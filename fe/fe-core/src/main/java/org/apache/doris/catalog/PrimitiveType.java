@@ -1052,7 +1052,7 @@ public enum PrimitiveType {
         return isFixedPointType() || isFloatingPointType() || isDecimalV2Type() || isDecimalV3Type();
     }
 
-    public boolean isVariantType(){
+    public boolean isVariantType() {
         return this == VARIANT;
     }
 

@@ -20,12 +20,12 @@
 
 #include "vec/columns/column_string.h"
 
+#include "vec/columns/column_impl.h"
 #include "vec/columns/columns_common.h"
 #include "vec/common/arena.h"
 #include "vec/common/assert_cast.h"
 #include "vec/common/memcmp_small.h"
 #include "vec/common/unaligned.h"
-#include "vec/columns/column_impl.h"
 
 namespace doris::vectorized {
 
@@ -429,7 +429,7 @@ void ColumnString::protect() {
     get_offsets().protect();
 }
 
-ColumnPtr ColumnString::index(const IColumn & indexes, size_t limit) const {
+ColumnPtr ColumnString::index(const IColumn& indexes, size_t limit) const {
     return select_index_impl(*this, indexes, limit);
 }
 

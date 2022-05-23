@@ -28,6 +28,8 @@
 
 #include "runtime/datetime_value.h"
 #include "util/simd/bits.h"
+#include "vec/columns/column_impl.h"
+#include "vec/columns/columns_common.h"
 #include "vec/common/arena.h"
 #include "vec/common/assert_cast.h"
 #include "vec/common/bit_cast.h"
@@ -35,8 +37,6 @@
 #include "vec/common/nan_utils.h"
 #include "vec/common/sip_hash.h"
 #include "vec/common/unaligned.h"
-#include "vec/columns/column_impl.h"
-#include "vec/columns/columns_common.h"
 
 namespace doris::vectorized {
 
@@ -442,7 +442,7 @@ void ColumnVector<T>::get_extremes(Field& min, Field& max) const {
 }
 
 template <typename T>
-ColumnPtr ColumnVector<T>::index(const IColumn & indexes, size_t limit) const {
+ColumnPtr ColumnVector<T>::index(const IColumn& indexes, size_t limit) const {
     return select_index_impl(*this, indexes, limit);
 }
 

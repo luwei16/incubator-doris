@@ -23,9 +23,9 @@
 
 #include "runtime/string_value.h"
 #include "vec/columns/column.h"
-#include "vec/common/pod_array.h"
 #include "vec/columns/column_string.h"
 #include "vec/columns/predicate_column.h"
+#include "vec/common/pod_array.h"
 #include "vec/core/types.h"
 
 namespace doris::vectorized {
@@ -162,7 +162,8 @@ public:
 
     bool is_fixed_and_contiguous() const override { return true; }
 
-    void get_indices_of_non_default_rows(IColumn::Offsets & indices, size_t from, size_t limit) const override {
+    void get_indices_of_non_default_rows(IColumn::Offsets& indices, size_t from,
+                                         size_t limit) const override {
         LOG(FATAL) << "get_indices_of_non_default_rows not supported in ColumnDictionary";
     }
 
@@ -194,7 +195,7 @@ public:
         LOG(FATAL) << "scatter not supported in ColumnDictionary";
     }
 
-    [[noreturn]] ColumnPtr index(const IColumn & indexes, size_t limit) const override {
+    [[noreturn]] ColumnPtr index(const IColumn& indexes, size_t limit) const override {
         LOG(FATAL) << "index not implemented";
     }
 

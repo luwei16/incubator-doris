@@ -225,6 +225,9 @@ message TabletSchemaPB {
     optional int32 schema_version = 14;
     optional bool disable_auto_compaction = 15 [default=false];
     optional bool is_persistent = 16;
+
+    // reserved
+    optional bool is_dynamic_schema = 100 [default=false];
 }
 
 enum TabletStatePB {

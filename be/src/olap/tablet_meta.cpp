@@ -189,6 +189,9 @@ TabletMeta::TabletMeta(int64_t table_id, int64_t partition_id, int64_t tablet_id
     if (tablet_schema.__isset.is_persistent) {
         schema->set_is_persistent(tablet_schema.is_persistent);
     }
+    if (tablet_schema.__isset.is_dynamic_schema) {
+        schema->set_is_dynamic_schema(tablet_schema.is_dynamic_schema);
+    }
 
     if (tablet_schema.__isset.delete_sign_idx) {
         schema->set_delete_sign_idx(tablet_schema.delete_sign_idx);

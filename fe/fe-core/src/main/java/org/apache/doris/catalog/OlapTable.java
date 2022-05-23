@@ -1634,6 +1634,22 @@ public class OlapTable extends Table {
         return false;
     }
 
+    public Boolean isDynamicSchema() {
+        if (tableProperty != null) {
+            return tableProperty.isDynamicSchema();
+        }
+        return false;
+    }
+
+    public void setIsDynamicSchema(boolean isDynamicSchema) {
+        if (tableProperty == null) {
+            tableProperty = new TableProperty(new HashMap<>());
+        }
+        tableProperty.modifyTableProperties(
+                PropertyAnalyzer.PROPERTIES_DYNAMIC_SCHEMA, Boolean.valueOf(isDynamicSchema).toString());
+        tableProperty.buildDynamicSchema();
+    }
+
     public void setDataSortInfo(DataSortInfo dataSortInfo) {
         if (tableProperty == null) {
             tableProperty = new TableProperty(new HashMap<>());

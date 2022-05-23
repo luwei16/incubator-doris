@@ -102,6 +102,7 @@ public abstract class Type {
     public static final MapType MAP = new MapType();
     public static final ArrayType ARRAY = ArrayType.create();
     public static final StructType STRUCT = new StructType();
+    public static final VariantType VARIANT = new VariantType();
 
     private static final Logger LOG = LogManager.getLogger(Type.class);
     private static final ArrayList<ScalarType> integerTypes;
@@ -1404,7 +1405,7 @@ public abstract class Type {
                         || t1 == PrimitiveType.TIMEV2 || t2 == PrimitiveType.TIMEV2
                         || t1 == PrimitiveType.MAP || t2 == PrimitiveType.MAP
                         || t1 == PrimitiveType.STRUCT || t2 == PrimitiveType.STRUCT
-                        || t1 == PrimitiveType.VARIANT|| t2 == PrimitiveType.VARIANT) {
+                        || t1 == PrimitiveType.VARIANT || t2 == PrimitiveType.VARIANT) {
                     continue;
                 }
                 Preconditions.checkNotNull(compatibilityMatrix[i][j]);
