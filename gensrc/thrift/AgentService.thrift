@@ -157,6 +157,16 @@ struct TAlterTabletReqV2 {
     10: optional list<Descriptors.TColumn> columns
 }
 
+struct TAlterInvertedIndexReq {
+    1: required Types.TTabletId tablet_id
+    2: required Types.TSchemaHash schema_hash
+    3: optional Types.TVersion alter_version
+    4: optional TAlterTabletType alter_tablet_type = TAlterTabletType.SCHEMA_CHANGE
+    5: optional list<Descriptors.TOlapTableIndex> alter_inverted_indexes
+    6: optional bool is_drop_op= false
+    7: optional list<Descriptors.TColumn> columns
+}
+
 struct TAlterMaterializedViewParam {
     1: required string column_name
     2: optional string origin_column_name
@@ -385,6 +395,7 @@ struct TAgentTaskRequest {
     27: optional TCompactionReq compaction_req
     28: optional TStorageMigrationReqV2 storage_migration_req_v2
     29: optional TGetStoragePolicy update_policy
+    30: optional TAlterInvertedIndexReq alter_inverted_index_req
 }
 
 struct TAgentResult {

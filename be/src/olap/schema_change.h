@@ -32,6 +32,10 @@ namespace cloud {
 class CloudSchemaChangeHandler;
 }
 
+namespace segment_v2 {
+    class InvertedIndexColumnWriter;
+}
+
 bool to_bitmap(RowCursor* read_helper, RowCursor* write_helper, const TabletColumn& ref_column,
                int field_idx, int ref_field_idx, MemPool* mem_pool);
 bool hll_hash(RowCursor* read_helper, RowCursor* write_helper, const TabletColumn& ref_column,
@@ -164,6 +168,41 @@ private:
     DISALLOW_COPY_AND_ASSIGN(LinkedSchemaChange);
 };
 
+class SchemaChangeForInvertedIndex : public SchemaChange {
+public:
+    // @params tablet           the instance of tablet which has new schema.
+    // @params row_block_changer    changer to modify the data of RowBlock
+    explicit SchemaChangeForInvertedIndex(
+            const std::vector<TOlapTableIndex>& alter_inverted_indexs,
+            const TabletSchemaSPtr& tablet_schema);
+    virtual ~SchemaChangeForInvertedIndex();
+
+    virtual Status process(RowsetReaderSharedPtr rowset_reader, RowsetWriter* rowset_writer,
+                           TabletSharedPtr base_tablet, TabletSchemaSPtr base_tablet_schema) override;
+
+private:
+    DISALLOW_COPY_AND_ASSIGN(SchemaChangeForInvertedIndex);
+    Status _write_inverted_index(int32_t segment_idx, 
+            vectorized::Block* block);
+    Status _add_data(const std::string& column_name,
+            const std::string& index_writer_sign,
+            const uint8_t** ptr, 
+            size_t num_rows);
+    Status _add_nullable(const std::string& column_name,
+            const std::string& index_writer_sign,
+            Field* field,
+            const uint8_t* null_map, 
+            const uint8_t** ptr, 
+            size_t num_rows);
+
+private:
+    std::vector<TOlapTableIndex> _alter_inverted_indexs;
+    TabletSchemaSPtr _tablet_schema;
+
+    // "segment_id_unique_id" -> InvertedIndexColumnWriter
+    std::unordered_map<std::string, std::unique_ptr<segment_v2::InvertedIndexColumnWriter>>  _inverted_index_builders;
+};
+
 // @brief schema change without sorting.
 class SchemaChangeDirectly : public SchemaChange {
 public:
@@ -270,6 +309,7 @@ class SchemaChangeHandler {
 public:
     // schema change v2, it will not set alter task in base tablet
     static Status process_alter_tablet_v2(const TAlterTabletReqV2& request);
+    static Status process_alter_inverted_index(const TAlterInvertedIndexReq& request);
 
     static std::unique_ptr<SchemaChange> get_sc_procedure(const RowBlockChanger& rb_changer,
                                                           bool sc_sorting, bool sc_directly) {
@@ -315,11 +355,40 @@ private:
 
     static Status _validate_alter_result(const TabletSharedPtr& new_tablet,
                                          const TAlterTabletReqV2& request);
-
+    static Status _validate_alter_result(const TabletSharedPtr& tablet, 
+                                        const TAlterInvertedIndexReq& request);
+    static Status _check_rowset(TabletSharedPtr tablet);
     static Status _convert_historical_rowsets(const SchemaChangeParams& sc_params);
 
     static Status _parse_request(const SchemaChangeParams& sc_params, RowBlockChanger* rb_changer,
                                  bool* sc_sorting, bool* sc_directly);
+
+    static Status _do_process_alter_inverted_index(TabletSharedPtr tablet, const TAlterInvertedIndexReq& request);
+
+    static Status _get_rowset_readers(
+            TabletSharedPtr tablet, const TabletSchemaSPtr& tablet_schema, const TAlterInvertedIndexReq& request,
+            std::vector<RowsetReaderSharedPtr>* rs_readers, DeleteHandler* delete_handler);
+    static Status _add_inverted_index(
+            std::vector<RowsetReaderSharedPtr> rs_readers, 
+            DeleteHandler* delete_handler,
+            const TabletSchemaSPtr& tablet_schema,
+            TabletSharedPtr tablet, 
+            const TAlterInvertedIndexReq& request);
+    static Status _drop_inverted_index(
+            std::vector<RowsetReaderSharedPtr> rs_readers, 
+            const TabletSchemaSPtr& tablet_schema,
+            TabletSharedPtr tablet, 
+            const TAlterInvertedIndexReq& request);
+    
+    static Status _rebuild_inverted_index(
+            const std::vector<RowsetReaderSharedPtr>& rs_readers,
+            DeleteHandler* delete_handler,
+            const TabletSchemaSPtr& tablet_schema,
+            TabletSharedPtr tablet,
+            const std::vector<TOlapTableIndex>& alter_inverted_indexs);
+
+    static Status _update_column_describe(const TAlterInvertedIndexReq& request, 
+                TabletSharedPtr tablet, const TabletSchemaSPtr& tablet_schema);
 
     // Initialization Settings for creating a default value
     static Status _init_column_mapping(ColumnMapping* column_mapping,

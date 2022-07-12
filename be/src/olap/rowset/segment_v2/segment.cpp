@@ -102,6 +102,7 @@ Status Segment::new_iterator(const Schema& schema, const StorageReadOptions& rea
             continue;
         }
         if (read_options.col_id_to_predicates.count(column_id) > 0 &&
+            !read_options.tablet_schema->column(column_id).has_inverted_index() &&
             !_column_readers.at(uid)->match_condition(entry.second.get())) {
             // any condition not satisfied, return.
             iter->reset(new EmptySegmentIterator(schema));
@@ -119,7 +120,8 @@ Status Segment::new_iterator(const Schema& schema, const StorageReadOptions& rea
             AndBlockColumnPredicate and_predicate;
             auto single_predicate = new SingleColumnBlockPredicate(runtime_predicate.get());
             and_predicate.add_column_predicate(single_predicate);
-            if (!_column_readers.at(uid)->match_condition(&and_predicate)) {
+            if (!read_options.tablet_schema->column(runtime_predicate->column_id()).has_inverted_index() &&
+                !_column_readers.at(uid)->match_condition(&and_predicate)) {
                 // any condition not satisfied, return.
                 iter->reset(new EmptySegmentIterator(schema));
                 read_options.stats->filtered_segment_number++;

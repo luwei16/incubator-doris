@@ -51,8 +51,10 @@ import org.apache.doris.task.AgentBatchTask;
 import org.apache.doris.task.AgentTask;
 import org.apache.doris.task.AgentTaskExecutor;
 import org.apache.doris.task.AgentTaskQueue;
+import org.apache.doris.task.AlterInvertedIndexTask;
 import org.apache.doris.task.AlterReplicaTask;
 import org.apache.doris.task.CreateReplicaTask;
+import org.apache.doris.thrift.TColumn;
 import org.apache.doris.thrift.TStorageFormat;
 import org.apache.doris.thrift.TStorageMedium;
 import org.apache.doris.thrift.TStorageType;
@@ -119,8 +121,16 @@ public class SchemaChangeJobV2 extends AlterJobV2 {
     // alter index info
     @SerializedName(value = "indexChange")
     private boolean indexChange = false;
+    @SerializedName(value = "invertedIndexChange")
+    private boolean invertedIndexChange = false;
+    @SerializedName(value = "isDropOp")
+    private boolean isDropOp = false;
     @SerializedName(value = "indexes")
     private List<Index> indexes = null;
+    @SerializedName(value = "alterInvertedIndexes")
+    private List<Index> alterInvertedIndexes = null;
+    @SerializedName(value = "oriIndexes")
+    private List<Index> oriIndexes = null;
 
     // The schema change job will wait all transactions before this txn id finished, then send the schema change tasks.
     @SerializedName(value = "watershedTxnId")
@@ -175,6 +185,17 @@ public class SchemaChangeJobV2 extends AlterJobV2 {
         this.indexes = indexes;
     }
 
+    public void setAlterInvertedIndexInfo(boolean invertedIndexChange,
+                    boolean isDropOp, List<Index> alterInvertedIndexes) {
+        this.invertedIndexChange = invertedIndexChange;
+        this.isDropOp = isDropOp;
+        this.alterInvertedIndexes = alterInvertedIndexes;
+    }
+
+    public void setOriIndexInfo(List<Index> oriIndexes) {
+        this.oriIndexes = oriIndexes;
+    }
+
     public void setStorageFormat(TStorageFormat storageFormat) {
         this.storageFormat = storageFormat;
     }
@@ -214,6 +235,25 @@ public class SchemaChangeJobV2 extends AlterJobV2 {
             tbl = (OlapTable) db.getTableOrMetaException(tableId, TableType.OLAP);
         } catch (MetaNotFoundException e) {
             throw new AlterCancelException(e.getMessage());
+        }
+
+        if (invertedIndexChange) {
+            // add inverted index for tablet meta
+            tbl.writeLockOrAlterCancelException();
+            try {
+                Preconditions.checkState(tbl.getState() == OlapTableState.SCHEMA_CHANGE);
+                // update index
+                tbl.setIndexes(indexes);
+            } finally {
+                tbl.writeUnlock();
+            }
+            this.watershedTxnId = Env.getCurrentGlobalTransactionMgr().getNextTransactionId(dbId);
+            this.jobState = JobState.WAITING_TXN;
+            // write edit log
+            Env.getCurrentEnv().getEditLog().logAlterJob(this);
+            LOG.info("transfer schema change job {} state to {}, watershed txn id: {}",
+                    jobId, this.jobState, watershedTxnId);
+            return;
         }
 
         tbl.readLock();
@@ -414,6 +454,10 @@ public class SchemaChangeJobV2 extends AlterJobV2 {
     }
 
     private void addShadowIndexToCatalog(OlapTable tbl) {
+        if (invertedIndexChange) {
+            return;
+        }
+
         for (long partitionId : partitionIndexMap.rowKeySet()) {
             Partition partition = tbl.getPartition(partitionId);
             if (partition == null) {
@@ -522,6 +566,11 @@ public class SchemaChangeJobV2 extends AlterJobV2 {
                     int shadowSchemaHash = indexSchemaVersionAndHashMap.get(shadowIdxId).schemaHash;
                     int originSchemaHash = tbl.getSchemaHashByIndexId(indexIdMap.get(shadowIdxId));
                     List<Column> originSchemaColumns = tbl.getSchemaByIndexId(originIdxId, true);
+                    for (Column col : originSchemaColumns) {
+                        TColumn tColumn = col.toThrift();
+                        col.setIndexFlag(tColumn, tbl);
+                    }
+
                     for (Tablet shadowTablet : shadowIdx.getTablets()) {
                         long shadowTabletId = shadowTablet.getId();
                         long originTabletId = partitionIndexTabletMap.get(partitionId, shadowIdxId).get(shadowTabletId);
@@ -532,11 +581,22 @@ public class SchemaChangeJobV2 extends AlterJobV2 {
                                 throw new AlterCancelException("shadowReplica:" + shadowReplica.getId()
                                         + " backendId < 0");
                             }
-                            AlterReplicaTask rollupTask = new AlterReplicaTask(shadowReplica.getBackendId(), dbId,
-                                    tableId, partitionId, shadowIdxId, originIdxId, shadowTabletId, originTabletId,
-                                    shadowReplica.getId(), shadowSchemaHash, originSchemaHash, visibleVersion, jobId,
-                                    JobType.SCHEMA_CHANGE, defineExprs, descTable, originSchemaColumns);
-                            schemaChangeBatchTask.addTask(rollupTask);
+                            if (invertedIndexChange) {
+                                AlterInvertedIndexTask alterInvertedIndexTask = new AlterInvertedIndexTask(
+                                        shadowReplica.getBackendId(), dbId, tableId,
+                                        partitionId, shadowIdxId, visibleVersion,
+                                        originTabletId, originSchemaHash,
+                                        jobId, JobType.SCHEMA_CHANGE,
+                                        isDropOp, alterInvertedIndexes, originSchemaColumns);
+                                schemaChangeBatchTask.addTask(alterInvertedIndexTask);
+                            } else {
+                                AlterReplicaTask rollupTask = new AlterReplicaTask(shadowReplica.getBackendId(), dbId,
+                                        tableId, partitionId, shadowIdxId, originIdxId,
+                                        shadowTabletId, originTabletId, shadowReplica.getId(),
+                                        shadowSchemaHash, originSchemaHash, visibleVersion, jobId,
+                                        JobType.SCHEMA_CHANGE, defineExprs, descTable, originSchemaColumns);
+                                schemaChangeBatchTask.addTask(rollupTask);
+                            }
                         }
                     }
                 }
@@ -609,6 +669,22 @@ public class SchemaChangeJobV2 extends AlterJobV2 {
          * we just check whether all new replicas are healthy.
          */
         tbl.writeLockOrAlterCancelException();
+        if (invertedIndexChange) {
+            // do nothing
+            try {
+                Preconditions.checkState(tbl.getState() == OlapTableState.SCHEMA_CHANGE);
+                tbl.setState(OlapTableState.NORMAL);
+            } finally {
+                tbl.writeUnlock();
+            }
+            pruneMeta();
+            this.jobState = JobState.FINISHED;
+            this.finishedTimeMs = System.currentTimeMillis();
+            Env.getCurrentEnv().getEditLog().logAlterJob(this);
+            LOG.info("schema change job finished: {}", jobId);
+            return;
+        }
+
         try {
             Preconditions.checkState(tbl.getState() == OlapTableState.SCHEMA_CHANGE);
             TabletInvertedIndex invertedIndex = Env.getCurrentInvertedIndex();
@@ -690,67 +766,69 @@ public class SchemaChangeJobV2 extends AlterJobV2 {
     }
 
     private void onFinished(OlapTable tbl) {
-        // replace the origin index with shadow index, set index state as NORMAL
-        for (Partition partition : tbl.getPartitions()) {
-            // drop the origin index from partitions
+        if (!invertedIndexChange) {
+            // replace the origin index with shadow index, set index state as NORMAL
+            for (Partition partition : tbl.getPartitions()) {
+                // drop the origin index from partitions
+                for (Map.Entry<Long, Long> entry : indexIdMap.entrySet()) {
+                    long shadowIdxId = entry.getKey();
+                    long originIdxId = entry.getValue();
+                    // get index from catalog, not from 'partitionIdToRollupIndex'.
+                    // because if this alter job is recovered from edit log, index in 'partitionIndexMap'
+                    // is not the same object in catalog. So modification on that index can not reflect to the index
+                    // in catalog.
+                    MaterializedIndex shadowIdx = partition.getIndex(shadowIdxId);
+                    Preconditions.checkNotNull(shadowIdx, shadowIdxId);
+                    MaterializedIndex droppedIdx = null;
+                    if (originIdxId == partition.getBaseIndex().getId()) {
+                        droppedIdx = partition.getBaseIndex();
+                    } else {
+                        droppedIdx = partition.deleteRollupIndex(originIdxId);
+                    }
+                    Preconditions.checkNotNull(droppedIdx, originIdxId + " vs. " + shadowIdxId);
+
+                    // set replica state
+                    for (Tablet tablet : shadowIdx.getTablets()) {
+                        for (Replica replica : tablet.getReplicas()) {
+                            replica.setState(ReplicaState.NORMAL);
+                        }
+                    }
+
+                    partition.visualiseShadowIndex(shadowIdxId, originIdxId == partition.getBaseIndex().getId());
+
+                    // delete origin replicas
+                    for (Tablet originTablet : droppedIdx.getTablets()) {
+                        Env.getCurrentInvertedIndex().deleteTablet(originTablet.getId());
+                    }
+                }
+            }
+
+            // update index schema info of each index
             for (Map.Entry<Long, Long> entry : indexIdMap.entrySet()) {
                 long shadowIdxId = entry.getKey();
                 long originIdxId = entry.getValue();
-                // get index from catalog, not from 'partitionIdToRollupIndex'.
-                // because if this alter job is recovered from edit log, index in 'partitionIndexMap'
-                // is not the same object in catalog. So modification on that index can not reflect to the index
-                // in catalog.
-                MaterializedIndex shadowIdx = partition.getIndex(shadowIdxId);
-                Preconditions.checkNotNull(shadowIdx, shadowIdxId);
-                MaterializedIndex droppedIdx = null;
-                if (originIdxId == partition.getBaseIndex().getId()) {
-                    droppedIdx = partition.getBaseIndex();
-                } else {
-                    droppedIdx = partition.deleteRollupIndex(originIdxId);
-                }
-                Preconditions.checkNotNull(droppedIdx, originIdxId + " vs. " + shadowIdxId);
-
-                // set replica state
-                for (Tablet tablet : shadowIdx.getTablets()) {
-                    for (Replica replica : tablet.getReplicas()) {
-                        replica.setState(ReplicaState.NORMAL);
+                String shadowIdxName = tbl.getIndexNameById(shadowIdxId);
+                String originIdxName = tbl.getIndexNameById(originIdxId);
+                int maxColUniqueId = tbl.getIndexMetaByIndexId(originIdxId).getMaxColUniqueId();
+                for (Column column : indexSchemaMap.get(shadowIdxId)) {
+                    if (column.getUniqueId() > maxColUniqueId) {
+                        maxColUniqueId = column.getUniqueId();
                     }
                 }
+                tbl.getIndexMetaByIndexId(shadowIdxId).setMaxColUniqueId(maxColUniqueId);
+                LOG.debug("originIdxId:{}, shadowIdxId:{}, maxColUniqueId:{}, indexSchema:{}",
+                        originIdxId, shadowIdxId, maxColUniqueId,  indexSchemaMap.get(shadowIdxId));
 
-                partition.visualiseShadowIndex(shadowIdxId, originIdxId == partition.getBaseIndex().getId());
+                tbl.deleteIndexInfo(originIdxName);
+                // the shadow index name is '__doris_shadow_xxx', rename it to origin name 'xxx'
+                // this will also remove the prefix of columns
+                tbl.renameIndexForSchemaChange(shadowIdxName, originIdxName);
+                tbl.renameColumnNamePrefix(shadowIdxId);
 
-                // delete origin replicas
-                for (Tablet originTablet : droppedIdx.getTablets()) {
-                    Env.getCurrentInvertedIndex().deleteTablet(originTablet.getId());
+                if (originIdxId == tbl.getBaseIndexId()) {
+                    // set base index
+                    tbl.setBaseIndexId(shadowIdxId);
                 }
-            }
-        }
-
-        // update index schema info of each index
-        for (Map.Entry<Long, Long> entry : indexIdMap.entrySet()) {
-            long shadowIdxId = entry.getKey();
-            long originIdxId = entry.getValue();
-            String shadowIdxName = tbl.getIndexNameById(shadowIdxId);
-            String originIdxName = tbl.getIndexNameById(originIdxId);
-            int maxColUniqueId = tbl.getIndexMetaByIndexId(originIdxId).getMaxColUniqueId();
-            for (Column column : indexSchemaMap.get(shadowIdxId)) {
-                if (column.getUniqueId() > maxColUniqueId) {
-                    maxColUniqueId = column.getUniqueId();
-                }
-            }
-            tbl.getIndexMetaByIndexId(shadowIdxId).setMaxColUniqueId(maxColUniqueId);
-            LOG.debug("originIdxId:{}, shadowIdxId:{}, maxColUniqueId:{}, indexSchema:{}",
-                    originIdxId, shadowIdxId, maxColUniqueId,  indexSchemaMap.get(shadowIdxId));
-
-            tbl.deleteIndexInfo(originIdxName);
-            // the shadow index name is '__doris_shadow_xxx', rename it to origin name 'xxx'
-            // this will also remove the prefix of columns
-            tbl.renameIndexForSchemaChange(shadowIdxName, originIdxName);
-            tbl.renameColumnNamePrefix(shadowIdxId);
-
-            if (originIdxId == tbl.getBaseIndexId()) {
-                // set base index
-                tbl.setBaseIndexId(shadowIdxId);
             }
         }
         // rebuild table's full schema
@@ -796,6 +874,7 @@ public class SchemaChangeJobV2 extends AlterJobV2 {
     private void cancelInternal() {
         // clear tasks if has
         AgentTaskQueue.removeBatchTask(schemaChangeBatchTask, TTaskType.ALTER);
+        AgentTaskQueue.removeBatchTask(schemaChangeBatchTask, TTaskType.ALTER_INVERTED_INDEX);
         // remove all shadow indexes, and set state to NORMAL
         TabletInvertedIndex invertedIndex = Env.getCurrentInvertedIndex();
         Database db = Env.getCurrentInternalCatalog().getDbNullable(dbId);
@@ -819,6 +898,10 @@ public class SchemaChangeJobV2 extends AlterJobV2 {
                     }
                     for (String shadowIndexName : indexIdToName.values()) {
                         tbl.deleteIndexInfo(shadowIndexName);
+                    }
+                    if (invertedIndexChange) {
+                        // update index
+                        tbl.setIndexes(oriIndexes);
                     }
                     tbl.setState(OlapTableState.NORMAL);
                     LOG.info("set table's state to NORMAL when cancel job: {}", tbl.getId(), jobId);
