@@ -1,7 +1,8 @@
-package com.selectdb.rpc;
+package com.selectdb.cloud.rpc;
+
+import com.selectdb.cloud.proto.SelectdbCloud;
 
 import com.google.common.collect.Maps;
-import com.selectdb.cloud.proto.SelectdbCloud;
 import org.apache.doris.rpc.RpcException;
 import org.apache.doris.thrift.TNetworkAddress;
 import org.apache.logging.log4j.LogManager;

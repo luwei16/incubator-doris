@@ -1,7 +1,8 @@
-package com.selectdb.rpc;
+package com.selectdb.cloud.rpc;
 
 import com.selectdb.cloud.proto.MetaServiceGrpc;
 import com.selectdb.cloud.proto.SelectdbCloud;
+
 import io.grpc.ManagedChannel;
 import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder;
 import org.apache.doris.common.Config;
