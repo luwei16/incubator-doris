@@ -1,12 +1,13 @@
 package org.apache.doris.rpc;
 
-import io.grpc.ManagedChannel;
-import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder;
 import org.apache.doris.common.Config;
 import org.apache.doris.proto.MetaService;
 import org.apache.doris.proto.MetaService.PGetVisibleVersionResponse;
 import org.apache.doris.proto.PMetaServiceGrpc;
 import org.apache.doris.thrift.TNetworkAddress;
+
+import io.grpc.ManagedChannel;
+import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 

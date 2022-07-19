@@ -27,14 +27,14 @@ import "types.proto";
 option cc_generic_services = true;
 
 message PGetVisibleVersionRequest {
-    required int64 db_id = 1;
-    required int64 table_id = 2;
-    required int64 partition_id = 3;
+    optional int64 db_id = 1;
+    optional int64 table_id = 2;
+    optional int64 partition_id = 3;
 }
 
 message PGetVisibleVersionResponse {
-    required PStatus status = 1;
-    required int64 version_id = 2;
+    optional PStatus status = 1;
+    optional int64 version_id = 2;
 }
 
 service PMetaService {

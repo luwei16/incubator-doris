@@ -1,9 +1,10 @@
 package org.apache.doris.rpc;
 
-import com.google.common.collect.Maps;
 import org.apache.doris.proto.MetaService.PGetVisibleVersionRequest;
 import org.apache.doris.proto.MetaService.PGetVisibleVersionResponse;
 import org.apache.doris.thrift.TNetworkAddress;
+
+import com.google.common.collect.Maps;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.thrift.TException;
@@ -69,7 +70,7 @@ public class MetaServiceProxy {
 
     public Future<PGetVisibleVersionResponse> getVisibleVersionAsync(TNetworkAddress address,
                                                                      PGetVisibleVersionRequest request)
-        throws TException, RpcException {
+            throws TException, RpcException {
         try {
             final MetaServiceClient client = getProxy(address);
             return client.getVisibleVersionAsync(request);
