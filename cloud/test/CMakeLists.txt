@@ -1,0 +1,16 @@
+# where to put generated libraries
+set(LIBRARY_OUTPUT_PATH "${BUILD_DIR}/test")
+
+# where to put generated libraries
+set(EXECUTABLE_OUTPUT_PATH "${BUILD_DIR}/test")
+
+add_executable(sync_point_test
+   sync_point_test.cpp
+)
+
+message(${DORIS_LINK_LIBS})
+target_link_libraries(sync_point_test
+    ${DORIS_LINK_LIBS}
+)
+
+# vim: et tw=120 ts=4 sw=4 cc=80:
