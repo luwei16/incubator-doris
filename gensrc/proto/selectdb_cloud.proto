@@ -1,7 +1,7 @@
 syntax="proto2";
 
 package selectdb;
-option java_package = "com.selectdb.proto";
+option java_package = "com.selectdb.cloud.proto";
 
 import "olap_file.proto";
 

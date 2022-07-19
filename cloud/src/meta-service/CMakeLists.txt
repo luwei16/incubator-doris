@@ -6,14 +6,14 @@ set(LIBRARY_OUTPUT_PATH "${BUILD_DIR}/src/service")
 # where to put generated binaries
 set(EXECUTABLE_OUTPUT_PATH "${BUILD_DIR}/src/service")
 
-# add_library(MetaService
-# )
+add_library(MetaService
+    meta_server.cpp
+    meta_service.cpp
+)
 
 
 if (${MAKE_TEST} STREQUAL "OFF")
     add_executable(meta_service
-        meta_server.cpp
-        meta_service.cpp
         meta_service_main.cpp
     )
 
@@ -21,6 +21,7 @@ if (${MAKE_TEST} STREQUAL "OFF")
     set_target_properties(meta_service PROPERTIES ENABLE_EXPORTS 1)
 
     target_link_libraries(meta_service
+        MetaService
         ${DORIS_LINK_LIBS}
     )
 
