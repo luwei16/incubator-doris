@@ -1,13 +1,11 @@
-package org.apache.doris.rpc;
+package com.selectdb.rpc;
 
-import org.apache.doris.common.Config;
-import org.apache.doris.proto.MetaService;
-import org.apache.doris.proto.MetaService.PGetVisibleVersionResponse;
-import org.apache.doris.proto.PMetaServiceGrpc;
-import org.apache.doris.thrift.TNetworkAddress;
-
+import com.selectdb.proto.MetaServiceGrpc;
+import com.selectdb.proto.SelectdbCloud;
 import io.grpc.ManagedChannel;
 import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder;
+import org.apache.doris.common.Config;
+import org.apache.doris.thrift.TNetworkAddress;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -15,12 +13,12 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 public class MetaServiceClient {
-    public static final Logger LOG = LogManager.getLogger(BackendServiceClient.class);
+    public static final Logger LOG = LogManager.getLogger(MetaServiceClient.class);
 
     private static final int MAX_RETRY_NUM = 0;
     private final TNetworkAddress address;
-    private final PMetaServiceGrpc.PMetaServiceFutureStub stub;
-    private final PMetaServiceGrpc.PMetaServiceBlockingStub blockingStub;
+    private final MetaServiceGrpc.MetaServiceFutureStub stub;
+    private final MetaServiceGrpc.MetaServiceBlockingStub blockingStub;
     private final ManagedChannel channel;
 
     public MetaServiceClient(TNetworkAddress address) {
@@ -29,8 +27,8 @@ public class MetaServiceClient {
             .flowControlWindow(Config.grpc_max_message_size_bytes)
             .maxInboundMessageSize(Config.grpc_max_message_size_bytes).enableRetry().maxRetryAttempts(MAX_RETRY_NUM)
             .usePlaintext().build();
-        stub = PMetaServiceGrpc.newFutureStub(channel);
-        blockingStub = PMetaServiceGrpc.newBlockingStub(channel);
+        stub = MetaServiceGrpc.newFutureStub(channel);
+        blockingStub = MetaServiceGrpc.newBlockingStub(channel);
     }
 
     public void shutdown() {
@@ -59,7 +57,8 @@ public class MetaServiceClient {
         LOG.warn("shut down backend service client: {}", address);
     }
 
-    public Future<PGetVisibleVersionResponse> getVisibleVersionAsync(MetaService.PGetVisibleVersionRequest request) {
-        return stub.getVisibleVersion(request);
+    public Future<SelectdbCloud.GetVersionResponse>
+            getVisibleVersionAsync(SelectdbCloud.GetVersionRequest request) {
+        return stub.getVersion(request);
     }
 }

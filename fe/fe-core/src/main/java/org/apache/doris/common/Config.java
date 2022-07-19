@@ -1732,4 +1732,8 @@ public class Config extends ConfigBase {
      */
     @ConfField
     public static String s3_compatible_object_storages = "s3,oss,cos,bos";
+    /**
+     * MetaService endpoint, ip:port, such as meta_service_endpoint = "192.0.0.10:8866"
+     */
+    @ConfField public static String meta_service_endpoint = "";
 }

@@ -43,6 +43,8 @@ under the License.
     <suppress files="org[\\/]apache[\\/]doris[\\/](?!nereids)[^\\/]+[\\/]|PaloFe\.java" checks="RequireEmptyLineBeforeBlockTagGroup" />
     <suppress files="org[\\/]apache[\\/]doris[\\/](?!nereids)[^\\/]+[\\/]|PaloFe\.java" checks="SummaryJavadoc" />
     <suppress files="org[\\/]apache[\\/]doris[\\/](?!nereids)[^\\/]+[\\/]|PaloFe\.java" checks="SingleLineJavadoc" />
+    <suppress files="com[\\/]selectdb[\\/](?!nereids)[^\\/]+[\\/]|PaloFe\.java" checks="MissingJavadocMethod" />
+    <suppress files="com[\\/]selectdb[\\/](?!nereids)[^\\/]+[\\/]|PaloFe\.java" checks="MissingJavadocType" />
 
     <!-- other -->
     <suppress files="org[\\/]apache[\\/]doris[\\/](?!nereids)[^\\/]+[\\/]|PaloFe\.java" checks="DeclarationOrder" />
