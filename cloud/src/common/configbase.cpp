@@ -279,13 +279,15 @@ std::ostream& operator<<(std::ostream& out, const std::vector<T>& v) {
         TYPE& ref_conf_value = *reinterpret_cast<TYPE*>((FIELD).storage);                      \
         TYPE old_value = ref_conf_value;                                                       \
         ref_conf_value = new_value;                                                            \
-        auto validator = RegisterConfValidator::_s_field_validator->find((FIELD).name);        \
-        if (validator != RegisterConfValidator::_s_field_validator->end() &&                   \
-            !(validator->second)()) {                                                          \
-            ref_conf_value = old_value;                                                        \
-            std::cerr << "validate " << (FIELD).name << "=" << new_value << " failed"          \
-                      << std::endl;                                                            \
-            return false;                                                                      \
+        if (RegisterConfValidator::_s_field_validator != nullptr) {                            \
+            auto validator = RegisterConfValidator::_s_field_validator->find((FIELD).name);    \
+            if (validator != RegisterConfValidator::_s_field_validator->end() &&               \
+                !(validator->second)()) {                                                      \
+                ref_conf_value = old_value;                                                    \
+                std::cerr << "validate " << (FIELD).name << "=" << new_value << " failed"      \
+                          << std::endl;                                                        \
+                return false;                                                                  \
+            }                                                                                  \
         }                                                                                      \
         if (FILL_CONF_MAP) {                                                                   \
             std::ostringstream oss;                                                            \

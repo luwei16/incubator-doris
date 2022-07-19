@@ -38,7 +38,7 @@ int MetaServer::start(int port) {
     }
     if (server_->Start(port, &options) != 0) {
         char buf[64];
-        LOG(WARNING) << "start brpc failed, errno=" << errno
+        LOG(WARNING) << "failed to start brpc, errno=" << errno
                      << ", errmsg=" << strerror_r(errno, buf, 64) << ", port=" << port;
         return -1;
     }
@@ -46,8 +46,9 @@ int MetaServer::start(int port) {
 }
 
 void MetaServer::join() {
-    server_->Stop(1000);
-    server_->Join();
+    server_->RunUntilAskedToQuit();
+    // server_->Stop(1000);
+    // server_->Join();
     server_->ClearServices();
 }
 
