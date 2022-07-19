@@ -1,10 +1,10 @@
 
 
 # where to put generated libraries
-set(LIBRARY_OUTPUT_PATH "${BUILD_DIR}/src/service")
+set(LIBRARY_OUTPUT_PATH "${BUILD_DIR}/src/meta-service")
 
 # where to put generated binaries
-set(EXECUTABLE_OUTPUT_PATH "${BUILD_DIR}/src/service")
+set(EXECUTABLE_OUTPUT_PATH "${BUILD_DIR}/src/meta-service")
 
 add_library(MetaService
     meta_server.cpp

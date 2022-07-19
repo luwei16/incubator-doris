@@ -1,13 +1,11 @@
 // Container of meta service
 #pragma once
 
-#include <memory>
-
+// clang-format off
 #include "brpc/server.h"
 
-// namespace brpc {
-// class Server;
-// };
+#include <memory>
+// clang-format on
 
 namespace selectdb {
 

@@ -1,7 +1,11 @@
 #include "meta_server.h"
 
-#include "brpc/server.h"
+// clang-format off
+#include "common/config.h"
 #include "meta_service.h"
+
+#include "brpc/server.h"
+// clang-format on
 
 // brpc
 // #include <brpc/channel.h>
@@ -9,7 +13,7 @@
 // #include <brpc/controller.h>
 // #include <brpc/protocol.h>
 // #include <brpc/reloadable_flags.h>
-#include <brpc/server.h>
+// #include <brpc/server.h>
 // #include <bthread/bthread.h>
 // #include <bthread/types.h>
 // #include <butil/containers/flat_map.h>
@@ -29,9 +33,9 @@ int MetaServer::start(int port) {
     server_->AddService(new MetaServiceImpl(), brpc::SERVER_OWNS_SERVICE);
     // start service
     brpc::ServerOptions options;
-    //     if (config::brpc_num_threads != -1) {
-    //         options.num_threads = config::brpc_num_threads;
-    //     }
+    if (config::brpc_num_threads != -1) {
+        options.num_threads = config::brpc_num_threads;
+    }
     if (server_->Start(port, &options) != 0) {
         char buf[64];
         LOG(WARNING) << "start brpc failed, errno=" << errno

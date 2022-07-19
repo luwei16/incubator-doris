@@ -353,6 +353,7 @@ message(STATUS "DORIS_DEPENDENCIES is ${DORIS_DEPENDENCIES}")
 set(DORIS_LINK_LIBS ${DORIS_LINK_LIBS}
     ${DORIS_DEPENDENCIES}
     SelectdbGen
+    Common
     -static-libstdc++
     -static-libgcc
     -lstdc++fs
@@ -410,6 +411,7 @@ if (${MAKE_TEST} STREQUAL "ON")
     add_definitions(-DBE_TEST)
 endif ()
 
+add_subdirectory(${SRC_DIR}/common)
 add_subdirectory(${SRC_DIR}/gen-cpp)
 add_subdirectory(${SRC_DIR}/meta-service)
 add_subdirectory(${SRC_DIR}/resource-manager)
