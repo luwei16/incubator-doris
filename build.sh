@@ -103,6 +103,7 @@ OPTS=$(getopt \
   -o '' \
   -l 'fe' \
   -l 'be' \
+  -l 'cloud' \
   -l 'broker' \
   -l 'audit' \
   -l 'meta-tool' \
@@ -123,6 +124,7 @@ eval set -- "$OPTS"
 PARALLEL=$[$(nproc)/4+1]
 BUILD_FE=0
 BUILD_BE=0
+BUILD_CLOUD=0
 BUILD_BROKER=0
 BUILD_AUDIT=0
 BUILD_META_TOOL=OFF
@@ -137,6 +139,7 @@ if [ $# == 1 ] ; then
     # default
     BUILD_FE=1
     BUILD_BE=1
+    BUILD_CLOUD=1
     BUILD_BROKER=1
     BUILD_AUDIT=1
     BUILD_META_TOOL=OFF
@@ -149,6 +152,7 @@ else
         case "$1" in
             --fe) BUILD_FE=1 BUILD_SPARK_DPP=1 ; shift ;;
             --be) BUILD_BE=1 ; shift ;;
+            --cloud) BUILD_CLOUD=1 ; shift ;;
             --broker) BUILD_BROKER=1 ; shift ;;
             --audit)  BUILD_AUDIT=1 ; shift ;;
             --meta-tool) BUILD_META_TOOL=ON ; shift ;;
@@ -167,6 +171,7 @@ else
     if [[ ${PARAMETER_COUNT} -eq 3 ]] && [[ ${PARAMETER_FLAG} -eq 1 ]];then
         BUILD_FE=1
         BUILD_BE=1
+        BUILD_CLOUD=1
         BUILD_BROKER=1
         BUILD_AUDIT=1
         BUILD_META_TOOL=ON
@@ -188,7 +193,7 @@ if [[ ! -f ${DORIS_THIRDPARTY}/installed/lib/libbacktrace.a ]]; then
     ${DORIS_THIRDPARTY}/build-thirdparty.sh -j $PARALLEL
 fi
 
-if [ ${CLEAN} -eq 1 -a ${BUILD_BE} -eq 0 -a ${BUILD_FE} -eq 0 -a ${BUILD_SPARK_DPP} -eq 0 ]; then
+if [ ${CLEAN} -eq 1 -a ${BUILD_BE} -eq 0 -a ${BUILD_FE} -eq 0 -a ${BUILD_SPARK_DPP} -eq 0 -a ${BUILD_CLOUD} -eq 0 ]; then
     clean_gensrc
     clean_be
     clean_fe
@@ -230,6 +235,7 @@ fi
 echo "Get params:
     BUILD_FE            -- $BUILD_FE
     BUILD_BE            -- $BUILD_BE
+    BUILD_CLOUD         -- $BUILD_CLOUD
     BUILD_BROKER        -- $BUILD_BROKER
     BUILD_AUDIT         -- $BUILD_AUDIT
     BUILD_META_TOOL     -- $BUILD_META_TOOL
@@ -320,6 +326,39 @@ if [ ${BUILD_BE} -eq 1 ] ; then
     ${BUILD_SYSTEM} -j ${PARALLEL}
     ${BUILD_SYSTEM} install
     cd ${DORIS_HOME}
+fi
+
+if [ ${BUILD_CLOUD} -eq 1 ] ; then
+    if [ -e ${DORIS_HOME}/gensrc/build/gen_cpp/version.h ]; then rm -f ${DORIS_HOME}/gensrc/build/gen_cpp/version.h ; fi
+    CMAKE_BUILD_TYPE=${BUILD_TYPE:-Release}
+    echo "Build Cloud: ${CMAKE_BUILD_TYPE}"
+    CMAKE_BUILD_DIR=${DORIS_HOME}/cloud/build_${CMAKE_BUILD_TYPE}
+    if [ ${CLEAN} -eq 1 ]; then
+        rm -rf ${CMAKE_BUILD_DIR}
+        echo "clean cloud"
+    fi
+    MAKE_PROGRAM="$(which "${BUILD_SYSTEM}")"
+    echo "-- Make program: ${MAKE_PROGRAM}"
+    mkdir -p ${CMAKE_BUILD_DIR}
+    cd ${CMAKE_BUILD_DIR}
+    ${CMAKE_CMD} -G "${GENERATOR}"  \
+            -DCMAKE_MAKE_PROGRAM="${MAKE_PROGRAM}" \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+            -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} \
+            -DMAKE_TEST=OFF \
+            ${CMAKE_USE_CCACHE} \
+            -DUSE_LIBCPP=${USE_LIBCPP} \
+            -DSTRIP_DEBUG_INFO=${STRIP_DEBUG_INFO} \
+            -DUSE_DWARF=${USE_DWARF} \
+            -DUSE_JEMALLOC=${USE_JEMALLOC} \
+            -DSTRICT_MEMORY_USE=${STRICT_MEMORY_USE} \
+            -DUSE_AVX2=${USE_AVX2} \
+            -DGLIBC_COMPATIBILITY=${GLIBC_COMPATIBILITY} ${DORIS_HOME}/cloud/
+    ${BUILD_SYSTEM} -j ${PARALLEL}
+#     ${BUILD_SYSTEM} install
+#     cd ${DORIS_HOME}
+    echo "Build cloud done, exit"
+    exit
 fi
 
 if [ "${BUILD_DOCS}" = "ON" ] ; then
