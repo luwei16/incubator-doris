@@ -5,6 +5,8 @@ option java_package = "com.selectdb.proto";
 
 import "olap_file.proto";
 
+option cc_generic_services = true;
+
 message InstanceInfoPB {
     optional string user_id = 1;
     optional string instance_id = 2;
