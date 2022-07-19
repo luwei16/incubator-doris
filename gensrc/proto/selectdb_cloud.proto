@@ -1,0 +1,167 @@
+syntax="proto2";
+
+package selectdb;
+option java_package = "com.selectdb.proto";
+
+import "olap_file.proto";
+
+message InstanceInfoPB {
+    optional string user_id = 1;
+    optional string instance_id = 2;
+    repeated string lb_ip = 3;
+    optional int64 ctime = 4;
+    optional int64 mtime = 5;
+    repeated NodeInfoPB sql_server = 6;
+    repeated ClusterPB clusters = 7;
+}
+
+message ClusterPB {
+    optional string name = 1;
+    optional string cluster_id = 2;
+    repeated NodeInfoPB compute_node = 3;
+}
+
+message NodeInfoPB {
+    optional string name = 1;
+    optional string ip = 2;
+    optional string vpc_name = 3;
+    optional string unique_id = 4;
+    optional int64 ctime = 5;
+    optional int64 mtime = 6;
+    optional NodeStatusPB status = 7;
+    optional string desc = 8;
+}
+
+enum NodeStatusPB {
+    NODE_STATUS_UNKNOWN = 0;
+    NODE_STATUS_RUNNING = 1;
+    NODE_STATUS_SHUTDOWN = 2;
+}
+
+message ObjectStoreInfoPB {
+    optional string ak = 1;
+    optional string sk = 2;
+    optional string bucket = 3;
+    optional string prefix = 4;
+    optional string endpoint = 5;
+}
+
+message TxnInfoPB {
+    optional int64 db_id = 1;
+    repeated int64 table_id_list = 2;
+    optional int64 transaction_id = 3;
+    optional string label = 4;
+    // TODO: There are more fields TBD
+}
+
+message TxnRequest {
+    optional string cloud_unique_id = 1; // For auth
+    optional int64 db_id = 2;
+    optional string label = 3;
+    optional string txn_id = 4;
+    optional TxnInfoPB txn_info = 5;
+    optional bool precommit = 6;
+}
+
+message TxnResponse {
+    optional MetaServiceResponseStatus status = 1;
+    // TODO: There may be more fields TBD
+}
+
+message GetVersionRequest {
+    optional string cloud_unique_id = 1; // For auth
+    optional int64 db_id = 2;
+    optional int64 table_id = 3;
+    optional int64 partition_id = 4;
+};
+
+message GetVersionResponse {
+    optional MetaServiceResponseStatus status = 1;
+    optional int64 version = 2;
+};
+
+message GetObjStoreInfoRequest {
+    optional string cloud_unique_id = 1; // For auth
+    optional string resource_id = 2;
+};
+
+message GetObjStoreInfoResponse {
+    optional MetaServiceResponseStatus status = 1;
+    optional ObjectStoreInfoPB obj = 2;
+};
+
+message CreateTabletRequest {
+    optional string cloud_unique_id = 1; // For auth
+    optional doris.TabletMetaPB talet_meta = 2;
+}
+
+message DropTabletRequest {
+    optional string cloud_unique_id = 1; // For auth
+    optional int64 tablet_id = 2;
+    // TODO: There are more fields TBD
+}
+
+message GetTabletRequest {
+    optional string cloud_unique_id = 1; // For auth
+    optional int64 tablet_id = 2;
+    // TODO: There are more fields TBD
+}
+
+message GetTabletResponse {
+    optional MetaServiceResponseStatus status = 1;
+    optional doris.TabletMetaPB tablet_meta = 2;
+}
+
+message CreateRowsetRequest {
+    optional string cloud_unique_id = 1; // For auth
+    optional doris.RowsetMetaPB rowset_meta = 2;
+}
+
+message CreateRowsetResponse {
+    optional MetaServiceResponseStatus status = 1;
+}
+
+message GetRowsetRequest {
+    optional string cloud_unique_id = 1; // For auth
+    optional int64 tablet_id = 2;
+    // TODO: There may be more fields TBD
+}
+
+message GetRowsetResponse {
+    optional MetaServiceResponseStatus status = 1;
+    optional doris.RowsetMetaPB rowset_meta = 2;
+}
+
+message MetaServiceResponseStatus {
+    optional int32 code = 1;
+    optional string msg = 2;
+}
+
+message MetaServiceGenericResponse {
+    optional MetaServiceResponseStatus status = 1;
+}
+
+service MetaService {
+    rpc begin_txn(TxnRequest) returns (TxnResponse);
+    rpc precommit_txn(TxnRequest) returns (TxnResponse);
+    rpc commit_txn(TxnRequest) returns (TxnResponse);
+    rpc get_version(GetVersionRequest) returns (GetVersionResponse);
+
+    rpc create_tablet(CreateTabletRequest) returns (MetaServiceGenericResponse);
+    rpc drop_tablet(DropTabletRequest) returns (MetaServiceGenericResponse);
+    rpc get_tablet(GetTabletRequest) returns (GetTabletResponse);
+    rpc create_rowset(CreateRowsetRequest) returns (MetaServiceGenericResponse);
+    rpc get_rowset(GetRowsetRequest) returns (GetRowsetResponse);
+};
+
+service ResourceManagerService {
+    rpc get_obj_store_info(GetObjStoreInfoRequest) returns (GetObjStoreInfoResponse);
+
+    // TODO:
+    // create_instance
+    // add_sql_server
+    // add_compute_server
+};
+
+
+// vim: et ts=4 sw=4:
