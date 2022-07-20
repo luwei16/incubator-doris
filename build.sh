@@ -355,7 +355,7 @@ if [ ${BUILD_CLOUD} -eq 1 ] ; then
             -DUSE_AVX2=${USE_AVX2} \
             -DGLIBC_COMPATIBILITY=${GLIBC_COMPATIBILITY} ${DORIS_HOME}/cloud/
     ${BUILD_SYSTEM} -j ${PARALLEL}
-#     ${BUILD_SYSTEM} install
+    ${BUILD_SYSTEM} install
 #     cd ${DORIS_HOME}
     echo "Build cloud done, exit"
     exit

@@ -8,7 +8,7 @@ namespace selectdb {
 class MetaServiceImpl : public selectdb::MetaService {
 public:
     MetaServiceImpl();
-    virtual ~MetaServiceImpl();
+    ~MetaServiceImpl() override;
 
     void begin_txn(::google::protobuf::RpcController* controller,
                    const ::selectdb::TxnRequest* request, ::selectdb::TxnResponse* response,

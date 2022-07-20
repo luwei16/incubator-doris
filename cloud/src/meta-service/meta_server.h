@@ -2,6 +2,8 @@
 #pragma once
 
 // clang-format off
+#include "txn_kv.h"
+
 #include "brpc/server.h"
 
 #include <memory>
@@ -15,6 +17,11 @@ public:
     ~MetaServer() = default;
 
     /**
+     * @return 0 for success otherwise failure
+     */
+    int init();
+
+    /**
      * Starts to listen and server
      *
      * return 0 for success otherwise failure
@@ -25,6 +32,7 @@ public:
 
 private:
     std::unique_ptr<brpc::Server> server_;
+    std::shared_ptr<TxnKv> txn_kv_;
 };
 
 } // namespace selectdb

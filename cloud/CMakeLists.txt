@@ -411,6 +411,16 @@ if (${MAKE_TEST} STREQUAL "ON")
     add_definitions(-DBE_TEST)
 endif ()
 
+# Add libs if needed, download to current dir -- ${BUILD_DIR}
+if (NOT EXISTS "ldb_lib.xz")
+    execute_process(COMMAND "curl" "https://justtmp-1308700295.cos.ap-hongkong.myqcloud.com/ldb_lib.xz"
+                            "-o" "ldb_lib.xz" "-k")
+endif ()
+# Add fdb dependencies
+if (NOT EXISTS ${THIRDPARTY_DIR}/include/foundationdb)
+    execute_process(COMMAND "tar" "xf" "ldb_lib.xz" "-C" "${THIRDPARTY_DIR}/")
+endif ()
+
 add_subdirectory(${SRC_DIR}/common)
 add_subdirectory(${SRC_DIR}/gen-cpp)
 add_subdirectory(${SRC_DIR}/meta-service)
@@ -420,24 +430,39 @@ if (${MAKE_TEST} STREQUAL "ON")
     add_subdirectory(${TEST_DIR})
 endif ()
 
-# install(DIRECTORY DESTINATION ${OUTPUT_DIR})
-# install(DIRECTORY DESTINATION ${OUTPUT_DIR}/bin)
-# install(DIRECTORY DESTINATION ${OUTPUT_DIR}/conf)
-# 
-# install(FILES
-#     ${BASE_DIR}/../bin/start_be.sh
-#     ${BASE_DIR}/../bin/stop_be.sh
-#     PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE
-#     GROUP_READ GROUP_WRITE GROUP_EXECUTE
-#     WORLD_READ WORLD_EXECUTE
-#     DESTINATION ${OUTPUT_DIR}/bin)
-# 
+message("install files at ${OUTPUT_DIR}")
+install(DIRECTORY DESTINATION ${OUTPUT_DIR})
+install(DIRECTORY DESTINATION ${OUTPUT_DIR}/bin)
+install(DIRECTORY DESTINATION ${OUTPUT_DIR}/conf)
+install(DIRECTORY DESTINATION ${OUTPUT_DIR}/lib)
+
+install(FILES
+    ${BASE_DIR}/script/start_meta_service.sh
+    PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE
+    GROUP_READ GROUP_WRITE GROUP_EXECUTE
+    WORLD_READ WORLD_EXECUTE
+    DESTINATION ${OUTPUT_DIR}/bin)
+
 # install(FILES
 #     ${BASE_DIR}/../conf/be.conf
 #     ${BASE_DIR}/../conf/odbcinst.ini
 #     ${BASE_DIR}/../conf/asan_suppr.conf
 #     DESTINATION ${OUTPUT_DIR}/conf)
-# 
+
+install(FILES
+    ${THIRDPARTY_DIR}/lib/ld-linux-x86-64.so.2
+    ${THIRDPARTY_DIR}/lib/libc.so.6
+    ${THIRDPARTY_DIR}/lib/libdl.so.2
+    ${THIRDPARTY_DIR}/lib/libfdb_c.so
+    ${THIRDPARTY_DIR}/lib/libgcc_s.so.1
+    ${THIRDPARTY_DIR}/lib/libm.so.6
+    ${THIRDPARTY_DIR}/lib/libpthread.so.0
+    ${THIRDPARTY_DIR}/lib/librt.so.1
+    PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE
+    GROUP_READ GROUP_WRITE GROUP_EXECUTE
+    WORLD_READ WORLD_EXECUTE
+    DESTINATION ${OUTPUT_DIR}/lib)
+
 # get_property(dirs DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY INCLUDE_DIRECTORIES)
 # foreach(dir ${dirs})
 #     message(STATUS "dir='${dir}'")

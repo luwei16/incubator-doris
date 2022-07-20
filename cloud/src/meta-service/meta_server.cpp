@@ -1,4 +1,5 @@
 #include "meta_server.h"
+#include <memory>
 
 // clang-format off
 #include "common/config.h"
@@ -26,6 +27,11 @@ namespace selectdb {
 
 MetaServer::MetaServer() {
     server_.reset(new brpc::Server());
+}
+
+int MetaServer::init() {
+    txn_kv_ = std::dynamic_pointer_cast<TxnKv>(std::make_shared<FdbTxnKv>());
+    return txn_kv_ != nullptr;
 }
 
 int MetaServer::start(int port) {
