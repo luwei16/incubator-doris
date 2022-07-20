@@ -82,6 +82,20 @@ public class SystemInfoService {
 
     private volatile ImmutableMap<Long, DiskInfo> pathHashToDishInfoRef = ImmutableMap.of();
 
+    public static Pair<String, Integer> metaServiceHostPort;
+    public static String cloudUniqueId;
+
+    static {
+        cloudUniqueId = Config.cloud_unique_id;
+        if (!cloudUniqueId.equals("")) {
+            try {
+                metaServiceHostPort = validateHostAndPort(Config.meta_service_endpoint);
+            } catch (AnalysisException e) {
+                throw new RuntimeException(e);
+            }
+        }
+    }
+
     // sort host backends list by num of backends, descending
     private static final Comparator<List<Backend>> hostBackendsListComparator = new Comparator<List<Backend>>() {
         @Override

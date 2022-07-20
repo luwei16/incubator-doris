@@ -1736,4 +1736,7 @@ public class Config extends ConfigBase {
      * MetaService endpoint, ip:port, such as meta_service_endpoint = "192.0.0.10:8866"
      */
     @ConfField public static String meta_service_endpoint = "";
+
+    @ConfField
+    public static String cloud_unique_id = "this is cloud unique id";
 }

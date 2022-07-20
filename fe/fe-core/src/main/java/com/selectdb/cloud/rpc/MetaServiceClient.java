@@ -62,4 +62,8 @@ public class MetaServiceClient {
             getVisibleVersionAsync(SelectdbCloud.GetVersionRequest request) {
         return stub.getVersion(request);
     }
+
+    public SelectdbCloud.GetVersionResponse getVersion(SelectdbCloud.GetVersionRequest request) {
+        return blockingStub.getVersion(request);
+    }
 }

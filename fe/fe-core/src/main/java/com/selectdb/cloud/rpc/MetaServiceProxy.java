@@ -7,7 +7,6 @@ import org.apache.doris.rpc.RpcException;
 import org.apache.doris.thrift.TNetworkAddress;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.apache.thrift.TException;
 
 import java.util.Map;
 import java.util.concurrent.Future;
@@ -70,10 +69,20 @@ public class MetaServiceProxy {
 
     public Future<SelectdbCloud.GetVersionResponse>
             getVisibleVersionAsync(TNetworkAddress address, SelectdbCloud.GetVersionRequest request)
-            throws TException, RpcException {
+            throws RpcException {
         try {
             final MetaServiceClient client = getProxy(address);
             return client.getVisibleVersionAsync(request);
+        } catch (Exception e) {
+            throw new RpcException(address.hostname, e.getMessage(), e);
+        }
+    }
+
+    public SelectdbCloud.GetVersionResponse
+            getVersion(TNetworkAddress address, SelectdbCloud.GetVersionRequest request) throws RpcException {
+        try {
+            final MetaServiceClient client = getProxy(address);
+            return client.getVersion(request);
         } catch (Exception e) {
             throw new RpcException(address.hostname, e.getMessage(), e);
         }
