@@ -67,6 +67,10 @@ public class MetaServiceClient {
         return blockingStub.getVersion(request);
     }
 
+    public SelectdbCloud.MetaServiceGenericResponse createTablet(SelectdbCloud.CreateTabletRequest request) {
+        return blockingStub.createTablet(request);
+    }
+
     public SelectdbCloud.BeginTxnResponse
             beginTxn(SelectdbCloud.BeginTxnRequest request) {
         return blockingStub.beginTxn(request);

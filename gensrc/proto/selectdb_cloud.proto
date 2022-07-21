@@ -169,7 +169,7 @@ message GetObjStoreInfoResponse {
 
 message CreateTabletRequest {
     optional string cloud_unique_id = 1; // For auth
-    optional doris.TabletMetaPB talet_meta = 2;
+    optional doris.TabletMetaPB tablet_meta = 2;
 }
 
 message DropTabletRequest {

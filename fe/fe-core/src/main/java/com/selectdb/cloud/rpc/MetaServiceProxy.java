@@ -88,6 +88,16 @@ public class MetaServiceProxy {
         }
     }
 
+    public SelectdbCloud.MetaServiceGenericResponse
+            createTablet(TNetworkAddress address, SelectdbCloud.CreateTabletRequest request) throws RpcException {
+        try {
+            final MetaServiceClient client = getProxy(address);
+            return client.createTablet(request);
+        } catch (Exception e) {
+            throw new RpcException(address.hostname, e.getMessage(), e);
+        }
+    }
+
     public SelectdbCloud.BeginTxnResponse
             beginTxn(TNetworkAddress address, SelectdbCloud.BeginTxnRequest request)
             throws RpcException {

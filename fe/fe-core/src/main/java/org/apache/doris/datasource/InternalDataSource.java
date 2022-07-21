@@ -60,6 +60,7 @@ import org.apache.doris.analysis.TypeDef;
 import org.apache.doris.analysis.UserDesc;
 import org.apache.doris.analysis.UserIdentity;
 import org.apache.doris.catalog.BrokerTable;
+import org.apache.doris.catalog.CloudReplica;
 import org.apache.doris.catalog.ColocateGroupSchema;
 import org.apache.doris.catalog.ColocateTableIndex;
 import org.apache.doris.catalog.ColocateTableIndex.GroupId;
@@ -152,8 +153,13 @@ import org.apache.doris.persist.PartitionPersistInfo;
 import org.apache.doris.persist.RecoverInfo;
 import org.apache.doris.persist.ReplicaPersistInfo;
 import org.apache.doris.persist.TruncateTableInfo;
+import org.apache.doris.policy.Policy;
+import org.apache.doris.policy.PolicyTypeEnum;
+import org.apache.doris.policy.StoragePolicy;
+import org.apache.doris.proto.OlapFile;
 import org.apache.doris.qe.ConnectContext;
 import org.apache.doris.resource.Tag;
+import org.apache.doris.rpc.RpcException;
 import org.apache.doris.system.Backend;
 import org.apache.doris.system.Backend.BackendState;
 import org.apache.doris.system.SystemInfoService;
@@ -162,6 +168,7 @@ import org.apache.doris.task.AgentTaskExecutor;
 import org.apache.doris.task.AgentTaskQueue;
 import org.apache.doris.task.CreateReplicaTask;
 import org.apache.doris.thrift.TCompressionType;
+import org.apache.doris.thrift.TNetworkAddress;
 import org.apache.doris.thrift.TStorageFormat;
 import org.apache.doris.thrift.TStorageMedium;
 import org.apache.doris.thrift.TStorageType;
@@ -173,12 +180,15 @@ import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
+import com.selectdb.cloud.proto.SelectdbCloud;
+import com.selectdb.cloud.rpc.MetaServiceProxy;
 import lombok.Getter;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.hive.metastore.HiveMetaStoreClient;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+//import org.apache.thrift.TException;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.DataInputStream;
@@ -1955,6 +1965,17 @@ public class InternalDataSource implements DataSourceIf<Database> {
                                     + totalReplicaNum + " of replica exceeds quota[" + db.getReplicaQuota() + "]");
                 }
                 // create partition
+                if (!Config.cloud_unique_id.isEmpty()) {
+                    Partition partition = createCloudPartitionWithIndices(db.getClusterName(), db.getId(),
+                            olapTable.getId(), olapTable.getBaseIndexId(), partitionId, partitionName,
+                            olapTable.getIndexIdToMeta(), partitionDistributionInfo,
+                            partitionInfo.getDataProperty(partitionId).getStorageMedium(),
+                            partitionInfo.getReplicaAllocation(partitionId), versionInfo, bfColumns, bfFpp, tabletIdSet,
+                            olapTable.getCopiedIndexes(), isInMemory, storageFormat, tabletType, compressionType,
+                            olapTable.getDataSortInfo(), olapTable.getEnableUniqueKeyMergeOnWrite(), storagePolicy);
+                    olapTable.addPartition(partition);
+                    return;
+                }
                 Partition partition = createPartitionWithIndices(db.getClusterName(), db.getId(), olapTable.getId(),
                         olapTable.getBaseIndexId(), partitionId, partitionName, olapTable.getIndexIdToMeta(),
                         partitionDistributionInfo, partitionInfo.getDataProperty(partitionId).getStorageMedium(),
@@ -2012,6 +2033,21 @@ public class InternalDataSource implements DataSourceIf<Database> {
                         storagePolicy = partionStoragePolicy;
                     }
                     Env.getCurrentEnv().getPolicyMgr().checkStoragePolicyExist(storagePolicy);
+
+                    if (!Config.cloud_unique_id.isEmpty()) {
+                        Partition partition = createCloudPartitionWithIndices(db.getClusterName(), db.getId(),
+                                olapTable.getId(), olapTable.getBaseIndexId(), entry.getValue(), entry.getKey(),
+                                olapTable.getIndexIdToMeta(), partitionDistributionInfo,
+                                dataProperty.getStorageMedium(),
+                                partitionInfo.getReplicaAllocation(entry.getValue()), versionInfo, bfColumns,
+                                bfFpp, tabletIdSet, olapTable.getCopiedIndexes(), isInMemory, storageFormat,
+                                partitionInfo.getTabletType(entry.getValue()), compressionType,
+                                olapTable.getDataSortInfo(), olapTable.getEnableUniqueKeyMergeOnWrite(),
+                                storagePolicy);
+                        olapTable.addPartition(partition);
+                        continue;
+                    }
+
                     Partition partition = createPartitionWithIndices(db.getClusterName(), db.getId(), olapTable.getId(),
                             olapTable.getBaseIndexId(), entry.getValue(), entry.getKey(), olapTable.getIndexIdToMeta(),
                             partitionDistributionInfo, dataProperty.getStorageMedium(),
@@ -2380,6 +2416,23 @@ public class InternalDataSource implements DataSourceIf<Database> {
         IdGeneratorBuffer idGeneratorBuffer = Env.getCurrentEnv().getIdGeneratorBuffer(bufferSize);
         try {
             for (Map.Entry<String, Long> entry : origPartitions.entrySet()) {
+                if (!Config.cloud_unique_id.isEmpty()) { // TODO(gaivn): extract as function
+                    long oldPartitionId = entry.getValue();
+                    long newPartitionId = Env.getCurrentEnv().getNextId();
+                    Partition newPartition = createCloudPartitionWithIndices(db.getClusterName(),
+                            db.getId(), copiedTbl.getId(), copiedTbl.getBaseIndexId(), newPartitionId,
+                            entry.getKey(), copiedTbl.getIndexIdToMeta(),
+                            partitionsDistributionInfo.get(oldPartitionId),
+                            copiedTbl.getPartitionInfo().getDataProperty(oldPartitionId).getStorageMedium(),
+                            copiedTbl.getPartitionInfo().getReplicaAllocation(oldPartitionId), null /* version info */,
+                            copiedTbl.getCopiedBfColumns(), copiedTbl.getBfFpp(), tabletIdSet,
+                            copiedTbl.getCopiedIndexes(), copiedTbl.isInMemory(), copiedTbl.getStorageFormat(),
+                            copiedTbl.getPartitionInfo().getTabletType(oldPartitionId),
+                            copiedTbl.getCompressionType(), copiedTbl.getDataSortInfo(),
+                            copiedTbl.getEnableUniqueKeyMergeOnWrite(), olapTable.getStoragePolicy());
+                    newPartitions.add(newPartition);
+                    continue;
+                }
                 // the new partition must use new id
                 // If we still use the old partition id, the behavior of current load jobs on this partition
                 // will be undefined.
@@ -3235,4 +3288,170 @@ public class InternalDataSource implements DataSourceIf<Database> {
         LOG.info("finished replay databases from image");
         return newChecksum;
     }
+
+    private void createCloudTablets(String clusterName, MaterializedIndex index, ReplicaState replicaState,
+            DistributionInfo distributionInfo, long version, ReplicaAllocation replicaAlloc, TabletMeta tabletMeta,
+            Set<Long> tabletIdSet) throws DdlException {
+        ColocateTableIndex colocateIndex = Env.getCurrentColocateIndex();
+        Map<Tag, List<List<Long>>> backendsPerBucketSeq = null;
+        GroupId groupId = null;
+        if (colocateIndex.isColocateTable(tabletMeta.getTableId())) {
+            if (distributionInfo.getType() == DistributionInfoType.RANDOM) {
+                throw new DdlException("Random distribution for colocate table is unsupported");
+            }
+            // if this is a colocate table, try to get backend seqs from colocation index.
+            groupId = colocateIndex.getGroup(tabletMeta.getTableId());
+            backendsPerBucketSeq = colocateIndex.getBackendsPerBucketSeq(groupId);
+        }
+
+        // chooseBackendsArbitrary is true, means this may be the first table of colocation group,
+        // or this is just a normal table, and we can choose backends arbitrary.
+        // otherwise, backends should be chosen from backendsPerBucketSeq;
+        boolean chooseBackendsArbitrary = backendsPerBucketSeq == null || backendsPerBucketSeq.isEmpty();
+        if (chooseBackendsArbitrary) {
+            backendsPerBucketSeq = Maps.newHashMap();
+        }
+        for (int i = 0; i < distributionInfo.getBucketNum(); ++i) {
+            // create a new tablet with random chosen backends
+            Tablet tablet = new Tablet(Env.getCurrentEnv().getNextId());
+
+            // add tablet to inverted index first
+            index.addTablet(tablet, tabletMeta);
+            tabletIdSet.add(tablet.getId());
+
+            // get BackendIds
+            Map<Tag, List<Long>> chosenBackendIds = null;
+            if (!chooseBackendsArbitrary) {
+                // get backends from existing backend sequence
+                chosenBackendIds = Maps.newHashMap();
+                for (Map.Entry<Tag, List<List<Long>>> entry : backendsPerBucketSeq.entrySet()) {
+                    chosenBackendIds.put(entry.getKey(), entry.getValue().get(i));
+                }
+            }
+            // create replica
+            short totalReplicaNum = (short) 0;
+            if (chosenBackendIds != null) {
+                for (List<Long> backendIds : chosenBackendIds.values()) {
+                    long replicaId = Env.getCurrentEnv().getNextId();
+                    Replica replica = new CloudReplica(replicaId, backendIds, replicaState, version,
+                            tabletMeta.getOldSchemaHash());
+                    tablet.addReplica(replica);
+                    totalReplicaNum++;
+                }
+            } else {
+                long replicaId = Env.getCurrentEnv().getNextId();
+                Replica replica = new CloudReplica(replicaId, null, replicaState, version,
+                        tabletMeta.getOldSchemaHash());
+                tablet.addReplica(replica);
+                totalReplicaNum++;
+            }
+            Preconditions.checkState(totalReplicaNum == replicaAlloc.getTotalReplicaNum(),
+                    totalReplicaNum + " vs. " + replicaAlloc.getTotalReplicaNum());
+        }
+
+        if (groupId != null && chooseBackendsArbitrary) {
+            colocateIndex.addBackendsPerBucketSeq(groupId, backendsPerBucketSeq);
+            ColocatePersistInfo info = ColocatePersistInfo.createForBackendsPerBucketSeq(groupId, backendsPerBucketSeq);
+            Env.getCurrentEnv().getEditLog().logColocateBackendsPerBucketSeq(info);
+        }
+    }
+
+    private Partition createCloudPartitionWithIndices(String clusterName, long dbId, long tableId, long baseIndexId,
+            long partitionId, String partitionName, Map<Long, MaterializedIndexMeta> indexIdToMeta,
+            DistributionInfo distributionInfo, TStorageMedium storageMedium, ReplicaAllocation replicaAlloc,
+            Long versionInfo, Set<String> bfColumns, double bfFpp, Set<Long> tabletIdSet, List<Index> indexes,
+            boolean isInMemory, TStorageFormat storageFormat, TTabletType tabletType, TCompressionType compressionType,
+            DataSortInfo dataSortInfo, boolean enableUniqueKeyMergeOnWrite, String storagePolicy) throws DdlException {
+        // create base index first.
+        Preconditions.checkArgument(baseIndexId != -1);
+        MaterializedIndex baseIndex = new MaterializedIndex(baseIndexId, IndexState.NORMAL);
+
+        LOG.info("lw test create partition");
+        // create partition with base index
+        Partition partition = new Partition(partitionId, partitionName, baseIndex, distributionInfo);
+
+        // add to index map
+        Map<Long, MaterializedIndex> indexMap = new HashMap<>();
+        indexMap.put(baseIndexId, baseIndex);
+
+        // create rollup index if has
+        for (long indexId : indexIdToMeta.keySet()) {
+            if (indexId == baseIndexId) {
+                continue;
+            }
+
+            MaterializedIndex rollup = new MaterializedIndex(indexId, IndexState.NORMAL);
+            indexMap.put(indexId, rollup);
+        }
+
+        // version and version hash
+        if (versionInfo != null) {
+            partition.updateVisibleVersion(versionInfo);
+        }
+        long version = partition.getVisibleVersion();
+
+        // short totalReplicaNum = replicaAlloc.getTotalReplicaNum();
+        for (Map.Entry<Long, MaterializedIndex> entry : indexMap.entrySet()) {
+            long indexId = entry.getKey();
+            MaterializedIndex index = entry.getValue();
+            MaterializedIndexMeta indexMeta = indexIdToMeta.get(indexId);
+
+            // create tablets
+            int schemaHash = indexMeta.getSchemaHash();
+            TabletMeta tabletMeta = new TabletMeta(dbId, tableId, partitionId, indexId, schemaHash, storageMedium);
+            createCloudTablets(clusterName, index, ReplicaState.NORMAL, distributionInfo, version, replicaAlloc,
+                    tabletMeta, tabletIdSet);
+
+            // boolean ok = false;
+            // String errMsg = null;
+
+            // short shortKeyColumnCount = indexMeta.getShortKeyColumnCount();
+            // TStorageType storageType = indexMeta.getStorageType();
+            // List<Column> schema = indexMeta.getSchema();
+            // KeysType keysType = indexMeta.getKeysType();
+            //
+            //
+            //
+
+            for (Tablet tablet : index.getTablets()) {
+                OlapFile.TabletMetaPB.Builder builder = OlapFile.TabletMetaPB.newBuilder();
+                builder.setTableId(1);
+                builder.setPartitionId(partitionId);
+                builder.setTabletId(tablet.getId());
+                builder.setSchemaHash(schemaHash);
+                builder.setReplicaId(tablet.getReplicas().get(0).getId());
+                builder.setStoragePolicy(storagePolicy);
+                OlapFile.TabletMetaPB tabletMetaPb = builder.build();
+
+                SelectdbCloud.CreateTabletRequest.Builder requestBuilder
+                        = SelectdbCloud.CreateTabletRequest.newBuilder();
+                requestBuilder.setTabletMeta(tabletMetaPb);
+                SelectdbCloud.CreateTabletRequest createTableReq = requestBuilder.build();
+
+                String metaEndPoint = Config.meta_service_endpoint;
+                String[] splitMetaEndPoint = metaEndPoint.split(":");
+                TNetworkAddress metaAddress =
+                        new TNetworkAddress(splitMetaEndPoint[0], Integer.parseInt(splitMetaEndPoint[1]));
+
+                SelectdbCloud.MetaServiceGenericResponse response;
+                try {
+                    response = MetaServiceProxy.getInstance().createTablet(metaAddress, createTableReq);
+                } catch (RpcException e) {
+                    throw new RuntimeException(e);
+                }
+                LOG.info("lw test get rpc resp: {} ", response.getStatus().getMsg());
+
+                if (response.getStatus().getCode() != 0) {
+                    throw new DdlException(response.getStatus().getMsg());
+                }
+            }
+
+            if (index.getId() != baseIndexId) {
+                // add rollup index to partition
+                partition.createRollupIndex(index);
+            }
+        } // end for indexMap
+        return partition;
+    }
 }
+
