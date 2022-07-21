@@ -96,6 +96,45 @@ TEST(KeysTest, KeysTest) {
     }
 
     // MetaTabletKeyInfo tablet_key;
+
+    // 0x01 "version" ${instance_id} "version_id" ${db_id} ${tbl_id} ${partition_id} -> ${version}
+    {
+        int64_t db_id = 11111;
+        int64_t tablet_id = 10086;
+        int64_t partition_id = 9998;
+        VersionKeyInfo v_key {instance_id, db_id, tablet_id, partition_id};
+        std::string encoded_version_key0;
+        version_key(v_key, &encoded_version_key0);
+        std::cout << "version key after encode: " << hex(encoded_version_key0) << std::endl;
+
+        std::string dec_instance_id;
+        int64_t dec_db_id = 0;
+        int64_t dec_table_id = 0;
+        int64_t dec_partition_id = 0;
+
+        std::string_view key_sv(encoded_version_key0);
+        std::string dec_version_prefix;
+        std::string dec_version_infix;
+        key_sv.remove_prefix(1); // Remove CLOUD_KEY_SPACE01
+        ASSERT_EQ(decode_bytes(&key_sv, &dec_version_prefix), 0);
+        ASSERT_EQ(decode_bytes(&key_sv, &dec_instance_id), 0);
+        ASSERT_EQ(decode_bytes(&key_sv, &dec_version_infix), 0);
+        ASSERT_EQ(decode_int64(&key_sv, &dec_db_id), 0) << hex(key_sv);
+        ASSERT_EQ(decode_int64(&key_sv, &dec_table_id), 0);
+        ASSERT_EQ(decode_int64(&key_sv, &dec_partition_id), 0);
+
+        EXPECT_EQ(instance_id, dec_instance_id);
+        EXPECT_EQ(db_id, dec_db_id);
+        EXPECT_EQ(tablet_id, dec_table_id);
+        EXPECT_EQ(partition_id, dec_partition_id);
+
+        std::get<3>(v_key) = partition_id + 1;
+        std::string encoded_version_key1;
+        version_key(v_key, &encoded_version_key1);
+        std::cout << "version key after encode: " << hex(encoded_version_key1) << std::endl;
+
+        ASSERT_GT(encoded_version_key1, encoded_version_key0);
+    }
 }
 
 // vim: et tw=100 ts=4 sw=4 cc=80:
