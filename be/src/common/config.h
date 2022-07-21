@@ -840,6 +840,10 @@ CONF_String(test_s3_bucket, "bucket");
 CONF_String(test_s3_prefix, "prefix");
 #endif
 
+// cloud
+CONF_String(cloud_unique_id, "");
+CONF_String(meta_service_endpoint, "");
+
 } // namespace config
 
 } // namespace doris

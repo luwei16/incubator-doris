@@ -111,6 +111,9 @@ public:
     // Init `RowsetMeta._fs` if rowset is local.
     void init_rs_metas_fs(const io::FileSystemPtr& fs);
 
+    // For cloud mode.
+    void init_rs_metas(std::vector<RowsetMetaSharedPtr> rs_metas);
+
     void to_meta_pb(TabletMetaPB* tablet_meta_pb);
     void to_json(std::string* json_string, json2pb::Pb2JsonOptions& options);
     uint32_t mem_size() const;

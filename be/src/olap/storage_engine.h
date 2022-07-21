@@ -30,6 +30,7 @@
 #include <thread>
 #include <vector>
 
+#include "cloud/meta_mgr.h"
 #include "common/status.h"
 #include "gen_cpp/AgentService_types.h"
 #include "gen_cpp/BackendService_types.h"
@@ -133,6 +134,8 @@ public:
     TabletManager* tablet_manager() { return _tablet_manager.get(); }
     TxnManager* txn_manager() { return _txn_manager.get(); }
     MemTableFlushExecutor* memtable_flush_executor() { return _memtable_flush_executor.get(); }
+
+    MetaMgr* meta_mgr() { return _meta_mgr.get(); }
 
     bool check_rowset_id_in_unused_rowsets(const RowsetId& rowset_id);
 
@@ -404,6 +407,8 @@ private:
     std::mutex _running_cooldown_mutex;
     std::unordered_map<DataDir*, int64_t> _running_cooldown_tasks_cnt;
     std::unordered_set<int64_t> _running_cooldown_tablets;
+
+    std::unique_ptr<MetaMgr> _meta_mgr;
 
     DISALLOW_COPY_AND_ASSIGN(StorageEngine);
 };

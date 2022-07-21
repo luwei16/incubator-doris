@@ -67,6 +67,8 @@ AgentServer::AgentServer(ExecEnv* exec_env, const TMasterInfo& master_info)
 #define CREATE_AND_START_THREAD(type, pool_name)
 #endif // BE_TEST
 
+#ifdef CLOUD_MODE
+#else
     CREATE_AND_START_POOL(CREATE_TABLE, _create_tablet_workers);
     CREATE_AND_START_POOL(DROP_TABLE, _drop_tablet_workers);
     // Both PUSH and REALTIME_PUSH type use _push_workers
@@ -91,6 +93,7 @@ AgentServer::AgentServer(ExecEnv* exec_env, const TMasterInfo& master_info)
     CREATE_AND_START_POOL(SUBMIT_TABLE_COMPACTION, _submit_table_compaction_workers);
     CREATE_AND_START_THREAD(REFRESH_STORAGE_POLICY, _storage_refresh_policy_workers);
     CREATE_AND_START_POOL(UPDATE_STORAGE_POLICY, _storage_update_policy_workers);
+#endif
 #undef CREATE_AND_START_POOL
 #undef CREATE_AND_START_THREAD
 

@@ -60,7 +60,7 @@ message TxnRequest {
     optional string cloud_unique_id = 1; // For auth
     optional int64 db_id = 2;
     optional string label = 3;
-    optional string txn_id = 4;
+    optional int64 txn_id = 4;
     optional TxnInfoPB txn_info = 5;
     optional bool precommit = 6;
 }
@@ -117,6 +117,7 @@ message GetTabletResponse {
 message CreateRowsetRequest {
     optional string cloud_unique_id = 1; // For auth
     optional doris.RowsetMetaPB rowset_meta = 2;
+    optional bool temporary = 3;
 }
 
 message CreateRowsetResponse {
@@ -126,12 +127,14 @@ message CreateRowsetResponse {
 message GetRowsetRequest {
     optional string cloud_unique_id = 1; // For auth
     optional int64 tablet_id = 2;
+    optional int64 start_version = 3;
+    optional int64 end_version = 4;
     // TODO: There may be more fields TBD
 }
 
 message GetRowsetResponse {
     optional MetaServiceResponseStatus status = 1;
-    optional doris.RowsetMetaPB rowset_meta = 2;
+    repeated doris.RowsetMetaPB rowset_meta = 2;
 }
 
 message MetaServiceResponseStatus {

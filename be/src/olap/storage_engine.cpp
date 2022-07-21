@@ -36,8 +36,11 @@
 
 #include "agent/cgroups_mgr.h"
 #include "agent/task_worker_pool.h"
+#include "cloud/cloud_meta_mgr.h"
+#include "cloud/utils.h"
 #include "env/env.h"
 #include "env/env_util.h"
+#include "io/fs/s3_file_system.h"
 #include "olap/base_compaction.h"
 #include "olap/cumulative_compaction.h"
 #include "olap/data_dir.h"
@@ -192,7 +195,14 @@ Status StorageEngine::_open() {
     RETURN_NOT_OK_STATUS_WITH_WARN(_check_file_descriptor_number(), "check fd number failed");
 
     auto dirs = get_stores<false>();
+#ifdef CLOUD_MODE
+    CHECK(dirs.size() == 1);
+    _meta_mgr = std::make_unique<CloudMetaMgr>(config::meta_service_endpoint);
+    RETURN_IF_ERROR(_meta_mgr->open());
+    // TBD(cyx): init s3 fs
+#else
     load_data_dirs(dirs);
+#endif
 
     _memtable_flush_executor.reset(new MemTableFlushExecutor());
     _memtable_flush_executor->init(dirs);

@@ -438,6 +438,7 @@ void TabletMeta::init_from_pb(const TabletMetaPB& tablet_meta_pb) {
     // init _schema
     _schema->init_from_pb(tablet_meta_pb.schema());
 
+#ifndef CLOUD_MODE
     // init _rs_metas
     for (auto& it : tablet_meta_pb.rs_metas()) {
         RowsetMetaSharedPtr rs_meta(new RowsetMeta());
@@ -453,6 +454,7 @@ void TabletMeta::init_from_pb(const TabletMetaPB& tablet_meta_pb) {
         rs_meta->init_from_pb(it);
         _stale_rs_metas.push_back(std::move(rs_meta));
     }
+#endif
 
     if (tablet_meta_pb.has_in_restore_mode()) {
         _in_restore_mode = tablet_meta_pb.in_restore_mode();
@@ -514,12 +516,14 @@ void TabletMeta::to_meta_pb(TabletMetaPB* tablet_meta_pb) {
         break;
     }
 
+#ifndef CLOUD_MODE
     for (auto& rs : _rs_metas) {
         rs->to_rowset_pb(tablet_meta_pb->add_rs_metas());
     }
     for (auto rs : _stale_rs_metas) {
         rs->to_rowset_pb(tablet_meta_pb->add_stale_rs_metas());
     }
+#endif
     _schema->to_schema_pb(tablet_meta_pb->mutable_schema());
 
     tablet_meta_pb->set_in_restore_mode(in_restore_mode());
@@ -544,6 +548,15 @@ void TabletMeta::to_meta_pb(TabletMetaPB* tablet_meta_pb) {
             bitmap.write(bitmap_data.data());
             *(delete_bitmap_pb->add_segment_delete_bitmaps()) = std::move(bitmap_data);
         }
+    }
+}
+
+void TabletMeta::init_rs_metas(std::vector<RowsetMetaSharedPtr> rs_metas) {
+    for (auto& rs_meta : rs_metas) {
+        if (rs_meta->has_delete_predicate()) {
+            add_delete_predicate(rs_meta->delete_predicate(), rs_meta->version().first);
+        }
+        _rs_metas.push_back(std::move(rs_meta));
     }
 }
 

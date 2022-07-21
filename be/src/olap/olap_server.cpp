@@ -42,6 +42,8 @@ namespace doris {
 volatile uint32_t g_schema_change_active_threads = 0;
 
 Status StorageEngine::start_bg_threads() {
+#ifdef CLOUD_MODE
+#else
     RETURN_IF_ERROR(Thread::create(
             "StorageEngine", "unused_rowset_monitor_thread",
             [this]() { this->_unused_rowset_monitor_thread_callback(); },
@@ -98,6 +100,7 @@ Status StorageEngine::start_bg_threads() {
             [this, data_dirs]() { this->_tablet_checkpoint_callback(data_dirs); },
             &_tablet_checkpoint_tasks_producer_thread));
     LOG(INFO) << "tablet checkpoint tasks producer thread started";
+#endif
 
     // fd cache clean thread
     RETURN_IF_ERROR(Thread::create(
@@ -105,6 +108,7 @@ Status StorageEngine::start_bg_threads() {
             [this]() { this->_fd_cache_clean_callback(); }, &_fd_cache_clean_thread));
     LOG(INFO) << "fd cache clean thread started";
 
+#ifndef CLOUD_MODE
     // path scan and gc thread
     if (config::path_gc_check) {
         for (auto data_dir : get_stores()) {
@@ -148,6 +152,7 @@ Status StorageEngine::start_bg_threads() {
             .set_min_threads(config::tablet_publish_txn_max_thread)
             .set_max_threads(config::tablet_publish_txn_max_thread)
             .build(&_tablet_publish_txn_thread_pool);
+#endif
 
     LOG(INFO) << "all storage engine's background threads are started.";
     return Status::OK();

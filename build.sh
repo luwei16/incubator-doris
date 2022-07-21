@@ -251,6 +251,7 @@ echo "Get params:
     USE_LIBCPP          -- $USE_LIBCPP
     USE_DWARF           -- $USE_DWARF
     STRIP_DEBUG_INFO    -- $STRIP_DEBUG_INFO
+    CLOUD_MODE          -- $CLOUD_MODE
     USE_MEM_TRACKER     -- $USE_MEM_TRACKER
     USE_JEMALLOC        -- $USE_JEMALLOC
     STRICT_MEMORY_USE   -- $STRICT_MEMORY_USE
@@ -316,6 +317,7 @@ if [ ${BUILD_BE} -eq 1 ] ; then
             -DBUILD_JAVA_UDF=${BUILD_JAVA_UDF} \
             -DSTRIP_DEBUG_INFO=${STRIP_DEBUG_INFO} \
             -DUSE_DWARF=${USE_DWARF} \
+            -DCLOUD_MODE=${CLOUD_MODE} \
             -DUSE_MEM_TRACKER=${USE_MEM_TRACKER} \
             -DUSE_JEMALLOC=${USE_JEMALLOC} \
             -DSTRICT_MEMORY_USE=${STRICT_MEMORY_USE} \

@@ -108,7 +108,9 @@ Status DataDir::init() {
     RETURN_NOT_OK_STATUS_WITH_WARN(update_capacity(), "update_capacity failed");
     RETURN_NOT_OK_STATUS_WITH_WARN(_init_cluster_id(), "_init_cluster_id failed");
     RETURN_NOT_OK_STATUS_WITH_WARN(_init_capacity(), "_init_capacity failed");
+#ifndef CLOUD_MODE
     RETURN_NOT_OK_STATUS_WITH_WARN(_init_meta(), "_init_meta failed");
+#endif
 
     _is_used = true;
     return Status::OK();

@@ -31,6 +31,7 @@
 #include <cstdlib>
 #include <filesystem>
 
+#include "cloud/utils.h"
 #include "env/env.h"
 #include "env/env_util.h"
 #include "gutil/strings/strcat.h"
@@ -528,7 +529,45 @@ Status TabletManager::drop_tablets_on_error_root_path(
 
 TabletSharedPtr TabletManager::get_tablet(TTabletId tablet_id, bool include_deleted, string* err) {
     std::shared_lock rdlock(_get_tablets_shard_lock(tablet_id));
-    return _get_tablet_unlocked(tablet_id, include_deleted, err);
+    auto tablet = _get_tablet_unlocked(tablet_id, include_deleted, err);
+#ifdef CLOUD_MODE
+    rdlock.unlock();
+    if (!tablet) {
+        auto meta_mgr = cloud::meta_mgr();
+        TabletMetaSharedPtr tablet_meta;
+        auto st = meta_mgr->get_tablet_meta(tablet_id, &tablet_meta);
+        if (!st.ok()) {
+            if (err != nullptr) {
+                *err = st.to_string();
+            } else {
+                LOG(WARNING) << st;
+            }
+            return nullptr;
+        }
+        std::vector<RowsetMetaSharedPtr> rs_metas;
+        // Get all rowsets to which the tablet belongs.
+        st = meta_mgr->get_rowset_meta(tablet_id, {0, -1}, &rs_metas);
+        if (!st.ok()) {
+            if (err != nullptr) {
+                *err = st.to_string();
+            } else {
+                LOG(WARNING) << st;
+            }
+            return nullptr;
+        }
+        tablet_meta->init_rs_metas(std::move(rs_metas));
+        // init version tracker
+        tablet = Tablet::create_tablet_from_meta(std::move(tablet_meta), cloud::cloud_data_dir());
+        // init rs version map
+        tablet->init();
+        {
+            auto& shard = _get_tablets_shard(tablet_id);
+            std::unique_lock wlock(shard.lock);
+            shard.tablet_map.emplace(tablet_id, tablet);
+        }
+    }
+#endif
+    return tablet;
 }
 
 TabletSharedPtr TabletManager::_get_tablet_unlocked(TTabletId tablet_id, bool include_deleted,

@@ -76,12 +76,12 @@ DEFINE_COUNTER_METRIC_PROTOTYPE_2ARG(flush_count, MetricUnit::OPERATIONS);
 
 TabletSharedPtr Tablet::create_tablet_from_meta(TabletMetaSharedPtr tablet_meta,
                                                 DataDir* data_dir) {
-    return std::make_shared<Tablet>(tablet_meta, data_dir);
+    return std::make_shared<Tablet>(std::move(tablet_meta), data_dir);
 }
 
 Tablet::Tablet(TabletMetaSharedPtr tablet_meta, DataDir* data_dir,
                const std::string& cumulative_compaction_type)
-        : BaseTablet(tablet_meta, data_dir),
+        : BaseTablet(std::move(tablet_meta), data_dir),
           _is_bad(false),
           _last_cumu_compaction_failure_millis(0),
           _last_base_compaction_failure_millis(0),
