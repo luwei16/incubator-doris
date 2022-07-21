@@ -43,7 +43,7 @@ import org.apache.doris.thrift.TTxnParams;
 import org.apache.doris.thrift.TUniqueId;
 import org.apache.doris.transaction.BeginTransactionException;
 import org.apache.doris.transaction.DatabaseTransactionMgr;
-import org.apache.doris.transaction.GlobalTransactionMgr;
+import org.apache.doris.transaction.GlobalTransactionMgrInterface;
 import org.apache.doris.transaction.TransactionEntry;
 import org.apache.doris.transaction.TransactionState;
 
@@ -122,7 +122,7 @@ public class CanalSyncChannel extends SyncChannel {
             String label = "label_job" + + jobId + "_channel" + id + "_db" + db.getId() + "_tbl" + tbl.getId()
                     + "_batch" + batchId + "_" + currentTime;
             String targetColumn = Joiner.on(",").join(columns) + "," + DELETE_COLUMN;
-            GlobalTransactionMgr globalTransactionMgr = Env.getCurrentGlobalTransactionMgr();
+            GlobalTransactionMgrInterface globalTransactionMgr = Env.getCurrentGlobalTransactionMgr();
             DatabaseTransactionMgr databaseTransactionMgr = globalTransactionMgr.getDatabaseTransactionMgr(db.getId());
             if (databaseTransactionMgr.getRunningTxnNums() < Config.max_running_txn_num_per_db) {
                 TransactionEntry txnEntry = txnExecutor.getTxnEntry();

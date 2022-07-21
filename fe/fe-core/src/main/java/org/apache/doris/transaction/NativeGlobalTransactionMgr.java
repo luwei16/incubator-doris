@@ -28,7 +28,6 @@ import org.apache.doris.common.MetaNotFoundException;
 import org.apache.doris.common.Pair;
 import org.apache.doris.common.QuotaExceedException;
 import org.apache.doris.common.UserException;
-import org.apache.doris.common.io.Writable;
 import org.apache.doris.common.util.MetaLockUtils;
 import org.apache.doris.persist.BatchRemoveTransactionsOperation;
 import org.apache.doris.persist.EditLog;
@@ -64,8 +63,8 @@ import java.util.concurrent.TimeoutException;
  * Attention: all api in txn manager should get db lock or load lock first, then get txn manager's lock,
  * or there will be dead lock
  */
-public class GlobalTransactionMgr implements Writable {
-    private static final Logger LOG = LogManager.getLogger(GlobalTransactionMgr.class);
+public class NativeGlobalTransactionMgr implements GlobalTransactionMgrInterface {
+    private static final Logger LOG = LogManager.getLogger(NativeGlobalTransactionMgr.class);
 
     private Map<Long, DatabaseTransactionMgr> dbIdToDatabaseTransactionMgrs = Maps.newConcurrentMap();
 
@@ -74,7 +73,7 @@ public class GlobalTransactionMgr implements Writable {
 
     private Env env;
 
-    public GlobalTransactionMgr(Env env) {
+    public NativeGlobalTransactionMgr(Env env) {
         this.env = env;
     }
 
@@ -516,6 +515,11 @@ public class GlobalTransactionMgr implements Writable {
             txnNum += dbTransactionMgr.getTransactionNum();
         }
         return txnNum;
+    }
+
+    @Override
+    public long getNextTransactionId(long dbId) {
+        return this.idGenerator.getNextTransactionId();
     }
 
     public TransactionIdGenerator getTransactionIDGenerator() {

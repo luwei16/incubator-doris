@@ -66,4 +66,19 @@ public class MetaServiceClient {
     public SelectdbCloud.GetVersionResponse getVersion(SelectdbCloud.GetVersionRequest request) {
         return blockingStub.getVersion(request);
     }
+
+    public SelectdbCloud.BeginTxnResponse
+            beginTxn(SelectdbCloud.BeginTxnRequest request) {
+        return blockingStub.beginTxn(request);
+    }
+
+    public SelectdbCloud.PrecommitTxnResponse
+            precommitTxn(SelectdbCloud.PrecommitTxnRequest request) {
+        return blockingStub.precommitTxn(request);
+    }
+
+    public SelectdbCloud.CommitTxnResponse
+            commitTxn(SelectdbCloud.CommitTxnRequest request) {
+        return blockingStub.commitTxn(request);
+    }
 }

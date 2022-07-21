@@ -57,7 +57,7 @@ import org.apache.doris.task.AgentTaskExecutor;
 import org.apache.doris.task.MasterTaskExecutor;
 import org.apache.doris.task.PushTask;
 import org.apache.doris.thrift.TEtlState;
-import org.apache.doris.transaction.GlobalTransactionMgr;
+import org.apache.doris.transaction.GlobalTransactionMgrInterface;
 import org.apache.doris.transaction.TabletCommitInfo;
 
 import com.google.common.collect.Lists;
@@ -199,8 +199,9 @@ public class SparkLoadJobTest {
     }
 
     @Test
-    public void testExecute(@Mocked Env env, @Mocked SparkLoadPendingTask pendingTask, @Injectable String originStmt,
-            @Injectable GlobalTransactionMgr transactionMgr, @Injectable MasterTaskExecutor executor) throws Exception {
+    public void testExecute(@Mocked Env env, @Mocked SparkLoadPendingTask pendingTask,
+                            @Injectable String originStmt, @Injectable GlobalTransactionMgrInterface transactionMgr,
+                            @Injectable MasterTaskExecutor executor) throws Exception {
         new Expectations() {
             {
                 pendingTask.init();
@@ -323,10 +324,12 @@ public class SparkLoadJobTest {
     }
 
     @Test
-    public void testUpdateEtlStatusFinishedAndCommitTransaction(@Mocked Env env, @Injectable String originStmt,
-            @Mocked SparkEtlJobHandler handler, @Mocked AgentTaskExecutor executor, @Injectable Database db,
-            @Injectable OlapTable table, @Injectable Partition partition, @Injectable MaterializedIndex index,
-            @Injectable Tablet tablet, @Injectable Replica replica, @Injectable GlobalTransactionMgr transactionMgr) throws Exception {
+    public void testUpdateEtlStatusFinishedAndCommitTransaction(
+            @Mocked Env env, @Injectable String originStmt,
+            @Mocked SparkEtlJobHandler handler, @Mocked AgentTaskExecutor executor,
+            @Injectable Database db, @Injectable OlapTable table, @Injectable Partition partition,
+            @Injectable MaterializedIndex index, @Injectable Tablet tablet, @Injectable Replica replica,
+            @Injectable GlobalTransactionMgrInterface transactionMgr) throws Exception {
         EtlStatus status = new EtlStatus();
         status.setState(TEtlState.FINISHED);
         status.getCounters().put("dpp.norm.ALL", "9");

@@ -43,7 +43,7 @@ public class DbUsedDataQuotaInfoCollector extends MasterDaemon {
     private void updateAllDatabaseUsedDataQuota() {
         Env env = Env.getCurrentEnv();
         List<Long> dbIdList = env.getInternalDataSource().getDbIds();
-        GlobalTransactionMgr globalTransactionMgr = env.getGlobalTransactionMgr();
+        GlobalTransactionMgrInterface globalTransactionMgr = env.getGlobalTransactionMgr();
         for (Long dbId : dbIdList) {
             Database db = env.getInternalDataSource().getDbNullable(dbId);
             if (db == null) {

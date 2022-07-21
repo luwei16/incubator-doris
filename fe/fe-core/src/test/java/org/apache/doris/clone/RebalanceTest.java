@@ -134,7 +134,7 @@ public class RebalanceTest {
                 minTimes = 0;
                 result = invertedIndex;
 
-                Env.getCurrentGlobalTransactionMgr().getTransactionIDGenerator().getNextTransactionId();
+                Env.getCurrentGlobalTransactionMgr().getNextTransactionId(anyLong);
                 result = 111;
 
                 Env.getCurrentGlobalTransactionMgr().isPreviousTransactionsFinished(anyLong, anyLong, (List<Long>) any);
@@ -142,10 +142,8 @@ public class RebalanceTest {
             }
         };
         // Test mock validation
-        Assert.assertEquals(111,
-                Env.getCurrentGlobalTransactionMgr().getTransactionIDGenerator().getNextTransactionId());
-        Assert.assertTrue(
-                Env.getCurrentGlobalTransactionMgr().isPreviousTransactionsFinished(1, 2, Lists.newArrayList(3L)));
+        Assert.assertEquals(111, Env.getCurrentGlobalTransactionMgr().getNextTransactionId(2));
+        Assert.assertTrue(Env.getCurrentGlobalTransactionMgr().isPreviousTransactionsFinished(1, 2, Lists.newArrayList(3L)));
 
         List<Long> beIds = Lists.newArrayList(10001L, 10002L, 10003L, 10004L);
         beIds.forEach(id -> systemInfoService.addBackend(RebalancerTestUtil.createBackend(id, 2048, 0)));

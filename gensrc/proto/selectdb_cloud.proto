@@ -48,25 +48,100 @@ message ObjectStoreInfoPB {
     optional string endpoint = 5;
 }
 
+// Wire format for UniqueId
+message UniqueIdPB {
+  optional int64 hi = 1;
+  optional int64 lo = 2;
+}
+
+enum TxnSourceTypePB {
+    FE = 1;
+    BE = 2;
+}
+
+enum LoadJobSourceTypePB {
+    FRONTEND = 1;        
+    BACKEND_STREAMING = 2;    // streaming load use this type
+    INSERT_STREAMING = 3;    // insert stmt (streaming type), update stmt use this type
+    ROUTINE_LOAD_TASK = 4;    // routine load task use this type
+    BATCH_LOAD_JOB = 5;    // load job v2 for broker load
+}
+
+enum TransactionStatusPB {
+    UNKNOWN = 0;
+    PREPARE = 1;
+    COMMITTED = 2;
+    VISIBLE = 3;
+    ABORTED = 4;
+    PRECOMMITTED = 5;
+}
+
+message TxnCoordinatorPB {
+    optional TxnSourceTypePB sourceType = 1;
+    optional string ip = 2;
+}
+
 message TxnInfoPB {
     optional int64 db_id = 1;
     repeated int64 table_id_list = 2;
     optional int64 transaction_id = 3;
     optional string label = 4;
+    optional UniqueIdPB request_unique_id = 5;
+    optional TxnCoordinatorPB coordinator = 6;
+    optional LoadJobSourceTypePB load_job_source_type = 7;
+    optional int64 timeout_second = 8;
+    optional int64 prepare_time = 9;
+    optional int64 precommit_time = 10;
+    optional int64 commit_time = 11;
+    optional int64 finish_time = 12;
+    optional int64 reason = 13;
+    optional TransactionStatusPB transactionStatus = 14;
+    //optional TxnCommitAttachmentPB txnCommitAttachment = 15;
     // TODO: There are more fields TBD
 }
 
-message TxnRequest {
+message BeginTxnRequest {
     optional string cloud_unique_id = 1; // For auth
     optional int64 db_id = 2;
-    optional string label = 3;
-    optional int64 txn_id = 4;
-    optional TxnInfoPB txn_info = 5;
-    optional bool precommit = 6;
+    repeated int64 table_id_list = 3;
+    optional string label = 4;
+    optional UniqueIdPB request_unique_id = 5;
+    optional TxnCoordinatorPB coordinator = 6;
+    optional LoadJobSourceTypePB load_job_source_type = 7;
+    optional int64 timeout_second = 8;
 }
 
-message TxnResponse {
+message BeginTxnResponse {
     optional MetaServiceResponseStatus status = 1;
+    optional int64 db_id = 2;
+    optional int64 txn_id = 3;
+    // TODO: There may be more fields TBD
+}
+
+message PrecommitTxnRequest {
+    optional string cloud_unique_id = 1; // For auth
+    optional int64 db_id = 2;
+    optional int64 txn_id = 3;
+}
+
+message PrecommitTxnResponse {
+    optional MetaServiceResponseStatus status = 1;
+    optional int64 db_id = 2;
+    optional int64 txn_id = 3;
+    // TODO: There may be more fields TBD
+}
+
+message CommitTxnRequest {
+    optional string cloud_unique_id = 1; // For auth
+    optional int64 db_id = 2;
+    optional int64 txn_id = 3;
+    optional bool is_2pc = 4;
+}
+
+message CommitTxnResponse {
+    optional MetaServiceResponseStatus status = 1;
+    optional int64 db_id = 2;
+    optional int64 txn_id = 3;
     // TODO: There may be more fields TBD
 }
 
@@ -147,9 +222,9 @@ message MetaServiceGenericResponse {
 }
 
 service MetaService {
-    rpc begin_txn(TxnRequest) returns (TxnResponse);
-    rpc precommit_txn(TxnRequest) returns (TxnResponse);
-    rpc commit_txn(TxnRequest) returns (TxnResponse);
+    rpc begin_txn(BeginTxnRequest) returns (BeginTxnResponse);
+    rpc precommit_txn(PrecommitTxnRequest) returns (PrecommitTxnResponse);
+    rpc commit_txn(CommitTxnRequest) returns (CommitTxnResponse);
     rpc get_version(GetVersionRequest) returns (GetVersionResponse);
 
     rpc create_tablet(CreateTabletRequest) returns (MetaServiceGenericResponse);
@@ -167,6 +242,5 @@ service ResourceManagerService {
     // add_sql_server
     // add_compute_server
 };
-
 
 // vim: et ts=4 sw=4:

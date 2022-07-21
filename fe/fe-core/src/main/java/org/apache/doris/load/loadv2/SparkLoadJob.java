@@ -481,8 +481,7 @@ public class SparkLoadJob extends BulkLoadJob {
                                     if (!tabletToSentReplicaPushTask.containsKey(tabletId)
                                             || !tabletToSentReplicaPushTask.get(tabletId).containsKey(replicaId)) {
                                         long backendId = replica.getBackendId();
-                                        long taskSignature = Env.getCurrentGlobalTransactionMgr()
-                                                .getTransactionIDGenerator().getNextTransactionId();
+                                        long taskSignature = Env.getCurrentEnv().getNextId();
 
                                         PushBrokerReaderParams params = getPushBrokerReaderParams(olapTable, indexId);
                                         // deep copy TBrokerScanRange because filePath and fileSize will be updated

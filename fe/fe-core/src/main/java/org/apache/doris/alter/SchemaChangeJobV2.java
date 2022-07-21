@@ -325,7 +325,7 @@ public class SchemaChangeJobV2 extends AlterJobV2 {
         }
 
         this.watershedTxnId = Env.getCurrentGlobalTransactionMgr()
-                .getTransactionIDGenerator().getNextTransactionId();
+                .getNextTransactionId(dbId);
         this.jobState = JobState.WAITING_TXN;
 
         // write edit log

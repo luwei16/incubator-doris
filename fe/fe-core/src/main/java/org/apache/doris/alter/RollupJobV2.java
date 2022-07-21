@@ -299,7 +299,7 @@ public class RollupJobV2 extends AlterJobV2 implements GsonPostProcessable {
         }
 
         this.watershedTxnId = Env.getCurrentGlobalTransactionMgr()
-                .getTransactionIDGenerator().getNextTransactionId();
+                .getNextTransactionId(dbId);
         this.jobState = JobState.WAITING_TXN;
 
         // write edit log

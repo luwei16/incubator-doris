@@ -86,12 +86,12 @@ Status CloudMetaMgr::write_rowset_meta(const RowsetMetaSharedPtr& rs_meta, bool 
 
 Status CloudMetaMgr::commit_txn(int64_t db_id, int64_t txn_id, bool is_2pc) {
     brpc::Controller cntl;
-    selectdb::TxnRequest req;
-    selectdb::TxnResponse resp;
+    selectdb::CommitTxnRequest req;
+    selectdb::CommitTxnResponse resp;
     req.set_cloud_unique_id(config::cloud_unique_id);
     req.set_db_id(db_id);
     req.set_txn_id(txn_id);
-    req.set_precommit(is_2pc);
+    req.set_is_2pc(is_2pc);
     _stub->commit_txn(&cntl, &req, &resp, nullptr);
     if (cntl.Failed()) {
         return Status::IOError("failed to commit txn: {}", cntl.ErrorText());
@@ -108,12 +108,11 @@ Status CloudMetaMgr::abort_txn(int64_t db_id, int64_t txn_id) {
 
 Status CloudMetaMgr::precommit_txn(int64_t db_id, int64_t txn_id) {
     brpc::Controller cntl;
-    selectdb::TxnRequest req;
-    selectdb::TxnResponse resp;
+    selectdb::PrecommitTxnRequest req;
+    selectdb::PrecommitTxnResponse resp;
     req.set_cloud_unique_id(config::cloud_unique_id);
     req.set_db_id(db_id);
     req.set_txn_id(txn_id);
-    req.set_precommit(true);
     _stub->precommit_txn(&cntl, &req, &resp, nullptr);
     if (cntl.Failed()) {
         return Status::IOError("failed to precommit txn: {}", cntl.ErrorText());

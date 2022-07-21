@@ -63,7 +63,7 @@ import org.apache.doris.task.AgentTaskQueue;
 import org.apache.doris.thrift.TStorageFormat;
 import org.apache.doris.thrift.TTaskType;
 import org.apache.doris.transaction.FakeTransactionIDGenerator;
-import org.apache.doris.transaction.GlobalTransactionMgr;
+import org.apache.doris.transaction.GlobalTransactionMgrInterface;
 
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
@@ -94,8 +94,8 @@ public class SchemaChangeJobV2Test {
     private static FakeEditLog fakeEditLog;
     private static FakeEnv fakeEnv;
     private static FakeTransactionIDGenerator fakeTransactionIDGenerator;
-    private static GlobalTransactionMgr masterTransMgr;
-    private static GlobalTransactionMgr slaveTransMgr;
+    private static GlobalTransactionMgrInterface masterTransMgr;
+    private static GlobalTransactionMgrInterface slaveTransMgr;
     private static Env masterEnv;
     private static Env slaveEnv;
 

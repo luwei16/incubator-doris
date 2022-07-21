@@ -87,4 +87,37 @@ public class MetaServiceProxy {
             throw new RpcException(address.hostname, e.getMessage(), e);
         }
     }
+
+    public SelectdbCloud.BeginTxnResponse
+            beginTxn(TNetworkAddress address, SelectdbCloud.BeginTxnRequest request)
+            throws RpcException {
+        try {
+            final MetaServiceClient client = getProxy(address);
+            return client.beginTxn(request);
+        } catch (Exception e) {
+            throw new RpcException(address.hostname, e.getMessage(), e);
+        }
+    }
+
+    public SelectdbCloud.PrecommitTxnResponse
+            precommitTxn(TNetworkAddress address, SelectdbCloud.PrecommitTxnRequest request)
+            throws RpcException {
+        try {
+            final MetaServiceClient client = getProxy(address);
+            return client.precommitTxn(request);
+        } catch (Exception e) {
+            throw new RpcException(address.hostname, e.getMessage(), e);
+        }
+    }
+
+    public SelectdbCloud.CommitTxnResponse
+            commitTxn(TNetworkAddress address, SelectdbCloud.CommitTxnRequest request)
+            throws RpcException {
+        try {
+            final MetaServiceClient client = getProxy(address);
+            return client.commitTxn(request);
+        } catch (Exception e) {
+            throw new RpcException(address.hostname, e.getMessage(), e);
+        }
+    }
 }

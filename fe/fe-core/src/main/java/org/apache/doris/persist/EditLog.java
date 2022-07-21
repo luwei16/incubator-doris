@@ -70,6 +70,7 @@ import org.apache.doris.policy.Policy;
 import org.apache.doris.policy.StoragePolicy;
 import org.apache.doris.system.Backend;
 import org.apache.doris.system.Frontend;
+import org.apache.doris.transaction.NativeGlobalTransactionMgr;
 import org.apache.doris.transaction.TransactionState;
 
 import org.apache.logging.log4j.LogManager;
@@ -150,7 +151,11 @@ public class EditLog {
                 case OperationType.OP_SAVE_TRANSACTION_ID: {
                     String idString = ((Text) journal.getData()).toString();
                     long id = Long.parseLong(idString);
-                    Env.getCurrentGlobalTransactionMgr().getTransactionIDGenerator().initTransactionId(id + 1);
+                    if (Config.cloud_unique_id.isEmpty()) {
+                        NativeGlobalTransactionMgr globalTransactionMgr =
+                                (NativeGlobalTransactionMgr) Env.getCurrentGlobalTransactionMgr();
+                        globalTransactionMgr.getTransactionIDGenerator().initTransactionId(id + 1);
+                    }
                     break;
                 }
                 case OperationType.OP_CREATE_DB: {

@@ -47,7 +47,8 @@ import org.apache.doris.task.AgentBatchTask;
 import org.apache.doris.task.AgentTask;
 import org.apache.doris.task.AgentTaskExecutor;
 import org.apache.doris.task.AgentTaskQueue;
-import org.apache.doris.transaction.GlobalTransactionMgr;
+import org.apache.doris.transaction.GlobalTransactionMgrInterface;
+import org.apache.doris.transaction.NativeGlobalTransactionMgr;
 import org.apache.doris.transaction.TabletCommitInfo;
 import org.apache.doris.transaction.TransactionState;
 import org.apache.doris.transaction.TransactionStatus;
@@ -99,7 +100,7 @@ public class DeleteHandlerTest {
 
     Analyzer analyzer;
 
-    private GlobalTransactionMgr globalTransactionMgr;
+    private GlobalTransactionMgrInterface globalTransactionMgr;
     private TabletInvertedIndex invertedIndex = new TabletInvertedIndex();
     private ConnectContext connectContext = new ConnectContext();
 
@@ -107,7 +108,7 @@ public class DeleteHandlerTest {
     public void setUp() throws Exception {
         FeConstants.runningUnitTest = true;
 
-        globalTransactionMgr = new GlobalTransactionMgr(env);
+        globalTransactionMgr = new NativeGlobalTransactionMgr(env);
         globalTransactionMgr.setEditLog(editLog);
         deleteHandler = new DeleteHandler();
         auth = AccessTestUtil.fetchAdminAccess();
@@ -243,7 +244,7 @@ public class DeleteHandlerTest {
             }
         };
 
-        new MockUp<GlobalTransactionMgr>() {
+        new MockUp<NativeGlobalTransactionMgr>() {
             @Mock
             public TransactionState getTransactionState(long transactionId) {
                 TransactionState transactionState =  new TransactionState();
@@ -293,7 +294,7 @@ public class DeleteHandlerTest {
             }
         };
 
-        new MockUp<GlobalTransactionMgr>() {
+        new MockUp<NativeGlobalTransactionMgr>() {
             @Mock
             public TransactionState getTransactionState(long transactionId) {
                 TransactionState transactionState =  new TransactionState();

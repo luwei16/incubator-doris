@@ -23,7 +23,7 @@ import org.apache.doris.thrift.TPartitionVersionInfo;
 import org.apache.doris.thrift.TStorageMedium;
 import org.apache.doris.thrift.TTablet;
 import org.apache.doris.thrift.TTabletInfo;
-import org.apache.doris.transaction.GlobalTransactionMgr;
+import org.apache.doris.transaction.GlobalTransactionMgrInterface;
 import org.apache.doris.transaction.PartitionCommitInfo;
 import org.apache.doris.transaction.TableCommitInfo;
 import org.apache.doris.transaction.TransactionState;
@@ -207,7 +207,7 @@ public class TabletInvertedIndex {
                             // check if should clear transactions
                             if (backendTabletInfo.isSetTransactionIds()) {
                                 List<Long> transactionIds = backendTabletInfo.getTransactionIds();
-                                GlobalTransactionMgr transactionMgr = Env.getCurrentGlobalTransactionMgr();
+                                GlobalTransactionMgrInterface transactionMgr = Env.getCurrentGlobalTransactionMgr();
                                 for (Long transactionId : transactionIds) {
                                     TransactionState transactionState
                                             = transactionMgr.getTransactionState(tabletMeta.getDbId(), transactionId);

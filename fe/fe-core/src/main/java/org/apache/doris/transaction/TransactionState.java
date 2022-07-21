@@ -33,6 +33,9 @@ import com.google.common.base.Strings;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
+import com.selectdb.cloud.proto.SelectdbCloud.LoadJobSourceTypePB;
+import com.selectdb.cloud.proto.SelectdbCloud.TxnCoordinatorPB;
+import com.selectdb.cloud.proto.SelectdbCloud.TxnSourceTypePB;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -94,6 +97,10 @@ public class TransactionState implements Writable {
                     return null;
             }
         }
+
+        public LoadJobSourceTypePB toPB() {
+            return LoadJobSourceTypePB.forNumber(flag);
+        }
     }
 
     public enum TxnStatusChangeReason {
@@ -149,6 +156,10 @@ public class TransactionState implements Writable {
                     return null;
             }
         }
+
+        public TxnSourceTypePB toPB() {
+            return TxnSourceTypePB.forNumber(flag);
+        }
     }
 
     public static class TxnCoordinator {
@@ -166,6 +177,13 @@ public class TransactionState implements Writable {
         @Override
         public String toString() {
             return sourceType.toString() + ": " + ip;
+        }
+
+        public TxnCoordinatorPB toPB() {
+            TxnCoordinatorPB.Builder builder = TxnCoordinatorPB.newBuilder();
+            builder.setSourceType(sourceType.toPB());
+            builder.setIp(ip);
+            return builder.build();
         }
     }
 

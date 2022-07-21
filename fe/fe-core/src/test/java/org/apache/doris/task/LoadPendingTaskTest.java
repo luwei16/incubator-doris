@@ -35,7 +35,8 @@ import org.apache.doris.load.TableLoadInfo;
 import org.apache.doris.persist.EditLog;
 import org.apache.doris.thrift.TStatus;
 import org.apache.doris.thrift.TStatusCode;
-import org.apache.doris.transaction.GlobalTransactionMgr;
+import org.apache.doris.transaction.GlobalTransactionMgrInterface;
+import org.apache.doris.transaction.NativeGlobalTransactionMgr;
 
 import mockit.Expectations;
 import mockit.Mocked;
@@ -88,7 +89,7 @@ public class LoadPendingTaskTest {
         // mock catalog
         db = UnitTestUtil.createDb(dbId, tableId, partitionId, indexId, tabletId, backendId, 1L);
 
-        GlobalTransactionMgr globalTransactionMgr = new GlobalTransactionMgr(env);
+        GlobalTransactionMgrInterface globalTransactionMgr = new NativeGlobalTransactionMgr(env);
         globalTransactionMgr.setEditLog(editLog);
         globalTransactionMgr.addDatabaseTransactionMgr(db.getId());
 

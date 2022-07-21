@@ -222,8 +222,10 @@ import org.apache.doris.thrift.BackendService;
 import org.apache.doris.thrift.TCompressionType;
 import org.apache.doris.thrift.TNetworkAddress;
 import org.apache.doris.thrift.TStorageMedium;
+import org.apache.doris.transaction.CloudGlobalTransactionMgr;
 import org.apache.doris.transaction.DbUsedDataQuotaInfoCollector;
-import org.apache.doris.transaction.GlobalTransactionMgr;
+import org.apache.doris.transaction.GlobalTransactionMgrInterface;
+import org.apache.doris.transaction.NativeGlobalTransactionMgr;
 import org.apache.doris.transaction.PublishVersionDaemon;
 
 import com.google.common.base.Joiner;
@@ -381,7 +383,7 @@ public class Env {
     private BrokerMgr brokerMgr;
     private ResourceMgr resourceMgr;
 
-    private GlobalTransactionMgr globalTransactionMgr;
+    private GlobalTransactionMgrInterface globalTransactionMgr;
 
     private DeployManager deployManager;
 
@@ -563,7 +565,11 @@ public class Env {
         this.brokerMgr = new BrokerMgr();
         this.resourceMgr = new ResourceMgr();
 
-        this.globalTransactionMgr = new GlobalTransactionMgr(this);
+        if ((Config.cloud_unique_id != null) && (Config.cloud_unique_id.length() > 0)) {
+            this.globalTransactionMgr = new CloudGlobalTransactionMgr(this);
+        } else {
+            this.globalTransactionMgr = new NativeGlobalTransactionMgr(this);
+        }
 
         this.tabletStatMgr = new TabletStatMgr();
         // statistics
@@ -651,11 +657,11 @@ public class Env {
         return resourceMgr;
     }
 
-    public static GlobalTransactionMgr getCurrentGlobalTransactionMgr() {
+    public static GlobalTransactionMgrInterface getCurrentGlobalTransactionMgr() {
         return getCurrentEnv().globalTransactionMgr;
     }
 
-    public GlobalTransactionMgr getGlobalTransactionMgr() {
+    public GlobalTransactionMgrInterface getGlobalTransactionMgr() {
         return globalTransactionMgr;
     }
 

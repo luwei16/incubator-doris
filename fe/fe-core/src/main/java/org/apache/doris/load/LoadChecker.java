@@ -46,7 +46,7 @@ import org.apache.doris.thrift.TColumn;
 import org.apache.doris.thrift.TPriority;
 import org.apache.doris.thrift.TPushType;
 import org.apache.doris.thrift.TTaskType;
-import org.apache.doris.transaction.GlobalTransactionMgr;
+import org.apache.doris.transaction.GlobalTransactionMgrInterface;
 import org.apache.doris.transaction.TabletCommitInfo;
 import org.apache.doris.transaction.TabletQuorumFailedException;
 import org.apache.doris.transaction.TransactionState;
@@ -330,7 +330,7 @@ public class LoadChecker extends MasterDaemon {
     private void tryCommitJob(LoadJob job, List<Table> tables) {
         // check transaction state
         Load load = Env.getCurrentEnv().getLoadInstance();
-        GlobalTransactionMgr globalTransactionMgr = Env.getCurrentGlobalTransactionMgr();
+        GlobalTransactionMgrInterface globalTransactionMgr = Env.getCurrentGlobalTransactionMgr();
         TransactionState transactionState = globalTransactionMgr.getTransactionState(
                 job.getDbId(), job.getTransactionId());
         List<TabletCommitInfo> tabletCommitInfos = new ArrayList<TabletCommitInfo>();
@@ -476,8 +476,7 @@ public class LoadChecker extends MasterDaemon {
                                             tabletId, replicaId, schemaHash, -1, filePath, fileSize, 0,
                                             job.getId(), type, job.getConditions(), needDecompress, job.getPriority(),
                                             TTaskType.REALTIME_PUSH, job.getTransactionId(),
-                                            Env.getCurrentGlobalTransactionMgr()
-                                                    .getTransactionIDGenerator().getNextTransactionId(), columnsDesc);
+                                            Env.getCurrentEnv().getNextId(), columnsDesc);
                                     pushTask.setIsSchemaChanging(autoLoadToTwoTablet);
                                     if (AgentTaskQueue.addTask(pushTask)) {
                                         batchTask.addTask(pushTask);

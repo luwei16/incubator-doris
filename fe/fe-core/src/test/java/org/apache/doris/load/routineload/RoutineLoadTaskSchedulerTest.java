@@ -29,7 +29,7 @@ import org.apache.doris.load.RoutineLoadDesc;
 import org.apache.doris.task.AgentTaskExecutor;
 import org.apache.doris.thrift.BackendService;
 import org.apache.doris.transaction.BeginTransactionException;
-import org.apache.doris.transaction.GlobalTransactionMgr;
+import org.apache.doris.transaction.GlobalTransactionMgrInterface;
 
 import com.google.common.collect.Maps;
 import com.google.common.collect.Queues;
@@ -56,7 +56,7 @@ public class RoutineLoadTaskSchedulerTest {
                                 @Injectable KafkaRoutineLoadJob routineLoadJob,
                                 @Injectable RoutineLoadDesc routineLoadDesc,
                                 @Injectable LoadColumnsInfo loadColumnsInfo,
-                                @Mocked GlobalTransactionMgr globalTransactionMgr,
+                                @Mocked GlobalTransactionMgrInterface globalTransactionMgr,
                                 @Mocked BackendService.Client client,
                                 @Mocked ClientPool clientPool) throws LoadException,
             MetaNotFoundException, AnalysisException, LabelAlreadyUsedException, BeginTransactionException {

@@ -43,7 +43,7 @@ import org.apache.doris.qe.ConnectContext;
 import org.apache.doris.system.SystemInfoService;
 import org.apache.doris.thrift.TResourceInfo;
 import org.apache.doris.transaction.BeginTransactionException;
-import org.apache.doris.transaction.GlobalTransactionMgr;
+import org.apache.doris.transaction.GlobalTransactionMgrInterface;
 
 import com.google.common.base.Joiner;
 import com.google.common.collect.Lists;
@@ -198,7 +198,7 @@ public class KafkaRoutineLoadJobTest {
     }
 
     @Test
-    public void testProcessTimeOutTasks(@Injectable GlobalTransactionMgr globalTransactionMgr,
+    public void testProcessTimeOutTasks(@Injectable GlobalTransactionMgrInterface globalTransactionMgr,
                                         @Injectable RoutineLoadManager routineLoadManager,
                                         @Mocked RoutineLoadDesc routineLoadDesc)
             throws AnalysisException, LabelAlreadyUsedException,

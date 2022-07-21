@@ -36,7 +36,7 @@ import org.apache.doris.thrift.TNetworkAddress;
 import org.apache.doris.thrift.TPlanFragmentExecParams;
 import org.apache.doris.thrift.TStorageMedium;
 import org.apache.doris.thrift.TUniqueId;
-import org.apache.doris.transaction.GlobalTransactionMgr;
+import org.apache.doris.transaction.GlobalTransactionMgrInterface;
 import org.apache.doris.transaction.TransactionState;
 
 import com.alibaba.otter.canal.client.CanalConnector;
@@ -204,7 +204,7 @@ public class CanalSyncDataTest {
     }
 
     @Test
-    public void testBeginTxnFail(@Mocked GlobalTransactionMgr transactionMgr) throws Exception {
+    public void testBeginTxnFail(@Mocked GlobalTransactionMgrInterface transactionMgr) throws Exception {
 
         new Expectations() {
             {
@@ -245,7 +245,7 @@ public class CanalSyncDataTest {
     }
 
     @Test
-    public void testNormal(@Mocked GlobalTransactionMgr transactionMgr,
+    public void testNormal(@Mocked GlobalTransactionMgrInterface transactionMgr,
                            @Mocked BackendServiceProxy backendServiceProxy,
                            @Mocked Future<InternalService.PExecPlanFragmentResult> execFuture,
                            @Mocked Future<InternalService.PCommitResult> commitFuture,
@@ -319,7 +319,7 @@ public class CanalSyncDataTest {
     }
 
     @Test
-    public void testExecFragmentFail(@Mocked GlobalTransactionMgr transactionMgr,
+    public void testExecFragmentFail(@Mocked GlobalTransactionMgrInterface transactionMgr,
                                      @Mocked BackendServiceProxy backendServiceProxy,
                                      @Mocked Future<InternalService.PExecPlanFragmentResult> execFuture,
                                      @Mocked Future<InternalService.PRollbackResult> abortFuture) throws Exception {
@@ -384,7 +384,7 @@ public class CanalSyncDataTest {
     }
 
     @Test
-    public void testCommitTxnFail(@Mocked GlobalTransactionMgr transactionMgr,
+    public void testCommitTxnFail(@Mocked GlobalTransactionMgrInterface transactionMgr,
                                   @Mocked BackendServiceProxy backendServiceProxy,
                                   @Mocked Future<InternalService.PExecPlanFragmentResult> execFuture,
                                   @Mocked Future<InternalService.PCommitResult> commitFuture,

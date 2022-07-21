@@ -42,7 +42,7 @@ import org.apache.doris.task.LoadEtlTask;
 import org.apache.doris.thrift.TQueryType;
 import org.apache.doris.thrift.TUniqueId;
 import org.apache.doris.transaction.BeginTransactionException;
-import org.apache.doris.transaction.GlobalTransactionMgr;
+import org.apache.doris.transaction.GlobalTransactionMgrInterface;
 import org.apache.doris.transaction.TabletCommitInfo;
 import org.apache.doris.transaction.TransactionState.LoadJobSourceType;
 import org.apache.doris.transaction.TransactionState.TxnCoordinator;
@@ -176,7 +176,7 @@ public class UpdateStmtExecutor {
     }
 
     private void commitAndPublishTxn() throws UserException {
-        GlobalTransactionMgr globalTransactionMgr = Env.getCurrentGlobalTransactionMgr();
+        GlobalTransactionMgrInterface globalTransactionMgr = Env.getCurrentGlobalTransactionMgr();
         TransactionStatus txnStatus;
         boolean isPublished;
         try {

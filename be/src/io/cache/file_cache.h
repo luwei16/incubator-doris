@@ -43,6 +43,9 @@ public:
     virtual Status clean_timeout_cache() = 0;
 
     virtual Status clean_all_cache() = 0;
+
+    // Dummy fs
+    FileSystem* fs() const override { return nullptr; }
 };
 
 using FileCachePtr = std::shared_ptr<FileCache>;

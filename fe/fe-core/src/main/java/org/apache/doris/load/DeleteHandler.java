@@ -70,7 +70,7 @@ import org.apache.doris.thrift.TColumn;
 import org.apache.doris.thrift.TPriority;
 import org.apache.doris.thrift.TPushType;
 import org.apache.doris.thrift.TTaskType;
-import org.apache.doris.transaction.GlobalTransactionMgr;
+import org.apache.doris.transaction.GlobalTransactionMgrInterface;
 import org.apache.doris.transaction.TabletCommitInfo;
 import org.apache.doris.transaction.TransactionState;
 import org.apache.doris.transaction.TransactionState.TxnCoordinator;
@@ -266,8 +266,7 @@ public class DeleteHandler implements Writable {
                                         true, TPriority.NORMAL,
                                         TTaskType.REALTIME_PUSH,
                                         transactionId,
-                                        Env.getCurrentGlobalTransactionMgr()
-                                                .getTransactionIDGenerator().getNextTransactionId(),
+                                        Env.getCurrentEnv().getNextId(),
                                         columnsDesc);
                                 pushTask.setIsSchemaChanging(false);
                                 pushTask.setCountDownLatch(countDownLatch);
@@ -417,7 +416,7 @@ public class DeleteHandler implements Writable {
      */
     private boolean unprotectedCommitJob(DeleteJob job, Database db, Table table, long timeoutMs) throws UserException {
         long transactionId = job.getTransactionId();
-        GlobalTransactionMgr globalTransactionMgr = Env.getCurrentGlobalTransactionMgr();
+        GlobalTransactionMgrInterface globalTransactionMgr = Env.getCurrentGlobalTransactionMgr();
         List<TabletCommitInfo> tabletCommitInfos = new ArrayList<TabletCommitInfo>();
         TabletInvertedIndex invertedIndex = Env.getCurrentInvertedIndex();
         for (TabletDeleteInfo tDeleteInfo : job.getTabletDeleteInfo()) {
@@ -486,7 +485,7 @@ public class DeleteHandler implements Writable {
     public boolean cancelJob(DeleteJob job, CancelType cancelType, String reason) {
         LOG.info("start to cancel delete job, transactionId: {}, cancelType: {}",
                 job.getTransactionId(), cancelType.name());
-        GlobalTransactionMgr globalTransactionMgr = Env.getCurrentGlobalTransactionMgr();
+        GlobalTransactionMgrInterface globalTransactionMgr = Env.getCurrentGlobalTransactionMgr();
         try {
             if (job != null) {
                 globalTransactionMgr.abortTransaction(job.getDeleteInfo().getDbId(), job.getTransactionId(), reason);

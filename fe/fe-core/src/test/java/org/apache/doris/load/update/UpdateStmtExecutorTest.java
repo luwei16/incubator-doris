@@ -33,7 +33,7 @@ import org.apache.doris.common.jmockit.Deencapsulation;
 import org.apache.doris.datasource.InternalDataSource;
 import org.apache.doris.qe.Coordinator;
 import org.apache.doris.thrift.TUniqueId;
-import org.apache.doris.transaction.GlobalTransactionMgr;
+import org.apache.doris.transaction.GlobalTransactionMgrInterface;
 
 import com.google.common.collect.Lists;
 import mockit.Expectations;
@@ -49,7 +49,7 @@ public class UpdateStmtExecutorTest {
     @Test
     public void testCommitAndPublishTxn(@Injectable Analyzer analyzer,
                                         @Injectable Coordinator coordinator,
-                                        @Mocked GlobalTransactionMgr globalTransactionMgr) {
+                                        @Mocked GlobalTransactionMgrInterface globalTransactionMgr) {
         Cluster testCluster = new Cluster("test_cluster", 0);
         Database testDb = new Database(1, "test_db");
         testDb.setClusterName("test_cluster");

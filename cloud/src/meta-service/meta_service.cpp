@@ -18,19 +18,36 @@ MetaServiceImpl::MetaServiceImpl(std::shared_ptr<TxnKv> txn_kv) {
 MetaServiceImpl::~MetaServiceImpl() {}
 
 void MetaServiceImpl::begin_txn(::google::protobuf::RpcController* controller,
-                                const ::selectdb::TxnRequest* request,
-                                ::selectdb::TxnResponse* response,
+                                const ::selectdb::BeginTxnRequest* request,
+                                ::selectdb::BeginTxnResponse* response,
                                 ::google::protobuf::Closure* done) {
-    // TBD
+    LOG(INFO) << "recv request begin_txn: " << request->DebugString();
+    brpc::ClosureGuard done_guard(done);
+    brpc::Controller* cntl = static_cast<brpc::Controller*>(controller);
+    std::string cloud_unique_id;
+    if (request->has_cloud_unique_id()) {
+        cloud_unique_id = request->cloud_unique_id();
+    };
+    int64_t db_id = request->db_id();
+
+    LOG(INFO) << "received request get_version [log_id=" << cntl->log_id() << "] from "
+              << cntl->remote_side() << " to " << cntl->local_side()
+              << ": unique_id = " << cloud_unique_id << " db_id = " << db_id;
+
+    // TODO(dx): begin txn
+
+    response->mutable_status()->set_code(0);
+    LOG(INFO) << "send response begin_txn: " << response->DebugString();
 }
 
 void MetaServiceImpl::precommit_txn(::google::protobuf::RpcController* controller,
-                                    const ::selectdb::TxnRequest* request,
-                                    ::selectdb::TxnResponse* response,
+                                    const ::selectdb::PrecommitTxnRequest* request,
+                                    ::selectdb::PrecommitTxnResponse* response,
                                     ::google::protobuf::Closure* done) {}
+
 void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
-                                 const ::selectdb::TxnRequest* request,
-                                 ::selectdb::TxnResponse* response,
+                                 const ::selectdb::CommitTxnRequest* request,
+                                 ::selectdb::CommitTxnResponse* response,
                                  ::google::protobuf::Closure* done) {}
 
 void MetaServiceImpl::get_version(::google::protobuf::RpcController* controller,
