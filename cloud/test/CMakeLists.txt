@@ -8,9 +8,17 @@ add_executable(sync_point_test
    sync_point_test.cpp
 )
 
-message(${DORIS_LINK_LIBS})
+add_executable(codec_test
+   codec_test.cpp
+)
+
+message("test dependencies: ${TEST_LINK_LIBS}")
 target_link_libraries(sync_point_test
-    ${DORIS_LINK_LIBS}
+    ${TEST_LINK_LIBS}
+)
+
+target_link_libraries(codec_test
+    ${TEST_LINK_LIBS}
 )
 
 # vim: et tw=120 ts=4 sw=4 cc=80:
