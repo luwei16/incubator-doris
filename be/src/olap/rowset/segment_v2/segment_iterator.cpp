@@ -17,12 +17,15 @@
 
 #include "olap/rowset/segment_v2/segment_iterator.h"
 
+#include <cstdint>
 #include <memory>
 #include <set>
 #include <utility>
 
+#include "common/config.h"
 #include "common/status.h"
 #include "gutil/strings/substitute.h"
+#include "io/fs/file_system.h"
 #include "olap/column_predicate.h"
 #include "olap/olap_common.h"
 #include "olap/row_block2.h"
@@ -50,6 +53,50 @@ public:
     }
 
     bool has_more_range() const { return !_eof; }
+
+    std::vector<std::pair<uint32_t, uint32_t>> get_all_contiguous_ranges() {
+        std::vector<std::pair<uint32_t, uint32_t>> ranges;
+        std::pair<uint32_t, uint32_t> range;
+        while (next_contiguous_range(&range.first, &range.second)) {
+            ranges.push_back(range);
+        }
+        return ranges;
+    }
+
+    bool next_contiguous_range(uint32_t* from, uint32_t* to) {
+        if (_eof) {
+            return false;
+        }
+
+        *from = _buf[_buf_pos];
+        uint32_t range_size = 0;
+        uint32_t expect_val = _buf[_buf_pos]; // this initial value just make first batch valid
+
+        // if array is contiguous sequence then the following conditions need to be met :
+        // a_0: x
+        // a_1: x+1
+        // a_2: x+2
+        // ...
+        // a_p: x+p
+        // so we can just use (a_p-a_0)-p to check conditions
+        // and should notice the previous batch needs to be continuous with the current batch
+        while (!_eof && expect_val == _buf[_buf_pos] &&
+               _buf[_buf_size - 1] - _buf[_buf_pos] == _buf_size - 1 - _buf_pos) {
+            range_size += _buf_size - _buf_pos;
+            expect_val = _buf[_buf_size - 1] + 1;
+            _read_next_batch();
+        }
+
+        // promise remain range not will reach next batch
+        if (!_eof && expect_val == _buf[_buf_pos]) {
+            do {
+                _buf_pos++;
+                range_size++;
+            } while (_buf[_buf_pos] == _buf[_buf_pos - 1] + 1);
+        }
+        *to = *from + range_size;
+        return true;
+    }
 
     // read next range into [*from, *to) whose size <= max_range_size.
     // return false when there is no more range.
@@ -145,11 +192,15 @@ Status SegmentIterator::_init(bool is_vec) {
         RETURN_IF_ERROR(_get_row_ranges_by_keys());
     }
     RETURN_IF_ERROR(_get_row_ranges_by_column_conditions());
+    BitmapRangeIterator iter(_row_bitmap);
+    _ranges = iter.get_all_contiguous_ranges();
     if (is_vec) {
         _vec_init_lazy_materialization();
         _vec_init_char_column_id();
+        _vec_init_prefetch_column_pages();
     } else {
         _init_lazy_materialization();
+        _init_prefetch_column_pages();
     }
     // Remove rows that have been marked deleted
     if (_opts.delete_bitmap.count(segment_id()) > 0 &&
@@ -160,6 +211,31 @@ Status SegmentIterator::_init(bool is_vec) {
     }
     _range_iter.reset(new BitmapRangeIterator(_row_bitmap));
     return Status::OK();
+}
+
+void SegmentIterator::_vec_init_prefetch_column_pages() {
+    if (!config::enable_column_reader_prefetch ||
+        _file_reader->fs()->type() == io::FileSystemType::LOCAL) {
+        return;
+    }
+    for (auto cid : _first_read_column_ids) {
+        _column_iterators[cid]->get_all_contiguous_pages(_ranges);
+    }
+    if (_lazy_materialization_read && (_is_need_vec_eval || _is_need_short_eval)) {
+        for (auto cid : _non_predicate_columns) {
+            _column_iterators[cid]->get_all_contiguous_pages(_ranges);
+        }
+    }
+}
+
+void SegmentIterator::_init_prefetch_column_pages() {
+    if (!config::enable_column_reader_prefetch ||
+        _file_reader->fs()->type() == io::FileSystemType::LOCAL) {
+        return;
+    }
+    for (auto cid : _schema.column_ids()) {
+        _column_iterators[cid]->get_all_contiguous_pages(_ranges);
+    }
 }
 
 Status SegmentIterator::_get_row_ranges_by_keys() {
@@ -581,7 +657,7 @@ Status SegmentIterator::next_batch(RowBlockV2* block) {
             uint32_t range_from;
             uint32_t range_to;
             bool has_next_range =
-                    _range_iter->next_range(nrows_read_limit - nrows_read, &range_from, &range_to);
+                    next_range(nrows_read_limit - nrows_read, _cur_rowid, &range_from, &range_to);
             if (!has_next_range) {
                 break;
             }
@@ -895,7 +971,7 @@ Status SegmentIterator::_read_columns_by_index(uint32_t nrows_read_limit, uint32
         uint32_t range_from;
         uint32_t range_to;
         bool has_next_range =
-                _range_iter->next_range(nrows_read_limit - nrows_read, &range_from, &range_to);
+                next_range(nrows_read_limit - nrows_read, _cur_rowid, &range_from, &range_to);
         if (!has_next_range) {
             break;
         }

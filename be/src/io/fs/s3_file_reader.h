@@ -42,6 +42,8 @@ public:
 
     bool closed() const override { return _closed.load(std::memory_order_acquire); }
 
+    FileSystem* fs() const override { return _fs; }
+
 private:
     Path _path;
     size_t _file_size;

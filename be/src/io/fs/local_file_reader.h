@@ -21,13 +21,14 @@
 
 #include "io/fs/file_reader.h"
 #include "io/fs/path.h"
+#include "io/fs/local_file_system.h"
 
 namespace doris {
 namespace io {
 
 class LocalFileReader final : public FileReader {
 public:
-    LocalFileReader(Path path, size_t file_size, int fd);
+    LocalFileReader(Path path, size_t file_size, int fd, LocalFileSystem* fs);
 
     ~LocalFileReader() override;
 
@@ -41,11 +42,14 @@ public:
 
     bool closed() const override { return _closed.load(std::memory_order_acquire); }
 
+    FileSystem* fs() const override { return _fs; }
+
 private:
     int _fd = -1; // owned
     Path _path;
     size_t _file_size;
     std::atomic<bool> _closed = false;
+    LocalFileSystem* _fs;
 };
 
 } // namespace io

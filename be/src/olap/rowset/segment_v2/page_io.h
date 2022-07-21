@@ -49,6 +49,7 @@ struct PageReadOptions {
     io::FileReader* file_reader = nullptr;
     // location of the page
     PagePointer page_pointer;
+    const std::vector<PagePointer>* page_pointers = nullptr;
     // decompressor for page body (null means page body is not compressed)
     const BlockCompressionCodec* codec = nullptr;
     // used to collect IO metrics
@@ -116,6 +117,9 @@ public:
     //     `footer' stores the page footer.
     static Status read_and_decompress_page(const PageReadOptions& opts, PageHandle* handle,
                                            Slice* body, PageFooterPB* footer);
+
+    static Status read_and_decompress_pages(const PageReadOptions& opts, std::vector<PageHandle>& handles,
+                                           std::vector<Slice>& bodys, std::vector<PageFooterPB>& footers);
 };
 
 } // namespace segment_v2

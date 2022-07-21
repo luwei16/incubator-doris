@@ -17,15 +17,19 @@
 
 #include "olap/rowset/segment_v2/column_reader.h"
 
+#include "common/config.h"
+#include "common/status.h"
 #include "io/fs/file_reader.h"
 #include "olap/column_block.h"                       // for ColumnBlockView
 #include "olap/rowset/segment_v2/binary_dict_page.h" // for BinaryDictPageDecoder
 #include "olap/rowset/segment_v2/bloom_filter_index_reader.h"
+#include "olap/rowset/segment_v2/common.h"
 #include "olap/rowset/segment_v2/encoding_info.h" // for EncodingInfo
 #include "olap/rowset/segment_v2/page_handle.h"   // for PageHandle
 #include "olap/rowset/segment_v2/page_io.h"
 #include "olap/rowset/segment_v2/page_pointer.h" // for PagePointer
-#include "olap/types.h"                          // for TypeInfo
+#include "olap/rowset/segment_v2/parsed_page.h"
+#include "olap/types.h" // for TypeInfo
 #include "util/block_compression.h"
 #include "util/rle_encoding.h" // for RleDecoder
 #include "vec/columns/column.h"
@@ -157,6 +161,26 @@ Status ColumnReader::read_page(const ColumnIteratorOptions& iter_opts, const Pag
     opts.encoding_info = _encoding_info;
 
     return PageIO::read_and_decompress_page(opts, handle, page_body, footer);
+}
+
+Status ColumnReader::read_pages(const ColumnIteratorOptions& iter_opts,
+                                const std::vector<PagePointer>& pps,
+                                std::vector<PageHandle>& handles, std::vector<Slice>& page_bodys,
+                                std::vector<PageFooterPB>& footers,
+                                BlockCompressionCodec* codec) const {
+    iter_opts.sanity_check();
+    PageReadOptions opts;
+    opts.file_reader = iter_opts.file_reader;
+    opts.page_pointers = &pps;
+    opts.codec = codec;
+    opts.stats = iter_opts.stats;
+    opts.verify_checksum = _opts.verify_checksum;
+    opts.use_page_cache = iter_opts.use_page_cache;
+    opts.kept_in_memory = _opts.kept_in_memory;
+    opts.type = iter_opts.type;
+    opts.encoding_info = _encoding_info;
+
+    return PageIO::read_and_decompress_pages(opts, handles, page_bodys, footers);
 }
 
 Status ColumnReader::get_row_ranges_by_zone_map(CondColumn* cond_column,
@@ -516,7 +540,8 @@ Status ArrayFileColumnIterator::read_by_rowids(const rowid_t* rowids, const size
 
 ////////////////////////////////////////////////////////////////////////////////
 
-FileColumnIterator::FileColumnIterator(ColumnReader* reader) : _reader(reader) {}
+FileColumnIterator::FileColumnIterator(ColumnReader* reader)
+        : _reader(reader), _pages(config::max_column_reader_prefetch_size) {}
 
 Status FileColumnIterator::init(const ColumnIteratorOptions& opts) {
     _opts = opts;
@@ -526,7 +551,7 @@ Status FileColumnIterator::init(const ColumnIteratorOptions& opts) {
         auto dict_encoding_type = _reader->get_dict_encoding_type();
         if (dict_encoding_type == ColumnReader::UNKNOWN_DICT_ENCODING) {
             seek_to_ordinal(_reader->num_rows() - 1);
-            _is_all_dict_encoding = _page.is_dict_encoding;
+            _is_all_dict_encoding = _cur_page->is_dict_encoding;
             _reader->set_dict_encoding_type(_is_all_dict_encoding
                                                     ? ColumnReader::ALL_DICT_ENCODING
                                                     : ColumnReader::PARTIAL_DICT_ENCODING);
@@ -540,27 +565,80 @@ Status FileColumnIterator::init(const ColumnIteratorOptions& opts) {
 FileColumnIterator::~FileColumnIterator() = default;
 
 Status FileColumnIterator::seek_to_first() {
-    RETURN_IF_ERROR(_reader->seek_to_first(&_page_iter));
-    RETURN_IF_ERROR(_read_data_page(_page_iter));
+    if (_enable_prefetch) {
+        // TODO
+    } else {
+        RETURN_IF_ERROR(_reader->seek_to_first(&_page_iter));
+        RETURN_IF_ERROR(_read_data_page(_page_iter));
 
-    _seek_to_pos_in_page(&_page, 0);
-    _current_ordinal = 0;
+        _seek_to_pos_in_page(_cur_page, 0);
+        _current_ordinal = 0;
+    }
     return Status::OK();
 }
 
-Status FileColumnIterator::seek_to_ordinal(ordinal_t ord) {
-    // if current page contains this row, we don't need to seek
-    if (!_page || !_page.contains(ord) || !_page_iter.valid()) {
-        RETURN_IF_ERROR(_reader->seek_at_or_before(ord, &_page_iter));
-        RETURN_IF_ERROR(_read_data_page(_page_iter));
+bool FileColumnIterator::_check_and_set_cur_page(ordinal_t ord) {
+    while (!_cur_page->contains(ord)) {
+        _index++;
+        if (_index == _pages.size()) {
+            return false;
+        }
+        _cur_page = &_pages[_index];
     }
-    _seek_to_pos_in_page(&_page, ord - _page.first_ordinal);
-    _current_ordinal = ord;
+    return true;
+}
+
+void FileColumnIterator::_find_cur_page(ordinal_t ord) {
+    while (ord > _page_ranges[_cur_range][_cur_page_idx].last_ordinal()) {
+        _cur_page_idx++;
+        if (_cur_page_idx == _page_ranges[_cur_range].size()) {
+            _cur_range++;
+            _cur_page_idx = 0;
+        }
+    }
+}
+
+Status FileColumnIterator::seek_to_ordinal(ordinal_t ord) {
+    if (_enable_prefetch) {
+        if (!_cur_page || !_check_and_set_cur_page(ord)) {
+            _find_cur_page(ord);
+            RETURN_IF_ERROR(_prefetch_pages());
+        }
+        _seek_to_pos_in_page(_cur_page, ord - _cur_page->first_ordinal);
+        _current_ordinal = ord;
+    } else {
+        // if current page contains this row, we don't need to seek
+        if (!_cur_page || !_cur_page->contains(ord) || !_page_iter.valid()) {
+            RETURN_IF_ERROR(_reader->seek_at_or_before(ord, &_page_iter));
+            RETURN_IF_ERROR(_read_data_page(_page_iter));
+        }
+        _seek_to_pos_in_page(_cur_page, ord - _cur_page->first_ordinal);
+        _current_ordinal = ord;
+    }
     return Status::OK();
 }
 
 Status FileColumnIterator::seek_to_page_start() {
-    return seek_to_ordinal(_page.first_ordinal);
+    return seek_to_ordinal(_cur_page->first_ordinal);
+}
+
+Status FileColumnIterator::get_all_contiguous_pages(
+        const std::vector<std::pair<uint32_t, uint32_t>>& row_ranges) {
+    _enable_prefetch = true;
+    for (auto pair : row_ranges) {
+        std::vector<OrdinalPageIndexIterator> page_pointers;
+        OrdinalPageIndexIterator iter;
+        _reader->seek_at_or_before(pair.first, &iter);
+        while (iter.valid()) {
+            page_pointers.push_back(iter);
+            if (pair.second == iter.last_ordinal() + 1 || pair.second <= iter.last_ordinal()) {
+                break;
+            }
+            iter.next();
+        }
+        _page_ranges.push_back(std::move(page_pointers));
+    }
+    return Status::OK();
 }
 
 void FileColumnIterator::_seek_to_pos_in_page(ParsedPage* page, ordinal_t offset_in_page) const {
@@ -570,7 +648,7 @@ void FileColumnIterator::_seek_to_pos_in_page(ParsedPage* page, ordinal_t offset
     }
 
     ordinal_t pos_in_data = offset_in_page;
-    if (_page.has_null) {
+    if (page->has_null) {
         ordinal_t offset_in_data = 0;
         ordinal_t skips = offset_in_page;
 
@@ -596,7 +674,7 @@ Status FileColumnIterator::next_batch(size_t* n, ColumnBlockView* dst, bool* has
     size_t remaining = *n;
     *has_null = false;
     while (remaining > 0) {
-        if (!_page.has_remaining()) {
+        if (!_cur_page->has_remaining()) {
             bool eos = false;
             RETURN_IF_ERROR(_load_next_page(&eos));
             if (eos) {
@@ -605,9 +683,9 @@ Status FileColumnIterator::next_batch(size_t* n, ColumnBlockView* dst, bool* has
         }
 
         // number of rows to be read from this page
-        size_t nrows_in_page = std::min(remaining, _page.remaining());
+        size_t nrows_in_page = std::min(remaining, _cur_page->remaining());
         size_t nrows_to_read = nrows_in_page;
-        if (_page.has_null) {
+        if (_cur_page->has_null) {
             // when this page contains NULLs we read data in some runs
             // first we read null bits in the same value, if this is null, we
             // don't need to read value from page.
@@ -616,11 +694,11 @@ Status FileColumnIterator::next_batch(size_t* n, ColumnBlockView* dst, bool* has
             // will lead too many function calls to PageDecoder
             while (nrows_to_read > 0) {
                 bool is_null = false;
-                size_t this_run = _page.null_decoder.GetNextRun(&is_null, nrows_to_read);
+                size_t this_run = _cur_page->null_decoder.GetNextRun(&is_null, nrows_to_read);
                 // we use num_rows only for CHECK
                 size_t num_rows = this_run;
                 if (!is_null) {
-                    RETURN_IF_ERROR(_page.data_decoder->next_batch(&num_rows, dst));
+                    RETURN_IF_ERROR(_cur_page->data_decoder->next_batch(&num_rows, dst));
                     DCHECK_EQ(this_run, num_rows);
                 } else {
                     *has_null = true;
@@ -630,19 +708,19 @@ Status FileColumnIterator::next_batch(size_t* n, ColumnBlockView* dst, bool* has
                 dst->set_null_bits(this_run, is_null);
 
                 nrows_to_read -= this_run;
-                _page.offset_in_page += this_run;
+                _cur_page->offset_in_page += this_run;
                 dst->advance(this_run);
                 _current_ordinal += this_run;
             }
         } else {
-            RETURN_IF_ERROR(_page.data_decoder->next_batch(&nrows_to_read, dst));
+            RETURN_IF_ERROR(_cur_page->data_decoder->next_batch(&nrows_to_read, dst));
             DCHECK_EQ(nrows_to_read, nrows_in_page);
 
             if (dst->is_nullable()) {
                 dst->set_null_bits(nrows_to_read, false);
             }
 
-            _page.offset_in_page += nrows_to_read;
+            _cur_page->offset_in_page += nrows_to_read;
             dst->advance(nrows_to_read);
             _current_ordinal += nrows_to_read;
         }
@@ -661,7 +739,7 @@ Status FileColumnIterator::next_batch(size_t* n, vectorized::MutableColumnPtr& d
     size_t remaining = *n;
     *has_null = false;
     while (remaining > 0) {
-        if (!_page.has_remaining()) {
+        if (!_cur_page->has_remaining()) {
             bool eos = false;
             RETURN_IF_ERROR(_load_next_page(&eos));
             if (eos) {
@@ -670,16 +748,16 @@ Status FileColumnIterator::next_batch(size_t* n, vectorized::MutableColumnPtr& d
         }
 
         // number of rows to be read from this page
-        size_t nrows_in_page = std::min(remaining, _page.remaining());
+        size_t nrows_in_page = std::min(remaining, _cur_page->remaining());
         size_t nrows_to_read = nrows_in_page;
-        if (_page.has_null) {
+        if (_cur_page->has_null) {
             while (nrows_to_read > 0) {
                 bool is_null = false;
-                size_t this_run = _page.null_decoder.GetNextRun(&is_null, nrows_to_read);
+                size_t this_run = _cur_page->null_decoder.GetNextRun(&is_null, nrows_to_read);
                 // we use num_rows only for CHECK
                 size_t num_rows = this_run;
                 if (!is_null) {
-                    RETURN_IF_ERROR(_page.data_decoder->next_batch(&num_rows, dst));
+                    RETURN_IF_ERROR(_cur_page->data_decoder->next_batch(&num_rows, dst));
                     DCHECK_EQ(this_run, num_rows);
                 } else {
                     *has_null = true;
@@ -694,14 +772,14 @@ Status FileColumnIterator::next_batch(size_t* n, vectorized::MutableColumnPtr& d
                 }
 
                 nrows_to_read -= this_run;
-                _page.offset_in_page += this_run;
+                _cur_page->offset_in_page += this_run;
                 _current_ordinal += this_run;
             }
         } else {
-            RETURN_IF_ERROR(_page.data_decoder->next_batch(&nrows_to_read, dst));
+            RETURN_IF_ERROR(_cur_page->data_decoder->next_batch(&nrows_to_read, dst));
             DCHECK_EQ(nrows_to_read, nrows_in_page);
 
-            _page.offset_in_page += nrows_to_read;
+            _cur_page->offset_in_page += nrows_to_read;
             _current_ordinal += nrows_to_read;
         }
         remaining -= nrows_in_page;
@@ -720,20 +798,21 @@ Status FileColumnIterator::read_by_rowids(const rowid_t* rowids, const size_t co
         RETURN_IF_ERROR(seek_to_ordinal(rowids[total_read_count]));
 
         // number of rows to be read from this page
-        nrows_to_read = std::min(remaining, _page.remaining());
+        nrows_to_read = std::min(remaining, _cur_page->remaining());
 
-        if (_page.has_null) {
+        if (_cur_page->has_null) {
             size_t already_read = 0;
             while ((nrows_to_read - already_read) > 0) {
                 bool is_null = false;
-                size_t this_run = std::min(nrows_to_read - already_read, _page.remaining());
+                size_t this_run = std::min(nrows_to_read - already_read, _cur_page->remaining());
                 if (UNLIKELY(this_run == 0)) {
                     break;
                 }
-                this_run = _page.null_decoder.GetNextRun(&is_null, this_run);
+                this_run = _cur_page->null_decoder.GetNextRun(&is_null, this_run);
                 size_t offset = total_read_count + already_read;
                 size_t this_read_count = 0;
-                rowid_t current_ordinal_in_page = _page.offset_in_page + _page.first_ordinal;
+                rowid_t current_ordinal_in_page =
+                        _cur_page->offset_in_page + _cur_page->first_ordinal;
                 for (size_t i = 0; i < this_run; ++i) {
                     if (rowids[offset + i] - current_ordinal_in_page >= this_run) {
                         break;
@@ -741,7 +820,7 @@ Status FileColumnIterator::read_by_rowids(const rowid_t* rowids, const size_t co
                     this_read_count++;
                 }
 
-                auto origin_index = _page.data_decoder->current_index();
+                auto origin_index = _cur_page->data_decoder->current_index();
                 if (this_read_count > 0) {
                     if (is_null) {
                         auto* null_col =
@@ -758,28 +837,28 @@ Status FileColumnIterator::read_by_rowids(const rowid_t* rowids, const size_t co
                         // ordinal in nullable columns' data buffer maybe be not continuously(the data doesn't contain null value),
                         // so we need use `page_start_off_in_decoder` to calculate the actual offset in `data_decoder`
                         size_t page_start_off_in_decoder =
-                                _page.first_ordinal + _page.offset_in_page - origin_index;
-                        RETURN_IF_ERROR(_page.data_decoder->read_by_rowids(
+                                _cur_page->first_ordinal + _cur_page->offset_in_page - origin_index;
+                        RETURN_IF_ERROR(_cur_page->data_decoder->read_by_rowids(
                                 &rowids[offset], page_start_off_in_decoder, &read_count, dst));
                         DCHECK_EQ(read_count, this_read_count);
                     }
                 }
 
                 if (!is_null) {
-                    _page.data_decoder->seek_to_position_in_page(origin_index + this_run);
+                    _cur_page->data_decoder->seek_to_position_in_page(origin_index + this_run);
                 }
 
                 already_read += this_read_count;
-                _page.offset_in_page += this_run;
-                DCHECK(_page.offset_in_page <= _page.num_rows);
+                _cur_page->offset_in_page += this_run;
+                DCHECK(_cur_page->offset_in_page <= _cur_page->num_rows);
             }
 
             nrows_to_read = already_read;
             total_read_count += nrows_to_read;
             remaining -= nrows_to_read;
         } else {
-            RETURN_IF_ERROR(_page.data_decoder->read_by_rowids(
-                    &rowids[total_read_count], _page.first_ordinal, &nrows_to_read, dst));
+            RETURN_IF_ERROR(_cur_page->data_decoder->read_by_rowids(
+                    &rowids[total_read_count], _cur_page->first_ordinal, &nrows_to_read, dst));
             total_read_count += nrows_to_read;
             remaining -= nrows_to_read;
         }
@@ -787,16 +866,93 @@ Status FileColumnIterator::read_by_rowids(const rowid_t* rowids, const size_t co
     return Status::OK();
 }
 
-Status FileColumnIterator::_load_next_page(bool* eos) {
-    _page_iter.next();
-    if (!_page_iter.valid()) {
-        *eos = true;
-        return Status::OK();
+Status FileColumnIterator::_prefetch_pages() {
+    uint32_t size = (_page_ranges[_cur_range].size() - _cur_page_idx) > _pages.max_size()
+                            ? _pages.max_size()
+                            : _page_ranges.size() - _cur_range;
+    RETURN_IF_ERROR(_read_data_pages(_page_ranges[_cur_range], _cur_page_idx, size));
+    _cur_page_idx += size;
+    if (_cur_page_idx == _page_ranges[_cur_range].size()) {
+        _cur_page++;
+        _cur_page_idx = 0;
     }
+    _cur_page = &_pages[_index];
+    return Status::OK();
+}
 
-    RETURN_IF_ERROR(_read_data_page(_page_iter));
-    _seek_to_pos_in_page(&_page, 0);
-    *eos = false;
+Status FileColumnIterator::_load_next_page(bool* eos) {
+    if (_enable_prefetch) {
+        if (++_index == _pages.size()) {
+            RETURN_IF_ERROR(_prefetch_pages());
+        }
+        _seek_to_pos_in_page(_cur_page, 0);
+        *eos = false;
+    } else {
+        _page_iter.next();
+        if (!_page_iter.valid()) {
+            *eos = true;
+            return Status::OK();
+        }
+
+        RETURN_IF_ERROR(_read_data_page(_page_iter));
+        _seek_to_pos_in_page(_cur_page, 0);
+        *eos = false;
+    }
+    return Status::OK();
+}
+
+Status FileColumnIterator::_read_data_pages(const std::vector<OrdinalPageIndexIterator>& iters,
+                                            uint32_t start, uint32_t size) {
+    std::vector<PageHandle> handles(size);
+    std::vector<Slice> page_bodys(size);
+    std::vector<PageFooterPB> footers(size);
+    std::vector<PagePointer> pps(size);
+    _opts.type = DATA_PAGE;
+    for (uint32_t i = 0; i < size; i++) {
+        pps[i] = iters[start + i].page();
+    }
+    RETURN_IF_ERROR(
+            _reader->read_pages(_opts, pps, handles, page_bodys, footers, _compress_codec.get()));
+    for (uint32_t i = 0; i < size; i++) {
+        RETURN_IF_ERROR(ParsedPage::create(std::move(handles[i]), page_bodys[i],
+                                           footers[i].data_page_footer(), _reader->encoding_info(),
+                                           pps[i], iters[start + i].page_index(), &_pages[i]));
+
+        // dictionary page is read when the first data page that uses it is read,
+        // this is to optimize the memory usage: when there is no query on one column, we could
+        // release the memory of dictionary page.
+        // note that concurrent iterators for the same column won't repeatedly read dictionary page
+        // because of page cache.
+        if (_reader->encoding_info()->encoding() == DICT_ENCODING) {
+            auto dict_page_decoder =
+                    reinterpret_cast<BinaryDictPageDecoder*>(_pages[i].data_decoder);
+            if (dict_page_decoder->is_dict_encoding()) {
+                if (_dict_decoder == nullptr) {
+                    // read dictionary page
+                    Slice dict_data;
+                    PageFooterPB dict_footer;
+                    _opts.type = INDEX_PAGE;
+                    RETURN_IF_ERROR(_reader->read_page(_opts, _reader->get_dict_page_pointer(),
+                                                       &_dict_page_handle, &dict_data, &dict_footer,
+                                                       _compress_codec.get()));
+                    // ignore dict_footer.dict_page_footer().encoding() due to only
+                    // PLAIN_ENCODING is supported for dict page right now
+                    _dict_decoder =
+                            std::make_unique<BinaryPlainPageDecoder<OLAP_FIELD_TYPE_VARCHAR>>(
+                                    dict_data);
+                    RETURN_IF_ERROR(_dict_decoder->init());
+
+                    auto* pd_decoder =
+                            (BinaryPlainPageDecoder<OLAP_FIELD_TYPE_VARCHAR>*)_dict_decoder.get();
+                    _dict_word_info.reset(new StringRef[pd_decoder->_num_elems]);
+                    pd_decoder->get_dict_word_info(_dict_word_info.get());
+                }
+
+                dict_page_decoder->set_dict_decoder(_dict_decoder.get(), _dict_word_info.get());
+            }
+        }
+    }
+    _index = 0;
     return Status::OK();
 }
 
@@ -843,6 +999,7 @@ Status FileColumnIterator::_read_data_page(const OrdinalPageIndexIterator& iter)
             dict_page_decoder->set_dict_decoder(_dict_decoder.get(), _dict_word_info.get());
         }
     }
+    _cur_page = &_page;
     return Status::OK();
 }
 

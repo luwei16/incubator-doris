@@ -21,6 +21,7 @@
 #include <cstdint> // for uint32_t
 #include <memory>  // for unique_ptr
 
+#include "common/config.h"
 #include "common/logging.h"
 #include "common/status.h"         // for Status
 #include "gen_cpp/segment_v2.pb.h" // for ColumnMetaPB
@@ -108,6 +109,11 @@ public:
     Status read_page(const ColumnIteratorOptions& iter_opts, const PagePointer& pp,
                      PageHandle* handle, Slice* page_body, PageFooterPB* footer,
                      BlockCompressionCodec* codec) const;
+
+    // read pages from file into page handles
+    Status read_pages(const ColumnIteratorOptions& iter_opts, const std::vector<PagePointer>& pps,
+                      std::vector<PageHandle>& handle, std::vector<Slice>& page_body,
+                      std::vector<PageFooterPB>& footer, BlockCompressionCodec* codec) const;
 
     bool is_nullable() const { return _meta.is_nullable(); }
 
@@ -254,6 +260,11 @@ public:
         return Status::NotSupported("read_by_rowids not implement");
     }
 
+    virtual Status get_all_contiguous_pages(
+            const std::vector<std::pair<uint32_t, uint32_t>>& row_ranges) {
+        return Status::NotSupported("get_all_contiguous_pages not implement");
+    }
+
     virtual ordinal_t get_current_ordinal() const = 0;
 
     virtual Status get_row_ranges_by_zone_map(CondColumn* cond_column, CondColumn* delete_condition,
@@ -303,16 +314,24 @@ public:
 
     Status get_row_ranges_by_bloom_filter(CondColumn* cond_column, RowRanges* row_ranges) override;
 
-    ParsedPage* get_current_page() { return &_page; }
+    ParsedPage* get_current_page() { return _cur_page; }
 
     bool is_nullable() { return _reader->is_nullable(); }
 
     bool is_all_dict_encoding() const override { return _is_all_dict_encoding; }
 
+    Status get_all_contiguous_pages(
+            const std::vector<std::pair<uint32_t, uint32_t>>& row_ranges) override;
+
 private:
     void _seek_to_pos_in_page(ParsedPage* page, ordinal_t offset_in_page) const;
     Status _load_next_page(bool* eos);
     Status _read_data_page(const OrdinalPageIndexIterator& iter);
+    Status _read_data_pages(const std::vector<OrdinalPageIndexIterator>& iter, uint32_t start,
+                            uint32_t size);
+    bool _check_and_set_cur_page(ordinal_t ord);
+    Status _prefetch_pages();
+    void _find_cur_page(ordinal_t ord);
 
 private:
     ColumnReader* _reader;
@@ -341,6 +360,15 @@ private:
     bool _is_all_dict_encoding = false;
 
     std::unique_ptr<StringRef[]> _dict_word_info;
+
+    // use for prefetch data pages from s3
+    std::vector<std::vector<OrdinalPageIndexIterator>> _page_ranges;
+    uint32_t _cur_range = 0;
+    uint32_t _cur_page_idx = 0;
+    bool _enable_prefetch = false;
+    std::vector<ParsedPage> _pages;
+    uint32_t _index = 0;
+    ParsedPage* _cur_page = nullptr;
 };
 
 class EmptyFileColumnIterator final : public ColumnIterator {
