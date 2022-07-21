@@ -1,27 +1,14 @@
-#include "meta_server.h"
-#include <memory>
 
 // clang-format off
+#include "meta_server.h"
+
 #include "common/config.h"
 #include "meta_service.h"
 
 #include "brpc/server.h"
-// clang-format on
 
-// brpc
-// #include <brpc/channel.h>
-// #include <brpc/closure_guard.h>
-// #include <brpc/controller.h>
-// #include <brpc/protocol.h>
-// #include <brpc/reloadable_flags.h>
-// #include <brpc/server.h>
-// #include <bthread/bthread.h>
-// #include <bthread/types.h>
-// #include <butil/containers/flat_map.h>
-// #include <butil/containers/flat_map_inl.h>
-// #include <butil/endpoint.h>
-// #include <butil/fd_utility.h>
-// #include <butil/macros.h>
+#include <memory>
+// clang-format on
 
 namespace selectdb {
 
@@ -29,19 +16,27 @@ MetaServer::MetaServer() {
     server_.reset(new brpc::Server());
 }
 
-int MetaServer::init() {
+int MetaServer::start() {
     txn_kv_ = std::dynamic_pointer_cast<TxnKv>(std::make_shared<FdbTxnKv>());
-    return txn_kv_ != nullptr;
-}
+    if (txn_kv_ == nullptr) {
+        LOG(WARNING) << "failed to create txn kv, invalid txnkv type";
+        return 1;
+    }
+    int ret = txn_kv_->init();
+    if (ret != 0) {
+        LOG(WARNING) << "failed to init txnkv";
+        return 1;
+    }
 
-int MetaServer::start(int port) {
     // Add service
-    server_->AddService(new MetaServiceImpl(), brpc::SERVER_OWNS_SERVICE);
+    auto service = new MetaServiceImpl(txn_kv_);
+    server_->AddService(service, brpc::SERVER_OWNS_SERVICE);
     // start service
     brpc::ServerOptions options;
     if (config::brpc_num_threads != -1) {
         options.num_threads = config::brpc_num_threads;
     }
+    int port = selectdb::config::brpc_listen_port;
     if (server_->Start(port, &options) != 0) {
         char buf[64];
         LOG(WARNING) << "failed to start brpc, errno=" << errno

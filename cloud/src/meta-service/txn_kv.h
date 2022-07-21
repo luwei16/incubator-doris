@@ -1,4 +1,6 @@
 
+#pragma once
+
 // clang-format off
 #define FDB_API_VERSION 710
 #include "foundationdb/fdb_c.h"
@@ -170,8 +172,8 @@ class Network;
 
 class FdbTxnKv : public TxnKv {
 public:
-    FdbTxnKv();
-    ~FdbTxnKv() override;
+    FdbTxnKv() = default;
+    ~FdbTxnKv() override = default;
 
     int create_txn(std::unique_ptr<Transaction>* txn) override;
 
@@ -201,8 +203,7 @@ public:
      */
     void stop();
 
-public:
-    ~Network() {}
+    ~Network() = default;
 
 private:
     std::shared_ptr<std::thread> network_thread_;
@@ -323,6 +324,8 @@ public:
      * @return 0 for success otherwise false
      */
     int init();
+
+    int begin() override;
 
     void put(std::string_view key, std::string_view val) override;
 

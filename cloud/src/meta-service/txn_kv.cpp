@@ -2,8 +2,13 @@
 // clang-format off
 #include "txn_kv.h"
 
+#include "common/config.h"
+
+#include "glog/logging.h"
+
 #include <atomic>
 #include <iomanip>
+#include <memory>
 #include <sstream>
 #include <thread>
 #include <cstring>
@@ -15,14 +20,31 @@
 
 namespace selectdb {
 
-FdbTxnKv::FdbTxnKv() {}
-FdbTxnKv::~FdbTxnKv() {}
-
 int FdbTxnKv::init() {
+    network_ = std::make_shared<fdb::Network>(FDBNetworkOption {});
+    int ret = network_->init();
+    if (ret != 0) {
+        LOG(WARNING) << "failed to init network";
+        return ret;
+    }
+    database_ = std::make_shared<fdb::Database>(network_, config::fdb_cluster_file_path,
+                                                FDBDatabaseOption {});
+    ret = database_->init();
+    if (ret != 0) {
+        LOG(WARNING) << "failed to init database";
+        return ret;
+    }
     return 0;
 }
 
 int FdbTxnKv::create_txn(std::unique_ptr<Transaction>* txn) {
+    auto t = new fdb::Transaction(database_, FDBTransactionOption {});
+    txn->reset(t);
+    int ret = t->init();
+    if (ret != 0) {
+        LOG(WARNING) << "failed to init txn";
+        return ret;
+    }
     return 0;
 }
 
@@ -73,12 +95,12 @@ int Network::init() {
                 // Will not return until fdb_stop_network() called
                 auto err = fdb_run_network();
                 if (!err) return;
-                std::cerr << "exit fdb_run_network error: " << fdb_get_error(err) << std::endl;
+                LOG(WARNING) << "exit fdb_run_network error: " << fdb_get_error(err);
             }),
             [](auto* p) {
                 auto err = fdb_stop_network();
                 if (err) {
-                    std::cerr << "fdb_stop_network error: " << fdb_get_error(err) << std::endl;
+                    LOG(WARNING) << "fdb_stop_network error: " << fdb_get_error(err);
                 }
                 p->join();
                 delete p;
@@ -103,7 +125,7 @@ int Database::init() {
     // TODO: process opt
     fdb_error_t err = fdb_create_database(cluster_file_path_.c_str(), &db_);
     if (err) {
-        std::cout << "fdb_create_database error: " << fdb_get_error(err) << std::endl;
+        std::cout << "fdb_create_database error: " << fdb_get_error(err) << " conf: " << cluster_file_path_ << std::endl;
         return 1;
     }
 
@@ -124,6 +146,10 @@ int Transaction::init() {
     return 0;
 }
 
+int Transaction::begin() {
+    return 0;
+}
+
 void Transaction::put(std::string_view key, std::string_view val) {
     fdb_transaction_set(txn_, (uint8_t*)key.data(), key.size(), (uint8_t*)val.data(), val.size());
 }
@@ -136,12 +162,12 @@ int Transaction::get(std::string_view key, std::string* val) {
 
     auto err = fdb_future_block_until_ready(fut);
     if (err) {
-        std::cerr << __LINE__ << " " << fdb_get_error(err) << " key: " << hex(key) << std::endl;
+        LOG(WARNING) << " " << fdb_get_error(err) << " key: " << hex(key);
         return -1;
     }
     err = fdb_future_get_error(fut);
     if (err) {
-        std::cerr << __LINE__ << " " << fdb_get_error(err) << " key: " << hex(key) << std::endl;
+        LOG(WARNING) << " " << fdb_get_error(err) << " key: " << hex(key);
         return -2;
     }
 
@@ -169,12 +195,12 @@ int Transaction::get(std::string_view begin, std::string_view end,
 
     auto err = fdb_future_block_until_ready(fut);
     if (err) {
-        std::cerr << fdb_get_error(err) << std::endl;
+        LOG(WARNING) << fdb_get_error(err);
         return -1;
     }
     err = fdb_future_get_error(fut);
     if (err) {
-        std::cerr << fdb_get_error(err) << std::endl;
+        LOG(WARNING) << fdb_get_error(err);
         return -2;
     }
 
@@ -235,12 +261,12 @@ int Transaction::commit() {
     std::unique_ptr<int, decltype(release_fut)> defer((int*)0x01, std::move(release_fut));
     auto err = fdb_future_block_until_ready(fut);
     if (err) {
-        std::cerr << __LINE__ << " " << fdb_get_error(err) << std::endl;
+        LOG(WARNING) << " " << fdb_get_error(err);
         return -1;
     }
     err = fdb_future_get_error(fut);
     if (err) {
-        std::cerr << __LINE__ << " " << fdb_get_error(err) << std::endl;
+        LOG(WARNING) << " " << fdb_get_error(err);
         return -2;
     }
     return 0;

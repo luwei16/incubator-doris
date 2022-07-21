@@ -443,11 +443,9 @@ install(FILES
     WORLD_READ WORLD_EXECUTE
     DESTINATION ${OUTPUT_DIR}/bin)
 
-# install(FILES
-#     ${BASE_DIR}/../conf/be.conf
-#     ${BASE_DIR}/../conf/odbcinst.ini
-#     ${BASE_DIR}/../conf/asan_suppr.conf
-#     DESTINATION ${OUTPUT_DIR}/conf)
+install(FILES
+    ${BASE_DIR}/conf/fdb.cluster
+    DESTINATION ${OUTPUT_DIR}/conf)
 
 install(FILES
     ${THIRDPARTY_DIR}/lib/ld-linux-x86-64.so.2

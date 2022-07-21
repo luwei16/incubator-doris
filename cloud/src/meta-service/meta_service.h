@@ -2,12 +2,13 @@
 #pragma once
 
 #include "gen_cpp/selectdb_cloud.pb.h"
+#include "txn_kv.h"
 
 namespace selectdb {
 
 class MetaServiceImpl : public selectdb::MetaService {
 public:
-    MetaServiceImpl();
+    MetaServiceImpl(std::shared_ptr<TxnKv> txn_kv);
     ~MetaServiceImpl() override;
 
     void begin_txn(::google::protobuf::RpcController* controller,
@@ -43,6 +44,8 @@ public:
                     const ::selectdb::GetRowsetRequest* request,
                     ::selectdb::GetRowsetResponse* response,
                     ::google::protobuf::Closure* done) override;
+private:
+    std::shared_ptr<TxnKv> txn_kv_;
 };
 
 } // namespace selectdb

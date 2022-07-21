@@ -9,7 +9,7 @@
 int main(int argc, char** argv) {
     selectdb::config::init(nullptr, true); // Use default from config.h
     selectdb::MetaServer meta_server;
-    int ret = meta_server.start(selectdb::config::brpc_listen_port);
+    int ret = meta_server.start();
     if (ret != 0) {
         std::cerr << "failed to start meta server" << std::endl;
     }

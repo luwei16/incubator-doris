@@ -17,16 +17,11 @@ public:
     ~MetaServer() = default;
 
     /**
-     * @return 0 for success otherwise failure
-     */
-    int init();
-
-    /**
      * Starts to listen and server
      *
      * return 0 for success otherwise failure
      */
-    int start(int port);
+    int start();
 
     void join();
 
