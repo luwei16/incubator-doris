@@ -354,6 +354,7 @@ set(DORIS_LINK_LIBS ${DORIS_LINK_LIBS}
     ${DORIS_DEPENDENCIES}
     SelectdbGen
     Common
+    MetaService
     -static-libstdc++
     -static-libgcc
     -lstdc++fs

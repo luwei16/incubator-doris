@@ -115,7 +115,8 @@ void encode_int64(int64_t val, std::string* b) {
 int decode_int64(std::string_view* in, int64_t* val) {
     // static_assert(std::endian::little); // Since c++20
     if (in->size() < 9) return -1; // Insufficient length to decode
-    if (in->at(0) != EncodingTag::NEGATIVE_FIXED_INT_TAG && in->at(0) != EncodingTag::POSITIVE_FIXED_INT_TAG) {
+    if (in->at(0) != EncodingTag::NEGATIVE_FIXED_INT_TAG &&
+        in->at(0) != EncodingTag::POSITIVE_FIXED_INT_TAG) {
         // Invalid tag
         return -2;
     }
@@ -133,6 +134,8 @@ int decode_int64(std::string_view* in, int64_t* val) {
     // the same here
     *val = static_cast<int64_t>(v);
     *val = is_negative ? -*val : *val;
+
+    in->remove_prefix(9);
 
     return 0;
 }

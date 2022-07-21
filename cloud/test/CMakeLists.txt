@@ -12,6 +12,10 @@ add_executable(codec_test
    codec_test.cpp
 )
 
+add_executable(keys_test
+   keys_test.cpp
+)
+
 message("test dependencies: ${TEST_LINK_LIBS}")
 target_link_libraries(sync_point_test
     ${TEST_LINK_LIBS}
@@ -19,6 +23,10 @@ target_link_libraries(sync_point_test
 
 target_link_libraries(codec_test
     ${TEST_LINK_LIBS}
+)
+
+target_link_libraries(keys_test
+    ${TEST_LINK_LIBS} 
 )
 
 # vim: et tw=120 ts=4 sw=4 cc=80:
