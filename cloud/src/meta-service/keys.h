@@ -20,6 +20,8 @@
 // 0x01 "meta" ${instance_id} "rowset" ${tablet_id} ${version} ${rowset_id} -> RowsetMetaPB
 // 0x01 "meta" ${instance_id} "rowset_tmp" ${txn_id} ${rowset_id} -> RowsetMetaPB
 // 0x01 "meta" ${instance_id} "tablet" ${table_id} ${tablet_id} -> TabletMetaPB
+// 0x01 "meta" ${instance_id} "tablet_table" ${tablet_id} -> ${table_id}
+// 0x01 "meta" ${instance_id} "tablet_tmp" ${table_id} ${tablet_id} -> TabletMetaPB
 // 
 // 0x01 "trash" ${instacne_id} "table" -> TableTrashPB
 // 
@@ -47,13 +49,16 @@ using TxnRunningKeyInfo    = std::tuple<std::string,  int64_t, int64_t>;
 using VersionKeyInfo       = std::tuple<std::string,  int64_t, int64_t,  int64_t>;
 
 //                                     0:instance_id  1:tablet_id  2:version  3:rowset_id
-using MetaRowsetKeyInfo    = std::tuple<std::string,  int64_t,     int64_t,   int64_t>;
+using MetaRowsetKeyInfo    = std::tuple<std::string,  int64_t,     int64_t,   std::string>;
 
 //                                     0:instance_id  1:txn_id  3:rowset_id
-using MetaRowsetTmpKeyInfo = std::tuple<std::string,  int64_t,  int64_t>;
+using MetaRowsetTmpKeyInfo = std::tuple<std::string,  int64_t,  std::string>;
 
 //                                     0:instance_id  1:table_id  2:tablet_id
 using MetaTabletKeyInfo    = std::tuple<std::string,  int64_t,    int64_t>;
+
+//                                     0:instance_id  1:tablet_id
+using MetaTabletTblKeyInfo = std::tuple<std::string,  int64_t>;
 
 //                                     0:instance_id  1:table_id  2:tablet_id
 using MetaTabletTmpKeyInfo = std::tuple<std::string,  int64_t,    int64_t>;
@@ -69,6 +74,7 @@ void version_key(const VersionKeyInfo& in, std::string* out);
 void meta_rowset_key(const MetaRowsetKeyInfo& in, std::string* out);
 void meta_rowset_tmp_key(const MetaRowsetTmpKeyInfo& in, std::string* out);
 void meta_tablet_key(const MetaTabletKeyInfo& in, std::string* out);
+void meta_tablet_table_key(const MetaTabletTblKeyInfo& in, std::string* out);
 void meta_tablet_tmp_key(const MetaTabletTmpKeyInfo& in, std::string* out);
 
 // TODO: add a family of decoding functions if needed

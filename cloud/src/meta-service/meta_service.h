@@ -55,6 +55,7 @@ public:
                     const ::selectdb::GetRowsetRequest* request,
                     ::selectdb::GetRowsetResponse* response,
                     ::google::protobuf::Closure* done) override;
+
 private:
     std::shared_ptr<TxnKv> txn_kv_;
 };

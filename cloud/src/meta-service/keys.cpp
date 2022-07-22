@@ -25,6 +25,8 @@ namespace selectdb {
 // 0x01 "meta" ${instance_id} "rowset" ${tablet_id} ${version} ${rowset_id} -> RowsetMetaPB
 // 0x01 "meta" ${instance_id} "rowset_tmp" ${txn_id} ${rowset_id} -> RowsetMetaPB
 // 0x01 "meta" ${instance_id} "tablet" ${table_id} ${tablet_id} -> TabletMetaPB
+// 0x01 "meta" ${instance_id} "tablet_table" ${tablet_id} -> ${table_id}
+// 0x01 "meta" ${instance_id} "tablet_tmp" ${table_id} ${tablet_id} -> TabletMetaPB
 // 
 // 0x01 "trash" ${instacne_id} "table" -> TableTrashPB
 // 
@@ -45,6 +47,7 @@ namespace selectdb {
 [[maybe_unused]] static const char* META_KEY_INFIX_ROWSET     = "rowset";
 [[maybe_unused]] static const char* META_KEY_INFIX_ROWSET_TMP = "rowset_tmp";
 [[maybe_unused]] static const char* META_KEY_INFIX_TABLET     = "tablet";
+[[maybe_unused]] static const char* META_KEY_INFIX_TABLET_TBL = "tablet_table";
 [[maybe_unused]] static const char* META_KEY_INFIX_TABLET_TMP = "tablet_tmp";
 
 [[maybe_unused]] static const char* TRASH_KEY_INFIX_TRASH   = "trash";
@@ -63,6 +66,7 @@ static int encode_prefix(const T& t, std::string* key) {
     } else if constexpr (std::is_same_v<T, MetaRowsetKeyInfo>
                       || std::is_same_v<T, MetaRowsetTmpKeyInfo>
                       || std::is_same_v<T, MetaTabletKeyInfo>
+                      || std::is_same_v<T, MetaTabletTblKeyInfo>
                       || std::is_same_v<T, MetaTabletTmpKeyInfo>) {
         encode_bytes(META_KEY_PREFIX, key);
     } else if constexpr (std::is_same_v<T, VersionKeyInfo>) {
@@ -127,12 +131,14 @@ void meta_rowset_key(const MetaRowsetKeyInfo& in, std::string* out) {
     encode_bytes(META_KEY_INFIX_ROWSET, out); // "rowset"
     encode_int64(std::get<1>(in), out);       // tablet_id
     encode_int64(std::get<2>(in), out);       // version
-    encode_int64(std::get<3>(in), out);       // rowset_id
+    encode_bytes(std::get<3>(in), out);       // rowset_id
 }
 
 void meta_rowset_tmp_key(const MetaRowsetTmpKeyInfo& in, std::string* out) {
-    // TBD
-    (void)META_KEY_INFIX_ROWSET_TMP;
+    assert(encode_prefix(in, out) == 0);          // 0x01 "meta" ${instance_id}
+    encode_bytes(META_KEY_INFIX_ROWSET_TMP, out); // "rowset_tmp"
+    encode_int64(std::get<1>(in), out);           // txn_id
+    encode_bytes(std::get<2>(in), out);           // rowset_id
 }
 
 void meta_tablet_key(const MetaTabletKeyInfo& in, std::string* out) {
@@ -142,9 +148,17 @@ void meta_tablet_key(const MetaTabletKeyInfo& in, std::string* out) {
     encode_int64(std::get<2>(in), out);       // tablet_id
 }
 
+void meta_tablet_table_key(const MetaTabletTblKeyInfo& in, std::string* out) {
+    assert(encode_prefix(in, out) == 0);          // 0x01 "meta" ${instance_id}
+    encode_bytes(META_KEY_INFIX_TABLET_TBL, out); // "tablet"
+    encode_int64(std::get<1>(in), out);           // tablet_id
+}
+
 void meta_tablet_tmp_key(const MetaTabletTmpKeyInfo& in, std::string* out) {
-    // TBD
-    (void)META_KEY_INFIX_TABLET_TMP;
+    assert(encode_prefix(in, out) == 0);          // 0x01 "meta" ${instance_id}
+    encode_bytes(META_KEY_INFIX_TABLET_TMP, out); // "tablet"
+    encode_int64(std::get<1>(in), out);           // table_id
+    encode_int64(std::get<2>(in), out);           // tablet_id
 }
 
 //==============================================================================

@@ -2,7 +2,7 @@
 // clang-format off
 #include "meta-service/keys.h"
 
-#include <gtest/gtest.h>
+#include "gtest/gtest.h"
 
 #include <cstring>
 #include <iostream>
@@ -46,6 +46,8 @@ int decode_bytes(std::string_view* in, std::string* out);
 // 0x01 "meta" ${instance_id} "rowset" ${tablet_id} ${version} ${rowset_id} -> RowsetMetaPB
 // 0x01 "meta" ${instance_id} "rowset_tmp" ${txn_id} ${rowset_id} -> RowsetMetaPB
 // 0x01 "meta" ${instance_id} "tablet" ${table_id} ${tablet_id} -> TabletMetaPB
+// 0x01 "meta" ${instance_id} "tablet_table" ${tablet_id} -> ${table_id}
+// 0x01 "meta" ${instance_id} "tablet_tmp" ${table_id} ${tablet_id} -> TabletMetaPB
 // 
 // 0x01 "trash" ${instacne_id} "table" -> TableTrashPB
 // 
@@ -56,11 +58,12 @@ TEST(KeysTest, KeysTest) {
     using namespace selectdb;
     std::string instance_id = "instance_id_deadbeef";
 
+    // rowset meta key
     // 0x01 "meta" ${instance_id} "rowset" ${tablet_id} ${version} ${rowset_id}
     {
         int64_t tablet_id = 10086;
         int64_t version = 100;
-        int64_t rowset_id = 10010;
+        std::string rowset_id = "10010";
         MetaRowsetKeyInfo rowset_key {instance_id, tablet_id, version, rowset_id};
         std::string encoded_rowset_key0;
         meta_rowset_key(rowset_key, &encoded_rowset_key0);
@@ -69,7 +72,7 @@ TEST(KeysTest, KeysTest) {
         std::string dec_instance_id;
         int64_t dec_tablet_id = 0;
         int64_t dec_version = 0;
-        int64_t dec_rowset_id = 0;
+        std::string dec_rowset_id;
 
         std::string_view key_sv(encoded_rowset_key0);
         std::string dec_meta_prefix;
@@ -80,7 +83,7 @@ TEST(KeysTest, KeysTest) {
         ASSERT_EQ(decode_bytes(&key_sv, &dec_rowset_prefix), 0);
         ASSERT_EQ(decode_int64(&key_sv, &dec_tablet_id), 0) << hex(key_sv);
         ASSERT_EQ(decode_int64(&key_sv, &dec_version), 0);
-        ASSERT_EQ(decode_int64(&key_sv, &dec_rowset_id), 0);
+        ASSERT_EQ(decode_bytes(&key_sv, &dec_rowset_id), 0);
 
         EXPECT_EQ(instance_id, dec_instance_id);
         EXPECT_EQ(tablet_id, dec_tablet_id);
@@ -95,7 +98,109 @@ TEST(KeysTest, KeysTest) {
         ASSERT_GT(encoded_rowset_key1, encoded_rowset_key0);
     }
 
-    // MetaTabletKeyInfo tablet_key;
+    // tablet meta key
+    // 0x01 "meta" ${instance_id} "tablet" ${table_id} ${tablet_id} -> TabletMetaPB
+    {
+        int64_t table_id = 10010;
+        int64_t tablet_id = 10086;
+        MetaTabletKeyInfo tablet_key {instance_id, table_id, tablet_id};
+        std::string encoded_rowset_key0;
+        meta_tablet_key(tablet_key, &encoded_rowset_key0);
+        std::cout << hex(encoded_rowset_key0) << std::endl;
+
+        std::string dec_instance_id;
+        int64_t dec_table_id = 0;
+        int64_t dec_tablet_id = 0;
+
+        std::string_view key_sv(encoded_rowset_key0);
+        std::string dec_meta_prefix;
+        std::string dec_tablet_prefix;
+        key_sv.remove_prefix(1); // Remove CLOUD_KEY_SPACE01
+        ASSERT_EQ(decode_bytes(&key_sv, &dec_meta_prefix), 0);
+        ASSERT_EQ(decode_bytes(&key_sv, &dec_instance_id), 0);
+        ASSERT_EQ(decode_bytes(&key_sv, &dec_tablet_prefix), 0);
+        ASSERT_EQ(decode_int64(&key_sv, &dec_table_id), 0) << hex(key_sv);
+        ASSERT_EQ(decode_int64(&key_sv, &dec_tablet_id), 0);
+
+        EXPECT_EQ(instance_id, dec_instance_id);
+        EXPECT_EQ(table_id, dec_table_id);
+        EXPECT_EQ(tablet_id, dec_tablet_id);
+
+        std::get<2>(tablet_key) = tablet_id + 1;
+        std::string encoded_rowset_key1;
+        meta_tablet_key(tablet_key, &encoded_rowset_key1);
+        std::cout << hex(encoded_rowset_key1) << std::endl;
+
+        ASSERT_GT(encoded_rowset_key1, encoded_rowset_key0);
+    }
+
+    // tablet table key
+    // 0x01 "meta" ${instance_id} "tablet_table" ${tablet_id} -> ${table_id}
+    {
+        int64_t tablet_id = 10086;
+        MetaTabletTblKeyInfo tablet_tbl_key {instance_id, tablet_id};
+        std::string encoded_rowset_key0;
+        meta_tablet_table_key(tablet_tbl_key, &encoded_rowset_key0);
+        std::cout << hex(encoded_rowset_key0) << std::endl;
+
+        std::string dec_instance_id;
+        int64_t dec_tablet_id = 0;
+
+        std::string_view key_sv(encoded_rowset_key0);
+        std::string dec_meta_prefix;
+        std::string dec_tablet_prefix;
+        key_sv.remove_prefix(1); // Remove CLOUD_KEY_SPACE01
+        ASSERT_EQ(decode_bytes(&key_sv, &dec_meta_prefix), 0);
+        ASSERT_EQ(decode_bytes(&key_sv, &dec_instance_id), 0);
+        ASSERT_EQ(decode_bytes(&key_sv, &dec_tablet_prefix), 0);
+        ASSERT_EQ(decode_int64(&key_sv, &dec_tablet_id), 0);
+
+        EXPECT_EQ(instance_id, dec_instance_id);
+        EXPECT_EQ(tablet_id, dec_tablet_id);
+
+        std::get<1>(tablet_tbl_key) = tablet_id + 1;
+        std::string encoded_rowset_key1;
+        meta_tablet_table_key(tablet_tbl_key, &encoded_rowset_key1);
+        std::cout << hex(encoded_rowset_key1) << std::endl;
+
+        ASSERT_GT(encoded_rowset_key1, encoded_rowset_key0);
+    }
+
+    // tablet tmp meta key
+    // 0x01 "meta" ${instance_id} "tablet_tmp" ${table_id} ${tablet_id} -> TabletMetaPB
+    {
+        int64_t table_id = 10010;
+        int64_t tablet_id = 10086;
+        MetaTabletTmpKeyInfo tablet_key {instance_id, table_id, tablet_id};
+        std::string encoded_rowset_key0;
+        meta_tablet_key(tablet_key, &encoded_rowset_key0);
+        std::cout << hex(encoded_rowset_key0) << std::endl;
+
+        std::string dec_instance_id;
+        int64_t dec_table_id = 0;
+        int64_t dec_tablet_id = 0;
+
+        std::string_view key_sv(encoded_rowset_key0);
+        std::string dec_meta_prefix;
+        std::string dec_tablet_prefix;
+        key_sv.remove_prefix(1); // Remove CLOUD_KEY_SPACE01
+        ASSERT_EQ(decode_bytes(&key_sv, &dec_meta_prefix), 0);
+        ASSERT_EQ(decode_bytes(&key_sv, &dec_instance_id), 0);
+        ASSERT_EQ(decode_bytes(&key_sv, &dec_tablet_prefix), 0);
+        ASSERT_EQ(decode_int64(&key_sv, &dec_table_id), 0) << hex(key_sv);
+        ASSERT_EQ(decode_int64(&key_sv, &dec_tablet_id), 0);
+
+        EXPECT_EQ(instance_id, dec_instance_id);
+        EXPECT_EQ(table_id, dec_table_id);
+        EXPECT_EQ(tablet_id, dec_tablet_id);
+
+        std::get<2>(tablet_key) = tablet_id + 1;
+        std::string encoded_rowset_key1;
+        meta_tablet_key(tablet_key, &encoded_rowset_key1);
+        std::cout << hex(encoded_rowset_key1) << std::endl;
+
+        ASSERT_GT(encoded_rowset_key1, encoded_rowset_key0);
+    }
 
     // 0x01 "version" ${instance_id} "version_id" ${db_id} ${tbl_id} ${partition_id} -> ${version}
     {
