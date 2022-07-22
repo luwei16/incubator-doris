@@ -16,6 +16,10 @@ add_executable(keys_test
    keys_test.cpp
 )
 
+add_executable(doris_txn_test
+   doris_txn_test.cpp
+)
+
 message("test dependencies: ${TEST_LINK_LIBS}")
 target_link_libraries(sync_point_test
     ${TEST_LINK_LIBS}
@@ -26,6 +30,10 @@ target_link_libraries(codec_test
 )
 
 target_link_libraries(keys_test
+    ${TEST_LINK_LIBS} 
+)
+
+target_link_libraries(doris_txn_test
     ${TEST_LINK_LIBS} 
 )
 

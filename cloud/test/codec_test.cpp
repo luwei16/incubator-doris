@@ -152,14 +152,7 @@ TEST(CodecTest, StringCodecTest) {
     }
 }
 
-// FIXME: remove duplicated code
-static std::string hex(std::string_view str) {
-    std::stringstream ss;
-    for (auto& i : str) {
-        ss << std::hex << std::setw(2) << std::setfill('0') << ((int16_t)i & 0xff);
-    }
-    return ss.str();
-}
+extern std::string hex(std::string_view);
 
 TEST(CodecTest, Int64CodecTest) {
     int ret = 0;

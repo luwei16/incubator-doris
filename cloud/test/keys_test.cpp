@@ -14,14 +14,7 @@ int main(int argc, char** argv) {
     return RUN_ALL_TESTS();
 }
 
-// FIXME: remove duplicated code
-static std::string hex(std::string_view str) {
-    std::stringstream ss;
-    for (auto& i : str) {
-        ss << std::hex << std::setw(2) << std::setfill('0') << ((int16_t)i & 0xff);
-    }
-    return ss.str();
-}
+extern std::string hex(std::string_view);
 
 // extern
 namespace selectdb {
@@ -284,13 +277,15 @@ TEST(KeysTest, TxnKeysTest) {
     // 0x01 "txn" ${instance_id} "txn_info" ${db_id} ${version_timestamp} -> TxnInfoPB
     {
         int64_t db_id = 12345678;
-        TxnInfoKeyInfo info_key {instance_id, db_id};
+        int64_t txn_id = 10086;
+        TxnInfoKeyInfo info_key {instance_id, db_id, txn_id};
         std::string encoded_txn_info_key0;
         txn_info_key(info_key, &encoded_txn_info_key0);
         std::cout << hex(encoded_txn_info_key0) << std::endl;
 
         std::string dec_instance_id;
         int64_t dec_db_id = 0;
+        int64_t dec_txn_id = 0;
 
         std::string_view key_sv(encoded_txn_info_key0);
         std::string dec_txn_prefix;
@@ -300,9 +295,11 @@ TEST(KeysTest, TxnKeysTest) {
         ASSERT_EQ(decode_bytes(&key_sv, &dec_instance_id), 0);
         ASSERT_EQ(decode_bytes(&key_sv, &dec_txn_infix), 0);
         ASSERT_EQ(decode_int64(&key_sv, &dec_db_id), 0);
+        ASSERT_EQ(decode_int64(&key_sv, &dec_txn_id), 0);
 
         EXPECT_EQ(instance_id, dec_instance_id);
         EXPECT_EQ(db_id, dec_db_id);
+        EXPECT_EQ(txn_id, dec_txn_id);
 
         std::get<1>(info_key) = db_id + 1;
         std::string encoded_txn_info_key1;
@@ -337,7 +334,7 @@ TEST(KeysTest, TxnKeysTest) {
 
         std::get<1>(db_tbl_key) = txn_id + 1;
         std::string encoded_txn_db_tbl_key1;
-        txn_info_key(db_tbl_key, &encoded_txn_db_tbl_key1);
+        txn_db_tbl_key(db_tbl_key, &encoded_txn_db_tbl_key1);
         std::cout << hex(encoded_txn_db_tbl_key1) << std::endl;
 
         ASSERT_GT(encoded_txn_db_tbl_key1, encoded_txn_db_tbl_key0);

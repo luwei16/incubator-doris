@@ -48,6 +48,10 @@ message ObjectStoreInfoPB {
     optional string endpoint = 5;
 }
 
+//==============================================================================
+// Transaction persistence
+//==============================================================================
+
 // Wire format for UniqueId
 message UniqueIdPB {
   optional int64 hi = 1;
@@ -60,19 +64,19 @@ enum TxnSourceTypePB {
 }
 
 enum LoadJobSourceTypePB {
-    FRONTEND = 1;        
-    BACKEND_STREAMING = 2;    // streaming load use this type
-    INSERT_STREAMING = 3;    // insert stmt (streaming type), update stmt use this type
-    ROUTINE_LOAD_TASK = 4;    // routine load task use this type
-    BATCH_LOAD_JOB = 5;    // load job v2 for broker load
+    FRONTEND          = 1;
+    BACKEND_STREAMING = 2; // streaming load use this type
+    INSERT_STREAMING  = 3; // insert stmt (streaming type), update stmt use this type
+    ROUTINE_LOAD_TASK = 4; // routine load task use this type
+    BATCH_LOAD_JOB    = 5; // load job v2 for broker load
 }
 
 enum TransactionStatusPB {
-    UNKNOWN = 0;
-    PREPARE = 1;
-    COMMITTED = 2;
-    VISIBLE = 3;
-    ABORTED = 4;
+    UNKNOWN      = 0;
+    PREPARED     = 1;
+    COMMITTED    = 2;
+    VISIBLE      = 3;
+    ABORTED      = 4;
     PRECOMMITTED = 5;
 }
 
@@ -81,9 +85,22 @@ message TxnCoordinatorPB {
     optional string ip = 2;
 }
 
+// For storing label->txn_ids
+message TxnHistoryPB {
+    optional string label = 1;
+    optional int64 db_id = 2;
+    repeated int64 txn_ids = 3;
+}
+
+// For storing running info
+message TxnRunningInfoPB {
+    optional int64 db_id = 1;
+    repeated int64 table_ids = 2;
+}
+
 message TxnInfoPB {
     optional int64 db_id = 1;
-    repeated int64 table_id_list = 2;
+    repeated int64 table_ids = 2;
     optional int64 transaction_id = 3;
     optional string label = 4;
     optional UniqueIdPB request_unique_id = 5;
@@ -100,21 +117,18 @@ message TxnInfoPB {
     // TODO: There are more fields TBD
 }
 
+//==============================================================================
+// Rpc structures
+//==============================================================================
+
 message BeginTxnRequest {
     optional string cloud_unique_id = 1; // For auth
-    optional int64 db_id = 2;
-    repeated int64 table_id_list = 3;
-    optional string label = 4;
-    optional UniqueIdPB request_unique_id = 5;
-    optional TxnCoordinatorPB coordinator = 6;
-    optional LoadJobSourceTypePB load_job_source_type = 7;
-    optional int64 timeout_second = 8;
+    optional TxnInfoPB txn_info = 2;
 }
 
 message BeginTxnResponse {
     optional MetaServiceResponseStatus status = 1;
-    optional int64 db_id = 2;
-    optional int64 txn_id = 3;
+    optional int64 txn_id = 2;
     // TODO: There may be more fields TBD
 }
 
@@ -126,8 +140,7 @@ message PrecommitTxnRequest {
 
 message PrecommitTxnResponse {
     optional MetaServiceResponseStatus status = 1;
-    optional int64 db_id = 2;
-    optional int64 txn_id = 3;
+    optional int64 txn_id = 2;
     // TODO: There may be more fields TBD
 }
 
@@ -140,8 +153,6 @@ message CommitTxnRequest {
 
 message CommitTxnResponse {
     optional MetaServiceResponseStatus status = 1;
-    optional int64 db_id = 2;
-    optional int64 txn_id = 3;
     // TODO: There may be more fields TBD
 }
 

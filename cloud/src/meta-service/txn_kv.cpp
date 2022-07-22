@@ -14,6 +14,8 @@
 #include <cstring>
 // clang-format on
 
+extern std::string hex(std::string_view str);
+
 // =============================================================================
 //  FoundationDB implementation of TxnKv
 // =============================================================================
@@ -51,14 +53,6 @@ int FdbTxnKv::create_txn(std::unique_ptr<Transaction>* txn) {
 } // namespace selectdb
 
 namespace selectdb::fdb {
-
-static std::string hex(std::string_view str) {
-    std::stringstream ss;
-    for (auto& i : str) {
-        ss << std::hex << std::setw(2) << std::setfill('0') << ((int16_t)i & 0xff);
-    }
-    return ss.str();
-}
 
 // =============================================================================
 // Impl of Network
@@ -125,7 +119,8 @@ int Database::init() {
     // TODO: process opt
     fdb_error_t err = fdb_create_database(cluster_file_path_.c_str(), &db_);
     if (err) {
-        std::cout << "fdb_create_database error: " << fdb_get_error(err) << " conf: " << cluster_file_path_ << std::endl;
+        std::cout << "fdb_create_database error: " << fdb_get_error(err)
+                  << " conf: " << cluster_file_path_ << std::endl;
         return 1;
     }
 

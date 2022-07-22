@@ -95,6 +95,7 @@ void txn_info_key(const TxnInfoKeyInfo& in, std::string* out) {
     assert(encode_prefix(in, out) == 0);   // 0x01 "txn" ${instance_id}
     encode_bytes(TXN_KEY_INFIX_INFO, out); // "txn_info"
     encode_int64(std::get<1>(in), out);    // db_id
+    encode_int64(std::get<2>(in), out);    // txn_id
 }
 
 void txn_db_tbl_key(const TxnDbTblKeyInfo& in, std::string* out) {

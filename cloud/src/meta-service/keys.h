@@ -10,10 +10,10 @@
 //
 // 0x01 "instance" ${instance_id} -> InstanceInfoPB
 // 
-// 0x01 "txn" ${instance_id} "txn_index" ${db_id} ${label} -> set<${version_timestamp}>
-// 0x01 "txn" ${instance_id} "txn_info" ${db_id} ${version_timestamp} -> TxnInfoPB
-// 0x01 "txn" ${instance_id} "txn_db_tbl" ${version_timestamp} -> ${db_id} ${tbl_id}
-// 0x01 "txn" ${instance_id} "txn_running" ${db_id} ${version_timestamp} -> ${table_id_list} // creaet at begin, delete at commit
+// 0x01 "txn" ${instance_id} "txn_index" ${db_id} ${label} -> set<${version_timestamp}> // version_timestamp is auto generated
+// 0x01 "txn" ${instance_id} "txn_info" ${db_id} ${txn_id} -> TxnInfoPB           // txn_id is converted fomr version_timestamp
+// 0x01 "txn" ${instance_id} "txn_db_tbl" ${txn_id} -> ${db_id} ${tbl_id}
+// 0x01 "txn" ${instance_id} "txn_running" ${db_id} ${txn_id} -> ${table_id_list} // creaet at begin, delete at commit
 //
 // 0x01 "version" ${instance_id} "version_id" ${db_id} ${tbl_id} ${partition_id} -> ${version}
 // 
@@ -36,8 +36,8 @@ static const constexpr unsigned char CLOUD_KEY_SPACE01 = 0x01;
 //                                     0:instance_id  1:db_id  2:label
 using TxnIndexKeyInfo      = std::tuple<std::string,  int64_t, std::string>;
 
-//                                     0:instance_id  1:db_id
-using TxnInfoKeyInfo       = std::tuple<std::string,  int64_t>;
+//                                     0:instance_id  1:db_id  2:txn_id
+using TxnInfoKeyInfo       = std::tuple<std::string,  int64_t, int64_t>;
 
 //                                     0:instance_id  1:txn_id
 using TxnDbTblKeyInfo      = std::tuple<std::string,  int64_t>;
