@@ -137,4 +137,141 @@ TEST(KeysTest, KeysTest) {
     }
 }
 
+TEST(KeysTest, TxnKeysTest) {
+    using namespace selectdb;
+    std::string instance_id = "instance_id_deadbeef";
+
+    // 0x01 "txn" ${instance_id} "txn_index" ${db_id} ${label} -> set<${version_timestamp}>
+    {
+        int64_t db_id = 12345678;
+        std::string label = "label1xxx";
+        TxnIndexKeyInfo index_key {instance_id, db_id, label};
+        std::string encoded_txn_index_key0;
+        txn_index_key(index_key, &encoded_txn_index_key0);
+        std::cout << hex(encoded_txn_index_key0) << std::endl;
+
+        std::string dec_instance_id;
+        int64_t dec_db_id = 0;
+        std::string dec_label;
+
+        std::string_view key_sv(encoded_txn_index_key0);
+        std::string dec_txn_prefix;
+        std::string dec_txn_infix;
+        key_sv.remove_prefix(1); // Remove CLOUD_KEY_SPACE01
+        ASSERT_EQ(decode_bytes(&key_sv, &dec_txn_prefix), 0);
+        ASSERT_EQ(decode_bytes(&key_sv, &dec_instance_id), 0);
+        ASSERT_EQ(decode_bytes(&key_sv, &dec_txn_infix), 0);
+        ASSERT_EQ(decode_int64(&key_sv, &dec_db_id), 0);
+        ASSERT_EQ(decode_bytes(&key_sv, &dec_label), 0);
+
+        EXPECT_EQ(instance_id, dec_instance_id);
+        EXPECT_EQ(db_id, dec_db_id);
+        EXPECT_EQ(label, dec_label);
+
+        std::get<1>(index_key) = db_id + 1;
+        std::string encoded_txn_index_key1;
+        txn_index_key(index_key, &encoded_txn_index_key1);
+        std::cout << hex(encoded_txn_index_key1) << std::endl;
+
+        ASSERT_GT(encoded_txn_index_key1, encoded_txn_index_key0);
+    }
+
+    // 0x01 "txn" ${instance_id} "txn_info" ${db_id} ${version_timestamp} -> TxnInfoPB
+    {
+        int64_t db_id = 12345678;
+        TxnInfoKeyInfo info_key {instance_id, db_id};
+        std::string encoded_txn_info_key0;
+        txn_info_key(info_key, &encoded_txn_info_key0);
+        std::cout << hex(encoded_txn_info_key0) << std::endl;
+
+        std::string dec_instance_id;
+        int64_t dec_db_id = 0;
+
+        std::string_view key_sv(encoded_txn_info_key0);
+        std::string dec_txn_prefix;
+        std::string dec_txn_infix;
+        key_sv.remove_prefix(1); // Remove CLOUD_KEY_SPACE01
+        ASSERT_EQ(decode_bytes(&key_sv, &dec_txn_prefix), 0);
+        ASSERT_EQ(decode_bytes(&key_sv, &dec_instance_id), 0);
+        ASSERT_EQ(decode_bytes(&key_sv, &dec_txn_infix), 0);
+        ASSERT_EQ(decode_int64(&key_sv, &dec_db_id), 0);
+
+        EXPECT_EQ(instance_id, dec_instance_id);
+        EXPECT_EQ(db_id, dec_db_id);
+
+        std::get<1>(info_key) = db_id + 1;
+        std::string encoded_txn_info_key1;
+        txn_info_key(info_key, &encoded_txn_info_key1);
+        std::cout << hex(encoded_txn_info_key1) << std::endl;
+
+        ASSERT_GT(encoded_txn_info_key1, encoded_txn_info_key0);
+    }
+
+    // 0x01 "txn" ${instance_id} "txn_db_tbl" ${version_timestamp} -> ${db_id} ${tbl_id}
+    {
+        int64_t txn_id = 12343212453;
+        TxnDbTblKeyInfo db_tbl_key {instance_id, txn_id};
+        std::string encoded_txn_db_tbl_key0;
+        txn_db_tbl_key(db_tbl_key, &encoded_txn_db_tbl_key0);
+        std::cout << hex(encoded_txn_db_tbl_key0) << std::endl;
+
+        std::string dec_instance_id;
+        int64_t dec_txn_id = 0;
+
+        std::string_view key_sv(encoded_txn_db_tbl_key0);
+        std::string dec_txn_prefix;
+        std::string dec_txn_infix;
+        key_sv.remove_prefix(1); // Remove CLOUD_KEY_SPACE01
+        ASSERT_EQ(decode_bytes(&key_sv, &dec_txn_prefix), 0);
+        ASSERT_EQ(decode_bytes(&key_sv, &dec_instance_id), 0);
+        ASSERT_EQ(decode_bytes(&key_sv, &dec_txn_infix), 0);
+        ASSERT_EQ(decode_int64(&key_sv, &dec_txn_id), 0);
+
+        EXPECT_EQ(instance_id, dec_instance_id);
+        EXPECT_EQ(txn_id, dec_txn_id);
+
+        std::get<1>(db_tbl_key) = txn_id + 1;
+        std::string encoded_txn_db_tbl_key1;
+        txn_info_key(db_tbl_key, &encoded_txn_db_tbl_key1);
+        std::cout << hex(encoded_txn_db_tbl_key1) << std::endl;
+
+        ASSERT_GT(encoded_txn_db_tbl_key1, encoded_txn_db_tbl_key0);
+    }
+
+    // 0x01 "txn" ${instance_id} "txn_running" ${db_id} ${version_timestamp} -> ${table_id_list}
+    {
+        int64_t db_id = 98712345;
+        int64_t txn_id = 12343212453;
+        TxnRunningKeyInfo running_key {instance_id, db_id, txn_id};
+        std::string encoded_txn_running_key0;
+        txn_running_key(running_key, &encoded_txn_running_key0);
+        std::cout << hex(encoded_txn_running_key0) << std::endl;
+
+        std::string dec_instance_id;
+        int64_t dec_db_id = 0;
+        int64_t dec_txn_id = 0;
+
+        std::string_view key_sv(encoded_txn_running_key0);
+        std::string dec_txn_prefix;
+        std::string dec_txn_infix;
+        key_sv.remove_prefix(1); // Remove CLOUD_KEY_SPACE01
+        ASSERT_EQ(decode_bytes(&key_sv, &dec_txn_prefix), 0);
+        ASSERT_EQ(decode_bytes(&key_sv, &dec_instance_id), 0);
+        ASSERT_EQ(decode_bytes(&key_sv, &dec_txn_infix), 0);
+        ASSERT_EQ(decode_int64(&key_sv, &dec_db_id), 0);
+        ASSERT_EQ(decode_int64(&key_sv, &dec_txn_id), 0);
+
+        EXPECT_EQ(instance_id, dec_instance_id);
+        EXPECT_EQ(db_id, dec_db_id);
+        EXPECT_EQ(txn_id, dec_txn_id);
+
+        std::get<2>(running_key) = txn_id + 1;
+        std::string encoded_txn_running_key1;
+        txn_running_key(running_key, &encoded_txn_running_key1);
+        std::cout << hex(encoded_txn_running_key1) << std::endl;
+
+        ASSERT_GT(encoded_txn_running_key1, encoded_txn_running_key0);
+    }
+}
+
 // vim: et tw=100 ts=4 sw=4 cc=80:

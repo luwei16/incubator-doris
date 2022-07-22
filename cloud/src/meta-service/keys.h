@@ -10,7 +10,7 @@
 //
 // 0x01 "instance" ${instance_id} -> InstanceInfoPB
 // 
-// 0x01 "txn" ${instance_id} "txn_index" ${db_id} ${label} -> TxnIndexPB ${version_timestamp}
+// 0x01 "txn" ${instance_id} "txn_index" ${db_id} ${label} -> set<${version_timestamp}>
 // 0x01 "txn" ${instance_id} "txn_info" ${db_id} ${version_timestamp} -> TxnInfoPB
 // 0x01 "txn" ${instance_id} "txn_db_tbl" ${version_timestamp} -> ${db_id} ${tbl_id}
 // 0x01 "txn" ${instance_id} "txn_running" ${db_id} ${version_timestamp} -> ${table_id_list} // creaet at begin, delete at commit
@@ -37,11 +37,11 @@ using TxnIndexKeyInfo      = std::tuple<std::string,  int64_t, std::string>;
 //                                     0:instance_id  1:db_id
 using TxnInfoKeyInfo       = std::tuple<std::string,  int64_t>;
 
-//                                     0:instance_id
-using TxnDbTblKeyInfo      = std::tuple<std::string>;
+//                                     0:instance_id  1:txn_id
+using TxnDbTblKeyInfo      = std::tuple<std::string,  int64_t>;
 
-//                                     0:instance_id  1:db_id
-using TxnRunningKeyInfo    = std::tuple<std::string,  int64_t>;
+//                                     0:instance_id  1:db_id  2:txn_id
+using TxnRunningKeyInfo    = std::tuple<std::string,  int64_t, int64_t>;
 
 //                                     0:instance_id  1:db_id  2:tbl_id  3:partition_id
 using VersionKeyInfo       = std::tuple<std::string,  int64_t, int64_t,  int64_t>;

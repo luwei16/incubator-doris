@@ -32,7 +32,7 @@ void MetaServiceImpl::begin_txn(::google::protobuf::RpcController* controller,
 
     LOG(INFO) << "received request get_version [log_id=" << cntl->log_id() << "] from "
               << cntl->remote_side() << " to " << cntl->local_side()
-              << ": unique_id = " << cloud_unique_id << " db_id = " << db_id;
+              << " unique_id=" << cloud_unique_id << " db_id=" << db_id;
 
     // TODO(dx): begin txn
 

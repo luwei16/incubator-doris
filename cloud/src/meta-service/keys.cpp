@@ -81,23 +81,29 @@ static int encode_prefix(const T& t, std::string* key) {
 //==============================================================================
 
 void txn_index_key(const TxnIndexKeyInfo& in, std::string* out) {
-    // TDB
-    (void)TXN_KEY_INFIX_INDEX;
+    assert(encode_prefix(in, out) == 0);    // 0x01 "txn" ${instance_id}
+    encode_bytes(TXN_KEY_INFIX_INDEX, out); // "txn_index"
+    encode_int64(std::get<1>(in), out);     // db_id
+    encode_bytes(std::get<2>(in), out);     // label
 }
 
 void txn_info_key(const TxnInfoKeyInfo& in, std::string* out) {
-    // TDB
-    (void)TXN_KEY_INFIX_INFO;
+    assert(encode_prefix(in, out) == 0);   // 0x01 "txn" ${instance_id}
+    encode_bytes(TXN_KEY_INFIX_INFO, out); // "txn_info"
+    encode_int64(std::get<1>(in), out);    // db_id
 }
 
 void txn_db_tbl_key(const TxnDbTblKeyInfo& in, std::string* out) {
-    // TDB
-    (void)TXN_KEY_INFIX_DB_TBL;
+    assert(encode_prefix(in, out) == 0);     // 0x01 "txn" ${instance_id}
+    encode_bytes(TXN_KEY_INFIX_DB_TBL, out); // "txn_db_tbl"
+    encode_int64(std::get<1>(in), out);      // txn_id
 }
 
 void txn_running_key(const TxnRunningKeyInfo& in, std::string* out) {
-    // TDB
-    (void)TXN_KEY_INFIX_RUNNING;
+    assert(encode_prefix(in, out) == 0);      // 0x01 "txn" ${instance_id}
+    encode_bytes(TXN_KEY_INFIX_RUNNING, out); // "txn_running"
+    encode_int64(std::get<1>(in), out);       // db_id
+    encode_int64(std::get<2>(in), out);       // txn_id
 }
 
 //==============================================================================
