@@ -360,7 +360,6 @@ if [ ${BUILD_CLOUD} -eq 1 ] ; then
     ${BUILD_SYSTEM} install
 #     cd ${DORIS_HOME}
     echo "Build cloud done, exit"
-    exit
 fi
 
 if [ "${BUILD_DOCS}" = "ON" ] ; then

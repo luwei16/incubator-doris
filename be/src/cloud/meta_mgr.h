@@ -18,6 +18,8 @@ public:
     virtual Status get_rowset_meta(int64_t tablet_id, Version version_range,
                                    std::vector<RowsetMetaSharedPtr>* rs_metas) = 0;
 
+    virtual Status write_tablet_meta(const TabletMetaSharedPtr& tablet_meta) = 0;
+
     virtual Status write_rowset_meta(const RowsetMetaSharedPtr& rs_meta, bool is_tmp) = 0;
 
     virtual Status commit_txn(int64_t db_id, int64_t txn_id, bool is_2pc) = 0;

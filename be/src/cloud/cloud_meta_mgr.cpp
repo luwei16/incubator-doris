@@ -2,21 +2,31 @@
 
 #include <brpc/channel.h>
 #include <brpc/controller.h>
+#include <gen_cpp/olap_file.pb.h>
 
 #include "common/config.h"
 #include "gen_cpp/selectdb_cloud.pb.h"
+#include "service/internal_service.h"
+#include "util/defer_op.h"
 
 namespace doris {
 
-CloudMetaMgr::CloudMetaMgr(const std::string& endpoint) : _endpoint(endpoint) {}
+CloudMetaMgr::CloudMetaMgr() = default;
 
 CloudMetaMgr::~CloudMetaMgr() = default;
 
 Status CloudMetaMgr::open() {
     brpc::ChannelOptions options;
     auto channel = std::make_unique<brpc::Channel>();
-    if (channel->Init(_endpoint.c_str(), config::rpc_load_balancer.c_str(), &options) != 0) {
-        return Status::InternalError("fail to init brpc channel, encpoint: {}", _endpoint);
+    auto endpoint = config::meta_service_endpoint;
+    int ret_code = 0;
+    if (config::meta_service_use_load_balancer) {
+        ret_code = channel->Init(endpoint.c_str(), config::rpc_load_balancer.c_str(), &options);
+    } else {
+        ret_code = channel->Init(endpoint.c_str(), &options);
+    }
+    if (ret_code != 0) {
+        return Status::InternalError("fail to init brpc channel, endpoint: {}", endpoint);
     }
     _stub = std::make_unique<selectdb::MetaService_Stub>(
             channel.release(), google::protobuf::Service::STUB_OWNS_CHANNEL);
@@ -63,6 +73,25 @@ Status CloudMetaMgr::get_rowset_meta(int64_t tablet_id, Version version_range,
         auto rs_meta = std::make_shared<RowsetMeta>();
         rs_meta->init_from_pb(meta_pb);
         rs_metas->push_back(std::move(rs_meta));
+    }
+    return Status::OK();
+}
+
+Status CloudMetaMgr::write_tablet_meta(const TabletMetaSharedPtr& tablet_meta) {
+    brpc::Controller cntl;
+    selectdb::CreateTabletRequest req;
+    selectdb::MetaServiceGenericResponse resp;
+    Defer defer([&] { req.release_tablet_meta(); });
+    req.set_cloud_unique_id(config::cloud_unique_id);
+    TabletMetaPB tablet_meta_pb;
+    tablet_meta->to_meta_pb(&tablet_meta_pb);
+    req.set_allocated_tablet_meta(&tablet_meta_pb);
+    _stub->create_tablet(&cntl, &req, &resp, nullptr);
+    if (cntl.Failed()) {
+        return Status::IOError("failed to write tablet meta: {}", cntl.ErrorText());
+    }
+    if (resp.status().code() != 0) {
+        return Status::InternalError("failed to tablet rowset meta: {}", resp.status().msg());
     }
     return Status::OK();
 }

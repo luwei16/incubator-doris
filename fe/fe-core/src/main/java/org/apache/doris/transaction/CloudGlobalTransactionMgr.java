@@ -127,20 +127,7 @@ public class CloudGlobalTransactionMgr implements GlobalTransactionMgrInterface 
                 new TNetworkAddress(splitMetaServiceEndpoint[0], Integer.parseInt(splitMetaServiceEndpoint[1]));
 
         BeginTxnRequest.Builder builder = BeginTxnRequest.newBuilder();
-        builder.setDbId(dbId);
-        builder.addAllTableIdList(tableIdList);
-        builder.setLabel(label);
-
-        if (requestId != null) {
-            UniqueIdPB.Builder uniqueIdBuilder = UniqueIdPB.newBuilder();
-            uniqueIdBuilder.setHi(requestId.getHi());
-            uniqueIdBuilder.setLo(requestId.getLo());
-            builder.setRequestUniqueId(uniqueIdBuilder);
-        }
-
-        builder.setCoordinator(coordinator.toPB());
-        builder.setLoadJobSourceType(sourceType.toPB());
-        builder.setTimeoutSecond(timeoutSecond);
+        builder.setCloudUniqueId(Config.cloud_unique_id);
 
         final BeginTxnRequest beginTxnRequest = builder.build();
         try {

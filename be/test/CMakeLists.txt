@@ -361,25 +361,41 @@ set(VEC_TEST_FILES
     vec/olap/char_type_padding_test.cpp
 )
 
-add_executable(doris_be_test
-    ${AGENT_TEST_FILES}
-    ${COMMON_TEST_FILES}
-    ${ENV_TEST_FILES}
-    ${EXEC_TEST_FILES}
-    ${EXPRS_TEST_FILES}
-    ${GEO_TEST_FILES}
-    ${GUTIL_TEST_FILES}
-    ${HTTP_TEST_FILES}
-    ${OLAP_TEST_FILES}
-    ${RUNTIME_TEST_FILES}
-    ${TESTUTIL_TEST_FILES}
-    ${UDF_TEST_FILES}
-    ${UTIL_TEST_FILES}
-    ${VEC_TEST_FILES}
+if (NOT CLOUD_MODE)
+    add_executable(doris_be_test
+        ${AGENT_TEST_FILES}
+        ${COMMON_TEST_FILES}
+        ${ENV_TEST_FILES}
+        ${EXEC_TEST_FILES}
+        ${EXPRS_TEST_FILES}
+        ${GEO_TEST_FILES}
+        ${GUTIL_TEST_FILES}
+        ${HTTP_TEST_FILES}
+        ${OLAP_TEST_FILES}
+        ${RUNTIME_TEST_FILES}
+        ${TESTUTIL_TEST_FILES}
+        ${UDF_TEST_FILES}
+        ${UTIL_TEST_FILES}
+        ${VEC_TEST_FILES}
+    )
+
+    target_link_libraries(doris_be_test ${TEST_LINK_LIBS})
+    set_target_properties(doris_be_test PROPERTIES COMPILE_FLAGS "-fno-access-control" ENABLE_EXPORTS 1)
+endif()
+
+set(CLOUD_TEST_FILES
+    cloud/cloud_meta_mgr_test.cpp
+    testutil/run_all_tests.cpp
 )
 
-target_link_libraries(doris_be_test ${TEST_LINK_LIBS})
-set_target_properties(doris_be_test PROPERTIES COMPILE_FLAGS "-fno-access-control" ENABLE_EXPORTS 1)
+if (CLOUD_MODE)
+    add_executable(cloud_be_test
+        ${CLOUD_TEST_FILES}
+    )
+
+    target_link_libraries(cloud_be_test ${TEST_LINK_LIBS})
+    set_target_properties(cloud_be_test PROPERTIES COMPILE_FLAGS "-fno-access-control" ENABLE_EXPORTS 1)    
+endif()
 
 if (BUILD_BENCHMARK_TOOL AND BUILD_BENCHMARK_TOOL STREQUAL "ON")
     add_executable(benchmark_tool

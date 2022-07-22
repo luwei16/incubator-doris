@@ -10,7 +10,7 @@ namespace doris {
 
 class CloudMetaMgr final : public MetaMgr {
 public:
-    CloudMetaMgr(const std::string& endpoint);
+    CloudMetaMgr();
 
     ~CloudMetaMgr() override;
 
@@ -20,6 +20,8 @@ public:
 
     Status get_rowset_meta(int64_t tablet_id, Version version_range,
                            std::vector<RowsetMetaSharedPtr>* rs_metas) override;
+
+    Status write_tablet_meta(const TabletMetaSharedPtr& tablet_meta) override;
 
     Status write_rowset_meta(const RowsetMetaSharedPtr& rs_meta, bool is_tmp) override;
 
@@ -33,8 +35,6 @@ public:
                        std::map<std::string, std::string>* s3_info) override;
 
 private:
-    std::string _endpoint;
-
     std::unique_ptr<selectdb::MetaService_Stub> _stub;
 };
 

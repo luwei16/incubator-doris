@@ -840,11 +840,14 @@ CONF_String(test_s3_bucket, "bucket");
 CONF_String(test_s3_prefix, "prefix");
 #endif
 
+// reader prefetch
+CONF_Bool(enable_column_reader_prefetch, "true");
+CONF_Int32(max_column_reader_prefetch_size, "5");
+
 // cloud
 CONF_String(cloud_unique_id, "");
 CONF_String(meta_service_endpoint, "");
-CONF_Bool(enable_column_reader_prefetch, "true");
-CONF_Int32(max_column_reader_prefetch_size, "5");
+CONF_Bool(meta_service_use_load_balancer, "true");
 
 } // namespace config
 
