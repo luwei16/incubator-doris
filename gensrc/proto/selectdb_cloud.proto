@@ -98,6 +98,87 @@ message TxnRunningInfoPB {
     repeated int64 table_ids = 2;
 }
 
+message TxnCommitAttachmentPB {
+    enum TxnCommitAttachmenTypePB {
+        LODD_JOB_FINAL_OPERATION = 0;
+        MINI_LOAD_TXN_COMMIT_ATTACHMENT = 1;
+        RL_TASK_TXN_COMMIT_ATTACHMENT = 2;
+    }
+    message LoadJobFinalOperationPB {
+        message EtlStatusPB {
+            enum EtlStatePB {
+                RUNNING = 0;
+                FINISHED = 1;
+                CANCELLED = 2;
+                UNKNOWN = 3;
+            }
+
+            optional EtlStatePB state = 1;
+            optional string tracking_url = 2;
+            map<string, string> stats = 3;
+            map<string, string> counters = 4;
+        }
+
+        enum JobStatPB {
+            UNKNOWN = 0;
+            PENDING = 1;
+            ETL = 2;
+            LOADING = 3;
+            COMMITTED = 4;
+            FINISHED = 5;
+            CANCELLED = 6;
+        }
+
+        message FailMsgPB {
+            enum CancelTypePB {
+                USER_CANCEL = 0;
+                ETL_SUBMIT_FAIL = 1;
+                ETL_RUN_FAIL = 2;
+                ETL_QUALITY_UNSATISFIED = 3;
+                LOAD_RUN_FAIL = 4;
+                TIMEOUT = 5;
+                UNKNOWN = 6;
+                TXN_UNKNOWN =7;
+            }
+            optional CancelTypePB cancel_type = 1;
+            optional string msg = 2;
+        }
+
+        optional int64 id = 1;
+        optional EtlStatusPB loading_status = 2;
+        optional int64 progress = 3;
+        optional int64 load_start_timestamp = 4;
+        optional int64 finish_timestamp = 5;
+        optional JobStatPB job_state = 6;
+        optional FailMsgPB fail_msg = 7;
+    }
+
+    message MiniLoadTxnCommitAttachmentPB {
+        optional int64 loaded_rows = 1;
+        optional int64 filtered_rows = 2;
+        optional int64 error_log_url = 3;
+    }
+
+    message RLTaskTxnCommitAttachmentPB {
+        message KafkaProgressPB {
+            map<int64, int64> partition_id_to_offset = 1;
+        }
+        optional int64 job_id = 1;
+        optional UniqueIdPB task_id = 2;
+        optional int64 filtered_rows = 3;
+        optional int64 loaded_rows = 4;
+        optional int64 unselected_rows = 5;
+        optional int64 received_bytes = 6;
+        optional int64 task_execution_time_ms = 7;
+        optional KafkaProgressPB kb_progress = 8;
+        optional string error_log_url = 9;
+    }
+    optional TxnCommitAttachmenTypePB txn_commit_attachmen_type = 1;
+    optional LoadJobFinalOperationPB load_job_final_operation = 2;
+    optional MiniLoadTxnCommitAttachmentPB mini_load_txn_commit_attachment = 3;
+    optional RLTaskTxnCommitAttachmentPB rl_task_txn_commit_attachment = 4;
+}
+
 message TxnInfoPB {
     optional int64 db_id = 1;
     repeated int64 table_ids = 2;
@@ -113,7 +194,7 @@ message TxnInfoPB {
     optional int64 finish_time = 12;
     optional int64 reason = 13;
     optional TransactionStatusPB transactionStatus = 14;
-    //optional TxnCommitAttachmentPB txnCommitAttachment = 15;
+    optional TxnCommitAttachmentPB txnCommitAttachment = 15;
     // TODO: There are more fields TBD
 }
 

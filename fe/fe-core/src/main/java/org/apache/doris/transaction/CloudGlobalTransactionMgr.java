@@ -45,6 +45,7 @@ import com.selectdb.cloud.proto.SelectdbCloud.CommitTxnRequest;
 import com.selectdb.cloud.proto.SelectdbCloud.CommitTxnResponse;
 import com.selectdb.cloud.proto.SelectdbCloud.PrecommitTxnRequest;
 import com.selectdb.cloud.proto.SelectdbCloud.PrecommitTxnResponse;
+import com.selectdb.cloud.proto.SelectdbCloud.TxnInfoPB;
 import com.selectdb.cloud.proto.SelectdbCloud.UniqueIdPB;
 import com.selectdb.cloud.rpc.MetaServiceProxy;
 import org.apache.logging.log4j.LogManager;
@@ -126,14 +127,30 @@ public class CloudGlobalTransactionMgr implements GlobalTransactionMgrInterface 
         TNetworkAddress metaAddress =
                 new TNetworkAddress(splitMetaServiceEndpoint[0], Integer.parseInt(splitMetaServiceEndpoint[1]));
 
-        BeginTxnRequest.Builder builder = BeginTxnRequest.newBuilder();
-        builder.setCloudUniqueId(Config.cloud_unique_id);
+        TxnInfoPB.Builder txnInfoBuilder = TxnInfoPB.newBuilder();
+        txnInfoBuilder.setDbId(dbId);
+        txnInfoBuilder.addAllTableIds(tableIdList);
+        txnInfoBuilder.setLabel(label);
 
-        final BeginTxnRequest beginTxnRequest = builder.build();
+        if (requestId != null) {
+            UniqueIdPB.Builder uniqueIdBuilder = UniqueIdPB.newBuilder();
+            uniqueIdBuilder.setHi(requestId.getHi());
+            uniqueIdBuilder.setLo(requestId.getLo());
+            txnInfoBuilder.setRequestUniqueId(uniqueIdBuilder);
+        }
+
+        txnInfoBuilder.setCoordinator(coordinator.toPB());
+        txnInfoBuilder.setLoadJobSourceType(sourceType.toPB());
+        txnInfoBuilder.setTimeoutSecond(timeoutSecond);
+
+        final BeginTxnRequest beginTxnRequest = BeginTxnRequest.newBuilder()
+                .setTxnInfo(txnInfoBuilder.build())
+                .setCloudUniqueId(Config.cloud_unique_id)
+                .build();
         try {
-            BeginTxnResponse beginTxnResponse = MetaServiceProxy
-                    .getInstance().beginTxn(metaAddress, beginTxnRequest);
-            LOG.info("{}", beginTxnResponse);
+            LOG.info("beginTxnRequest: {}", beginTxnRequest);
+            BeginTxnResponse beginTxnResponse = MetaServiceProxy.getInstance().beginTxn(metaAddress, beginTxnRequest);
+            LOG.info("beginTxnResponse: {}", beginTxnResponse);
             return beginTxnResponse.getTxnId();
         } catch (RpcException e) {
             throw new RuntimeException(e);
@@ -180,9 +197,10 @@ public class CloudGlobalTransactionMgr implements GlobalTransactionMgrInterface 
 
         final PrecommitTxnRequest precommitTxnRequest = builder.build();
         try {
+            LOG.info("precommitTxnRequest: {}", precommitTxnRequest);
             PrecommitTxnResponse precommitTxnResponse = MetaServiceProxy
                     .getInstance().precommitTxn(metaAddress, precommitTxnRequest);
-            LOG.info("commitTxnResponse: {}", precommitTxnResponse);
+            LOG.info("precommitTxnResponse: {}", precommitTxnResponse);
             return;
         } catch (RpcException e) {
             throw new RuntimeException(e);
@@ -221,9 +239,11 @@ public class CloudGlobalTransactionMgr implements GlobalTransactionMgrInterface 
         CommitTxnRequest.Builder builder = CommitTxnRequest.newBuilder();
         builder.setDbId(dbId);
         builder.setTxnId(transactionId);
+        builder.setIs2Pc(false);
 
         final CommitTxnRequest commitTxnRequest = builder.build();
         try {
+            LOG.info("commitTxnRequest:{}", commitTxnRequest);
             CommitTxnResponse commitTxnResponse = MetaServiceProxy
                     .getInstance().commitTxn(metaAddress, commitTxnRequest);
             LOG.info("commitTxnResponse: {}", commitTxnResponse);

@@ -565,7 +565,7 @@ public class Env {
         this.brokerMgr = new BrokerMgr();
         this.resourceMgr = new ResourceMgr();
 
-        if ((Config.cloud_unique_id != null) && (Config.cloud_unique_id.length() > 0)) {
+        if (!Config.cloud_unique_id.isEmpty()) {
             this.globalTransactionMgr = new CloudGlobalTransactionMgr(this);
         } else {
             this.globalTransactionMgr = new NativeGlobalTransactionMgr(this);
@@ -1367,9 +1367,12 @@ public class Env {
         // Colocate tables checker and balancer
         ColocateTableCheckerAndBalancer.getInstance().start();
         // Publish Version Daemon
-        publishVersionDaemon.start();
-        // Start txn cleaner
-        txnCleaner.start();
+        if (Config.cloud_unique_id.isEmpty()) {
+            publishVersionDaemon.start();
+            // Start txn cleaner
+            txnCleaner.start();
+        }
+
         // Alter
         getAlterInstance().start();
         // Consistency checker
