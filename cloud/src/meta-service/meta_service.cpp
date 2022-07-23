@@ -187,14 +187,12 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
     int ret = 0;
     std::string msg = "OK";
     [[maybe_unused]] std::stringstream ss;
-    std::unique_ptr<int, std::function<void(int*)>> defer_status(
-            (int*)0x01, [&closure_guard, &ret, &msg, &response, &ctrl](int*) {
-                response->mutable_status()->set_code(ret);
-                response->mutable_status()->set_msg(msg);
-                closure_guard.reset(nullptr);
-                LOG(INFO) << "finish " << __PRETTY_FUNCTION__ << " " << ctrl->remote_side() << " "
-                          << msg;
-            });
+    std::unique_ptr<int, std::function<void(int*)>> defer_status((int*)0x01, [&ret, &msg, &response,
+                                                                              &ctrl](int*) {
+        response->mutable_status()->set_code(ret);
+        response->mutable_status()->set_msg(msg);
+        LOG(INFO) << "finish " << __PRETTY_FUNCTION__ << " " << ctrl->remote_side() << " " << msg;
+    });
 
     std::unique_ptr<Transaction> txn;
     ret = txn_kv_->create_txn(&txn);
@@ -331,15 +329,13 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
         new_versions.insert({std::move(ver_key), std::move(new_version_str)});
 
         // Update rowset version
-        i.set_start_version(version);
-        i.set_end_version(version);
+        i.set_start_version(new_version);
+        i.set_end_version(new_version);
 
         std::string key;
         std::string val;
         MetaRowsetKeyInfo key_info {"instance_id_deadbeef", i.tablet_id(), i.end_version(),
                                     i.rowset_id_v2()};
-        i.set_start_version(version);
-        i.set_end_version(version);
         meta_rowset_key(key_info, &key);
         if (!i.SerializeToString(&val)) {
             msg = "failed to serialize rowset_meta";
@@ -377,6 +373,7 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
     while (it->has_next()) {
         auto [k, _] = it->next();
         txn->remove(k);
+        LOG(INFO) << "xxx remove tmp_rowset_key=" << hex(k);
     }
 
     ret = txn->commit();
@@ -427,7 +424,6 @@ void MetaServiceImpl::get_version(::google::protobuf::RpcController* controller,
     std::string ver_key;
     version_key(ver_key_info, &ver_key);
 
-
     ret = txn_kv_->create_txn(&txn);
     if (ret != 0) {
         msg = "failed to create txn";
@@ -475,9 +471,20 @@ void MetaServiceImpl::create_tablet(::google::protobuf::RpcController* controlle
         return;
     }
 
+    auto& tablet_meta = const_cast<doris::TabletMetaPB&>(request->tablet_meta());
+    // TODO:
+    // process multiple initial rowsets so that we can create table with
+    // data -- boostrap
+    bool has_first_rowset = tablet_meta.rs_metas_size() > 0;
+    doris::RowsetMetaPB first_rowset;
+    if (has_first_rowset) {
+        first_rowset.CopyFrom(tablet_meta.rs_metas(0));
+        tablet_meta.clear_rs_metas(); // Strip off rowset meta
+    }
+
     // TODO: validate tablet meta, check existence
-    int64_t table_id = request->tablet_meta().table_id();
-    int64_t tablet_id = request->tablet_meta().tablet_id();
+    int64_t table_id = tablet_meta.table_id();
+    int64_t tablet_id = tablet_meta.tablet_id();
 
     std::unique_ptr<Transaction> txn;
     ret = txn_kv_->create_txn(&txn);
@@ -486,13 +493,29 @@ void MetaServiceImpl::create_tablet(::google::protobuf::RpcController* controlle
     std::string key;
     std::string val;
     meta_tablet_key(key_info, &key);
-    if (!request->tablet_meta().SerializeToString(&val)) {
+    if (!tablet_meta.SerializeToString(&val)) {
         ret = -2;
         msg = "failed to serialize tablet meta";
         return;
     }
     txn->put(key, val);
     LOG(INFO) << "xxx put tablet_key=" << hex(key);
+
+    // Put first rowset if needed
+    std::string rs_key;
+    std::string rs_val;
+    if (has_first_rowset) {
+        MetaRowsetKeyInfo rs_key_info {"instance_id_deadbeef", tablet_id,
+                                       first_rowset.end_version(), first_rowset.rowset_id_v2()};
+        meta_rowset_key(rs_key_info, &rs_key);
+        if (!first_rowset.SerializeToString(&rs_val)) {
+            ret = -2;
+            msg = "failed to serialize first rowset meta";
+            return;
+        }
+        txn->put(rs_key, rs_val);
+        LOG(INFO) << "xxx rowset key=" << hex(rs_key);
+    }
 
     // Index tablet_id -> table_id
     std::string key1;
@@ -609,7 +632,6 @@ void MetaServiceImpl::create_rowset(::google::protobuf::RpcController* controlle
         msg = "failed to serialize rowset meta";
         return;
     }
-
 
     std::unique_ptr<Transaction> txn;
     ret = txn_kv_->create_txn(&txn);
