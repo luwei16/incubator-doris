@@ -367,6 +367,7 @@ private:
     uint32_t _cur_page_idx = 0;
     bool _enable_prefetch = false;
     std::vector<ParsedPage> _pages;
+    uint32_t _cur_pages_size = 0;
     uint32_t _index = 0;
     ParsedPage* _cur_page = nullptr;
 };

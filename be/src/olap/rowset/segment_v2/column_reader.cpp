@@ -579,8 +579,7 @@ Status FileColumnIterator::seek_to_first() {
 
 bool FileColumnIterator::_check_and_set_cur_page(ordinal_t ord) {
     while (!_cur_page->contains(ord)) {
-        _index++;
-        if (_index == _pages.size()) {
+        if (++_index == _cur_pages_size) {
             return false;
         }
         _cur_page = &_pages[_index];
@@ -638,6 +637,7 @@ Status FileColumnIterator::get_all_contiguous_pages(
         }
         _page_ranges.push_back(std::move(page_pointers));
     }
+    _cur_page = nullptr;
     return Status::OK();
 }
 
@@ -867,9 +867,9 @@ Status FileColumnIterator::read_by_rowids(const rowid_t* rowids, const size_t co
 }
 
 Status FileColumnIterator::_prefetch_pages() {
-    uint32_t size = (_page_ranges[_cur_range].size() - _cur_page_idx) > _pages.max_size()
-                            ? _pages.max_size()
-                            : _page_ranges.size() - _cur_range;
+    uint32_t size = (_page_ranges[_cur_range].size() - _cur_page_idx) > _pages.size()
+                            ? _pages.size()
+                            : _page_ranges[_cur_range].size() - _cur_page_idx;
     RETURN_IF_ERROR(_read_data_pages(_page_ranges[_cur_range], _cur_page_idx, size));
     _cur_page_idx += size;
     if (_cur_page_idx == _page_ranges[_cur_range].size()) {
@@ -882,8 +882,14 @@ Status FileColumnIterator::_prefetch_pages() {
 
 Status FileColumnIterator::_load_next_page(bool* eos) {
     if (_enable_prefetch) {
-        if (++_index == _pages.size()) {
+        if (++_index == _cur_pages_size) {
+            if (_cur_range == _page_ranges.size()) {
+                *eos = true;
+                return Status::OK();
+            }
             RETURN_IF_ERROR(_prefetch_pages());
+        } else {
+            _cur_page = &_pages[_index];
         }
         _seek_to_pos_in_page(_cur_page, 0);
         *eos = false;
@@ -953,6 +959,7 @@ Status FileColumnIterator::_read_data_pages(const std::vector<OrdinalPageIndexIt
         }
     }
     _index = 0;
+    _cur_pages_size = size;
     return Status::OK();
 }
 

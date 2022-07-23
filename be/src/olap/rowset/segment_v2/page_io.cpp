@@ -143,7 +143,7 @@ Status PageIO::read_and_decompress_pages(const PageReadOptions& opts,
         uint32_t page_size = pp.size;
         if (opts.verify_checksum) {
             uint32_t expect = decode_fixed32_le((uint8_t*)page_pointer + page_size - 4);
-            uint32_t actual = crc32c::Value(pages_slice.data + offset, page_size - 4);
+            uint32_t actual = crc32c::Value(page_pointer, page_size - 4);
             if (expect != actual) {
                 return Status::Corruption("Bad page: checksum mismatch (actual={} vs expect={})",
                                           actual, expect);
@@ -158,7 +158,7 @@ Status PageIO::read_and_decompress_pages(const PageReadOptions& opts,
             return Status::Corruption("Bad page: invalid footer");
         }
 
-        uint32_t body_size = pages_slice.size - 4 - footer_size;
+        uint32_t body_size = page_size - 4 - footer_size;
         if (body_size != footers[i].uncompressed_size()) { // need decompress body
             if (opts.codec == nullptr) {
                 return Status::Corruption(
@@ -186,6 +186,9 @@ Status PageIO::read_and_decompress_pages(const PageReadOptions& opts,
             page_slice = Slice(page.get(), footers[i].uncompressed_size() + footer_size + 4);
             opts.stats->uncompressed_bytes_read += page_slice.size;
         } else {
+            page.reset(new char[body_size + footer_size + 4]);
+            memcpy(page.get(), page_pointer, body_size + footer_size + 4);
+            page_slice = Slice(page.get(), body_size + footer_size + 4);
             opts.stats->uncompressed_bytes_read += body_size;
         }
 
