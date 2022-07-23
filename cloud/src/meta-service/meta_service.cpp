@@ -26,7 +26,7 @@ void MetaServiceImpl::begin_txn(::google::protobuf::RpcController* controller,
                                 ::selectdb::BeginTxnResponse* response,
                                 ::google::protobuf::Closure* done) {
     auto ctrl = static_cast<brpc::Controller*>(controller);
-    LOG(INFO) << "rpc from " << ctrl->remote_side() << " request: " << request->DebugString();
+    LOG(INFO) << "rpc from " << ctrl->remote_side() << " request=" << request->DebugString();
     brpc::ClosureGuard closure_guard(done);
     int ret = 0;
     std::string msg = "OK";
@@ -44,13 +44,13 @@ void MetaServiceImpl::begin_txn(::google::protobuf::RpcController* controller,
         return;
     }
 
-    auto& txn_info = request->txn_info();
+    auto& txn_info = const_cast<TxnInfoPB&>(request->txn_info());
     std::string label = txn_info.has_label() ? txn_info.label() : "";
     int64_t db_id = txn_info.has_db_id() ? txn_info.db_id() : -1;
 
     if (label.empty() || db_id < 0) {
         std::stringstream ss;
-        ss << "invalid argument,  label: " << label << " db_id: " << db_id;
+        ss << "invalid argument,  label=" << label << " db_id=" << db_id;
         msg = ss.str();
         ret = -1;
         return;
@@ -101,13 +101,20 @@ void MetaServiceImpl::begin_txn(::google::protobuf::RpcController* controller,
     ret = get_txn_id_from_fdb_ts(txn_id_str, &txn_id);
     if (ret != 0) {
         std::stringstream ss;
-        ss << "failed to convert fdb ts to txn_id, ret: " << ret;
+        ss << "failed to convert fdb ts to txn_id, ret=" << ret;
         msg = ss.str();
         ret = -1;
         return;
     }
 
-    LOG(INFO) << "xxx txn id: " << txn_id;
+    // Update txn_info to be put into TxnKv
+    // Update txn_id in PB
+    txn_info.set_txn_id(txn_id);
+    // TODO:
+    // check initial status must be TXN_STATUS_PREPARED or TXN_STATUS_UNKNOWN
+    txn_info.set_status(TXN_STATUS_PREPARED);
+
+    LOG(INFO) << "xxx txn_id=" << txn_id;
 
     // Put txn info
     std::string txn_inf_key;
@@ -143,6 +150,8 @@ void MetaServiceImpl::begin_txn(::google::protobuf::RpcController* controller,
         ret = -3;
         return;
     }
+
+    response->set_txn_id(txn_id);
 }
 
 void MetaServiceImpl::precommit_txn(::google::protobuf::RpcController* controller,
@@ -150,17 +159,221 @@ void MetaServiceImpl::precommit_txn(::google::protobuf::RpcController* controlle
                                     ::selectdb::PrecommitTxnResponse* response,
                                     ::google::protobuf::Closure* done) {}
 
+/**
+ * 0. Extract txn_id from request
+ * 1. Get db id from TxnKv with txn_id
+ * 2. Get TxnInfo from TxnKv with db_id and txn_id
+ * 3. Get tmp rowset meta, there may be several or hundred of tmp rowsets
+ * 4. Get versions of each rowset
+ * 5. Put rowset meta, which will be visible to user
+ * 6. Put TxnInfo back into TxnKv with updated txn status (committed)
+ * 7. Update versions of each partition
+ * 8. Remove tmp rowset meta
+ *
+ * Note: getting version and all changes maded are in a single TxnKv transaction:
+ *       step 5, 6, 7, 8
+ */
 void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
                                  const ::selectdb::CommitTxnRequest* request,
                                  ::selectdb::CommitTxnResponse* response,
-                                 ::google::protobuf::Closure* done) {}
+                                 ::google::protobuf::Closure* done) {
+    auto ctrl = static_cast<brpc::Controller*>(controller);
+    LOG(INFO) << "rpc from " << ctrl->remote_side() << " request=" << request->DebugString();
+    brpc::ClosureGuard closure_guard(done);
+    int ret = 0;
+    std::string msg = "OK";
+    [[maybe_unused]] std::stringstream ss;
+    std::unique_ptr<int, std::function<void(int*)>> defer_status(
+            (int*)0x01, [&closure_guard, &ret, &msg, &response, &ctrl](int*) {
+                response->mutable_status()->set_code(ret);
+                response->mutable_status()->set_msg(msg);
+                closure_guard.reset(nullptr);
+                LOG(INFO) << "finish " << __PRETTY_FUNCTION__ << " " << ctrl->remote_side() << " "
+                          << msg;
+            });
+
+    std::unique_ptr<Transaction> txn;
+    ret = txn_kv_->create_txn(&txn);
+    if (ret != 0) {
+        msg = "filed to create txn";
+        ret = -2;
+        return;
+    }
+
+    // TODO: do more check like txn state, 2PC etc.
+    // Get txn id
+    int64_t txn_id = request->has_txn_id() ? request->txn_id() : -1;
+    if (txn_id < 0) {
+        msg = "no txn id";
+        ret = -1;
+        return;
+    }
+
+    // Get db id with txn id
+    std::string txn_db_key;
+    std::string txn_db_val;
+    TxnDbTblKeyInfo txn_db_key_info {"instance_id_deadbeef", txn_id};
+    txn_db_tbl_key(txn_db_key_info, &txn_db_key);
+    ret = txn->get(txn_db_key, &txn_db_val);
+    if (ret != 0) {
+        ss << "failed to get db id with txn_id=" << txn_id << " txn kv ret=" << ret;
+        msg = ss.str();
+        ret = -2;
+        return;
+    }
+
+    int64_t db_id = *reinterpret_cast<const int64_t*>(txn_db_val.data());
+
+    // Get txn info with db_id and txn_id
+    std::string txn_inf_key; // Will be used when saving updated txn
+    std::string txn_inf_val; // Will be reused when saving updated txn
+    TxnInfoKeyInfo txn_inf_key_info {"instance_id_deadbeef", db_id, txn_id};
+    txn_info_key(txn_inf_key_info, &txn_inf_key);
+    ret = txn->get(txn_inf_key, &txn_inf_val);
+    if (ret != 0) {
+        ss << "failed to get txn_info with db_id=" << db_id << " txn_id=" << txn_id
+           << " txn kv ret=" << ret;
+        msg = ss.str();
+        ret = -2;
+        return;
+    }
+
+    TxnInfoPB txn_info;
+    if (!txn_info.ParseFromString(txn_inf_val)) {
+        ss << "failed to parse txn_info, db_id=" << db_id << " txn_id=" << txn_id;
+        msg = ss.str();
+        ret = -1;
+        return;
+    }
+
+    // TODO: do more check
+    if (txn_info.txn_id() != txn_id) {
+        ss.clear();
+        ss << "txn not match request_txn_id=" << txn_id << " found_txn_id=" << txn_info.txn_id();
+        msg = ss.str();
+        ret = -1;
+        return;
+    }
+    LOG(INFO) << "xxx txn_info=" << txn_info.DebugString();
+
+    // Get temporary rowsets involved in the txn
+    // This is a range scan
+    MetaRowsetTmpKeyInfo rs_tmp_key_info0 {"instance_id_deadbeef", txn_id, ""};
+    MetaRowsetTmpKeyInfo rs_tmp_key_info1 {"instance_id_deadbeef", txn_id + 1, ""};
+    std::string rs_tmp_key0;
+    std::string rs_tmp_key1;
+    meta_rowset_tmp_key(rs_tmp_key_info0, &rs_tmp_key0);
+    meta_rowset_tmp_key(rs_tmp_key_info1, &rs_tmp_key1);
+    std::unique_ptr<RangeGetIterator> it;
+    ret = txn->get(rs_tmp_key0, rs_tmp_key1, &it);
+    if (ret != 0) {
+        msg = "no rowset found for txn";
+        ret = -1;
+        return;
+    }
+    // TODO: check more rowset_meta, it->more()?
+    // Get rowset meta that should be commited
+    std::vector<doris::RowsetMetaPB> rowset_meta;
+    while (it->has_next()) {
+        auto [k, v] = it->next();
+        LOG(INFO) << "xxx rowset tmp key " << hex(k);
+        rowset_meta.emplace_back();
+        if (!rowset_meta.back().ParseFromArray(v.data(), v.size())) {
+            ret = -3;
+            msg = "malformed rowset meta, unable to initialize";
+            return;
+        }
+    }
+
+    // Prepare rowset meta and new_versions
+    std::vector<std::pair<std::string, std::string>> rowsets;
+    std::map<std::string, std::string> new_versions;
+    rowsets.reserve(rowset_meta.size());
+    for (auto& i : rowset_meta) {
+        // Get version for the rowset
+        int64_t tbl_id = i.tablet_id();
+        int64_t partition_id = i.partition_id();
+        VersionKeyInfo ver_key_info {"instance_id_deadbeef", db_id, tbl_id, partition_id};
+        std::string ver_key;
+        version_key(ver_key_info, &ver_key);
+        int64_t version = -1;
+        std::string ver_str;
+        // TODO: read version from cache (the map)
+        ret = txn->get(ver_key, &ver_str);
+        if (ret != 1 && ret != 0) {
+            ss << "failed to get version, table_id=" << tbl_id << " partition_id=" << partition_id
+               << " key=" << hex(ver_key);
+            msg = ss.str();
+            LOG(INFO) << msg;
+            ret = -3;
+            return;
+        }
+        // Maybe first version
+        version = ret == 1 ? 1 : *reinterpret_cast<const int64_t*>(ver_str.data());
+        int64_t new_version = version + 1;
+        std::string new_version_str((char*)&new_version, sizeof(new_version));
+        new_versions.insert({std::move(ver_key), std::move(new_version_str)});
+
+        // Update rowset version
+        i.set_start_version(version);
+        i.set_end_version(version);
+
+        std::string key;
+        std::string val;
+        MetaRowsetKeyInfo key_info {"instance_id_deadbeef", i.tablet_id(), i.end_version(),
+                                    i.rowset_id_v2()};
+        i.set_start_version(version);
+        i.set_end_version(version);
+        meta_rowset_key(key_info, &key);
+        if (!i.SerializeToString(&val)) {
+            msg = "failed to serialize rowset_meta";
+            ret = -1;
+            return;
+        }
+        rowsets.emplace_back(std::move(key), std::move(val));
+    }
+
+    // Save rowset meta
+    for (auto& i : rowsets) {
+        txn->put(i.first, i.second);
+    }
+
+    // Save versions
+    for (auto& i : new_versions) {
+        txn->put(i.first, i.second);
+    }
+
+    // Update txn_info
+    txn_info.set_status(TXN_STATUS_COMMITTED);
+    txn_inf_val.clear();
+    if (!txn_info.SerializeToString(&txn_inf_val)) {
+        msg = "failed to serialize txn_info when saving";
+        ret = -3;
+        return;
+    }
+    txn->put(txn_inf_key, txn_inf_val);
+
+    // Remove tmp rowset meta
+    it->reset(); // Reuse what just scanned
+    while (it->has_next()) {
+        auto [k, _] = it->next();
+        txn->remove(k);
+    }
+
+    ret = txn->commit();
+    if (ret != 0) {
+        ret = -3;
+        msg = "failed to save tablet meta";
+        return;
+    }
+}
 
 void MetaServiceImpl::get_version(::google::protobuf::RpcController* controller,
                                   const ::selectdb::GetVersionRequest* request,
                                   ::selectdb::GetVersionResponse* response,
                                   ::google::protobuf::Closure* done) {
     auto ctrl = static_cast<brpc::Controller*>(controller);
-    LOG(INFO) << "rpc from " << ctrl->remote_side() << " request: " << request->DebugString();
+    LOG(INFO) << "rpc from " << ctrl->remote_side() << " request=" << request->DebugString();
     brpc::ClosureGuard closure_guard(done);
     std::unique_ptr<Transaction> txn;
     int ret = 0;
@@ -169,7 +382,7 @@ void MetaServiceImpl::get_version(::google::protobuf::RpcController* controller,
                                                                               &ctrl](int*) {
         response->mutable_status()->set_code(ret);
         response->mutable_status()->set_msg(msg);
-        LOG(INFO) << "rpc from " << ctrl->remote_side() << " response: " << response->DebugString();
+        LOG(INFO) << "rpc from " << ctrl->remote_side() << " response=" << response->DebugString();
     });
 
     // TODO(dx): For auth
@@ -182,9 +395,9 @@ void MetaServiceImpl::get_version(::google::protobuf::RpcController* controller,
     int64_t table_id = request->has_table_id() ? request->table_id() : -1;
     int64_t partition_id = request->has_partition_id() ? request->partition_id() : -1;
     if (db_id == -1 || table_id == -1 || partition_id == -1) {
-        msg = "params error, db_id: " + std::to_string(db_id) +
-              " table_id: " + std::to_string(table_id) +
-              " partition_id: " + std::to_string(partition_id);
+        msg = "params error, db_id=" + std::to_string(db_id) +
+              " table_id=" + std::to_string(table_id) +
+              " partition_id=" + std::to_string(partition_id);
         ret = -1;
         LOG(WARNING) << msg;
         return;
@@ -224,7 +437,7 @@ void MetaServiceImpl::create_tablet(::google::protobuf::RpcController* controlle
                                     ::selectdb::MetaServiceGenericResponse* response,
                                     ::google::protobuf::Closure* done) {
     auto ctrl = static_cast<brpc::Controller*>(controller);
-    LOG(INFO) << "rpc from " << ctrl->remote_side() << " request: " << request->DebugString();
+    LOG(INFO) << "rpc from " << ctrl->remote_side() << " request=" << request->DebugString();
     brpc::ClosureGuard closure_guard(done);
     int ret = 0;
     std::string msg = "OK";
@@ -259,7 +472,7 @@ void MetaServiceImpl::create_tablet(::google::protobuf::RpcController* controlle
     }
     txn->put(key, val);
 
-    LOG(INFO) << "xxx tablet key: " << hex(key);
+    LOG(INFO) << "xxx tablet key=" << hex(key);
 
     // Index tablet_id -> table_id
     std::string key1;
@@ -268,7 +481,7 @@ void MetaServiceImpl::create_tablet(::google::protobuf::RpcController* controlle
     meta_tablet_table_key(key_info1, &key1);
     txn->put(key1, val1);
 
-    LOG(INFO) << "xxx tablet -> table key: " << hex(key);
+    LOG(INFO) << "xxx tablet -> table_key=" << hex(key);
 
     ret = txn->commit();
     if (ret != 0) {
@@ -288,7 +501,7 @@ void MetaServiceImpl::get_tablet(::google::protobuf::RpcController* controller,
                                  ::selectdb::GetTabletResponse* response,
                                  ::google::protobuf::Closure* done) {
     auto ctrl = static_cast<brpc::Controller*>(controller);
-    LOG(INFO) << "rpc from " << ctrl->remote_side() << " request: " << request->DebugString();
+    LOG(INFO) << "rpc from " << ctrl->remote_side() << " request=" << request->DebugString();
     brpc::ClosureGuard closure_guard(done);
     int ret = 0;
     std::string msg = "OK";
@@ -338,7 +551,7 @@ void MetaServiceImpl::create_rowset(::google::protobuf::RpcController* controlle
                                     ::selectdb::MetaServiceGenericResponse* response,
                                     ::google::protobuf::Closure* done) {
     auto ctrl = static_cast<brpc::Controller*>(controller);
-    LOG(INFO) << "rpc from " << ctrl->remote_side() << " request: " << request->DebugString();
+    LOG(INFO) << "rpc from " << ctrl->remote_side() << " request=" << request->DebugString();
     brpc::ClosureGuard closure_guard(done);
     int ret = 0;
     std::string msg = "OK";

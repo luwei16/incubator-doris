@@ -71,13 +71,13 @@ enum LoadJobSourceTypePB {
     BATCH_LOAD_JOB    = 5; // load job v2 for broker load
 }
 
-enum TransactionStatusPB {
-    UNKNOWN      = 0;
-    PREPARED     = 1;
-    COMMITTED    = 2;
-    VISIBLE      = 3;
-    ABORTED      = 4;
-    PRECOMMITTED = 5;
+enum TxnStatusPB {
+    TXN_STATUS_UNKNOWN      = 0;
+    TXN_STATUS_PREPARED     = 1;
+    TXN_STATUS_COMMITTED    = 2;
+    TXN_STATUS_VISIBLE      = 3;
+    TXN_STATUS_ABORTED      = 4;
+    TXN_STATUS_PRECOMMITTED = 5;
 }
 
 message TxnCoordinatorPB {
@@ -182,7 +182,7 @@ message TxnCommitAttachmentPB {
 message TxnInfoPB {
     optional int64 db_id = 1;
     repeated int64 table_ids = 2;
-    optional int64 transaction_id = 3;
+    optional int64 txn_id = 3;
     optional string label = 4;
     optional UniqueIdPB request_unique_id = 5;
     optional TxnCoordinatorPB coordinator = 6;
@@ -193,8 +193,8 @@ message TxnInfoPB {
     optional int64 commit_time = 11;
     optional int64 finish_time = 12;
     optional int64 reason = 13;
-    optional TransactionStatusPB transactionStatus = 14;
-    optional TxnCommitAttachmentPB txnCommitAttachment = 15;
+    optional TxnStatusPB status = 14;
+    optional TxnCommitAttachmentPB commit_attachment = 15;
     // TODO: There are more fields TBD
 }
 
