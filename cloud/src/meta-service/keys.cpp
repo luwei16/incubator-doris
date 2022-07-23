@@ -54,9 +54,21 @@ namespace selectdb {
 // clang-format on
 
 template <typename T>
-static int encode_prefix(const T& t, std::string* key) {
-    key->push_back(CLOUD_KEY_SPACE01);
+static void encode_prefix(const T& t, std::string* key) {
     // clang-format off
+    static_assert(std::is_same_v<T, TxnIndexKeyInfo     >
+               || std::is_same_v<T, TxnInfoKeyInfo      >
+               || std::is_same_v<T, TxnDbTblKeyInfo     >
+               || std::is_same_v<T, TxnRunningKeyInfo   >
+               || std::is_same_v<T, MetaRowsetKeyInfo   >
+               || std::is_same_v<T, MetaRowsetTmpKeyInfo>
+               || std::is_same_v<T, MetaTabletKeyInfo   >
+               || std::is_same_v<T, MetaTabletTblKeyInfo>
+               || std::is_same_v<T, MetaTabletTmpKeyInfo>
+               || std::is_same_v<T, VersionKeyInfo      >
+               , "Invalid Key Type");
+
+    key->push_back(CLOUD_KEY_SPACE01);
     // Prefixes for key families
     if        constexpr (std::is_same_v<T, TxnIndexKeyInfo>
                       || std::is_same_v<T, TxnInfoKeyInfo>
@@ -72,12 +84,10 @@ static int encode_prefix(const T& t, std::string* key) {
     } else if constexpr (std::is_same_v<T, VersionKeyInfo>) {
         encode_bytes(VERSION_KEY_PREFIX, key);
     } else {
-        // TODO: check at complie-time
-        return 1;
+        std::abort(); // Impossible
     }
     // clang-format on
     encode_bytes(std::get<0>(t), key); // instance_id
-    return 0;
 }
 
 //==============================================================================
@@ -85,27 +95,27 @@ static int encode_prefix(const T& t, std::string* key) {
 //==============================================================================
 
 void txn_index_key(const TxnIndexKeyInfo& in, std::string* out) {
-    assert(encode_prefix(in, out) == 0);    // 0x01 "txn" ${instance_id}
+    encode_prefix(in, out);                 // 0x01 "txn" ${instance_id}
     encode_bytes(TXN_KEY_INFIX_INDEX, out); // "txn_index"
     encode_int64(std::get<1>(in), out);     // db_id
     encode_bytes(std::get<2>(in), out);     // label
 }
 
 void txn_info_key(const TxnInfoKeyInfo& in, std::string* out) {
-    assert(encode_prefix(in, out) == 0);   // 0x01 "txn" ${instance_id}
+    encode_prefix(in, out);                // 0x01 "txn" ${instance_id}
     encode_bytes(TXN_KEY_INFIX_INFO, out); // "txn_info"
     encode_int64(std::get<1>(in), out);    // db_id
     encode_int64(std::get<2>(in), out);    // txn_id
 }
 
 void txn_db_tbl_key(const TxnDbTblKeyInfo& in, std::string* out) {
-    assert(encode_prefix(in, out) == 0);     // 0x01 "txn" ${instance_id}
+    encode_prefix(in, out);                  // 0x01 "txn" ${instance_id}
     encode_bytes(TXN_KEY_INFIX_DB_TBL, out); // "txn_db_tbl"
     encode_int64(std::get<1>(in), out);      // txn_id
 }
 
 void txn_running_key(const TxnRunningKeyInfo& in, std::string* out) {
-    assert(encode_prefix(in, out) == 0);      // 0x01 "txn" ${instance_id}
+    encode_prefix(in, out);                   // 0x01 "txn" ${instance_id}
     encode_bytes(TXN_KEY_INFIX_RUNNING, out); // "txn_running"
     encode_int64(std::get<1>(in), out);       // db_id
     encode_int64(std::get<2>(in), out);       // txn_id
@@ -116,7 +126,7 @@ void txn_running_key(const TxnRunningKeyInfo& in, std::string* out) {
 //==============================================================================
 
 void version_key(const VersionKeyInfo& in, std::string* out) {
-    assert(encode_prefix(in, out) == 0);  // 0x01 "version" ${instance_id}
+    encode_prefix(in, out);               // 0x01 "version" ${instance_id}
     encode_bytes(VERSION_KEY_INFIX, out); // "version_id"
     encode_int64(std::get<1>(in), out);   // db_id
     encode_int64(std::get<2>(in), out);   // tbl_id
@@ -128,7 +138,7 @@ void version_key(const VersionKeyInfo& in, std::string* out) {
 //==============================================================================
 
 void meta_rowset_key(const MetaRowsetKeyInfo& in, std::string* out) {
-    assert(encode_prefix(in, out) == 0);      // 0x01 "meta" ${instance_id}
+    encode_prefix(in, out);                   // 0x01 "meta" ${instance_id}
     encode_bytes(META_KEY_INFIX_ROWSET, out); // "rowset"
     encode_int64(std::get<1>(in), out);       // tablet_id
     encode_int64(std::get<2>(in), out);       // version
@@ -136,27 +146,27 @@ void meta_rowset_key(const MetaRowsetKeyInfo& in, std::string* out) {
 }
 
 void meta_rowset_tmp_key(const MetaRowsetTmpKeyInfo& in, std::string* out) {
-    assert(encode_prefix(in, out) == 0);          // 0x01 "meta" ${instance_id}
+    encode_prefix(in, out);                       // 0x01 "meta" ${instance_id}
     encode_bytes(META_KEY_INFIX_ROWSET_TMP, out); // "rowset_tmp"
     encode_int64(std::get<1>(in), out);           // txn_id
     encode_bytes(std::get<2>(in), out);           // rowset_id
 }
 
 void meta_tablet_key(const MetaTabletKeyInfo& in, std::string* out) {
-    assert(encode_prefix(in, out) == 0);      // 0x01 "meta" ${instance_id}
+    encode_prefix(in, out);                   // 0x01 "meta" ${instance_id}
     encode_bytes(META_KEY_INFIX_TABLET, out); // "tablet"
     encode_int64(std::get<1>(in), out);       // table_id
     encode_int64(std::get<2>(in), out);       // tablet_id
 }
 
 void meta_tablet_table_key(const MetaTabletTblKeyInfo& in, std::string* out) {
-    assert(encode_prefix(in, out) == 0);          // 0x01 "meta" ${instance_id}
+    encode_prefix(in, out);                       // 0x01 "meta" ${instance_id}
     encode_bytes(META_KEY_INFIX_TABLET_TBL, out); // "tablet"
     encode_int64(std::get<1>(in), out);           // tablet_id
 }
 
 void meta_tablet_tmp_key(const MetaTabletTmpKeyInfo& in, std::string* out) {
-    assert(encode_prefix(in, out) == 0);          // 0x01 "meta" ${instance_id}
+    encode_prefix(in, out);                       // 0x01 "meta" ${instance_id}
     encode_bytes(META_KEY_INFIX_TABLET_TMP, out); // "tablet"
     encode_int64(std::get<1>(in), out);           // table_id
     encode_int64(std::get<2>(in), out);           // tablet_id

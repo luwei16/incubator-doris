@@ -73,6 +73,7 @@ void MetaServiceImpl::begin_txn(::google::protobuf::RpcController* controller,
     (void)txn_idx_val;
 
     txn->atomic_set_ver_value(txn_idx_key, txn_idx_val);
+    LOG(INFO) << "xxx atomic_set txn_idx_key=" << hex(txn_idx_key);
     ret = txn->commit();
     if (ret != 0) {
         msg = "failed to commit txn kv for txn id";
@@ -144,6 +145,9 @@ void MetaServiceImpl::begin_txn(::google::protobuf::RpcController* controller,
     txn->put(txn_inf_key, txn_inf_val);
     txn->put(txn_db_key, txn_db_val);
     txn->put(txn_run_key, txn_run_val);
+    LOG(INFO) << "xxx put txn_inf_key=" << hex(txn_inf_key);
+    LOG(INFO) << "xxx put txn_run_key=" << hex(txn_run_key);
+    LOG(INFO) << "xxx put txn_db_key=" << hex(txn_db_key);
     ret = txn->commit();
     if (ret != 0) {
         msg = "failed to commit txn kv";
@@ -276,7 +280,7 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
     std::vector<doris::RowsetMetaPB> rowset_meta;
     while (it->has_next()) {
         auto [k, v] = it->next();
-        LOG(INFO) << "xxx rowset tmp key " << hex(k);
+        LOG(INFO) << "xxx range_get rowset_tmp_key=" << hex(k);
         rowset_meta.emplace_back();
         if (!rowset_meta.back().ParseFromArray(v.data(), v.size())) {
             ret = -3;
@@ -288,11 +292,23 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
     // Prepare rowset meta and new_versions
     std::vector<std::pair<std::string, std::string>> rowsets;
     std::map<std::string, std::string> new_versions;
+    std::map<int64_t, int64_t> table_ids; // tablet_id -> table_id
     rowsets.reserve(rowset_meta.size());
     for (auto& i : rowset_meta) {
         // Get version for the rowset
-        int64_t tbl_id = i.tablet_id();
+
+        if (table_ids.count(i.tablet_id()) == 0) {
+            MetaTabletTblKeyInfo key_info {"instance_id_deadbeef", i.tablet_id()};
+            std::string key;
+            std::string val;
+            meta_tablet_table_key(key_info, &key);
+            txn->get(key, &val); // TODO: check result, it must be 0
+            table_ids.emplace(i.tablet_id(), *reinterpret_cast<int64_t*>(val.data()));
+        }
+
+        int64_t tbl_id = table_ids[i.tablet_id()];
         int64_t partition_id = i.partition_id();
+
         VersionKeyInfo ver_key_info {"instance_id_deadbeef", db_id, tbl_id, partition_id};
         std::string ver_key;
         version_key(ver_key_info, &ver_key);
@@ -336,11 +352,13 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
     // Save rowset meta
     for (auto& i : rowsets) {
         txn->put(i.first, i.second);
+        LOG(INFO) << "xxx put rowset_key=" << hex(i.first);
     }
 
     // Save versions
     for (auto& i : new_versions) {
         txn->put(i.first, i.second);
+        LOG(INFO) << "xxx put version_key=" << hex(i.first);
     }
 
     // Update txn_info
@@ -352,6 +370,7 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
         return;
     }
     txn->put(txn_inf_key, txn_inf_val);
+    LOG(INFO) << "xxx put txn_inf_key=" << hex(txn_inf_key);
 
     // Remove tmp rowset meta
     it->reset(); // Reuse what just scanned
@@ -386,7 +405,7 @@ void MetaServiceImpl::get_version(::google::protobuf::RpcController* controller,
     });
 
     // TODO(dx): For auth
-    std::string cloud_unique_id = "";
+    std::string cloud_unique_id;
     if (request->has_cloud_unique_id()) {
         cloud_unique_id = request->cloud_unique_id();
     }
@@ -404,9 +423,10 @@ void MetaServiceImpl::get_version(::google::protobuf::RpcController* controller,
     }
 
     // TODO(dx): fix it, use instance_id later.
-    VersionKeyInfo v_key {"instance_id_deadbeef", db_id, table_id, partition_id};
-    std::string encoded_version_key;
-    version_key(v_key, &encoded_version_key);
+    VersionKeyInfo ver_key_info {"instance_id_deadbeef", db_id, table_id, partition_id};
+    std::string ver_key;
+    version_key(ver_key_info, &ver_key);
+
 
     ret = txn_kv_->create_txn(&txn);
     if (ret != 0) {
@@ -417,7 +437,8 @@ void MetaServiceImpl::get_version(::google::protobuf::RpcController* controller,
 
     std::string val;
     // 0 for success get a key, 1 for key not found, negative for error
-    ret = txn->get(encoded_version_key, &val);
+    ret = txn->get(ver_key, &val);
+    LOG(INFO) << "xxx get version_key=" << hex(ver_key);
     if (ret == 0) {
         int64_t version = *reinterpret_cast<int64_t*>(val.data());
         response->set_version(version);
@@ -471,8 +492,7 @@ void MetaServiceImpl::create_tablet(::google::protobuf::RpcController* controlle
         return;
     }
     txn->put(key, val);
-
-    LOG(INFO) << "xxx tablet key=" << hex(key);
+    LOG(INFO) << "xxx put tablet_key=" << hex(key);
 
     // Index tablet_id -> table_id
     std::string key1;
@@ -480,8 +500,7 @@ void MetaServiceImpl::create_tablet(::google::protobuf::RpcController* controlle
     MetaTabletTblKeyInfo key_info1 {"instance_id_deadbeef", tablet_id};
     meta_tablet_table_key(key_info1, &key1);
     txn->put(key1, val1);
-
-    LOG(INFO) << "xxx tablet -> table_key=" << hex(key);
+    LOG(INFO) << "xxx put tablet_table_key=" << hex(key);
 
     ret = txn->commit();
     if (ret != 0) {
@@ -591,11 +610,11 @@ void MetaServiceImpl::create_rowset(::google::protobuf::RpcController* controlle
         return;
     }
 
-    LOG(INFO) << "xxx create_rowset key " << hex(key);
 
     std::unique_ptr<Transaction> txn;
     ret = txn_kv_->create_txn(&txn);
     txn->put(key, val);
+    LOG(INFO) << "xxx put" << (temporary ? " tmp " : " ") << "create_rowset_key " << hex(key);
     ret = txn->commit();
     if (ret != 0) {
         ret = -3;
@@ -645,7 +664,7 @@ void MetaServiceImpl::get_rowset(::google::protobuf::RpcController* controller,
 
     while (it->has_next()) {
         auto [k, v] = it->next();
-        LOG(INFO) << "xxx key " << hex(k);
+        LOG(INFO) << "xxx range get rowset_key=" << hex(k);
         std::string val(v.data(), v.size());
         auto rs = response->add_rowset_meta();
         if (!rs->ParseFromString(val)) {
