@@ -36,6 +36,7 @@ import org.apache.doris.catalog.Tablet.TabletStatus;
 import org.apache.doris.clone.TabletSchedCtx;
 import org.apache.doris.clone.TabletScheduler;
 import org.apache.doris.common.AnalysisException;
+import org.apache.doris.common.Config;
 import org.apache.doris.common.DdlException;
 import org.apache.doris.common.FeConstants;
 import org.apache.doris.common.FeMetaVersion;
@@ -63,6 +64,7 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Range;
 import com.google.common.collect.Sets;
+import com.selectdb.cloud.catalog.CloudPartition;
 import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -1213,7 +1215,12 @@ public class OlapTable extends Table {
 
         int partitionCount = in.readInt();
         for (int i = 0; i < partitionCount; ++i) {
-            Partition partition = Partition.read(in);
+            Partition partition;
+            if (Config.cloud_unique_id.isEmpty()) {
+                partition = Partition.read(in);
+            } else {
+                partition = CloudPartition.read(in);
+            }
             idToPartition.put(partition.getId(), partition);
             nameToPartition.put(partition.getName(), partition);
         }

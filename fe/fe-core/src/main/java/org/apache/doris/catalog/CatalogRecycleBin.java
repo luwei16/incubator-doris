@@ -36,6 +36,7 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Range;
 import com.google.common.collect.Sets;
+import com.selectdb.cloud.catalog.CloudPartition;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -812,7 +813,11 @@ public class CatalogRecycleBin extends MasterDaemon implements Writable {
         public void readFields(DataInput in) throws IOException {
             dbId = in.readLong();
             tableId = in.readLong();
-            partition = Partition.read(in);
+            if (Config.cloud_unique_id.isEmpty()) {
+                partition = Partition.read(in);
+            } else {
+                partition = CloudPartition.read(in);
+            }
             range = RangeUtils.readRange(in);
             listPartitionItem = ListPartitionItem.read(in);
             dataProperty = DataProperty.read(in);

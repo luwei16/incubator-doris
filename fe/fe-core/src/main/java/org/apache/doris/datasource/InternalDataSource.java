@@ -180,6 +180,7 @@ import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
+import com.selectdb.cloud.catalog.CloudPartition;
 import com.selectdb.cloud.proto.SelectdbCloud;
 import com.selectdb.cloud.rpc.MetaServiceProxy;
 import lombok.Getter;
@@ -1563,7 +1564,12 @@ public class InternalDataSource implements DataSourceIf<Database> {
         MaterializedIndex baseIndex = new MaterializedIndex(baseIndexId, IndexState.NORMAL);
 
         // create partition with base index
-        Partition partition = new Partition(partitionId, partitionName, baseIndex, distributionInfo);
+        Partition partition;
+        if (!Config.cloud_unique_id.equals("")) {
+            partition = new CloudPartition(partitionId, partitionName, baseIndex, distributionInfo, dbId, tableId);
+        } else {
+            partition = new Partition(partitionId, partitionName, baseIndex, distributionInfo);
+        }
 
         // add to index map
         Map<Long, MaterializedIndex> indexMap = new HashMap<>();

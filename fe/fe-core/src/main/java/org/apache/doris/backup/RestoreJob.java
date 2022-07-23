@@ -83,6 +83,7 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.Table.Cell;
+import com.selectdb.cloud.catalog.CloudPartition;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -1811,7 +1812,12 @@ public class RestoreJob extends AbstractJob {
         int size = in.readInt();
         for (int i = 0; i < size; i++) {
             String tblName = Text.readString(in);
-            Partition part = Partition.read(in);
+            Partition part;
+            if (Config.cloud_unique_id.isEmpty()) {
+                part = Partition.read(in);
+            } else {
+                part = CloudPartition.read(in);
+            }
             restoredPartitions.add(Pair.create(tblName, part));
         }
 

@@ -88,6 +88,7 @@ public class SystemInfoService {
     static {
         cloudUniqueId = Config.cloud_unique_id;
         if (!cloudUniqueId.equals("")) {
+
             try {
                 metaServiceHostPort = validateHostAndPort(Config.meta_service_endpoint);
             } catch (AnalysisException e) {

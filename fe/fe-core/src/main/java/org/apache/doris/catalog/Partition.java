@@ -20,6 +20,7 @@ package org.apache.doris.catalog;
 import org.apache.doris.catalog.DistributionInfo.DistributionInfoType;
 import org.apache.doris.catalog.MaterializedIndex.IndexExtState;
 import org.apache.doris.catalog.MaterializedIndex.IndexState;
+import org.apache.doris.common.Config;
 import org.apache.doris.common.FeConstants;
 import org.apache.doris.common.io.Text;
 import org.apache.doris.common.io.Writable;
@@ -95,14 +96,14 @@ public class Partition extends MetaObject implements Writable {
     @SerializedName(value = "visibleVersionHash")
     private long visibleVersionHash;
     @SerializedName(value = "nextVersion")
-    private long nextVersion;
+    protected long nextVersion;
     @Deprecated
     @SerializedName(value = "nextVersionHash")
     private long nextVersionHash;
     @SerializedName(value = "distributionInfo")
     private DistributionInfo distributionInfo;
 
-    private Partition() {
+    protected Partition() {
     }
 
     public Partition(long id, String name,
@@ -169,7 +170,7 @@ public class Partition extends MetaObject implements Writable {
     }
 
     // The method updateVisibleVersionAndVersionHash is called when fe restart, the visibleVersionTime is updated
-    private void setVisibleVersion(long visibleVersion) {
+    protected void setVisibleVersion(long visibleVersion) {
         this.visibleVersion = visibleVersion;
         this.visibleVersionTime = System.currentTimeMillis();
     }
@@ -360,10 +361,18 @@ public class Partition extends MetaObject implements Writable {
 
         visibleVersion = in.readLong();
         visibleVersionTime = in.readLong();
-        visibleVersionHash = in.readLong();
-        nextVersion = in.readLong();
-        nextVersionHash = in.readLong();
-        committedVersionHash = in.readLong();
+        if (Config.cloud_unique_id.isEmpty()) {
+            visibleVersionHash = in.readLong();
+            nextVersion = in.readLong();
+            nextVersionHash = in.readLong();
+            committedVersionHash = in.readLong();
+        } else {
+            visibleVersionHash = -1;
+            nextVersion = -1;
+            nextVersionHash = -1;
+            committedVersionHash = -1;
+        }
+
         DistributionInfoType distriType = DistributionInfoType.valueOf(Text.readString(in));
         if (distriType == DistributionInfoType.HASH) {
             distributionInfo = HashDistributionInfo.read(in);
