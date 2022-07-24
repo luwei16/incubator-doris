@@ -551,13 +551,13 @@ void TabletMeta::to_meta_pb(TabletMetaPB* tablet_meta_pb) {
     }
 }
 
-void TabletMeta::init_rs_metas(std::vector<RowsetMetaSharedPtr> rs_metas) {
-    for (auto& rs_meta : rs_metas) {
+void TabletMeta::init_rs_metas(std::vector<RowsetMetaSharedPtr>&& rs_metas) {
+    for (const auto& rs_meta : rs_metas) {
         if (rs_meta->has_delete_predicate()) {
             add_delete_predicate(rs_meta->delete_predicate(), rs_meta->version().first);
         }
-        _rs_metas.push_back(std::move(rs_meta));
     }
+    _rs_metas = std::move(rs_metas);
 }
 
 uint32_t TabletMeta::mem_size() const {

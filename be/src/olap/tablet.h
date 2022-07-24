@@ -129,6 +129,11 @@ public:
             const std::vector<RowsetMetaSharedPtr>& rowset_metas);
 
     Status add_inc_rowset(const RowsetSharedPtr& rowset);
+
+    // CLOUD_MODE
+    // Add rowset required for query to tablet in cloud mode.
+    void add_rowset_by_meta(const RowsetMetaSharedPtr& rs_meta);
+
     /// Delete stale rowset by timing. This delete policy uses now() minutes
     /// config::tablet_rowset_expired_stale_sweep_time_sec to compute the deadline of expired rowset
     /// to delete.  When rowset is deleted, it will be added to StorageEngine unused map and record

@@ -80,6 +80,8 @@ public:
         return Status::NotSupported("to be implemented");
     }
 
+    virtual const RowsetMetaSharedPtr& rowset_meta() const = 0;
+
 private:
     DISALLOW_COPY_AND_ASSIGN(RowsetWriter);
 };

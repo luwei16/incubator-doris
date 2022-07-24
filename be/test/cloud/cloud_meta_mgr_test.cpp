@@ -7,7 +7,7 @@
 #include "olap/rowset/unique_rowset_id_generator.h"
 #include "olap/tablet_meta.h"
 
-namespace doris {
+namespace doris::cloud {
 
 static CloudMetaMgr* meta_mgr = nullptr;
 static UniqueRowsetIdGenerator* id_generator = nullptr;
@@ -82,4 +82,4 @@ TEST_F(CloudMetaMgrTest, write_and_get_tablet_meta) {
     ASSERT_EQ(*tablet_meta, *tablet_meta1);
 }
 
-} // namespace doris
+} // namespace doris::cloud

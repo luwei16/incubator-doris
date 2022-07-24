@@ -6,7 +6,7 @@ namespace selectdb {
 class MetaService_Stub;
 }
 
-namespace doris {
+namespace doris::cloud {
 
 class CloudMetaMgr final : public MetaMgr {
 public:
@@ -38,4 +38,4 @@ private:
     std::unique_ptr<selectdb::MetaService_Stub> _stub;
 };
 
-} // namespace doris
+} // namespace doris::cloud

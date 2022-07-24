@@ -17,6 +17,7 @@
 
 #include "olap/delta_writer.h"
 
+#include "cloud/utils.h"
 #include "olap/base_compaction.h"
 #include "olap/cumulative_compaction.h"
 #include "olap/data_dir.h"
@@ -52,9 +53,12 @@ DeltaWriter::DeltaWriter(WriteRequest* req, StorageEngine* storage_engine,
           _is_vec(is_vec) {}
 
 DeltaWriter::~DeltaWriter() {
+    // MetaService will conduct garbage collection.
+#ifndef CLOUD_MODE
     if (_is_init && !_delta_written_success) {
         _garbage_collection();
     }
+#endif
 
     _mem_table.reset();
 
@@ -104,6 +108,8 @@ Status DeltaWriter::init() {
     _mem_tracker = std::make_shared<MemTrackerLimiter>(
             -1, fmt::format("DeltaWriter:tabletId={}", _tablet->tablet_id()), _parent_tracker);
     SCOPED_ATTACH_TASK(_mem_tracker, ThreadContext::TaskType::LOAD);
+
+#ifndef CLOUD_MODE
     // check tablet version number
     if (_tablet->version_count() > config::max_tablet_version_num) {
         //trigger quick compaction
@@ -125,6 +131,7 @@ Status DeltaWriter::init() {
         RETURN_NOT_OK(_storage_engine->txn_manager()->prepare_txn(_req.partition_id, _tablet,
                                                                   _req.txn_id, _req.load_id));
     }
+#endif
     // build tablet schema in request level
     _build_current_tablet_schema(_req.index_id, _req.ptable_schema_param,
                                  *_tablet->tablet_schema());
@@ -132,6 +139,9 @@ Status DeltaWriter::init() {
     RETURN_NOT_OK(_tablet->create_rowset_writer(_req.txn_id, _req.load_id, PREPARED, OVERLAPPING,
                                                 _tablet_schema, &_rowset_writer));
     _schema.reset(new Schema(_tablet_schema));
+#ifdef CLOUD_MODE
+    cloud::meta_mgr()->write_rowset_meta(_rowset_writer->rowset_meta(), true);
+#endif
     _reset_mem_table();
 
     // create flush handler
@@ -329,6 +339,9 @@ Status DeltaWriter::close_wait(const PSlaveTabletNodes& slave_tablet_nodes,
         LOG(WARNING) << "fail to build rowset";
         return Status::OLAPInternalError(OLAP_ERR_MALLOC_ERROR);
     }
+#ifdef CLOUD_MODE
+    cloud::meta_mgr()->write_rowset_meta(_cur_rowset->rowset_meta(), true);
+#else
     Status res = _storage_engine->txn_manager()->commit_txn(_req.partition_id, _tablet, _req.txn_id,
                                                             _req.load_id, _cur_rowset, false);
     if (!res && res != Status::OLAPInternalError(OLAP_ERR_PUSH_TRANSACTION_ALREADY_EXIST)) {
@@ -336,6 +349,7 @@ Status DeltaWriter::close_wait(const PSlaveTabletNodes& slave_tablet_nodes,
                      << " for rowset: " << _cur_rowset->rowset_id();
         return res;
     }
+#endif
 
     _delta_written_success = true;
 

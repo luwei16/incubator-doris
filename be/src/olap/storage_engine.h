@@ -107,7 +107,7 @@ public:
     int32_t effective_cluster_id() const { return _effective_cluster_id; }
 
     void start_delete_unused_rowset();
-    void add_unused_rowset(RowsetSharedPtr rowset);
+    void add_unused_rowset(const RowsetSharedPtr& rowset);
 
     // Obtain shard path for new tablet.
     //
@@ -135,7 +135,7 @@ public:
     TxnManager* txn_manager() { return _txn_manager.get(); }
     MemTableFlushExecutor* memtable_flush_executor() { return _memtable_flush_executor.get(); }
 
-    MetaMgr* meta_mgr() { return _meta_mgr.get(); }
+    cloud::MetaMgr* meta_mgr() { return _meta_mgr.get(); }
 
     bool check_rowset_id_in_unused_rowsets(const RowsetId& rowset_id);
 
@@ -408,7 +408,7 @@ private:
     std::unordered_map<DataDir*, int64_t> _running_cooldown_tasks_cnt;
     std::unordered_set<int64_t> _running_cooldown_tablets;
 
-    std::unique_ptr<MetaMgr> _meta_mgr;
+    std::unique_ptr<cloud::MetaMgr> _meta_mgr;
 
     DISALLOW_COPY_AND_ASSIGN(StorageEngine);
 };

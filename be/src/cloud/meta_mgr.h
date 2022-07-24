@@ -5,7 +5,7 @@
 #include "common/status.h"
 #include "olap/tablet_meta.h"
 
-namespace doris {
+namespace doris::cloud {
 
 class MetaMgr {
 public:
@@ -32,4 +32,4 @@ public:
                                std::map<std::string, std::string>* s3_info) = 0;
 };
 
-} // namespace doris
+} // namespace doris::cloud

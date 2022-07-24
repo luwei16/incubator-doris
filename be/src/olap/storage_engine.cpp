@@ -126,7 +126,9 @@ StorageEngine::StorageEngine(const EngineOptions& options)
           _mem_tracker(std::make_shared<MemTrackerLimiter>(-1, "StorageEngine::Self")),
           _stop_background_threads_latch(1),
           _tablet_manager(new TabletManager(config::tablet_map_shard_size)),
+#ifndef CLOUD_MODE
           _txn_manager(new TxnManager(config::txn_map_shard_size, config::txn_shard_size)),
+#endif
           _rowset_id_generator(new UniqueRowsetIdGenerator(options.backend_uid)),
           _memtable_flush_executor(nullptr),
           _default_rowset_type(BETA_ROWSET),
@@ -197,7 +199,7 @@ Status StorageEngine::_open() {
     auto dirs = get_stores<false>();
 #ifdef CLOUD_MODE
     CHECK(dirs.size() == 1);
-    _meta_mgr = std::make_unique<CloudMetaMgr>();
+    _meta_mgr = std::make_unique<cloud::CloudMetaMgr>();
     RETURN_IF_ERROR(_meta_mgr->open());
     // TBD(cyx): init s3 fs
 #else
@@ -905,7 +907,10 @@ void StorageEngine::start_delete_unused_rowset() {
     }
 }
 
-void StorageEngine::add_unused_rowset(RowsetSharedPtr rowset) {
+void StorageEngine::add_unused_rowset(const RowsetSharedPtr& rowset) {
+#ifdef CLOUD_MODE
+    LOG(FATAL) << "Should not call add_unused_rowset in cloud mode";
+#else
     if (rowset == nullptr) {
         return;
     }
@@ -924,6 +929,7 @@ void StorageEngine::add_unused_rowset(RowsetSharedPtr rowset) {
         _unused_rowsets[rowset_id] = rowset;
         release_rowset_id(rowset->rowset_id());
     }
+#endif
 }
 
 // TODO(zc): refactor this funciton

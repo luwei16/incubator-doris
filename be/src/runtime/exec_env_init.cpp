@@ -16,9 +16,11 @@
 // under the License.
 
 #include "agent/cgroups_mgr.h"
+#include "cloud/cloud_stream_load_executor.h"
 #include "common/config.h"
 #include "common/logging.h"
 #include "gen_cpp/BackendService.h"
+#include "gen_cpp/FrontendService.h"
 #include "gen_cpp/HeartbeatService_types.h"
 #include "gen_cpp/TPaloBrokerService.h"
 #include "olap/page_cache.h"
@@ -143,7 +145,11 @@ Status ExecEnv::_init(const std::vector<StorePath>& store_paths) {
     _load_stream_mgr = new LoadStreamMgr();
     _internal_client_cache = new BrpcClientCache<PBackendService_Stub>();
     _function_client_cache = new BrpcClientCache<PFunctionService_Stub>();
+#ifdef CLOUD_MODE
+    _stream_load_executor = new cloud::CloudStreamLoadExecutor(this);
+#else
     _stream_load_executor = new StreamLoadExecutor(this);
+#endif
     _routine_load_task_executor = new RoutineLoadTaskExecutor(this);
     _small_file_mgr = new SmallFileMgr(this, config::small_file_dir);
     _storage_policy_mgr = new StoragePolicyMgr();

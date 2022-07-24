@@ -35,6 +35,7 @@
 #include "env/env.h"
 #include "env/env_util.h"
 #include "gutil/strings/strcat.h"
+#include "io/fs/local_file_system.h"
 #include "olap/base_compaction.h"
 #include "olap/cumulative_compaction.h"
 #include "olap/data_dir.h"
@@ -565,6 +566,8 @@ TabletSharedPtr TabletManager::get_tablet(TTabletId tablet_id, bool include_dele
             std::unique_lock wlock(shard.lock);
             shard.tablet_map.emplace(tablet_id, tablet);
         }
+        // FIXME(cyx): remove this temporary code when we can load to s3
+        io::global_local_filesystem()->create_directory(tablet->tablet_path());
     }
 #endif
     return tablet;

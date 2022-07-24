@@ -19,6 +19,7 @@
 
 #include <memory>
 
+#include "cloud/utils.h"
 #include "olap/storage_engine.h"
 #include "runtime/runtime_state.h"
 #include "vec/core/block.h"
@@ -82,6 +83,7 @@ Status VOlapScanner::prepare(
                 _tablet_schema->append_column(TabletColumn(column_desc));
             }
         }
+        VLOG_DEBUG << "VOlapScanner version: " << _version;
         {
             std::shared_lock rdlock(_tablet->get_header_lock());
             const RowsetSharedPtr rowset = _tablet->rowset_with_max_version();
@@ -98,13 +100,28 @@ Status VOlapScanner::prepare(
             Version rd_version(0, _version);
             Status acquire_reader_st =
                     _tablet->capture_rs_readers(rd_version, &_tablet_reader_params.rs_readers);
+#ifdef CLOUD_MODE
+            rdlock.unlock();
+            if (!acquire_reader_st.ok()) {
+                std::vector<RowsetMetaSharedPtr> rs_metas;
+                RETURN_IF_ERROR(cloud::meta_mgr()->get_rowset_meta(
+                        tablet_id, {rowset->end_version() + 1, _version}, &rs_metas));
+                for (const auto& rs_meta : rs_metas) {
+                    // acquire tablet exclusive header_lock in add_rowset_by_meta
+                    _tablet->add_rowset_by_meta(rs_meta);
+                }
+                std::shared_lock rdlock(_tablet->get_header_lock());
+                acquire_reader_st =
+                        _tablet->capture_rs_readers(rd_version, &_tablet_reader_params.rs_readers);
+            }
+#endif
             if (!acquire_reader_st.ok()) {
                 LOG(WARNING) << "fail to init reader.res=" << acquire_reader_st;
                 std::stringstream ss;
                 ss << "failed to initialize storage reader. tablet=" << _tablet->full_name()
                    << ", res=" << acquire_reader_st
                    << ", backend=" << BackendOptions::get_localhost();
-                return Status::InternalError(ss.str().c_str());
+                return Status::InternalError(ss.str());
             }
         }
     }

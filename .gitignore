@@ -93,3 +93,6 @@ tools/tpch-tools/tpch-data/
 
 # be-ut
 data_test
+
+# cloud
+cloud/build*/

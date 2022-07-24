@@ -452,6 +452,23 @@ Status Tablet::add_inc_rowset(const RowsetSharedPtr& rowset) {
     return Status::OK();
 }
 
+void Tablet::add_rowset_by_meta(const RowsetMetaSharedPtr& rs_meta) {
+    DCHECK(rs_meta != nullptr);
+    RowsetSharedPtr rowset;
+    // nullptr implies using tablet schema in `rs_meta`
+    RowsetFactory::create_rowset(nullptr, tablet_path(), rs_meta, &rowset);
+    std::lock_guard<std::shared_mutex> wrlock(_meta_lock);
+    if (_contains_rowset(rowset->rowset_id())) {
+        // rowset is already in tablet
+        return;
+    }
+    // check should not contain same version
+    CHECK(_contains_version(rowset->version()).ok());
+    CHECK(_tablet_meta->add_rs_meta(rowset->rowset_meta()));
+    _rs_version_map[rs_meta->version()] = std::move(rowset);
+    _timestamped_version_tracker.add_version(rs_meta->version());
+}
+
 void Tablet::_delete_stale_rowset_by_version(const Version& version) {
     RowsetMetaSharedPtr rowset_meta = _tablet_meta->acquire_stale_rs_meta_by_version(version);
     if (rowset_meta == nullptr) {

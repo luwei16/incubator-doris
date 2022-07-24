@@ -70,6 +70,8 @@ public:
         return Status::OK();
     }
 
+    const RowsetMetaSharedPtr& rowset_meta() const override { return _rowset_meta; }
+
 private:
     template <typename RowType>
     Status _add_row(const RowType& row);

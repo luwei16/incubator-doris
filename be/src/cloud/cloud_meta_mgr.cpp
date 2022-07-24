@@ -9,7 +9,7 @@
 #include "service/internal_service.h"
 #include "util/defer_op.h"
 
-namespace doris {
+namespace doris::cloud {
 
 CloudMetaMgr::CloudMetaMgr() = default;
 
@@ -34,6 +34,7 @@ Status CloudMetaMgr::open() {
 }
 
 Status CloudMetaMgr::get_tablet_meta(int64_t tablet_id, TabletMetaSharedPtr* tablet_meta) {
+    VLOG_DEBUG << "send GetTabletRequest, tablet_id: " << tablet_id;
     brpc::Controller cntl;
     selectdb::GetTabletRequest req;
     selectdb::GetTabletResponse resp;
@@ -48,11 +49,14 @@ Status CloudMetaMgr::get_tablet_meta(int64_t tablet_id, TabletMetaSharedPtr* tab
     }
     *tablet_meta = std::make_shared<TabletMeta>();
     (*tablet_meta)->init_from_pb(resp.tablet_meta());
+    VLOG_DEBUG << "get tablet meta, tablet_id: " << (*tablet_meta)->tablet_id();
     return Status::OK();
 }
 
 Status CloudMetaMgr::get_rowset_meta(int64_t tablet_id, Version version_range,
                                      std::vector<RowsetMetaSharedPtr>* rs_metas) {
+    VLOG_DEBUG << "send GetRowsetRequest, tablet_id: " << tablet_id
+               << ", version: " << version_range;
     brpc::Controller cntl;
     selectdb::GetRowsetRequest req;
     selectdb::GetRowsetResponse resp;
@@ -72,6 +76,8 @@ Status CloudMetaMgr::get_rowset_meta(int64_t tablet_id, Version version_range,
     for (const auto& meta_pb : resp.rowset_meta()) {
         auto rs_meta = std::make_shared<RowsetMeta>();
         rs_meta->init_from_pb(meta_pb);
+        VLOG_DEBUG << "get rowset meta, tablet_id: " << rs_meta->tablet_id()
+                   << ", version: " << rs_meta->version();
         rs_metas->push_back(std::move(rs_meta));
     }
     return Status::OK();
@@ -97,6 +103,8 @@ Status CloudMetaMgr::write_tablet_meta(const TabletMetaSharedPtr& tablet_meta) {
 }
 
 Status CloudMetaMgr::write_rowset_meta(const RowsetMetaSharedPtr& rs_meta, bool is_tmp) {
+    VLOG_DEBUG << "write rowset meta, tablet_id: " << rs_meta->tablet_id()
+               << ", rowset_id: " << rs_meta->rowset_id() << ", is_tmp: " << is_tmp;
     brpc::Controller cntl;
     selectdb::CreateRowsetRequest req;
     selectdb::MetaServiceGenericResponse resp;
@@ -114,6 +122,8 @@ Status CloudMetaMgr::write_rowset_meta(const RowsetMetaSharedPtr& rs_meta, bool 
 }
 
 Status CloudMetaMgr::commit_txn(int64_t db_id, int64_t txn_id, bool is_2pc) {
+    VLOG_DEBUG << "commit txn, db_id: " << db_id << ", txn_id: " << txn_id
+               << ", is_2pc: " << is_2pc;
     brpc::Controller cntl;
     selectdb::CommitTxnRequest req;
     selectdb::CommitTxnResponse resp;
@@ -136,6 +146,7 @@ Status CloudMetaMgr::abort_txn(int64_t db_id, int64_t txn_id) {
 }
 
 Status CloudMetaMgr::precommit_txn(int64_t db_id, int64_t txn_id) {
+    VLOG_DEBUG << "precommit txn, db_id: " << db_id << ", txn_id: " << txn_id;
     brpc::Controller cntl;
     selectdb::PrecommitTxnRequest req;
     selectdb::PrecommitTxnResponse resp;
@@ -157,4 +168,4 @@ Status CloudMetaMgr::get_s3_info(const std::string& resource_id,
     return Status::OK();
 }
 
-} // namespace doris
+} // namespace doris::cloud
