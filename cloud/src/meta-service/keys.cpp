@@ -6,6 +6,7 @@
 
 #include <cassert>
 #include <type_traits>
+#include <variant>
 // clang-format on
 
 namespace selectdb {
@@ -175,6 +176,36 @@ void meta_tablet_tmp_key(const MetaTabletTmpKeyInfo& in, std::string* out) {
 //==============================================================================
 // Other keys
 //==============================================================================
+
+//==============================================================================
+// Decode keys
+//==============================================================================
+int decode_key(std::string_view* in,
+               std::vector<std::tuple<std::variant<int64_t, std::string>, int, int>>* out) {
+    int pos = 0;
+    int last_len = static_cast<int>(in->size());
+    while (!in->empty()) {
+        int ret = 0;
+        auto tag = in->at(0);
+        if (tag == EncodingTag::BYTES_TAG) {
+            std::string str;
+            ret = decode_bytes(in, &str);
+            if (ret != 0) return ret;
+            out->emplace_back(std::move(str), tag, pos);
+        } else if (tag == EncodingTag::NEGATIVE_FIXED_INT_TAG ||
+                   tag == EncodingTag::POSITIVE_FIXED_INT_TAG) {
+            int64_t v;
+            ret = decode_int64(in, &v);
+            if (ret != 0) return ret;
+            out->emplace_back(v, tag, pos);
+        } else {
+            return -1;
+        }
+        pos += last_len - in->size();
+        last_len = in->size();
+    }
+    return 0;
+}
 
 } // namespace selectdb
 // vim: et tw=100 ts=4 sw=4 cc=80:

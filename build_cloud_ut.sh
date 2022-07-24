@@ -136,13 +136,17 @@ ${CMAKE_CMD} -G "${GENERATOR}" \
     -DSTRICT_MEMORY_USE=OFF \
     ${CMAKE_USE_CCACHE} ${DORIS_HOME}/cloud/
 ${BUILD_SYSTEM} -j ${PARALLEL}
+${BUILD_SYSTEM} install
 
 if [ ${RUN} -ne 1 ]; then
     echo "Finished"
     exit 0
 fi
 
-# TODO
-# echo "******************************"
-# echo "   Running Backend Unit Test  "
-# echo "******************************"
+echo "**********************************"
+echo "   Running MetaService Unit Test  "
+echo "**********************************"
+
+# test binary output dir
+cd test
+./run_all_tests.sh "${FILTER}"

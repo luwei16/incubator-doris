@@ -1,6 +1,7 @@
 
 // clang-format off
 #include "meta-service/doris_txn.h"
+#include "common/util.h"
 
 #include "gtest/gtest.h"
 
@@ -10,8 +11,6 @@ int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
 }
-
-extern std::string hex(std::string_view str);
 
 TEST(TxnIdConvert, TxnIdTest) {
     using namespace selectdb;

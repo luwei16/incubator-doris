@@ -1,5 +1,6 @@
 
 // clang-format off
+#include "common/util.h"
 #include "meta-service/keys.h"
 
 #include "gtest/gtest.h"
@@ -7,14 +8,14 @@
 #include <cstring>
 #include <iostream>
 #include <random>
+#include <variant>
+#include <vector>
 // clang-format on
 
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
 }
-
-extern std::string hex(std::string_view);
 
 // extern
 namespace selectdb {
@@ -374,6 +375,16 @@ TEST(KeysTest, TxnKeysTest) {
 
         ASSERT_GT(encoded_txn_running_key1, encoded_txn_running_key0);
     }
+}
+
+TEST(KeysTest, DecodeKeysTest) {
+    using namespace selectdb;
+    // clang-format off
+    std::string key = "011074786e000110696e7374616e63655f69645f646561646265656600011074786e5f696e646578000112000000000000271310696e736572745f336664356164313264303035346139622d386337373664333231386336616462370001";
+    // clang-format on
+    auto pretty_key = prettify_key(key);
+    ASSERT_TRUE(!pretty_key.empty()) << key;
+    std::cout << "\n" << pretty_key << std::endl;
 }
 
 // vim: et tw=100 ts=4 sw=4 cc=80:

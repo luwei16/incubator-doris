@@ -3,6 +3,8 @@
 // clang-format off
 #include <string>
 #include <tuple>
+#include <variant>
+#include <vector>
 // clang-format on
 
 // clang-format off
@@ -78,6 +80,17 @@ void meta_tablet_table_key(const MetaTabletTblKeyInfo& in, std::string* out);
 void meta_tablet_tmp_key(const MetaTabletTmpKeyInfo& in, std::string* out);
 
 // TODO: add a family of decoding functions if needed
+
+/**
+ * Deocdes a given key without key space byte (the first byte).
+ * Note that the input may be partially decode if the return value is non-zero.
+ *
+ * @param in input byte stream, successfully decoded part will be consumed 
+ * @param out the vector of each <field decoded, field type and its position> in the input stream
+ * @return 0 for successful decoding of the entire input, otherwise error.
+ */
+int decode_key(std::string_view* in,
+               std::vector<std::tuple<std::variant<int64_t, std::string>, int, int>>* out);
 
 } // namespace selectdb
 // vim: et tw=100 ts=4 sw=4 cc=80:

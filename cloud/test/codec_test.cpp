@@ -1,6 +1,7 @@
 
 // clang-format off
 #include "meta-service/codec.h"
+#include "common/util.h"
 
 #include <gtest/gtest.h>
 
@@ -152,9 +153,8 @@ TEST(CodecTest, StringCodecTest) {
     }
 }
 
-extern std::string hex(std::string_view);
-
 TEST(CodecTest, Int64CodecTest) {
+    using namespace selectdb;
     int ret = 0;
 
     // Basic test
