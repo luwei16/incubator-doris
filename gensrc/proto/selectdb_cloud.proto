@@ -313,6 +313,12 @@ message MetaServiceGenericResponse {
     optional MetaServiceResponseStatus status = 1;
 }
 
+message MetaServiceHttpRequest {
+}
+
+message MetaServiceHttpResponse {
+}
+
 service MetaService {
     rpc begin_txn(BeginTxnRequest) returns (BeginTxnResponse);
     rpc precommit_txn(PrecommitTxnRequest) returns (PrecommitTxnResponse);
@@ -324,6 +330,8 @@ service MetaService {
     rpc get_tablet(GetTabletRequest) returns (GetTabletResponse);
     rpc create_rowset(CreateRowsetRequest) returns (MetaServiceGenericResponse);
     rpc get_rowset(GetRowsetRequest) returns (GetRowsetResponse);
+
+    rpc http(MetaServiceHttpRequest) returns (MetaServiceHttpResponse);
 };
 
 service ResourceManagerService {

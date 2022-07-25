@@ -3,6 +3,7 @@
 #include "txn_kv.h"
 
 #include "common/config.h"
+#include "common/util.h"
 
 #include "glog/logging.h"
 
@@ -13,8 +14,6 @@
 #include <thread>
 #include <cstring>
 // clang-format on
-
-extern std::string hex(std::string_view str);
 
 // =============================================================================
 //  FoundationDB implementation of TxnKv

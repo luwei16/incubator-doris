@@ -358,8 +358,8 @@ if [ ${BUILD_CLOUD} -eq 1 ] ; then
             -DGLIBC_COMPATIBILITY=${GLIBC_COMPATIBILITY} ${DORIS_HOME}/cloud/
     ${BUILD_SYSTEM} -j ${PARALLEL}
     ${BUILD_SYSTEM} install
-#     cd ${DORIS_HOME}
-    echo "Build cloud done, exit"
+    cd ${DORIS_HOME}
+    echo "Build cloud done"
 fi
 
 if [ "${BUILD_DOCS}" = "ON" ] ; then

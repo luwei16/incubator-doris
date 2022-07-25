@@ -1,8 +1,10 @@
 
 // clang-format off
 #include "meta_service.h"
-#include "meta-service/keys.h"
+#include "common/config.h"
+#include "common/util.h"
 #include "meta-service/doris_txn.h"
+#include "meta-service/keys.h"
 
 #include "brpc/closure_guard.h"
 #include "brpc/controller.h"
@@ -10,8 +12,6 @@
 #include <limits>
 #include <memory>
 // clang-format on
-
-extern std::string hex(std::string_view str);
 
 namespace selectdb {
 
@@ -695,6 +695,81 @@ void MetaServiceImpl::get_rowset(::google::protobuf::RpcController* controller,
             return;
         }
     }
+}
+
+void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
+                           const ::selectdb::MetaServiceHttpRequest* request,
+                           ::selectdb::MetaServiceHttpResponse* response,
+                           ::google::protobuf::Closure* done) {
+    auto cntl = static_cast<brpc::Controller*>(controller);
+    LOG(INFO) << "rpc from " << cntl->remote_side() << " request: " << request->DebugString();
+    brpc::ClosureGuard closure_guard(done);
+    int ret = 0;
+    int status_code = 200;
+    std::string msg = "OK";
+    std::string req;
+    std::string response_body;
+    std::string request_body;
+    std::unique_ptr<int, std::function<void(int*)>> defer_status(
+            (int*)0x01, [&ret, &msg, &status_code, &response_body, &cntl, &req](int*) {
+                LOG(INFO) << "finish " << __PRETTY_FUNCTION__ << " " << cntl->remote_side()
+                          << " request=\n"
+                          << req << " ret=" << ret << " msg=" << msg;
+                cntl->http_response().set_status_code(status_code);
+                cntl->response_attachment().append(response_body);
+                cntl->response_attachment().append("\n");
+            });
+    auto unresolved_path = cntl->http_request().unresolved_path();
+    auto uri = cntl->http_request().uri();
+
+    std::stringstream ss;
+    ss << "\nuri_path=" << uri.path();
+    ss << "\nunresolved_path=" << unresolved_path;
+    ss << "\nmethod=" << brpc::HttpMethod2Str(cntl->http_request().method());
+    ss << "\nquery strings:";
+    for (auto it = uri.QueryBegin(); it != uri.QueryEnd(); ++it) {
+        ss << "\n" << it->first << "=" << it->second;
+    }
+    ss << "\nheaders:";
+    for (auto it = cntl->http_request().HeaderBegin(); it != cntl->http_request().HeaderEnd();
+         ++it) {
+        ss << "\n" << it->first << ":" << it->second;
+    }
+    req = ss.str();
+    ss.clear();
+
+    // Auth
+    auto token = uri.GetQuery("token");
+    if (token == nullptr || *token != config::http_token) {
+        msg = "incorrect token, token=" + (token == nullptr ? std::string("(not given)") : *token);
+        response_body = "incorrect token";
+        status_code = 403;
+        return;
+    }
+
+    // Process http request
+    if (unresolved_path == "decode_key") { // TODO: implement this in a separate src file
+        if (uri.GetQuery("key") == nullptr || uri.GetQuery("key")->empty()) {
+            msg = "no key to decode";
+            response_body = msg;
+            status_code = 400;
+            return;
+        }
+        std::string_view key = *uri.GetQuery("key");
+        response_body = prettify_key(key);
+        if (key.empty()) {
+            msg = "failed to decode key, key=" + std::string(key);
+            response_body = "failed to decode key, it may be malformed";
+            status_code = 400;
+            return;
+        }
+        return;
+    }
+
+    // TODO:
+    // * unresolved_path == "encode_key"
+    // * unresolved_path == "set_token"
+    // * etc.
 }
 
 } // namespace selectdb

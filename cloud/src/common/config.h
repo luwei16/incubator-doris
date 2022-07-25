@@ -25,6 +25,7 @@ CONF_String(meta_service_conf_path, "./conf/meta_service.conf");
 CONF_Int32(brpc_listen_port, "5000");
 CONF_Int32(brpc_num_threads, "-1");
 CONF_String(fdb_cluster_file_path, "./conf/fdb.cluster");
+CONF_String(http_token, "greedisgood9999");
 // CONF_Int64(a, "1073741824");
 // CONF_Bool(b, "true");
 
