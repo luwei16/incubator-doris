@@ -321,7 +321,7 @@ public class CloudGlobalTransactionMgr implements GlobalTransactionMgrInterface 
 
     @Override
     public TransactionState getTransactionState(long dbId, long transactionId) {
-        return null;
+        return new TransactionState();
     }
 
     public void setEditLog(EditLog editLog) {

@@ -156,7 +156,9 @@ import org.apache.doris.persist.TruncateTableInfo;
 import org.apache.doris.policy.Policy;
 import org.apache.doris.policy.PolicyTypeEnum;
 import org.apache.doris.policy.StoragePolicy;
+import org.apache.doris.proto.OlapCommon;
 import org.apache.doris.proto.OlapFile;
+import org.apache.doris.proto.Types;
 import org.apache.doris.qe.ConnectContext;
 import org.apache.doris.resource.Tag;
 import org.apache.doris.rpc.RpcException;
@@ -169,6 +171,7 @@ import org.apache.doris.task.AgentTaskQueue;
 import org.apache.doris.task.CreateReplicaTask;
 import org.apache.doris.thrift.TCompressionType;
 import org.apache.doris.thrift.TNetworkAddress;
+import org.apache.doris.thrift.TSortType;
 import org.apache.doris.thrift.TStorageFormat;
 import org.apache.doris.thrift.TStorageMedium;
 import org.apache.doris.thrift.TStorageType;
@@ -183,6 +186,7 @@ import com.google.common.collect.Sets;
 import com.selectdb.cloud.catalog.CloudPartition;
 import com.selectdb.cloud.proto.SelectdbCloud;
 import com.selectdb.cloud.rpc.MetaServiceProxy;
+import doris.segment_v2.SegmentV2;
 import lombok.Getter;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -202,6 +206,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
@@ -3333,6 +3338,15 @@ public class InternalDataSource implements DataSourceIf<Database> {
                 for (Map.Entry<Tag, List<List<Long>>> entry : backendsPerBucketSeq.entrySet()) {
                     chosenBackendIds.put(entry.getKey(), entry.getValue().get(i));
                 }
+            } else {
+                if (!Config.disable_storage_medium_check) {
+                    chosenBackendIds = Catalog.getCurrentSystemInfo()
+                            .selectBackendIdsForReplicaCreation(replicaAlloc, clusterName,
+                                    tabletMeta.getStorageMedium());
+                } else {
+                    chosenBackendIds = Catalog.getCurrentSystemInfo()
+                            .selectBackendIdsForReplicaCreation(replicaAlloc, clusterName, null);
+                }
             }
             // create replica
             short totalReplicaNum = (short) 0;
@@ -3362,6 +3376,34 @@ public class InternalDataSource implements DataSourceIf<Database> {
         }
     }
 
+    private OlapFile.RowsetMetaPB.Builder createInitialRowset(Tablet tablet, long partitionId,
+            int schemaHash, OlapFile.TabletSchemaPB schema) {
+        OlapFile.RowsetMetaPB.Builder rowsetBuilder = OlapFile.RowsetMetaPB.newBuilder();
+        rowsetBuilder.setRowsetId(0);
+        rowsetBuilder.setPartitionId(partitionId);
+        rowsetBuilder.setTabletId(tablet.getId());
+        rowsetBuilder.setTabletSchemaHash(schemaHash);
+        rowsetBuilder.setRowsetType(OlapFile.RowsetTypePB.BETA_ROWSET);
+        rowsetBuilder.setRowsetState(OlapFile.RowsetStatePB.VISIBLE);
+        rowsetBuilder.setStartVersion(0);
+        rowsetBuilder.setEndVersion(1);
+        rowsetBuilder.setNumRows(0);
+        rowsetBuilder.setTotalDiskSize(0);
+        rowsetBuilder.setDataDiskSize(0);
+        rowsetBuilder.setIndexDiskSize(0);
+        rowsetBuilder.setSegmentsOverlapPb(OlapFile.SegmentsOverlapPB.NONOVERLAPPING);
+        rowsetBuilder.setNumSegments(0);
+        rowsetBuilder.setEmpty(true);
+
+        UUID uuid = UUID.randomUUID();
+        String rowsetIdV2Str = Long.toHexString(2 << 56) + Long.toHexString(uuid.getMostSignificantBits())
+                + Long.toHexString(uuid.getLeastSignificantBits());
+        rowsetBuilder.setRowsetIdV2(rowsetIdV2Str);
+
+        rowsetBuilder.setTabletSchema(schema);
+        return rowsetBuilder;
+    }
+
     private Partition createCloudPartitionWithIndices(String clusterName, long dbId, long tableId, long baseIndexId,
             long partitionId, String partitionName, Map<Long, MaterializedIndexMeta> indexIdToMeta,
             DistributionInfo distributionInfo, TStorageMedium storageMedium, ReplicaAllocation replicaAlloc,
@@ -3374,7 +3416,8 @@ public class InternalDataSource implements DataSourceIf<Database> {
 
         LOG.info("lw test create partition");
         // create partition with base index
-        Partition partition = new Partition(partitionId, partitionName, baseIndex, distributionInfo);
+        Partition partition = new CloudPartition(partitionId, partitionName, baseIndex,
+                distributionInfo, dbId, tableId);
 
         // add to index map
         Map<Long, MaterializedIndex> indexMap = new HashMap<>();
@@ -3411,28 +3454,115 @@ public class InternalDataSource implements DataSourceIf<Database> {
             // boolean ok = false;
             // String errMsg = null;
 
-            // short shortKeyColumnCount = indexMeta.getShortKeyColumnCount();
+            short shortKeyColumnCount = indexMeta.getShortKeyColumnCount();
             // TStorageType storageType = indexMeta.getStorageType();
-            // List<Column> schema = indexMeta.getSchema();
-            // KeysType keysType = indexMeta.getKeysType();
-            //
-            //
-            //
+            List<Column> columns = indexMeta.getSchema();
+            KeysType keysType = indexMeta.getKeysType();
 
             for (Tablet tablet : index.getTablets()) {
                 OlapFile.TabletMetaPB.Builder builder = OlapFile.TabletMetaPB.newBuilder();
-                builder.setTableId(1);
+                builder.setTableId(tableId);
                 builder.setPartitionId(partitionId);
                 builder.setTabletId(tablet.getId());
                 builder.setSchemaHash(schemaHash);
+                builder.setCreationTime(System.currentTimeMillis() / 1000);
+                builder.setCumulativeLayerPoint(-1);
+                builder.setTabletState(OlapFile.TabletStatePB.PB_RUNNING);
+
+                UUID uuid = UUID.randomUUID();
+                Types.PUniqueId tabletUid = Types.PUniqueId.newBuilder()
+                        .setHi(uuid.getMostSignificantBits())
+                        .setLo(uuid.getLeastSignificantBits())
+                        .build();
+                builder.setTabletUid(tabletUid);
+
+                builder.setPreferredRowsetType(OlapFile.RowsetTypePB.BETA_ROWSET);
+                builder.setTabletType(tabletType == TTabletType.TABLET_TYPE_DISK
+                        ? OlapFile.TabletTypePB.TABLET_TYPE_DISK : OlapFile.TabletTypePB.TABLET_TYPE_MEMORY);
+
                 builder.setReplicaId(tablet.getReplicas().get(0).getId());
                 builder.setStoragePolicy(storagePolicy);
-                OlapFile.TabletMetaPB tabletMetaPb = builder.build();
+                builder.setEnableUniqueKeyMergeOnWrite(false);
 
+                OlapFile.TabletSchemaPB.Builder schemaBuilder = OlapFile.TabletSchemaPB.newBuilder();
+                if (keysType == KeysType.DUP_KEYS) {
+                    schemaBuilder.setKeysType(OlapFile.KeysType.DUP_KEYS);
+                } else if (keysType == KeysType.UNIQUE_KEYS) {
+                    schemaBuilder.setKeysType(OlapFile.KeysType.UNIQUE_KEYS);
+                } else if (keysType == KeysType.AGG_KEYS) {
+                    schemaBuilder.setKeysType(OlapFile.KeysType.AGG_KEYS);
+                } else {
+                    throw new DdlException("invalid key types");
+                }
+                schemaBuilder.setNumShortKeyColumns(shortKeyColumnCount);
+                schemaBuilder.setNumRowsPerRowBlock(1024);
+                schemaBuilder.setCompressKind(OlapCommon.CompressKind.COMPRESS_LZ4);
+                schemaBuilder.setBfFpp(bfFpp);
+
+                int deleteSign = -1;
+                int sequenceCol = -1;
+                for (int i = 0; i < columns.size(); i++) {
+                    Column column = columns.get(i);
+                    if (column.isDeleteSignColumn()) {
+                        deleteSign = i;
+                    }
+                    if (column.isSequenceColumn()) {
+                        sequenceCol = i;
+                    }
+                }
+                schemaBuilder.setDeleteSignIdx(deleteSign);
+                schemaBuilder.setSequenceColIdx(sequenceCol);
+
+                if (dataSortInfo.getSortType() == TSortType.LEXICAL) {
+                    schemaBuilder.setSortType(OlapFile.SortType.LEXICAL);
+                } else if (dataSortInfo.getSortType() == TSortType.ZORDER) {
+                    schemaBuilder.setSortType(OlapFile.SortType.ZORDER);
+                } else {
+                    throw new DdlException("invalid sort types");
+                }
+
+                switch (compressionType) {
+                    case NO_COMPRESSION:
+                        schemaBuilder.setCompressionType(SegmentV2.CompressionTypePB.NO_COMPRESSION);
+                        break;
+                    case SNAPPY:
+                        schemaBuilder.setCompressionType(SegmentV2.CompressionTypePB.SNAPPY);
+                        break;
+                    case LZ4:
+                        schemaBuilder.setCompressionType(SegmentV2.CompressionTypePB.LZ4);
+                        break;
+                    case LZ4F:
+                        schemaBuilder.setCompressionType(SegmentV2.CompressionTypePB.LZ4F);
+                        break;
+                    case ZLIB:
+                        schemaBuilder.setCompressionType(SegmentV2.CompressionTypePB.ZLIB);
+                        break;
+                    case ZSTD:
+                        schemaBuilder.setCompressionType(SegmentV2.CompressionTypePB.ZSTD);
+                        break;
+                    default:
+                        schemaBuilder.setCompressionType(SegmentV2.CompressionTypePB.LZ4F);
+                        break;
+                }
+
+                schemaBuilder.setSortColNum(dataSortInfo.getColNum());
+                for (int i = 0; i < columns.size(); i++) {
+                    Column column = columns.get(i);
+                    schemaBuilder.addColumn(column.toPb(bfColumns));
+                }
+                OlapFile.TabletSchemaPB schema = schemaBuilder.build();
+                builder.setSchema(schema);
+                // rowset
+                OlapFile.RowsetMetaPB.Builder rowsetBuilder = createInitialRowset(tablet, partitionId,
+                        schemaHash, schema);
+                builder.addRsMetas(rowsetBuilder);
+
+                OlapFile.TabletMetaPB tabletMetaPb = builder.build();
                 SelectdbCloud.CreateTabletRequest.Builder requestBuilder
                         = SelectdbCloud.CreateTabletRequest.newBuilder();
                 requestBuilder.setTabletMeta(tabletMetaPb);
                 SelectdbCloud.CreateTabletRequest createTableReq = requestBuilder.build();
+                LOG.info("lw test debug req: {} ", createTableReq.toString());
 
                 String metaEndPoint = Config.meta_service_endpoint;
                 String[] splitMetaEndPoint = metaEndPoint.split(":");

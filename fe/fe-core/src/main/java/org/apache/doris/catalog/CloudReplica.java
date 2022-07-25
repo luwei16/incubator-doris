@@ -30,12 +30,14 @@ public class CloudReplica extends Replica {
                         long dataSize, long remoteDataSize, long rowCount, ReplicaState state,
                         long lastFailedVersion,
                         long lastSuccessVersion) {
-        super(replicaId, -1, version, schemaHash, dataSize, remoteDataSize,
+        //super(replicaId, -1, version, schemaHash, dataSize, remoteDataSize,
+        //       rowCount, state, lastFailedVersion, lastSuccessVersion);
+        super(replicaId, backendIds.get(0), version, schemaHash, dataSize, remoteDataSize,
                 rowCount, state, lastFailedVersion, lastSuccessVersion);
     }
 
-    public CloudReplica(long replicaId, List<Long> backendId, ReplicaState state, long version, int schemaHash) {
-        super(replicaId, -1, state, version, schemaHash);
+    public CloudReplica(long replicaId, List<Long> backendIds, ReplicaState state, long version, int schemaHash) {
+        super(replicaId, backendIds.get(0), state, version, schemaHash);
     }
 
     // In the future, a replica may be mapped to multiple BEs in a cluster,

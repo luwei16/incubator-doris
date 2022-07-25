@@ -30,12 +30,15 @@ import org.apache.doris.common.io.Text;
 import org.apache.doris.common.io.Writable;
 import org.apache.doris.common.util.SqlUtils;
 import org.apache.doris.persist.gson.GsonUtils;
+import org.apache.doris.proto.OlapFile;
 import org.apache.doris.thrift.TColumn;
 import org.apache.doris.thrift.TColumnType;
+import org.apache.doris.thrift.TPrimitiveType;
 
 import com.google.common.base.Preconditions;
 import com.google.common.base.Strings;
 import com.google.gson.annotations.SerializedName;
+//import com.google.protobuf.ByteString;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -386,6 +389,90 @@ public class Column implements Writable {
         // If we need to use `defineExpr` and call defineExpr.treeToThrift(),
         // make sure it is analyzed, or NPE will thrown.
         return tColumn;
+    }
+
+    public int get_field_length_by_type(TPrimitiveType type, int stringLength) {
+        switch (type) {
+            case TINYINT:
+            case BOOLEAN:
+                return 1;
+            case SMALLINT:
+                return 2;
+            case INT:
+                return 4;
+            case BIGINT:
+                return 8;
+            case LARGEINT:
+                return 16;
+            case DATE:
+                return 3;
+            case DATEV2:
+                return 4;
+            case DATETIME:
+                return 8;
+            case FLOAT:
+                return 4;
+            case DOUBLE:
+                return 8;
+            case QUANTILE_STATE:
+            case OBJECT:
+                return 16;
+            case CHAR:
+                return stringLength;
+            case VARCHAR:
+            case HLL:
+                return stringLength + 2; // sizeof(OLAP_VARCHAR_MAX_LENGTH)
+            case STRING:
+                return stringLength + 4; // sizeof(OLAP_STRING_MAX_LENGTH)
+            case ARRAY:
+                return 65535; // OLAP_ARRAY_MAX_LENGTH
+            case DECIMAL32:
+                return 4;
+            case DECIMAL64:
+                return 8;
+            case DECIMAL128:
+                return 16;
+            case DECIMALV2:
+                return 12; // use 12 bytes in olap engine.
+            default:
+                LOG.warn("unknown field type. [type= << {} << ]", type);
+                return 0;
+        }
+    }
+
+    public OlapFile.ColumnPB toPb(Set<String> bfColumns) {
+        OlapFile.ColumnPB.Builder builder = OlapFile.ColumnPB.newBuilder();
+        builder.setName(this.name);
+        builder.setUniqueId(uniqueId);
+        builder.setType(this.getDataType().toString());
+        builder.setIsKey(this.isKey);
+        if (null != this.aggregationType) {
+            builder.setAggregation(this.aggregationType.toString());
+        } else {
+            builder.setAggregation("NONE");
+        }
+        builder.setIsNullable(this.isAllowNull);
+        //builder.setDefaultValue(ByteString.copyFrom(this.defaultValue.getBytes()));
+        builder.setPrecision(this.getPrecision());
+        builder.setFrac(this.getScale());
+
+        int length = get_field_length_by_type(this.getDataType().toThrift(), this.getStrLen());
+
+        builder.setLength(length);
+        builder.setIndexLength(length);
+        if (this.getDataType().toThrift() == TPrimitiveType.VARCHAR
+                || this.getDataType().toThrift() == TPrimitiveType.STRING) {
+            builder.setIndexLength(this.getOlapColumnIndexSize());
+        }
+
+        if (bfColumns != null && bfColumns.contains(this.name)) {
+            builder.setIsBfColumn(true);
+        } else {
+            builder.setIsBfColumn(false);
+        }
+        builder.setVisible(visible);
+        OlapFile.ColumnPB col = builder.build();
+        return col;
     }
 
     private void toChildrenThrift(Column column, TColumn tColumn) {
