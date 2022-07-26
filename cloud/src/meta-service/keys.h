@@ -35,6 +35,9 @@ namespace selectdb {
 static const constexpr unsigned char CLOUD_KEY_SPACE01 = 0x01;
 
 // clang-format off
+//                                     0:instance_id
+using InstanceKeyInfo      = std::tuple<std::string>;
+
 //                                     0:instance_id  1:db_id  2:label
 using TxnIndexKeyInfo      = std::tuple<std::string,  int64_t, std::string>;
 
@@ -65,6 +68,8 @@ using MetaTabletTblKeyInfo = std::tuple<std::string,  int64_t>;
 //                                     0:instance_id  1:table_id  2:tablet_id
 using MetaTabletTmpKeyInfo = std::tuple<std::string,  int64_t,    int64_t>;
 // clang-format on
+
+void instance_key(const InstanceKeyInfo& in, std::string* out);
 
 void txn_index_key(const TxnIndexKeyInfo& in, std::string* out);
 void txn_info_key(const TxnInfoKeyInfo& in, std::string* out);

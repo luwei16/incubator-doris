@@ -3,7 +3,7 @@
 #include "meta_server.h"
 
 #include "common/config.h"
-#include "meta_service.h"
+#include "meta-service/meta_service.h"
 
 #include "brpc/server.h"
 
@@ -29,8 +29,8 @@ int MetaServer::start() {
     }
 
     // Add service
-    auto service = new MetaServiceImpl(txn_kv_);
-    server_->AddService(service, brpc::SERVER_OWNS_SERVICE);
+    auto meta_service = new MetaServiceImpl(txn_kv_);
+    server_->AddService(meta_service, brpc::SERVER_OWNS_SERVICE);
     // start service
     brpc::ServerOptions options;
     if (config::brpc_num_threads != -1) {

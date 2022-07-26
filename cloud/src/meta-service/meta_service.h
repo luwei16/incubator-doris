@@ -1,8 +1,8 @@
 
 #pragma once
 
+#include "meta-service/txn_kv.h"
 #include "gen_cpp/selectdb_cloud.pb.h"
-#include "txn_kv.h"
 
 namespace selectdb {
 
@@ -60,6 +60,26 @@ public:
               const ::selectdb::MetaServiceHttpRequest* request,
               ::selectdb::MetaServiceHttpResponse* response,
               ::google::protobuf::Closure* done) override;
+
+    void get_obj_store_info(google::protobuf::RpcController* controller,
+                            const ::selectdb::GetObjStoreInfoRequest* request,
+                            ::selectdb::GetObjStoreInfoResponse* response,
+                            ::google::protobuf::Closure* done) override;
+
+    void create_instance(google::protobuf::RpcController* controller,
+                         const ::selectdb::CreateInstanceRequest* request,
+                         ::selectdb::MetaServiceGenericResponse* response,
+                         ::google::protobuf::Closure* done) override;
+
+    void add_cluster(google::protobuf::RpcController* controller,
+                     const ::selectdb::AddClusterRequest* request,
+                     ::selectdb::MetaServiceGenericResponse* response,
+                     ::google::protobuf::Closure* done) override;
+
+    void get_cluster(google::protobuf::RpcController* controller,
+                     const ::selectdb::GetClusterRequest* request,
+                     ::selectdb::GetClusterResponse* response,
+                     ::google::protobuf::Closure* done) override;
 
 private:
     std::shared_ptr<TxnKv> txn_kv_;

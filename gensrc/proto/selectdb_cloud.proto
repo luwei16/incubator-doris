@@ -10,28 +10,32 @@ option cc_generic_services = true;
 message InstanceInfoPB {
     optional string user_id = 1;
     optional string instance_id = 2;
-    repeated string lb_ip = 3;
-    optional int64 ctime = 4;
-    optional int64 mtime = 5;
-    repeated NodeInfoPB sql_server = 6;
-    repeated ClusterPB clusters = 7;
+    optional string name = 3;
+    repeated string lb_ip = 4;
+    optional int64 ctime = 5;
+    optional int64 mtime = 6;
+    repeated NodeInfoPB sql_server = 7;
+    repeated ClusterPB clusters = 8;
+    optional ObjectStoreInfoPB obj_store = 9;
 }
 
 message ClusterPB {
-    optional string name = 1;
-    optional string cluster_id = 2;
+    optional string cluster_id = 1;
+    optional string cluster_name = 2;
     repeated NodeInfoPB compute_node = 3;
 }
 
 message NodeInfoPB {
-    optional string name = 1;
-    optional string ip = 2;
-    optional string vpc_name = 3;
-    optional string unique_id = 4;
+    optional string cloud_unique_id = 1;
+    optional string name = 2;
+    optional string ip = 3;
+    optional string vpc_name = 4;
     optional int64 ctime = 5;
     optional int64 mtime = 6;
     optional NodeStatusPB status = 7;
-    optional string desc = 8;
+    // There may be other ports, just add new fields in need
+    optional int32 heartbeat_port = 8; 
+    optional string desc = 9;
 }
 
 enum NodeStatusPB {
@@ -46,6 +50,7 @@ message ObjectStoreInfoPB {
     optional string bucket = 3;
     optional string prefix = 4;
     optional string endpoint = 5;
+    optional string region = 6;
 }
 
 //==============================================================================
@@ -319,6 +324,41 @@ message MetaServiceHttpRequest {
 message MetaServiceHttpResponse {
 }
 
+message CreateInstanceRequest {
+    optional string instance_id = 1;
+    optional string user_id = 2;
+    optional string name = 3; // Alias
+}
+
+message AddClusterRequest {
+    optional string instance_id = 1;
+    optional ClusterPB cluster = 2;
+}
+
+message GetClusterRequest {
+    optional string instance_id = 1; // Redundant field
+    optional string cloud_unique_id = 2;
+    optional string cluster_id = 3;
+    optional string cluster_name = 4;
+}
+
+message GetClusterResponse {
+    optional MetaServiceResponseStatus status = 1;
+    optional ClusterPB cluster = 2;
+}
+
+service ResourceManagerService {
+//     rpc get_obj_store_info(GetObjStoreInfoRequest) returns (GetObjStoreInfoResponse);
+//     rpc create_instance(CreateInstanceRequest) returns (MetaServiceGenericResponse);
+//     rpc add_cluster(AddClusterRequest) returns (MetaServiceGenericResponse);
+//     rpc get_cluster(GetClusterRequest) returns (GetClusterResponse);
+
+    // TODO:
+    // add_sql_server
+    // add_compute_server
+};
+
+
 service MetaService {
     rpc begin_txn(BeginTxnRequest) returns (BeginTxnResponse);
     rpc precommit_txn(PrecommitTxnRequest) returns (PrecommitTxnResponse);
@@ -332,15 +372,12 @@ service MetaService {
     rpc get_rowset(GetRowsetRequest) returns (GetRowsetResponse);
 
     rpc http(MetaServiceHttpRequest) returns (MetaServiceHttpResponse);
-};
 
-service ResourceManagerService {
+
     rpc get_obj_store_info(GetObjStoreInfoRequest) returns (GetObjStoreInfoResponse);
-
-    // TODO:
-    // create_instance
-    // add_sql_server
-    // add_compute_server
+    rpc create_instance(CreateInstanceRequest) returns (MetaServiceGenericResponse);
+    rpc add_cluster(AddClusterRequest) returns (MetaServiceGenericResponse);
+    rpc get_cluster(GetClusterRequest) returns (GetClusterResponse);
 };
 
 // vim: et ts=4 sw=4:

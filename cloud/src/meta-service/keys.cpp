@@ -33,6 +33,8 @@ namespace selectdb {
 // 
 // 0x01 "node_status" ${instance_id} "compute" ${backend_id} -> ComputeNodeStatusPB
 
+[[maybe_unused]] static const char* INSTANCE_KEY_PREFIX = "instance";
+
 [[maybe_unused]] static const char* TXN_KEY_PREFIX     = "txn";
 [[maybe_unused]] static const char* VERSION_KEY_PREFIX = "version";
 [[maybe_unused]] static const char* META_KEY_PREFIX    = "meta";
@@ -57,7 +59,8 @@ namespace selectdb {
 template <typename T>
 static void encode_prefix(const T& t, std::string* key) {
     // clang-format off
-    static_assert(std::is_same_v<T, TxnIndexKeyInfo     >
+    static_assert(std::is_same_v<T, InstanceKeyInfo     >
+               || std::is_same_v<T, TxnIndexKeyInfo     >
                || std::is_same_v<T, TxnInfoKeyInfo      >
                || std::is_same_v<T, TxnDbTblKeyInfo     >
                || std::is_same_v<T, TxnRunningKeyInfo   >
@@ -71,7 +74,9 @@ static void encode_prefix(const T& t, std::string* key) {
 
     key->push_back(CLOUD_KEY_SPACE01);
     // Prefixes for key families
-    if        constexpr (std::is_same_v<T, TxnIndexKeyInfo>
+    if        constexpr (std::is_same_v<T, InstanceKeyInfo>) {
+        encode_bytes(INSTANCE_KEY_PREFIX, key);
+    } else if constexpr (std::is_same_v<T, TxnIndexKeyInfo>
                       || std::is_same_v<T, TxnInfoKeyInfo>
                       || std::is_same_v<T, TxnDbTblKeyInfo>
                       || std::is_same_v<T, TxnRunningKeyInfo>) {
@@ -89,6 +94,14 @@ static void encode_prefix(const T& t, std::string* key) {
     }
     // clang-format on
     encode_bytes(std::get<0>(t), key); // instance_id
+}
+
+//==============================================================================
+// Resource keys
+//==============================================================================
+
+void instance_key(const InstanceKeyInfo& in, std::string* out) {
+    encode_prefix(in, out); // 0x01 "instance" ${instance_id}
 }
 
 //==============================================================================

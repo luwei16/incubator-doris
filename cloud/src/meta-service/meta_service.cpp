@@ -8,6 +8,7 @@
 
 #include "brpc/closure_guard.h"
 #include "brpc/controller.h"
+#include "google/protobuf/util/json_util.h"
 
 #include <limits>
 #include <memory>
@@ -30,13 +31,14 @@ void MetaServiceImpl::begin_txn(::google::protobuf::RpcController* controller,
     brpc::ClosureGuard closure_guard(done);
     int ret = 0;
     std::string msg = "OK";
-    std::unique_ptr<int, std::function<void(int*)>> defer_status((int*)0x01, [&ret, &msg, &response,
-                                                                              &ctrl](int*) {
-        response->mutable_status()->set_code(ret);
-        response->mutable_status()->set_msg(msg);
-        LOG(INFO) << "finish " << __PRETTY_FUNCTION__ << " " << ctrl->remote_side() << " " << msg;
-        LOG(INFO) << "xxx " << response->DebugString();
-    });
+    std::unique_ptr<int, std::function<void(int*)>> defer_status(
+            (int*)0x01, [&ret, &msg, &response, &ctrl](int*) {
+                response->mutable_status()->set_code(ret);
+                response->mutable_status()->set_msg(msg);
+                LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
+                          << ctrl->remote_side() << " " << msg;
+                LOG(INFO) << "xxx " << response->DebugString();
+            });
 
     if (!request->has_txn_info()) {
         msg = "no txn info";
@@ -187,12 +189,13 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
     int ret = 0;
     std::string msg = "OK";
     [[maybe_unused]] std::stringstream ss;
-    std::unique_ptr<int, std::function<void(int*)>> defer_status((int*)0x01, [&ret, &msg, &response,
-                                                                              &ctrl](int*) {
-        response->mutable_status()->set_code(ret);
-        response->mutable_status()->set_msg(msg);
-        LOG(INFO) << "finish " << __PRETTY_FUNCTION__ << " " << ctrl->remote_side() << " " << msg;
-    });
+    std::unique_ptr<int, std::function<void(int*)>> defer_status(
+            (int*)0x01, [&ret, &msg, &response, &ctrl](int*) {
+                response->mutable_status()->set_code(ret);
+                response->mutable_status()->set_msg(msg);
+                LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
+                          << ctrl->remote_side() << " " << msg;
+            });
 
     std::unique_ptr<Transaction> txn;
     ret = txn_kv_->create_txn(&txn);
@@ -458,12 +461,13 @@ void MetaServiceImpl::create_tablet(::google::protobuf::RpcController* controlle
     brpc::ClosureGuard closure_guard(done);
     int ret = 0;
     std::string msg = "OK";
-    std::unique_ptr<int, std::function<void(int*)>> defer_status((int*)0x01, [&ret, &msg, &response,
-                                                                              &ctrl](int*) {
-        response->mutable_status()->set_code(ret);
-        response->mutable_status()->set_msg(msg);
-        LOG(INFO) << "finish " << __PRETTY_FUNCTION__ << " " << ctrl->remote_side() << " " << msg;
-    });
+    std::unique_ptr<int, std::function<void(int*)>> defer_status(
+            (int*)0x01, [&ret, &msg, &response, &ctrl](int*) {
+                response->mutable_status()->set_code(ret);
+                response->mutable_status()->set_msg(msg);
+                LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
+                          << ctrl->remote_side() << " " << msg;
+            });
 
     if (!request->has_tablet_meta()) {
         msg = "no tablet meta";
@@ -547,12 +551,13 @@ void MetaServiceImpl::get_tablet(::google::protobuf::RpcController* controller,
     brpc::ClosureGuard closure_guard(done);
     int ret = 0;
     std::string msg = "OK";
-    std::unique_ptr<int, std::function<void(int*)>> defer_status((int*)0x01, [&ret, &msg, &response,
-                                                                              &ctrl](int*) {
-        response->mutable_status()->set_code(ret);
-        response->mutable_status()->set_msg(msg);
-        LOG(INFO) << "finish " << __PRETTY_FUNCTION__ << " " << ctrl->remote_side() << " " << msg;
-    });
+    std::unique_ptr<int, std::function<void(int*)>> defer_status(
+            (int*)0x01, [&ret, &msg, &response, &ctrl](int*) {
+                response->mutable_status()->set_code(ret);
+                response->mutable_status()->set_msg(msg);
+                LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
+                          << ctrl->remote_side() << " " << msg;
+            });
 
     std::unique_ptr<Transaction> txn;
     ret = txn_kv_->create_txn(&txn);
@@ -597,12 +602,13 @@ void MetaServiceImpl::create_rowset(::google::protobuf::RpcController* controlle
     brpc::ClosureGuard closure_guard(done);
     int ret = 0;
     std::string msg = "OK";
-    std::unique_ptr<int, std::function<void(int*)>> defer_status((int*)0x01, [&ret, &msg, &response,
-                                                                              &ctrl](int*) {
-        response->mutable_status()->set_code(ret);
-        response->mutable_status()->set_msg(msg);
-        LOG(INFO) << "finish " << __PRETTY_FUNCTION__ << " " << ctrl->remote_side() << " " << msg;
-    });
+    std::unique_ptr<int, std::function<void(int*)>> defer_status(
+            (int*)0x01, [&ret, &msg, &response, &ctrl](int*) {
+                response->mutable_status()->set_code(ret);
+                response->mutable_status()->set_msg(msg);
+                LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
+                          << ctrl->remote_side() << " " << msg;
+            });
 
     if (!request->has_rowset_meta()) {
         ret = -1;
@@ -654,12 +660,13 @@ void MetaServiceImpl::get_rowset(::google::protobuf::RpcController* controller,
     brpc::ClosureGuard closure_guard(done);
     int ret = 0;
     std::string msg = "OK";
-    std::unique_ptr<int, std::function<void(int*)>> defer_status((int*)0x01, [&ret, &msg, &response,
-                                                                              &ctrl](int*) {
-        response->mutable_status()->set_code(ret);
-        response->mutable_status()->set_msg(msg);
-        LOG(INFO) << "finish " << __PRETTY_FUNCTION__ << " " << ctrl->remote_side() << " " << msg;
-    });
+    std::unique_ptr<int, std::function<void(int*)>> defer_status(
+            (int*)0x01, [&ret, &msg, &response, &ctrl](int*) {
+                response->mutable_status()->set_code(ret);
+                response->mutable_status()->set_msg(msg);
+                LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
+                          << ctrl->remote_side() << " " << msg;
+            });
 
     int64_t tablet_id = request->tablet_id();
     int64_t start = request->start_version();
@@ -712,16 +719,17 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
     std::string request_body;
     std::unique_ptr<int, std::function<void(int*)>> defer_status(
             (int*)0x01, [&ret, &msg, &status_code, &response_body, &cntl, &req](int*) {
-                LOG(INFO) << "finish " << __PRETTY_FUNCTION__ << " " << cntl->remote_side()
-                          << " request=\n"
-                          << req << " ret=" << ret << " msg=" << msg;
+                LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
+                          << cntl->remote_side() << " request=\n"
+                          << req << "\n ret=" << ret << " msg=" << msg;
                 cntl->http_response().set_status_code(status_code);
                 cntl->response_attachment().append(response_body);
                 cntl->response_attachment().append("\n");
             });
+
+    // Prepare input request info
     auto unresolved_path = cntl->http_request().unresolved_path();
     auto uri = cntl->http_request().uri();
-
     std::stringstream ss;
     ss << "\nuri_path=" << uri.path();
     ss << "\nunresolved_path=" << unresolved_path;
@@ -737,6 +745,7 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
     }
     req = ss.str();
     ss.clear();
+    request_body = cntl->request_attachment().to_string(); // Just copy
 
     // Auth
     auto token = uri.GetQuery("token");
@@ -766,11 +775,322 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
         return;
     }
 
+    if (unresolved_path == "create_instance") {
+        CreateInstanceRequest req;
+        auto st = google::protobuf::util::JsonStringToMessage(request_body, &req);
+        if (!st.ok()) {
+            msg = "failed to CreateInstanceRequest, error: " + st.message().ToString();
+            response_body = msg;
+            LOG(WARNING) << msg;
+            return;
+        }
+        MetaServiceGenericResponse res;
+        create_instance(cntl, &req, &res, nullptr);
+        ret = res.status().code();
+        msg = res.status().msg();
+        response_body = msg;
+        return;
+    }
+
+    if (unresolved_path == "add_cluster") {
+        AddClusterRequest req;
+        auto st = google::protobuf::util::JsonStringToMessage(request_body, &req);
+        if (!st.ok()) {
+            msg = "failed to parse AddClusterRequest, error: " + st.message().ToString();
+            response_body = msg;
+            LOG(WARNING) << msg;
+            return;
+        }
+        MetaServiceGenericResponse res;
+        add_cluster(cntl, &req, &res, nullptr);
+        ret = res.status().code();
+        msg = res.status().msg();
+        response_body = msg;
+        return;
+    }
+
+    // This is useful for debuggin
+    if (unresolved_path == "get_cluster") {
+        GetClusterRequest req;
+        auto st = google::protobuf::util::JsonStringToMessage(request_body, &req);
+        if (!st.ok()) {
+            msg = "failed to GetClusterRequest, error: " + st.message().ToString();
+            response_body = msg;
+            LOG(WARNING) << msg;
+            return;
+        }
+        GetClusterResponse res;
+        get_cluster(cntl, &req, &res, nullptr);
+        ret = res.status().code();
+        msg = res.status().msg();
+        response_body = msg;
+        return;
+    }
+
     // TODO:
     // * unresolved_path == "encode_key"
     // * unresolved_path == "set_token"
     // * etc.
 }
+
+// TODO: move to separate file
+//==============================================================================
+// Resources
+//==============================================================================
+
+void MetaServiceImpl::get_obj_store_info(google::protobuf::RpcController* controller,
+                                         const ::selectdb::GetObjStoreInfoRequest* request,
+                                         ::selectdb::GetObjStoreInfoResponse* response,
+                                         ::google::protobuf::Closure* done) {}
+
+void MetaServiceImpl::create_instance(google::protobuf::RpcController* controller,
+                                      const ::selectdb::CreateInstanceRequest* request,
+                                      ::selectdb::MetaServiceGenericResponse* response,
+                                      ::google::protobuf::Closure* done) {
+    auto ctrl = static_cast<brpc::Controller*>(controller);
+    LOG(INFO) << "rpc from " << ctrl->remote_side() << " request=" << request->DebugString();
+    brpc::ClosureGuard closure_guard(done);
+    int ret = 0;
+    std::string msg = "OK";
+    std::unique_ptr<int, std::function<void(int*)>> defer_status(
+            (int*)0x01, [&ret, &msg, &response, &ctrl](int*) {
+                response->mutable_status()->set_code(ret);
+                response->mutable_status()->set_msg(msg);
+                LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
+                          << ctrl->remote_side() << " " << msg;
+            });
+
+    // Prepare data
+    InstanceInfoPB instance;
+    instance.set_instance_id(request->has_instance_id() ? request->instance_id() : "");
+    instance.set_user_id(request->has_user_id() ? request->user_id() : "");
+    instance.set_name(request->has_name() ? request->name() : "");
+
+    if (instance.instance_id().empty()) {
+        msg = "instance id not set";
+        return;
+    }
+
+    // TODO: check existence before proceeding
+
+    InstanceKeyInfo key_info {request->instance_id()};
+    std::string key;
+    std::string val = instance.SerializeAsString();
+    instance_key(key_info, &key);
+    if (val.empty()) {
+        msg = "failed to serialize";
+        LOG(ERROR) << msg;
+        return;
+    }
+
+    LOG(INFO) << "xxx instance json="
+              << ([&] {
+                     std::string str;
+                     google::protobuf::util::MessageToJsonString(instance, &str);
+                     return str;
+                 }());
+
+    std::unique_ptr<Transaction> txn;
+    ret = txn_kv_->create_txn(&txn);
+    if (ret != 0) {
+        msg = "failed to create txn";
+        LOG(WARNING) << msg << " ret=" << ret;
+        return;
+    }
+
+    txn->put(key, val);
+    LOG(INFO) << "put instance_key=" << hex(key);
+    ret = txn->commit();
+    if (ret != 0) {
+        msg = "failed to commit txn";
+        LOG(WARNING) << msg << " ret=" << ret;
+    }
+}
+
+void MetaServiceImpl::add_cluster(google::protobuf::RpcController* controller,
+                                  const ::selectdb::AddClusterRequest* request,
+                                  ::selectdb::MetaServiceGenericResponse* response,
+                                  ::google::protobuf::Closure* done) {
+    auto ctrl = static_cast<brpc::Controller*>(controller);
+    LOG(INFO) << "rpc from " << ctrl->remote_side() << " request=" << request->DebugString();
+    brpc::ClosureGuard closure_guard(done);
+    int ret = 0;
+    std::string msg = "OK";
+    [[maybe_unused]] std::stringstream ss;
+    std::unique_ptr<int, std::function<void(int*)>> defer_status(
+            (int*)0x01, [&ret, &msg, &response, &ctrl](int*) {
+                response->mutable_status()->set_code(ret);
+                response->mutable_status()->set_msg(msg);
+                LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
+                          << ctrl->remote_side() << " " << msg;
+            });
+
+    if (!request->has_instance_id() || !request->has_cluster()) {
+        msg = "invalid request instance_id or cluster not given";
+        ret = -1;
+        return;
+    }
+
+    std::string instance_id = request->instance_id();
+
+    InstanceKeyInfo key_info {instance_id};
+    std::string key;
+    std::string val;
+    instance_key(key_info, &key);
+
+    std::unique_ptr<Transaction> txn;
+    ret = txn_kv_->create_txn(&txn);
+    if (ret != 0) {
+        msg = "failed to create txn";
+        LOG(WARNING) << msg << " ret=" << ret;
+        return;
+    }
+    ret = txn->get(key, &val);
+    LOG(INFO) << "get instnace_key=" << hex(key);
+
+    if (ret != 0) {
+        ss << "failed to get intancece, instance_id=" << instance_id << " ret=" << ret;
+        msg = ss.str();
+        return;
+    }
+
+    InstanceInfoPB instance;
+    if (!instance.ParseFromString(val)) {
+        msg = "failed to parse InstanceInfoPB";
+        ret = -1;
+        return;
+    }
+
+    google::protobuf::util::JsonPrintOptions opts;
+    opts.preserve_proto_field_names = true;
+    LOG(INFO) << "xxx cluster to add json="
+              << ([&] {
+                     std::string str;
+                     google::protobuf::util::MessageToJsonString(request->cluster(), &str);
+                     return str;
+                 }());
+    LOG(INFO) << "xxx instance json="
+              << ([&] {
+                     std::string str;
+                     google::protobuf::util::MessageToJsonString(instance, &str);
+                     return str;
+                 }());
+
+    // TODO:
+    // do some check before adding, dedup is needed
+    instance.add_clusters()->CopyFrom(request->cluster());
+    LOG(INFO) << "instance " << instance_id << " has " << instance.clusters().size() << " clusters";
+
+    val = instance.SerializeAsString();
+    if (val.empty()) {
+        msg = "failed to serialize";
+        ret = -1;
+        return;
+    }
+
+    txn->put(key, val);
+    LOG(INFO) << "put instnace_key=" << hex(key);
+    ret = txn->commit();
+    if (ret != 0) {
+        msg = "failed to commit txn";
+        LOG(WARNING) << msg << " ret=" << ret;
+    }
+} // add cluster
+
+void MetaServiceImpl::get_cluster(google::protobuf::RpcController* controller,
+                                  const ::selectdb::GetClusterRequest* request,
+                                  ::selectdb::GetClusterResponse* response,
+                                  ::google::protobuf::Closure* done) {
+    auto ctrl = static_cast<brpc::Controller*>(controller);
+    LOG(INFO) << "rpc from " << ctrl->remote_side() << " request=" << request->DebugString();
+    brpc::ClosureGuard closure_guard(done);
+    int ret = 0;
+    std::string msg = "OK";
+    [[maybe_unused]] std::stringstream ss;
+    std::unique_ptr<int, std::function<void(int*)>> defer_status(
+            (int*)0x01, [&ret, &msg, &response, &ctrl](int*) {
+                response->mutable_status()->set_code(ret);
+                response->mutable_status()->set_msg(msg);
+                LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
+                          << ctrl->remote_side() << " " << msg;
+            });
+
+    std::string instance_id = request->has_instance_id() ? request->instance_id() : "";
+    std::string cloud_unique_id = request->has_cloud_unique_id() ? request->cloud_unique_id() : "";
+    std::string cluster_id = request->has_cluster_id() ? request->cluster_id() : "";
+    std::string cluster_name = request->has_cluster_name() ? request->cluster_name() : "";
+
+    if (cloud_unique_id.empty()) {
+        msg = "cloud_unique_id must be given";
+        ret = -2;
+        return;
+    }
+
+    if (cluster_id.empty() && cluster_name.empty()) {
+        msg = "cluster_name or cluster_id must be given";
+        ret = -2;
+        return;
+    }
+
+    // TODO: get instance_id with cloud_unique_id
+    if (instance_id.empty()) {
+        msg = "failed to get instance_id with cloud_unique_id=" + cloud_unique_id;
+        ret = -2;
+        return;
+    }
+
+    InstanceKeyInfo key_info {instance_id};
+    std::string key;
+    std::string val;
+    instance_key(key_info, &key);
+
+    std::unique_ptr<Transaction> txn;
+    ret = txn_kv_->create_txn(&txn);
+    if (ret != 0) {
+        msg = "failed to create txn";
+        LOG(WARNING) << msg << " ret=" << ret;
+        return;
+    }
+    ret = txn->get(key, &val);
+    LOG(INFO) << "get instnace_key=" << hex(key);
+
+    if (ret != 0) {
+        ss << "failed to get intancece, instance_id=" << instance_id << " ret=" << ret;
+        msg = ss.str();
+        return;
+    }
+
+    InstanceInfoPB instance;
+    if (!instance.ParseFromString(val)) {
+        msg = "failed to parse InstanceInfoPB";
+        ret = -1;
+        return;
+    }
+
+    for (int i = 0; i < instance.clusters_size(); ++i) {
+        auto& c = instance.clusters(i);
+        if ((c.has_cluster_name() && c.cluster_name() == cluster_name) ||
+            (c.has_cluster_id() && c.cluster_id() == cluster_id)) {
+            response->mutable_cluster()->CopyFrom(c);
+            google::protobuf::util::JsonPrintOptions opts;
+            opts.preserve_proto_field_names = true;
+            std::string str;
+            google::protobuf::util::MessageToJsonString(response->cluster(), &str, opts);
+            msg = str;
+            LOG(INFO) << "found a cluster=" << str;
+            break;
+        }
+    }
+
+    if (!response->has_cluster()) {
+        ss << "fail to get cluster with " << request->DebugString();
+        msg = ss.str();
+        std::replace(msg.begin(), msg.end(), '\n', ' ');
+        ret = -2;
+        return;
+    }
+
+} // get_cluster
 
 } // namespace selectdb
 // vim: et ts=4 sw=4 cc=80:
