@@ -3396,8 +3396,9 @@ public class InternalDataSource implements DataSourceIf<Database> {
         rowsetBuilder.setEmpty(true);
 
         UUID uuid = UUID.randomUUID();
-        String rowsetIdV2Str = Long.toHexString(2 << 56) + Long.toHexString(uuid.getMostSignificantBits())
-                + Long.toHexString(uuid.getLeastSignificantBits());
+        String rowsetIdV2Str = String.format("%016X", 2L << 56)
+                + String.format("%016X", uuid.getMostSignificantBits())
+                + String.format("%016X", uuid.getLeastSignificantBits());
         rowsetBuilder.setRowsetIdV2(rowsetIdV2Str);
 
         rowsetBuilder.setTabletSchema(schema);
