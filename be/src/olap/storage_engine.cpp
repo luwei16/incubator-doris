@@ -201,7 +201,7 @@ Status StorageEngine::_open() {
     CHECK(dirs.size() == 1);
     _meta_mgr = std::make_unique<cloud::CloudMetaMgr>();
     RETURN_IF_ERROR(_meta_mgr->open());
-    // TBD(cyx): init s3 fs
+
 #else
     load_data_dirs(dirs);
 #endif

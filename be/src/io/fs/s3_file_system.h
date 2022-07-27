@@ -85,6 +85,7 @@ private:
     std::shared_ptr<Aws::S3::S3Client> _client;
     mutable std::mutex _client_mu;
 
+    friend class S3FileWriter;
     std::shared_ptr<Aws::Utils::Threading::PooledThreadExecutor> _executor;
 };
 

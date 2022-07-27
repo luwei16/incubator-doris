@@ -17,17 +17,21 @@
 
 #pragma once
 
-#include <cstddef>
-
 #include "io/fs/file_writer.h"
+
+namespace Aws::Transfer {
+class TransferHandle;
+}
 
 namespace doris {
 namespace io {
 
-class LocalFileWriter final : public FileWriter {
+class S3FileSystem;
+
+class S3FileWriter final : public FileWriter {
 public:
-    LocalFileWriter(Path path);
-    ~LocalFileWriter() override;
+    S3FileWriter(Path path, std::string key, std::string bucket, S3FileSystem* fs);
+    ~S3FileWriter() override;
 
     Status open() override;
 
@@ -43,17 +47,18 @@ public:
 
     Status finalize() override;
 
-    size_t bytes_appended() const override { return _bytes_appended; }
+    size_t bytes_appended() const override { return _tmp_file_writer->bytes_appended(); }
 
 private:
-    Status _close(bool sync);
+    Path _path;
+    S3FileSystem* _fs;
 
-private:
-    int _fd = -1; // owned
-
-    size_t _bytes_appended = 0;
-    bool _dirty = false;
+    std::string _bucket;
+    std::string _key;
     bool _closed = true;
+
+    FileWriterPtr _tmp_file_writer;
+    std::shared_ptr<Aws::Transfer::TransferHandle> _handle;
 };
 
 } // namespace io

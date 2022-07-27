@@ -50,7 +50,7 @@ Status sync_dir(const io::Path& dirname) {
 
 namespace io {
 
-LocalFileWriter::LocalFileWriter(Path path, int fd) : FileWriter(std::move(path)), _fd(fd) {
+LocalFileWriter::LocalFileWriter(Path path) : FileWriter(std::move(path)) {
     DorisMetrics::instance()->local_file_open_writing->increment(1);
     DorisMetrics::instance()->local_file_writer_total->increment(1);
 }
@@ -61,13 +61,24 @@ LocalFileWriter::~LocalFileWriter() {
     }
 }
 
+Status LocalFileWriter::open() {
+    _fd = ::open(_path.c_str(), O_TRUNC | O_WRONLY | O_CREAT | O_CLOEXEC, 0666);
+    if (-1 == _fd) {
+        return Status::IOError(
+                fmt::format("cannot open {}: {}", _path.native(), std::strerror(errno)));
+    }
+    _closed = false;
+    return Status::OK();
+}
+
 Status LocalFileWriter::close() {
     return _close(true);
 }
 
 Status LocalFileWriter::abort() {
-    RETURN_IF_ERROR(_close(false));
-    return io::global_local_filesystem()->delete_file(_path);
+    auto st = _close(false);
+    io::global_local_filesystem()->delete_file(_path);
+    return st;
 }
 
 Status LocalFileWriter::append(const Slice& data) {

@@ -361,6 +361,10 @@ set(VEC_TEST_FILES
     vec/olap/char_type_padding_test.cpp
 )
 
+set(IO_TEST_FILES
+    io/s3_file_writer_test.cpp
+)
+
 if (NOT CLOUD_MODE)
     add_executable(doris_be_test
         ${AGENT_TEST_FILES}
@@ -385,12 +389,13 @@ endif()
 
 set(CLOUD_TEST_FILES
     cloud/cloud_meta_mgr_test.cpp
-    testutil/run_all_tests.cpp
 )
 
 if (CLOUD_MODE)
     add_executable(cloud_be_test
         ${CLOUD_TEST_FILES}
+        ${TESTUTIL_TEST_FILES}
+        ${IO_TEST_FILES}
     )
 
     target_link_libraries(cloud_be_test ${TEST_LINK_LIBS})

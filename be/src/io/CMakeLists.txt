@@ -43,6 +43,7 @@ set(IO_FILES
     cache/file_cache_manager.cpp
     cache/sub_file_cache.cpp
     cache/whole_file_cache.cpp
+    fs/s3_file_writer.cpp
 )
 
 add_library(IO STATIC

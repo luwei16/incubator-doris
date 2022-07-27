@@ -240,6 +240,11 @@ under the License.
 
         <revision>1.0-SNAPSHOT</revision>
         <project.scm.id>github</project.scm.id>
+
+        <!-- Define the following as `false` to speed up build process -->
+        <!-- It has drawbacks when it is set to false, see the following link for more details -->
+        <!-- https://maven.apache.org/plugins/maven-compiler-plugin/compile-mojo.html#useIncrementalCompilation -->
+        <full.incremental.build>true</full.incremental.build>
     </properties>
     <profiles>
         <!-- for custom internal repository -->

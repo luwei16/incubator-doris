@@ -38,12 +38,8 @@ Path LocalFileSystem::absolute_path(const Path& path) const {
 
 Status LocalFileSystem::create_file(const Path& path, FileWriterPtr* writer) {
     auto fs_path = absolute_path(path);
-    int fd = ::open(fs_path.c_str(), O_TRUNC | O_WRONLY | O_CREAT | O_CLOEXEC, 0666);
-    if (-1 == fd) {
-        return Status::IOError("cannot open {}: {}", fs_path.native(), std::strerror(errno));
-    }
-    *writer = std::make_unique<LocalFileWriter>(std::move(fs_path), fd);
-    return Status::OK();
+    *writer = std::make_unique<LocalFileWriter>(std::move(fs_path));
+    return (*writer)->open();
 }
 
 Status LocalFileSystem::open_file(const Path& path, FileReaderSPtr* reader) {

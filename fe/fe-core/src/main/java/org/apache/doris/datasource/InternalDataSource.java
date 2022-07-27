@@ -3340,11 +3340,11 @@ public class InternalDataSource implements DataSourceIf<Database> {
                 }
             } else {
                 if (!Config.disable_storage_medium_check) {
-                    chosenBackendIds = Catalog.getCurrentSystemInfo()
+                    chosenBackendIds = Env.getCurrentSystemInfo()
                             .selectBackendIdsForReplicaCreation(replicaAlloc, clusterName,
                                     tabletMeta.getStorageMedium());
                 } else {
-                    chosenBackendIds = Catalog.getCurrentSystemInfo()
+                    chosenBackendIds = Env.getCurrentSystemInfo()
                             .selectBackendIdsForReplicaCreation(replicaAlloc, clusterName, null);
                 }
             }

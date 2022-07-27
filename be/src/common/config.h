@@ -848,6 +848,16 @@ CONF_Int32(max_column_reader_prefetch_size, "5");
 CONF_String(cloud_unique_id, "");
 CONF_String(meta_service_endpoint, "");
 CONF_Bool(meta_service_use_load_balancer, "true");
+CONF_String(tmp_file_dir, "${DORIS_HOME}/storage/tmp");
+
+// test s3
+CONF_String(test_s3_resource, "resource");
+CONF_String(test_s3_ak, "ak");
+CONF_String(test_s3_sk, "sk");
+CONF_String(test_s3_endpoint, "endpoint");
+CONF_String(test_s3_region, "region");
+CONF_String(test_s3_bucket, "bucket");
+CONF_String(test_s3_prefix, "prefix");
 
 } // namespace config
 

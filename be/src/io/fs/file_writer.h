@@ -33,6 +33,8 @@ public:
 
     DISALLOW_COPY_AND_ASSIGN(FileWriter);
 
+    virtual Status open() = 0;
+
     // Normal close. Wait for all data to persist before returning.
     virtual Status close() = 0;
 
