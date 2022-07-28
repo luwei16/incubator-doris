@@ -57,8 +57,7 @@ TEST(KeysTest, KeysTest) {
     {
         int64_t tablet_id = 10086;
         int64_t version = 100;
-        std::string rowset_id = "10010";
-        MetaRowsetKeyInfo rowset_key {instance_id, tablet_id, version, rowset_id};
+        MetaRowsetKeyInfo rowset_key {instance_id, tablet_id, version};
         std::string encoded_rowset_key0;
         meta_rowset_key(rowset_key, &encoded_rowset_key0);
         std::cout << hex(encoded_rowset_key0) << std::endl;
@@ -82,7 +81,6 @@ TEST(KeysTest, KeysTest) {
         EXPECT_EQ(instance_id, dec_instance_id);
         EXPECT_EQ(tablet_id, dec_tablet_id);
         EXPECT_EQ(version, dec_version);
-        EXPECT_EQ(rowset_id, dec_rowset_id);
 
         std::get<2>(rowset_key) = version + 1;
         std::string encoded_rowset_key1;

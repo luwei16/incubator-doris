@@ -19,7 +19,7 @@
 //
 // 0x01 "version" ${instance_id} "version_id" ${db_id} ${tbl_id} ${partition_id} -> ${version}
 // 
-// 0x01 "meta" ${instance_id} "rowset" ${tablet_id} ${version} ${rowset_id} -> RowsetMetaPB
+// 0x01 "meta" ${instance_id} "rowset" ${tablet_id} ${version} -> RowsetMetaPB
 // 0x01 "meta" ${instance_id} "rowset_tmp" ${txn_id} ${rowset_id} -> RowsetMetaPB
 // 0x01 "meta" ${instance_id} "tablet" ${table_id} ${tablet_id} -> TabletMetaPB
 // 0x01 "meta" ${instance_id} "tablet_table" ${tablet_id} -> ${table_id}
@@ -53,8 +53,8 @@ using TxnRunningKeyInfo    = std::tuple<std::string,  int64_t, int64_t>;
 //                                     0:instance_id  1:db_id  2:tbl_id  3:partition_id
 using VersionKeyInfo       = std::tuple<std::string,  int64_t, int64_t,  int64_t>;
 
-//                                     0:instance_id  1:tablet_id  2:version  3:rowset_id
-using MetaRowsetKeyInfo    = std::tuple<std::string,  int64_t,     int64_t,   std::string>;
+//                                     0:instance_id  1:tablet_id  2:version
+using MetaRowsetKeyInfo    = std::tuple<std::string,  int64_t,     int64_t>;
 
 //                                     0:instance_id  1:txn_id  3:rowset_id
 using MetaRowsetTmpKeyInfo = std::tuple<std::string,  int64_t,  std::string>;

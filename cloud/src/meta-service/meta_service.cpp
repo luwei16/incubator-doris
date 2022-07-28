@@ -337,8 +337,7 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
 
         std::string key;
         std::string val;
-        MetaRowsetKeyInfo key_info {"instance_id_deadbeef", i.tablet_id(), i.end_version(),
-                                    i.rowset_id_v2()};
+        MetaRowsetKeyInfo key_info {"instance_id_deadbeef", i.tablet_id(), i.end_version()};
         meta_rowset_key(key_info, &key);
         if (!i.SerializeToString(&val)) {
             msg = "failed to serialize rowset_meta";
@@ -510,7 +509,7 @@ void MetaServiceImpl::create_tablet(::google::protobuf::RpcController* controlle
     std::string rs_val;
     if (has_first_rowset) {
         MetaRowsetKeyInfo rs_key_info {"instance_id_deadbeef", tablet_id,
-                                       first_rowset.end_version(), first_rowset.rowset_id_v2()};
+                                       first_rowset.end_version()};
         meta_rowset_key(rs_key_info, &rs_key);
         if (!first_rowset.SerializeToString(&rs_val)) {
             ret = -2;
@@ -629,7 +628,7 @@ void MetaServiceImpl::create_rowset(::google::protobuf::RpcController* controlle
         MetaRowsetTmpKeyInfo key_info {"instance_id_deadbeef", txn_id, rowset_id};
         meta_rowset_tmp_key(key_info, &key);
     } else {
-        MetaRowsetKeyInfo key_info {"instance_id_deadbeef", tablet_id, end_version, rowset_id};
+        MetaRowsetKeyInfo key_info {"instance_id_deadbeef", tablet_id, end_version};
         meta_rowset_key(key_info, &key);
     }
 
@@ -677,8 +676,8 @@ void MetaServiceImpl::get_rowset(::google::protobuf::RpcController* controller,
     ret = txn_kv_->create_txn(&txn);
 
     // TODO: validate request
-    MetaRowsetKeyInfo key_info0 {"instance_id_deadbeef", tablet_id, start, ""};
-    MetaRowsetKeyInfo key_info1 {"instance_id_deadbeef", tablet_id, end + 1, ""};
+    MetaRowsetKeyInfo key_info0 {"instance_id_deadbeef", tablet_id, start};
+    MetaRowsetKeyInfo key_info1 {"instance_id_deadbeef", tablet_id, end + 1};
     std::string key0;
     std::string key1;
     meta_rowset_key(key_info0, &key0);

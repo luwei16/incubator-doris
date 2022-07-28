@@ -100,7 +100,7 @@ void test_foo_data_race() {
   // ===========================================================================
   // FORCE threads concurrent execution with sequence:
   //
-  //      thread1       thread1       thread1
+  //      thread1       thread2       thread3
   //         |             |             |
   //         |             |           foo(3)
   //         |             |             |

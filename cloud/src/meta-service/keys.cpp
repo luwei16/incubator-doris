@@ -156,7 +156,6 @@ void meta_rowset_key(const MetaRowsetKeyInfo& in, std::string* out) {
     encode_bytes(META_KEY_INFIX_ROWSET, out); // "rowset"
     encode_int64(std::get<1>(in), out);       // tablet_id
     encode_int64(std::get<2>(in), out);       // version
-    encode_bytes(std::get<3>(in), out);       // rowset_id
 }
 
 void meta_rowset_tmp_key(const MetaRowsetTmpKeyInfo& in, std::string* out) {
