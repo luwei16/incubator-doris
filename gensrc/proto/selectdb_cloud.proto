@@ -184,6 +184,10 @@ message TxnCommitAttachmentPB {
     optional RLTaskTxnCommitAttachmentPB rl_task_txn_commit_attachment = 4;
 }
 
+message TxnLabelToIdsPB {
+    repeated int64 txn_ids = 1;
+}
+
 message TxnInfoPB {
     optional int64 db_id = 1;
     repeated int64 table_ids = 2;
@@ -197,7 +201,7 @@ message TxnInfoPB {
     optional int64 precommit_time = 10;
     optional int64 commit_time = 11;
     optional int64 finish_time = 12;
-    optional int64 reason = 13;
+    optional string reason = 13;
     optional TxnStatusPB status = 14;
     optional TxnCommitAttachmentPB commit_attachment = 15;
     // TODO: There are more fields TBD
@@ -310,7 +314,7 @@ message GetRowsetResponse {
 }
 
 message MetaServiceResponseStatus {
-    optional int32 code = 1;
+    optional MetaServiceCode code = 1;
     optional string msg = 2;
 }
 
@@ -345,6 +349,30 @@ message GetClusterRequest {
 message GetClusterResponse {
     optional MetaServiceResponseStatus status = 1;
     optional ClusterPB cluster = 2;
+}
+
+enum MetaServiceCode {
+    OK = 0;
+
+    //Meta service internal error
+    INVALID_ARGUMENT_ERR = 1;
+    KV_TXN_CREATE_ERR = 2;
+    KV_TXN_GET_ERR = 3;
+    KV_TXN_COMMIT_ERR = 4;
+
+    PROTOBUF_PARSE_ERR = 5;
+    PROTOBUF_SERIALIZE_ERR = 6;
+
+    //Doris error
+    TXN_GEN_ID_ERR = 7;
+    TXN_DUPLICATED_REQ_ERR = 8;
+    TXN_LABEL_ALREADY_USED_ERR = 9;
+    TXN_INVALID_STATUS_ERR = 10;
+    TXN_LABEL_NOT_FOUND_ERR = 11;
+    TXN_ID_NOT_FOUND_ERR = 12;
+
+    VERSION_NOT_FOUND_ERR = 13;
+    CLUSTER_NOT_FOUND_ERR = 14;
 }
 
 service ResourceManagerService {

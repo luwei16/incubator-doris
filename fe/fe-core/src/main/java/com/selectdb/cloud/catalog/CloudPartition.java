@@ -142,7 +142,8 @@ public class CloudPartition extends Partition {
                 }
             }
 
-            if (pResult.hasStatus() && pResult.getStatus().hasCode() && pResult.getStatus().getCode() != 0) {
+            if (pResult.hasStatus() && pResult.getStatus().hasCode()
+                    && pResult.getStatus().getCode() != SelectdbCloud.MetaServiceCode.OK) {
                 // meta Service return -1 or -2
                 // -1 txn error
                 // -2 no such key

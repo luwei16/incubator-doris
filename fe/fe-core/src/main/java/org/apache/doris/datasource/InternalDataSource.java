@@ -3578,7 +3578,7 @@ public class InternalDataSource implements DataSourceIf<Database> {
                 }
                 LOG.info("lw test get rpc resp: {} ", response.getStatus().getMsg());
 
-                if (response.getStatus().getCode() != 0) {
+                if (response.getStatus().getCode() != SelectdbCloud.MetaServiceCode.OK) {
                     throw new DdlException(response.getStatus().getMsg());
                 }
             }

@@ -1,20 +1,26 @@
 
 // clang-format off
-#include "meta_service.h"
+#include "brpc/closure_guard.h"
+#include "brpc/controller.h"
 #include "common/config.h"
 #include "common/util.h"
+#include "google/protobuf/util/json_util.h"
+#include "meta_service.h"
 #include "meta-service/doris_txn.h"
 #include "meta-service/keys.h"
 
-#include "brpc/closure_guard.h"
-#include "brpc/controller.h"
-#include "google/protobuf/util/json_util.h"
-
+#include <chrono>
 #include <limits>
 #include <memory>
+#include <string>
+#include <sstream>
 // clang-format on
 
+using namespace std::chrono;
+
 namespace selectdb {
+
+static constexpr uint32_t VERSION_STAMP_LEN = 10;
 
 MetaServiceImpl::MetaServiceImpl(std::shared_ptr<TxnKv> txn_kv) {
     txn_kv_ = txn_kv;
@@ -22,27 +28,29 @@ MetaServiceImpl::MetaServiceImpl(std::shared_ptr<TxnKv> txn_kv) {
 
 MetaServiceImpl::~MetaServiceImpl() {}
 
+//TODO: we need move begin/commit etc txn to TxnManager
 void MetaServiceImpl::begin_txn(::google::protobuf::RpcController* controller,
                                 const ::selectdb::BeginTxnRequest* request,
                                 ::selectdb::BeginTxnResponse* response,
                                 ::google::protobuf::Closure* done) {
     auto ctrl = static_cast<brpc::Controller*>(controller);
-    LOG(INFO) << "rpc from " << ctrl->remote_side() << " request=" << request->DebugString();
+    LOG(INFO) << __PRETTY_FUNCTION__ << " rpc from " << ctrl->remote_side()
+              << " request=" << request->DebugString();
     brpc::ClosureGuard closure_guard(done);
     int ret = 0;
+    MetaServiceCode code = MetaServiceCode::OK;
     std::string msg = "OK";
+    [[maybe_unused]] std::stringstream ss;
     std::unique_ptr<int, std::function<void(int*)>> defer_status(
-            (int*)0x01, [&ret, &msg, &response, &ctrl](int*) {
-                response->mutable_status()->set_code(ret);
+            (int*)0x01, [&code, &msg, &response, &ctrl](int*) {
+                response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
-                LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
-                          << ctrl->remote_side() << " " << msg;
-                LOG(INFO) << "xxx " << response->DebugString();
+                LOG(INFO) << "finish " << __PRETTY_FUNCTION__ << " " << ctrl->remote_side() << " "
+                          << msg << " response" << response->DebugString();
             });
-
     if (!request->has_txn_info()) {
-        msg = "no txn info";
-        ret = -1;
+        code = MetaServiceCode::INVALID_ARGUMENT_ERR;
+        msg = "invalid argument, missing txn info";
         return;
     }
 
@@ -51,63 +59,168 @@ void MetaServiceImpl::begin_txn(::google::protobuf::RpcController* controller,
     int64_t db_id = txn_info.has_db_id() ? txn_info.db_id() : -1;
 
     if (label.empty() || db_id < 0) {
-        std::stringstream ss;
-        ss << "invalid argument,  label=" << label << " db_id=" << db_id;
+        code = MetaServiceCode::INVALID_ARGUMENT_ERR;
+        ss << "invalid argument, label=" << label << " db_id=" << db_id;
         msg = ss.str();
-        ret = -1;
         return;
     }
 
+    //1. Generate version stamp for txn id
     std::unique_ptr<Transaction> txn;
     ret = txn_kv_->create_txn(&txn);
     if (ret != 0) {
-        msg = "failed to create txn";
+        code = MetaServiceCode::KV_TXN_CREATE_ERR;
+        ss << "txn_kv_->create_txn() failed, ret=" << ret << " label=" << label
+           << " db_id=" << db_id;
+        msg = ss.str();
         return;
     }
 
+    std::string instance_id = "instance_id_deadbeef";
     std::string txn_idx_key;
     std::string txn_idx_val;
-    TxnIndexKeyInfo txn_idx_key_info {"instance_id_deadbeef", db_id, label};
-    txn_index_key(txn_idx_key_info, &txn_idx_key);
-    // TODO:
-    // For reusing doris txn label, we need to get the original txn_ids, and
-    // append current txn_id to it
-    (void)txn_idx_val;
 
+    TxnIndexKeyInfo txn_idx_key_info {instance_id, db_id, label};
+    txn_index_key(txn_idx_key_info, &txn_idx_key);
+
+    ret = txn->get(txn_idx_key, &txn_idx_val);
+    if (ret < 0) {
+        code = MetaServiceCode::KV_TXN_GET_ERR;
+        ss << "txn->get failed(), ret=" << ret;
+        msg = ss.str();
+        return;
+    }
+    LOG(INFO) << "txn->get txn_idx_key=" << hex(txn_idx_key) << " txn_idx_val=" << txn_idx_val
+              << " ret=" << ret;
+
+    //ret == 0 means label has previous txn ids.
+    if (ret == 0) {
+        txn_idx_val = txn_idx_val.substr(0, txn_idx_val.size() - VERSION_STAMP_LEN);
+    }
+
+    //ret > 0, means label not exist previously.
     txn->atomic_set_ver_value(txn_idx_key, txn_idx_val);
-    LOG(INFO) << "xxx atomic_set txn_idx_key=" << hex(txn_idx_key);
+    LOG(INFO) << "txn->atomic_set_ver_value txn_idx_key=" << hex(txn_idx_key)
+              << " txn_idx_val=" << txn_idx_val;
     ret = txn->commit();
     if (ret != 0) {
-        msg = "failed to commit txn kv for txn id";
-        ret = -3;
+        code = MetaServiceCode::KV_TXN_COMMIT_ERR;
+        std::stringstream ss;
+        ss << "txn->commit failed(), ret=" << ret;
+        msg = ss.str();
         return;
     }
 
-    // Get txn id
+    //2. Get txn id from version stamp
     txn.reset();
     txn_kv_->create_txn(&txn);
     if (ret != 0) {
-        msg = "failed to create txn when read txn id";
-        ret = -3;
+        code = MetaServiceCode::KV_TXN_CREATE_ERR;
+        msg = "failed to create txn when get txn id.";
         return;
     }
-    int prefix_len = txn_idx_val.size();
+
     txn_idx_val.clear();
     ret = txn->get(txn_idx_key, &txn_idx_val);
     if (ret != 0) {
-        msg = "failed to get txn id from txn kv";
-        ret = -3;
+        code = MetaServiceCode::KV_TXN_GET_ERR;
+        ss << "txn->get() failed, ret=" << ret;
+        msg = ss.str();
         return;
     }
-    std::string txn_id_str = txn_idx_val.substr(prefix_len);
-    int64_t txn_id = 0; // Generated by TxnKv system
+
+    std::string txn_id_str =
+            txn_idx_val.substr(txn_idx_val.size() - VERSION_STAMP_LEN, txn_idx_val.size());
+    // Generated by TxnKv system
+    int64_t txn_id = 0;
     ret = get_txn_id_from_fdb_ts(txn_id_str, &txn_id);
     if (ret != 0) {
-        std::stringstream ss;
-        ss << "failed to convert fdb ts to txn_id, ret=" << ret;
+        code = MetaServiceCode::TXN_GEN_ID_ERR;
+        ss << "get_txn_id_from_fdb_ts() failed, ret=" << ret;
         msg = ss.str();
-        ret = -1;
         return;
+    }
+
+    LOG(INFO) << "get_txn_id_from_fdb_ts() txn_id=" << txn_id;
+
+    std::unique_ptr<int, std::function<void(int*)>> defer_(
+            (int*)0x01, [&code, &msg, &response, &ctrl](int*) {
+                response->mutable_status()->set_code(code);
+                response->mutable_status()->set_msg(msg);
+                LOG(INFO) << "finish " << __PRETTY_FUNCTION__ << " " << ctrl->remote_side() << " "
+                          << msg << " response" << response->DebugString();
+            });
+
+    TxnLabelToIdsPB label_to_ids;
+    if (txn_idx_val.size() > VERSION_STAMP_LEN) {
+        //3. Check label
+        //txn_idx_val.size() > VERSION_STAMP_LEN means label has previous txn ids.
+        ;
+        std::string label_to_ids_str = txn_idx_val.substr(0, txn_idx_val.size() - 10);
+        if (!label_to_ids.ParseFromString(label_to_ids_str)) {
+            code = MetaServiceCode::PROTOBUF_PARSE_ERR;
+            msg = "label_to_ids->ParseFromString() failed.";
+            return;
+        }
+
+        // Check if label already used, by following steps
+        // 1. get all existing transactions
+        // 2. if there is a PREPARE transaction, check if this is a retry request.
+        // 3. if there is a non-aborted transaction, throw label already used exception.
+
+        for (auto& cur_txn_id : label_to_ids.txn_ids()) {
+            std::string cur_txn_inf_key;
+            std::string cur_txn_inf_val;
+            TxnInfoKeyInfo cur_txn_inf_key_info {instance_id, db_id, cur_txn_id};
+            txn_info_key(cur_txn_inf_key_info, &cur_txn_inf_key);
+            ret = txn->get(cur_txn_inf_key, &cur_txn_inf_val);
+            if (ret < 0) {
+                code = MetaServiceCode::KV_TXN_GET_ERR;
+                ss << "txn->get() failed, cur_txn_id=" << cur_txn_id << " ret={}" << ret;
+                msg = ss.str();
+                return;
+            }
+
+            if (ret == 1) {
+                //label_to_idx and txn info inconsistency.
+                code = MetaServiceCode::TXN_ID_NOT_FOUND_ERR;
+                ss << "txn->get() failed, cur_txn_id=" << cur_txn_id << " label=" << label
+                   << " ret=" << ret;
+                msg = ss.str();
+                return;
+            }
+            TxnInfoPB cur_txn_info;
+            if (!cur_txn_info.ParseFromString(cur_txn_inf_val)) {
+                code = MetaServiceCode::PROTOBUF_PARSE_ERR;
+                ss << "cur_txn_info->ParseFromString() failed, cur_txn_id=" << cur_txn_id
+                   << " label=" << label << " ret={}" << ret;
+                msg = ss.str();
+                return;
+            }
+
+            if (cur_txn_info.status() == TxnStatusPB::TXN_STATUS_ABORTED) {
+                continue;
+            }
+
+            if (cur_txn_info.status() == TxnStatusPB::TXN_STATUS_PREPARED ||
+                cur_txn_info.status() == TxnStatusPB::TXN_STATUS_PRECOMMITTED) {
+                // clang-format off
+                if (cur_txn_info.has_request_unique_id() && txn_info.has_request_unique_id() &&
+                    ((cur_txn_info.request_unique_id().hi() == txn_info.request_unique_id().hi()) && 
+                     (cur_txn_info.request_unique_id().lo() == txn_info.request_unique_id().lo()))) {
+
+                    code = MetaServiceCode::TXN_DUPLICATED_REQ_ERR;
+                    ss << "db_id=" << db_id << " label=" << label << " dup begin txn request.";
+                    msg = ss.str();
+                    return;
+                }
+                // clang-format on
+            }
+            code = MetaServiceCode::TXN_LABEL_ALREADY_USED_ERR;
+            ss << "db_id=" << db_id << " label=" << label << " already used.";
+            msg = ss.str();
+            return;
+        }
     }
 
     // Update txn_info to be put into TxnKv
@@ -115,34 +228,47 @@ void MetaServiceImpl::begin_txn(::google::protobuf::RpcController* controller,
     txn_info.set_txn_id(txn_id);
     // TODO:
     // check initial status must be TXN_STATUS_PREPARED or TXN_STATUS_UNKNOWN
-    txn_info.set_status(TXN_STATUS_PREPARED);
+    txn_info.set_status(TxnStatusPB::TXN_STATUS_PREPARED);
 
-    LOG(INFO) << "xxx txn_id=" << txn_id;
+    auto now_time = system_clock::now();
+    uint64_t prepare_time = duration_cast<milliseconds>(now_time.time_since_epoch()).count();
 
-    // Put txn info
+    txn_info.set_prepare_time(prepare_time);
+
+    //4. put txn info and db_tbl
     std::string txn_inf_key;
     std::string txn_inf_val;
-    TxnInfoKeyInfo txn_inf_key_info {"instance_id_deadbeef", db_id, txn_id};
+    TxnInfoKeyInfo txn_inf_key_info {instance_id, db_id, txn_id};
     txn_info_key(txn_inf_key_info, &txn_inf_key);
     if (!txn_info.SerializeToString(&txn_inf_val)) {
+        code = MetaServiceCode::PROTOBUF_SERIALIZE_ERR;
         msg = "failed to serialize txn_info";
-        ret = -2;
         return;
     }
 
     std::string txn_db_key;
     std::string txn_db_val;
-    TxnDbTblKeyInfo txn_db_key_info {"instance_id_deadbeef", txn_id};
+    TxnDbTblKeyInfo txn_db_key_info {instance_id, txn_id};
     txn_db_tbl_key(txn_db_key_info, &txn_db_key);
     txn_db_val = std::string((char*)&db_id, sizeof(db_id));
 
     std::string txn_run_key;
     std::string txn_run_val;
-    TxnRunningKeyInfo txn_run_key_info {"instance_id_deadbeef", db_id, txn_id};
+    TxnRunningKeyInfo txn_run_key_info {instance_id, db_id, txn_id};
     txn_running_key(txn_run_key_info, &txn_run_key);
     TxnRunningInfoPB running_val_pb;
     running_val_pb.set_db_id(db_id);
     for (auto i : txn_info.table_ids()) running_val_pb.add_table_ids(i);
+
+    label_to_ids.add_txn_ids(txn_id);
+    if (!label_to_ids.SerializeToString(&txn_idx_val)) {
+        code = MetaServiceCode::PROTOBUF_SERIALIZE_ERR;
+        msg = "failed to serialize label_to_ids";
+        return;
+    }
+    txn->atomic_set_ver_value(txn_idx_key, txn_idx_val);
+    LOG(INFO) << "txn->atomic_set_ver_value txn_idx_key=" << hex(txn_idx_key)
+              << " txn_idx_val=" << txn_idx_val;
 
     txn->put(txn_inf_key, txn_inf_val);
     txn->put(txn_db_key, txn_db_val);
@@ -152,14 +278,13 @@ void MetaServiceImpl::begin_txn(::google::protobuf::RpcController* controller,
     LOG(INFO) << "xxx put txn_db_key=" << hex(txn_db_key);
     ret = txn->commit();
     if (ret != 0) {
+        code = MetaServiceCode::KV_TXN_COMMIT_ERR;
         msg = "failed to commit txn kv";
-        ret = -3;
         return;
     }
 
     response->set_txn_id(txn_id);
 }
-
 void MetaServiceImpl::precommit_txn(::google::protobuf::RpcController* controller,
                                     const ::selectdb::PrecommitTxnRequest* request,
                                     ::selectdb::PrecommitTxnResponse* response,
@@ -187,43 +312,43 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
     LOG(INFO) << "rpc from " << ctrl->remote_side() << " request=" << request->DebugString();
     brpc::ClosureGuard closure_guard(done);
     int ret = 0;
+    MetaServiceCode code = MetaServiceCode::OK;
     std::string msg = "OK";
+    std::string instance_id = "instance_id_deadbeef";
     [[maybe_unused]] std::stringstream ss;
     std::unique_ptr<int, std::function<void(int*)>> defer_status(
-            (int*)0x01, [&ret, &msg, &response, &ctrl](int*) {
-                response->mutable_status()->set_code(ret);
+            (int*)0x01, [&code, &msg, &response, &ctrl](int*) {
+                response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
-                LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
-                          << ctrl->remote_side() << " " << msg;
+                LOG(INFO) << "finish " << __PRETTY_FUNCTION__ << " " << ctrl->remote_side() << " "
+                          << msg;
             });
 
     std::unique_ptr<Transaction> txn;
     ret = txn_kv_->create_txn(&txn);
     if (ret != 0) {
+        code = MetaServiceCode::KV_TXN_CREATE_ERR;
         msg = "filed to create txn";
-        ret = -2;
         return;
     }
 
-    // TODO: do more check like txn state, 2PC etc.
-    // Get txn id
     int64_t txn_id = request->has_txn_id() ? request->txn_id() : -1;
     if (txn_id < 0) {
+        code = MetaServiceCode::INVALID_ARGUMENT_ERR;
         msg = "no txn id";
-        ret = -1;
         return;
     }
 
-    // Get db id with txn id
+    //Get db id with txn id
     std::string txn_db_key;
     std::string txn_db_val;
-    TxnDbTblKeyInfo txn_db_key_info {"instance_id_deadbeef", txn_id};
+    TxnDbTblKeyInfo txn_db_key_info {instance_id, txn_id};
     txn_db_tbl_key(txn_db_key_info, &txn_db_key);
     ret = txn->get(txn_db_key, &txn_db_val);
     if (ret != 0) {
-        ss << "failed to get db id with txn_id=" << txn_id << " txn kv ret=" << ret;
+        code = MetaServiceCode::KV_TXN_GET_ERR;
+        ss << "failed to get db id with txn_id=" << txn_id << " ret={}" << ret;
         msg = ss.str();
-        ret = -2;
         return;
     }
 
@@ -232,39 +357,51 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
     // Get txn info with db_id and txn_id
     std::string txn_inf_key; // Will be used when saving updated txn
     std::string txn_inf_val; // Will be reused when saving updated txn
-    TxnInfoKeyInfo txn_inf_key_info {"instance_id_deadbeef", db_id, txn_id};
+    TxnInfoKeyInfo txn_inf_key_info {instance_id, db_id, txn_id};
     txn_info_key(txn_inf_key_info, &txn_inf_key);
     ret = txn->get(txn_inf_key, &txn_inf_val);
     if (ret != 0) {
-        ss << "failed to get txn_info with db_id=" << db_id << " txn_id=" << txn_id
-           << " txn kv ret=" << ret;
+        code = MetaServiceCode::KV_TXN_GET_ERR;
+        ss << "failed to get db id with db_id=" << db_id << " txn_id=" << txn_id << " ret=" << ret;
         msg = ss.str();
-        ret = -2;
         return;
     }
 
     TxnInfoPB txn_info;
     if (!txn_info.ParseFromString(txn_inf_val)) {
-        ss << "failed to parse txn_info, db_id=" << db_id << " txn_id=" << txn_id;
+        code = MetaServiceCode::PROTOBUF_PARSE_ERR;
+        ss << "failed to parse txn_inf db_id=" << db_id << " txn_id=" << txn_id;
         msg = ss.str();
-        ret = -1;
         return;
     }
 
-    // TODO: do more check
-    if (txn_info.txn_id() != txn_id) {
-        ss.clear();
-        ss << "txn not match request_txn_id=" << txn_id << " found_txn_id=" << txn_info.txn_id();
+    // TODO: do more check like txn state, 2PC etc.
+    DCHECK(txn_info.txn_id() == txn_id);
+    if (txn_info.status() == TxnStatusPB::TXN_STATUS_ABORTED) {
+        code = MetaServiceCode::TXN_INVALID_STATUS_ERR;
+        ss << "transaction is already aborted: txn_id=" << txn_id;
         msg = ss.str();
-        ret = -1;
+        return;
+    }
+
+    if (txn_info.status() == TxnStatusPB::TXN_STATUS_VISIBLE) {
+        code = MetaServiceCode::OK;
+        ss << "ransaction is already visible: txn_id=" << txn_id;
+        msg = ss.str();
+    }
+
+    if (request->has_is_2pc() && TxnStatusPB::TXN_STATUS_PREPARED) {
+        code = MetaServiceCode::TXN_INVALID_STATUS_ERR;
+        ss << "transaction is prepare, not pre-committed: txn_id=" << txn_id;
+        msg = ss.str();
         return;
     }
     LOG(INFO) << "xxx txn_info=" << txn_info.DebugString();
 
     // Get temporary rowsets involved in the txn
     // This is a range scan
-    MetaRowsetTmpKeyInfo rs_tmp_key_info0 {"instance_id_deadbeef", txn_id, ""};
-    MetaRowsetTmpKeyInfo rs_tmp_key_info1 {"instance_id_deadbeef", txn_id + 1, ""};
+    MetaRowsetTmpKeyInfo rs_tmp_key_info0 {instance_id, txn_id, ""};
+    MetaRowsetTmpKeyInfo rs_tmp_key_info1 {instance_id, txn_id + 1, ""};
     std::string rs_tmp_key0;
     std::string rs_tmp_key1;
     meta_rowset_tmp_key(rs_tmp_key_info0, &rs_tmp_key0);
@@ -272,8 +409,9 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
     std::unique_ptr<RangeGetIterator> it;
     ret = txn->get(rs_tmp_key0, rs_tmp_key1, &it);
     if (ret != 0) {
-        msg = "no rowset found for txn";
-        ret = -1;
+        code = MetaServiceCode::KV_TXN_GET_ERR;
+        ss << "no rowset found for txn=" << txn_id;
+        msg = ss.str();
         return;
     }
     // TODO: check more rowset_meta, it->more()?
@@ -284,8 +422,9 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
         LOG(INFO) << "xxx range_get rowset_tmp_key=" << hex(k);
         rowset_meta.emplace_back();
         if (!rowset_meta.back().ParseFromArray(v.data(), v.size())) {
-            ret = -3;
-            msg = "malformed rowset meta, unable to initialize";
+            code = MetaServiceCode::PROTOBUF_PARSE_ERR;
+            ss << "malformed rowset meta, unable to initialize, txn_id=" << txn_id;
+            msg = ss.str();
             return;
         }
     }
@@ -299,7 +438,7 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
         // Get version for the rowset
 
         if (table_ids.count(i.tablet_id()) == 0) {
-            MetaTabletTblKeyInfo key_info {"instance_id_deadbeef", i.tablet_id()};
+            MetaTabletTblKeyInfo key_info {instance_id, i.tablet_id()};
             std::string key;
             std::string val;
             meta_tablet_table_key(key_info, &key);
@@ -310,7 +449,7 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
         int64_t tbl_id = table_ids[i.tablet_id()];
         int64_t partition_id = i.partition_id();
 
-        VersionKeyInfo ver_key_info {"instance_id_deadbeef", db_id, tbl_id, partition_id};
+        VersionKeyInfo ver_key_info {instance_id, db_id, tbl_id, partition_id};
         std::string ver_key;
         version_key(ver_key_info, &ver_key);
         int64_t version = -1;
@@ -318,11 +457,11 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
         // TODO: read version from cache (the map)
         ret = txn->get(ver_key, &ver_str);
         if (ret != 1 && ret != 0) {
-            ss << "failed to get version, table_id=" << tbl_id << " partition_id=" << partition_id
+            code = MetaServiceCode::KV_TXN_GET_ERR;
+            ss << "failed to get version, table_id=" << tbl_id << "partition_id=" << partition_id
                << " key=" << hex(ver_key);
             msg = ss.str();
             LOG(INFO) << msg;
-            ret = -3;
             return;
         }
         // Maybe first version
@@ -337,11 +476,11 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
 
         std::string key;
         std::string val;
-        MetaRowsetKeyInfo key_info {"instance_id_deadbeef", i.tablet_id(), i.end_version()};
+        MetaRowsetKeyInfo key_info {instance_id, i.tablet_id(), i.end_version()};
         meta_rowset_key(key_info, &key);
         if (!i.SerializeToString(&val)) {
+            code = MetaServiceCode::PROTOBUF_SERIALIZE_ERR;
             msg = "failed to serialize rowset_meta";
-            ret = -1;
             return;
         }
         rowsets.emplace_back(std::move(key), std::move(val));
@@ -360,11 +499,16 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
     }
 
     // Update txn_info
-    txn_info.set_status(TXN_STATUS_COMMITTED);
+    txn_info.set_status(TxnStatusPB::TXN_STATUS_VISIBLE);
+
+    auto now_time = system_clock::now();
+    uint64_t commit_time = duration_cast<milliseconds>(now_time.time_since_epoch()).count();
+    txn_info.set_commit_time(commit_time);
+    txn_info.set_finish_time(commit_time);
     txn_inf_val.clear();
     if (!txn_info.SerializeToString(&txn_inf_val)) {
+        code = MetaServiceCode::PROTOBUF_SERIALIZE_ERR;
         msg = "failed to serialize txn_info when saving";
-        ret = -3;
         return;
     }
     txn->put(txn_inf_key, txn_inf_val);
@@ -380,7 +524,7 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
 
     ret = txn->commit();
     if (ret != 0) {
-        ret = -3;
+        code = MetaServiceCode::KV_TXN_COMMIT_ERR;
         msg = "failed to save tablet meta";
         return;
     }
@@ -395,13 +539,15 @@ void MetaServiceImpl::get_version(::google::protobuf::RpcController* controller,
     brpc::ClosureGuard closure_guard(done);
     std::unique_ptr<Transaction> txn;
     int ret = 0;
+    MetaServiceCode code = MetaServiceCode::OK;
     std::string msg = "OK";
-    std::unique_ptr<int, std::function<void(int*)>> defer_status((int*)0x01, [&ret, &msg, &response,
-                                                                              &ctrl](int*) {
-        response->mutable_status()->set_code(ret);
-        response->mutable_status()->set_msg(msg);
-        LOG(INFO) << "rpc from " << ctrl->remote_side() << " response=" << response->DebugString();
-    });
+    std::unique_ptr<int, std::function<void(int*)>> defer_status(
+            (int*)0x01, [&code, &msg, &response, &ctrl](int*) {
+                response->mutable_status()->set_code(code);
+                response->mutable_status()->set_msg(msg);
+                LOG(INFO) << "rpc from " << ctrl->remote_side()
+                          << " response=" << response->DebugString();
+            });
 
     // TODO(dx): For auth
     std::string cloud_unique_id;
@@ -416,7 +562,7 @@ void MetaServiceImpl::get_version(::google::protobuf::RpcController* controller,
         msg = "params error, db_id=" + std::to_string(db_id) +
               " table_id=" + std::to_string(table_id) +
               " partition_id=" + std::to_string(partition_id);
-        ret = -1;
+        code = MetaServiceCode::INVALID_ARGUMENT_ERR;
         LOG(WARNING) << msg;
         return;
     }
@@ -429,7 +575,7 @@ void MetaServiceImpl::get_version(::google::protobuf::RpcController* controller,
     ret = txn_kv_->create_txn(&txn);
     if (ret != 0) {
         msg = "failed to create txn";
-        ret = -1;
+        code = MetaServiceCode::KV_TXN_CREATE_ERR;
         return;
     }
 
@@ -444,11 +590,11 @@ void MetaServiceImpl::get_version(::google::protobuf::RpcController* controller,
     } else if (ret == 1) {
         msg = "not found";
         // TODO(dx): find error code enum in proto, or add
-        ret = -2;
+        code = MetaServiceCode::VERSION_NOT_FOUND_ERR;
         return;
     }
     msg = "failed to get txn";
-    ret = -1;
+    code = MetaServiceCode::KV_TXN_GET_ERR;
 }
 
 void MetaServiceImpl::create_tablet(::google::protobuf::RpcController* controller,
@@ -459,10 +605,11 @@ void MetaServiceImpl::create_tablet(::google::protobuf::RpcController* controlle
     LOG(INFO) << "rpc from " << ctrl->remote_side() << " request=" << request->DebugString();
     brpc::ClosureGuard closure_guard(done);
     int ret = 0;
+    MetaServiceCode code = MetaServiceCode::OK;
     std::string msg = "OK";
     std::unique_ptr<int, std::function<void(int*)>> defer_status(
-            (int*)0x01, [&ret, &msg, &response, &ctrl](int*) {
-                response->mutable_status()->set_code(ret);
+            (int*)0x01, [&ret, &code, &msg, &response, &ctrl](int*) {
+                response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
                 LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
                           << ctrl->remote_side() << " " << msg;
@@ -470,7 +617,7 @@ void MetaServiceImpl::create_tablet(::google::protobuf::RpcController* controlle
 
     if (!request->has_tablet_meta()) {
         msg = "no tablet meta";
-        ret = -1;
+        code = MetaServiceCode::INVALID_ARGUMENT_ERR;
         return;
     }
 
@@ -497,7 +644,7 @@ void MetaServiceImpl::create_tablet(::google::protobuf::RpcController* controlle
     std::string val;
     meta_tablet_key(key_info, &key);
     if (!tablet_meta.SerializeToString(&val)) {
-        ret = -2;
+        code = MetaServiceCode::PROTOBUF_SERIALIZE_ERR;
         msg = "failed to serialize tablet meta";
         return;
     }
@@ -512,7 +659,7 @@ void MetaServiceImpl::create_tablet(::google::protobuf::RpcController* controlle
                                        first_rowset.end_version()};
         meta_rowset_key(rs_key_info, &rs_key);
         if (!first_rowset.SerializeToString(&rs_val)) {
-            ret = -2;
+            code = MetaServiceCode::PROTOBUF_SERIALIZE_ERR;
             msg = "failed to serialize first rowset meta";
             return;
         }
@@ -530,7 +677,7 @@ void MetaServiceImpl::create_tablet(::google::protobuf::RpcController* controlle
 
     ret = txn->commit();
     if (ret != 0) {
-        ret = -3;
+        code = MetaServiceCode::KV_TXN_COMMIT_ERR;
         msg = "failed to save tablet meta";
         return;
     }
@@ -549,10 +696,11 @@ void MetaServiceImpl::get_tablet(::google::protobuf::RpcController* controller,
     LOG(INFO) << "rpc from " << ctrl->remote_side() << " request=" << request->DebugString();
     brpc::ClosureGuard closure_guard(done);
     int ret = 0;
+    MetaServiceCode code = MetaServiceCode::OK;
     std::string msg = "OK";
     std::unique_ptr<int, std::function<void(int*)>> defer_status(
-            (int*)0x01, [&ret, &msg, &response, &ctrl](int*) {
-                response->mutable_status()->set_code(ret);
+            (int*)0x01, [&ret, &code, &msg, &response, &ctrl](int*) {
+                response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
                 LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
                           << ctrl->remote_side() << " " << msg;
@@ -569,6 +717,7 @@ void MetaServiceImpl::get_tablet(::google::protobuf::RpcController* controller,
     meta_tablet_table_key(key_info0, &key0);
     ret = txn->get(key0, &val0);
     if (ret != 0) {
+        code = MetaServiceCode::KV_TXN_GET_ERR;
         msg = "failed to get table id from tablet_id";
         return;
     }
@@ -580,13 +729,14 @@ void MetaServiceImpl::get_tablet(::google::protobuf::RpcController* controller,
     meta_tablet_key(key_info1, &key1);
     ret = txn->get(key1, &val1);
     if (ret != 0) {
+        code = MetaServiceCode::KV_TXN_GET_ERR;
         msg = "failed to get tablet";
         msg += (ret == 1 ? ": not found" : "");
         return;
     }
 
     if (!response->mutable_tablet_meta()->ParseFromString(val1)) {
-        ret = -3;
+        code = MetaServiceCode::PROTOBUF_PARSE_ERR;
         msg = "malformed tablet meta, unable to initialize";
         return;
     }
@@ -600,17 +750,18 @@ void MetaServiceImpl::create_rowset(::google::protobuf::RpcController* controlle
     LOG(INFO) << "rpc from " << ctrl->remote_side() << " request=" << request->DebugString();
     brpc::ClosureGuard closure_guard(done);
     int ret = 0;
+    MetaServiceCode code = MetaServiceCode::OK;
     std::string msg = "OK";
     std::unique_ptr<int, std::function<void(int*)>> defer_status(
-            (int*)0x01, [&ret, &msg, &response, &ctrl](int*) {
-                response->mutable_status()->set_code(ret);
+            (int*)0x01, [&ret, &code, &msg, &response, &ctrl](int*) {
+                response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
                 LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
                           << ctrl->remote_side() << " " << msg;
             });
 
     if (!request->has_rowset_meta()) {
-        ret = -1;
+        code = MetaServiceCode::INVALID_ARGUMENT_ERR;
         msg = "no rowset meta";
         return;
     }
@@ -633,7 +784,7 @@ void MetaServiceImpl::create_rowset(::google::protobuf::RpcController* controlle
     }
 
     if (!request->rowset_meta().SerializeToString(&val)) {
-        ret = -2;
+        code = MetaServiceCode::PROTOBUF_SERIALIZE_ERR;
         msg = "failed to serialize rowset meta";
         return;
     }
@@ -644,7 +795,7 @@ void MetaServiceImpl::create_rowset(::google::protobuf::RpcController* controlle
     LOG(INFO) << "xxx put" << (temporary ? " tmp " : " ") << "create_rowset_key " << hex(key);
     ret = txn->commit();
     if (ret != 0) {
-        ret = -3;
+        code = MetaServiceCode::KV_TXN_COMMIT_ERR;
         msg = "failed to save rowset meta";
         return;
     }
@@ -658,10 +809,11 @@ void MetaServiceImpl::get_rowset(::google::protobuf::RpcController* controller,
     LOG(INFO) << "rpc from " << ctrl->remote_side() << " request: " << request->DebugString();
     brpc::ClosureGuard closure_guard(done);
     int ret = 0;
+    MetaServiceCode code = MetaServiceCode::OK;
     std::string msg = "OK";
     std::unique_ptr<int, std::function<void(int*)>> defer_status(
-            (int*)0x01, [&ret, &msg, &response, &ctrl](int*) {
-                response->mutable_status()->set_code(ret);
+            (int*)0x01, [ret, &code, &msg, &response, &ctrl](int*) {
+                response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
                 LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
                           << ctrl->remote_side() << " " << msg;
@@ -685,6 +837,7 @@ void MetaServiceImpl::get_rowset(::google::protobuf::RpcController* controller,
     std::unique_ptr<RangeGetIterator> it;
     ret = txn->get(key0, key1, &it);
     if (ret != 0) {
+        code = MetaServiceCode::KV_TXN_GET_ERR;
         msg = "failed to get rowset";
         msg += (ret == 1 ? ": not found" : "");
         return;
@@ -696,7 +849,7 @@ void MetaServiceImpl::get_rowset(::google::protobuf::RpcController* controller,
         std::string val(v.data(), v.size());
         auto rs = response->add_rowset_meta();
         if (!rs->ParseFromString(val)) {
-            ret = -3;
+            code = MetaServiceCode::PROTOBUF_PARSE_ERR;
             msg = "malformed tablet meta, unable to initialize";
             return;
         }
@@ -850,10 +1003,11 @@ void MetaServiceImpl::create_instance(google::protobuf::RpcController* controlle
     LOG(INFO) << "rpc from " << ctrl->remote_side() << " request=" << request->DebugString();
     brpc::ClosureGuard closure_guard(done);
     int ret = 0;
+    MetaServiceCode code = MetaServiceCode::OK;
     std::string msg = "OK";
     std::unique_ptr<int, std::function<void(int*)>> defer_status(
-            (int*)0x01, [&ret, &msg, &response, &ctrl](int*) {
-                response->mutable_status()->set_code(ret);
+            (int*)0x01, [&ret, &code, &msg, &response, &ctrl](int*) {
+                response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
                 LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
                           << ctrl->remote_side() << " " << msg;
@@ -866,6 +1020,7 @@ void MetaServiceImpl::create_instance(google::protobuf::RpcController* controlle
     instance.set_name(request->has_name() ? request->name() : "");
 
     if (instance.instance_id().empty()) {
+        code = MetaServiceCode::INVALID_ARGUMENT_ERR;
         msg = "instance id not set";
         return;
     }
@@ -877,21 +1032,22 @@ void MetaServiceImpl::create_instance(google::protobuf::RpcController* controlle
     std::string val = instance.SerializeAsString();
     instance_key(key_info, &key);
     if (val.empty()) {
+        code = MetaServiceCode::PROTOBUF_SERIALIZE_ERR;
         msg = "failed to serialize";
         LOG(ERROR) << msg;
         return;
     }
 
-    LOG(INFO) << "xxx instance json="
-              << ([&] {
-                     std::string str;
-                     google::protobuf::util::MessageToJsonString(instance, &str);
-                     return str;
-                 }());
+    LOG(INFO) << "xxx instance json=" << ([&] {
+        std::string str;
+        google::protobuf::util::MessageToJsonString(instance, &str);
+        return str;
+    }());
 
     std::unique_ptr<Transaction> txn;
     ret = txn_kv_->create_txn(&txn);
     if (ret != 0) {
+        code = MetaServiceCode::KV_TXN_CREATE_ERR;
         msg = "failed to create txn";
         LOG(WARNING) << msg << " ret=" << ret;
         return;
@@ -901,6 +1057,7 @@ void MetaServiceImpl::create_instance(google::protobuf::RpcController* controlle
     LOG(INFO) << "put instance_key=" << hex(key);
     ret = txn->commit();
     if (ret != 0) {
+        code = MetaServiceCode::KV_TXN_COMMIT_ERR;
         msg = "failed to commit txn";
         LOG(WARNING) << msg << " ret=" << ret;
     }
@@ -914,11 +1071,12 @@ void MetaServiceImpl::add_cluster(google::protobuf::RpcController* controller,
     LOG(INFO) << "rpc from " << ctrl->remote_side() << " request=" << request->DebugString();
     brpc::ClosureGuard closure_guard(done);
     int ret = 0;
+    MetaServiceCode code = MetaServiceCode::OK;
     std::string msg = "OK";
     [[maybe_unused]] std::stringstream ss;
     std::unique_ptr<int, std::function<void(int*)>> defer_status(
-            (int*)0x01, [&ret, &msg, &response, &ctrl](int*) {
-                response->mutable_status()->set_code(ret);
+            (int*)0x01, [&ret, &code, &msg, &response, &ctrl](int*) {
+                response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
                 LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
                           << ctrl->remote_side() << " " << msg;
@@ -926,7 +1084,7 @@ void MetaServiceImpl::add_cluster(google::protobuf::RpcController* controller,
 
     if (!request->has_instance_id() || !request->has_cluster()) {
         msg = "invalid request instance_id or cluster not given";
-        ret = -1;
+        code = MetaServiceCode::INVALID_ARGUMENT_ERR;
         return;
     }
 
@@ -940,6 +1098,7 @@ void MetaServiceImpl::add_cluster(google::protobuf::RpcController* controller,
     std::unique_ptr<Transaction> txn;
     ret = txn_kv_->create_txn(&txn);
     if (ret != 0) {
+        code = MetaServiceCode::KV_TXN_CREATE_ERR;
         msg = "failed to create txn";
         LOG(WARNING) << msg << " ret=" << ret;
         return;
@@ -948,6 +1107,7 @@ void MetaServiceImpl::add_cluster(google::protobuf::RpcController* controller,
     LOG(INFO) << "get instnace_key=" << hex(key);
 
     if (ret != 0) {
+        code = MetaServiceCode::KV_TXN_GET_ERR;
         ss << "failed to get intancece, instance_id=" << instance_id << " ret=" << ret;
         msg = ss.str();
         return;
@@ -956,24 +1116,22 @@ void MetaServiceImpl::add_cluster(google::protobuf::RpcController* controller,
     InstanceInfoPB instance;
     if (!instance.ParseFromString(val)) {
         msg = "failed to parse InstanceInfoPB";
-        ret = -1;
+        code = MetaServiceCode::PROTOBUF_PARSE_ERR;
         return;
     }
 
     google::protobuf::util::JsonPrintOptions opts;
     opts.preserve_proto_field_names = true;
-    LOG(INFO) << "xxx cluster to add json="
-              << ([&] {
-                     std::string str;
-                     google::protobuf::util::MessageToJsonString(request->cluster(), &str);
-                     return str;
-                 }());
-    LOG(INFO) << "xxx instance json="
-              << ([&] {
-                     std::string str;
-                     google::protobuf::util::MessageToJsonString(instance, &str);
-                     return str;
-                 }());
+    LOG(INFO) << "xxx cluster to add json=" << ([&] {
+        std::string str;
+        google::protobuf::util::MessageToJsonString(request->cluster(), &str);
+        return str;
+    }());
+    LOG(INFO) << "xxx instance json=" << ([&] {
+        std::string str;
+        google::protobuf::util::MessageToJsonString(instance, &str);
+        return str;
+    }());
 
     // TODO:
     // do some check before adding, dedup is needed
@@ -982,8 +1140,8 @@ void MetaServiceImpl::add_cluster(google::protobuf::RpcController* controller,
 
     val = instance.SerializeAsString();
     if (val.empty()) {
+        code = MetaServiceCode::PROTOBUF_SERIALIZE_ERR;
         msg = "failed to serialize";
-        ret = -1;
         return;
     }
 
@@ -991,6 +1149,7 @@ void MetaServiceImpl::add_cluster(google::protobuf::RpcController* controller,
     LOG(INFO) << "put instnace_key=" << hex(key);
     ret = txn->commit();
     if (ret != 0) {
+        code = MetaServiceCode::KV_TXN_COMMIT_ERR;
         msg = "failed to commit txn";
         LOG(WARNING) << msg << " ret=" << ret;
     }
@@ -1004,11 +1163,12 @@ void MetaServiceImpl::get_cluster(google::protobuf::RpcController* controller,
     LOG(INFO) << "rpc from " << ctrl->remote_side() << " request=" << request->DebugString();
     brpc::ClosureGuard closure_guard(done);
     int ret = 0;
+    MetaServiceCode code = MetaServiceCode::OK;
     std::string msg = "OK";
     [[maybe_unused]] std::stringstream ss;
     std::unique_ptr<int, std::function<void(int*)>> defer_status(
-            (int*)0x01, [&ret, &msg, &response, &ctrl](int*) {
-                response->mutable_status()->set_code(ret);
+            (int*)0x01, [&ret, &code, &msg, &response, &ctrl](int*) {
+                response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
                 LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
                           << ctrl->remote_side() << " " << msg;
@@ -1020,21 +1180,21 @@ void MetaServiceImpl::get_cluster(google::protobuf::RpcController* controller,
     std::string cluster_name = request->has_cluster_name() ? request->cluster_name() : "";
 
     if (cloud_unique_id.empty()) {
+        code = MetaServiceCode::INVALID_ARGUMENT_ERR;
         msg = "cloud_unique_id must be given";
-        ret = -2;
         return;
     }
 
     if (cluster_id.empty() && cluster_name.empty()) {
+        code = MetaServiceCode::INVALID_ARGUMENT_ERR;
         msg = "cluster_name or cluster_id must be given";
-        ret = -2;
         return;
     }
 
     // TODO: get instance_id with cloud_unique_id
     if (instance_id.empty()) {
+        code = MetaServiceCode::INVALID_ARGUMENT_ERR;
         msg = "failed to get instance_id with cloud_unique_id=" + cloud_unique_id;
-        ret = -2;
         return;
     }
 
@@ -1046,6 +1206,7 @@ void MetaServiceImpl::get_cluster(google::protobuf::RpcController* controller,
     std::unique_ptr<Transaction> txn;
     ret = txn_kv_->create_txn(&txn);
     if (ret != 0) {
+        code = MetaServiceCode::KV_TXN_CREATE_ERR;
         msg = "failed to create txn";
         LOG(WARNING) << msg << " ret=" << ret;
         return;
@@ -1054,6 +1215,7 @@ void MetaServiceImpl::get_cluster(google::protobuf::RpcController* controller,
     LOG(INFO) << "get instnace_key=" << hex(key);
 
     if (ret != 0) {
+        code = MetaServiceCode::KV_TXN_GET_ERR;
         ss << "failed to get intancece, instance_id=" << instance_id << " ret=" << ret;
         msg = ss.str();
         return;
@@ -1061,8 +1223,8 @@ void MetaServiceImpl::get_cluster(google::protobuf::RpcController* controller,
 
     InstanceInfoPB instance;
     if (!instance.ParseFromString(val)) {
+        code = MetaServiceCode::PROTOBUF_PARSE_ERR;
         msg = "failed to parse InstanceInfoPB";
-        ret = -1;
         return;
     }
 
@@ -1085,7 +1247,7 @@ void MetaServiceImpl::get_cluster(google::protobuf::RpcController* controller,
         ss << "fail to get cluster with " << request->DebugString();
         msg = ss.str();
         std::replace(msg.begin(), msg.end(), '\n', ' ');
-        ret = -2;
+        ret = MetaServiceCode::CLUSTER_NOT_FOUND_ERR;
         return;
     }
 
