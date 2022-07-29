@@ -29,6 +29,9 @@ public class ClientPool {
     static GenericKeyedObjectPoolConfig heartbeatConfig = new GenericKeyedObjectPoolConfig();
     static int heartbeatTimeoutMs = FeConstants.heartbeat_interval_second * 1000;
 
+    // 1s
+    static int checkBackendTimeoutMs = 1000;
+
     static GenericKeyedObjectPoolConfig backendConfig = new GenericKeyedObjectPoolConfig();
 
     static {
@@ -63,6 +66,8 @@ public class ClientPool {
 
     public static GenericPool<HeartbeatService.Client> backendHeartbeatPool =
             new GenericPool("HeartbeatService", heartbeatConfig, heartbeatTimeoutMs);
+    public static GenericPool<HeartbeatService.Client> checkBackendPool =
+            new GenericPool("HeartbeatService", heartbeatConfig, checkBackendTimeoutMs);
     public static GenericPool<FrontendService.Client> frontendHeartbeatPool =
             new GenericPool<>("FrontendService", heartbeatConfig, heartbeatTimeoutMs,
                     Config.thrift_server_type.equalsIgnoreCase(ThriftServer.THREADED_SELECTOR));

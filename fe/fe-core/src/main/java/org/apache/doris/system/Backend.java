@@ -66,6 +66,9 @@ public class Backend implements Writable {
 
     private static final Logger LOG = LogManager.getLogger(Backend.class);
 
+    public static final String CLOUD_CLUSTER_NAME = "cloud_cluster_name";
+    public static final String CLOUD_CLUSTER_ID = "cloud_cluster_id";
+
     @SerializedName("id")
     private long id;
     @SerializedName("host")
@@ -166,6 +169,18 @@ public class Backend implements Writable {
         this.backendState = BackendState.free.ordinal();
         this.decommissionType = DecommissionType.SystemDecommission.ordinal();
         this.tagMap.put(locationTag.type, locationTag.value);
+    }
+
+    public String getCloudClusterName() {
+        return tagMap.getOrDefault(CLOUD_CLUSTER_NAME, "");
+    }
+
+    public String getCloudClusterId() {
+        return tagMap.getOrDefault(CLOUD_CLUSTER_ID, "");
+    }
+
+    public void setId(long id) {
+        this.id = id;
     }
 
     public long getId() {
@@ -562,6 +577,7 @@ public class Backend implements Writable {
             tagMap.put(Tag.TYPE_LOCATION, locationTag.value);
         }
         locationTag = Tag.createNotCheck(Tag.TYPE_LOCATION, tagMap.get(Tag.TYPE_LOCATION));
+        LOG.debug("convertToTagMapAndSetLocationTag: {}", tagMap);
     }
 
     public static Backend read(DataInput in) throws IOException {

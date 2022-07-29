@@ -28,6 +28,7 @@ import org.apache.doris.common.util.MasterDaemon;
 import org.apache.doris.persist.HbPackage;
 import org.apache.doris.service.FrontendOptions;
 import org.apache.doris.system.HeartbeatResponse.HbStatus;
+import org.apache.doris.system.HeartbeatResponse.Type;
 import org.apache.doris.thrift.FrontendService;
 import org.apache.doris.thrift.HeartbeatService;
 import org.apache.doris.thrift.TBackendInfo;
@@ -51,6 +52,7 @@ import com.google.common.collect.Maps;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
@@ -58,6 +60,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Collectors;
 
 /**
  * Heartbeat manager run as a daemon at a fix interval.
@@ -67,6 +70,8 @@ public class HeartbeatMgr extends MasterDaemon {
     private static final Logger LOG = LogManager.getLogger(HeartbeatMgr.class);
 
     private final ExecutorService executor;
+
+    private final ExecutorService executorCheckBe;
     private SystemInfoService nodeMgr;
     private HeartbeatFlags heartbeatFlags;
 
@@ -77,6 +82,8 @@ public class HeartbeatMgr extends MasterDaemon {
         this.nodeMgr = nodeMgr;
         this.executor = ThreadPoolManager.newDaemonFixedThreadPool(Config.heartbeat_mgr_threads_num,
                 Config.heartbeat_mgr_blocking_queue_size, "heartbeat-mgr-pool", needRegisterMetric);
+        this.executorCheckBe = ThreadPoolManager.newDaemonFixedThreadPool(Config.heartbeat_mgr_check_be_mgr_threads_num,
+            Config.heartbeat_mgr_blocking_queue_size, "heartbeat-mgr-check-be-pool", needRegisterMetric);
         this.heartbeatFlags = new HeartbeatFlags();
     }
 
@@ -380,6 +387,37 @@ public class HeartbeatMgr extends MasterDaemon {
         for (HeartbeatResponse hbResult : hbPackage.getHbResults()) {
             handleHbResponse(hbResult, true);
         }
+    }
+
+    public List<Backend> checkBeStatus(List<Backend> bes) {
+        List<Future<HeartbeatResponse>> hbResponses = Lists.newArrayList();
+
+        // send backend heartbeat
+        for (Backend backend : bes) {
+            BackendHeartbeatHandler handler = new BackendHeartbeatHandler(backend);
+            hbResponses.add(executorCheckBe.submit(handler));
+        }
+
+        List<Long> statusOkBackends = new ArrayList<>();
+        for (Future<HeartbeatResponse> future : hbResponses) {
+            try {
+                // the check status rpc's timeout is 1 seconds, so we will not be blocked here very long.
+                HeartbeatResponse response = future.get();
+                if (response.getType() == Type.BACKEND) {
+                    BackendHbResponse hbResponse = (BackendHbResponse) response;
+                    if (response.getStatus() != HbStatus.OK) {
+                        LOG.warn("get bad check status response: {}", response);
+                        ClientPool.checkBackendPool
+                            .clearPool(new TNetworkAddress(hbResponse.getHost(), hbResponse.getBePort()));
+                        continue;
+                    }
+                    statusOkBackends.add(hbResponse.getBeId());
+                }
+            } catch (InterruptedException | ExecutionException e) {
+                LOG.warn("got exception when doing check backend status", e);
+            }
+        } // end for all results
+        return bes.stream().filter(backend -> statusOkBackends.contains(backend.getId())).collect(Collectors.toList());
     }
 
 }

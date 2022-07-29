@@ -236,6 +236,7 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.Queues;
+import com.selectdb.cloud.catalog.ClusterBeChecker;
 import com.sleepycat.je.rep.InsufficientLogException;
 import com.sleepycat.je.rep.NetworkRestore;
 import com.sleepycat.je.rep.NetworkRestoreConfig;
@@ -372,6 +373,8 @@ public class Env {
 
     private SystemInfoService systemInfo;
     private HeartbeatMgr heartbeatMgr;
+
+    private ClusterBeChecker clusterBeChecker;
     private TabletInvertedIndex tabletInvertedIndex;
     private ColocateTableIndex colocateTableIndex;
 
@@ -552,6 +555,7 @@ public class Env {
 
         this.systemInfo = new SystemInfoService();
         this.heartbeatMgr = new HeartbeatMgr(systemInfo, !isCheckpointCatalog);
+        this.clusterBeChecker = new ClusterBeChecker();
         this.tabletInvertedIndex = new TabletInvertedIndex();
         this.colocateTableIndex = new ColocateTableIndex();
         this.recycleBin = new CatalogRecycleBin();
@@ -1348,6 +1352,9 @@ public class Env {
         // heartbeat mgr
         heartbeatMgr.setMaster(clusterId, token, epoch);
         heartbeatMgr.start();
+
+        // cluster be checker
+        clusterBeChecker.start();
         // Load checker
         LoadChecker.init(Config.load_checker_interval_second * 1000L);
         LoadChecker.startAll();

@@ -91,6 +91,10 @@ public class BackendHbResponse extends HeartbeatResponse implements Writable {
         return version;
     }
 
+    public String getHost() {
+        return host;
+    }
+
     public static BackendHbResponse read(DataInput in) throws IOException {
         BackendHbResponse result = new BackendHbResponse();
         result.readFields(in);

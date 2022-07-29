@@ -260,6 +260,9 @@ public class Config extends ConfigBase {
     @ConfField(masterOnly = true)
     public static int heartbeat_mgr_threads_num = 8;
 
+    @ConfField(masterOnly = true)
+    public static int heartbeat_mgr_check_be_mgr_threads_num = 4;
+
     /**
      * blocking queue size to store heartbeat task in heartbeat_mgr.
      */
