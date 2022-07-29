@@ -1,8 +1,8 @@
 
 #pragma once
 
-#include "meta-service/txn_kv.h"
 #include "gen_cpp/selectdb_cloud.pb.h"
+#include "meta-service/txn_kv.h"
 
 namespace selectdb {
 
@@ -25,6 +25,11 @@ public:
                     const ::selectdb::CommitTxnRequest* request,
                     ::selectdb::CommitTxnResponse* response,
                     ::google::protobuf::Closure* done) override;
+
+    void abort_txn(::google::protobuf::RpcController* controller,
+                   const ::selectdb::AbortTxnRequest* request,
+                   ::selectdb::AbortTxnResponse* response,
+                   ::google::protobuf::Closure* done) override;
 
     void get_version(::google::protobuf::RpcController* controller,
                      const ::selectdb::GetVersionRequest* request,

@@ -246,6 +246,20 @@ message CommitTxnResponse {
     // TODO: There may be more fields TBD
 }
 
+message AbortTxnRequest {
+    optional string cloud_unique_id = 1; // For auth
+    optional int64 db_id = 2;
+    optional int64 txn_id = 3;
+    optional string label = 4;
+    optional string reason = 5;
+    optional TxnCommitAttachmentPB commit_attachment = 6;
+}
+
+message AbortTxnResponse {
+    optional MetaServiceResponseStatus status = 1;
+    // TODO: There may be more fields TBD
+}
+
 message GetVersionRequest {
     optional string cloud_unique_id = 1; // For auth
     optional int64 db_id = 2;
@@ -359,20 +373,21 @@ enum MetaServiceCode {
     KV_TXN_CREATE_ERR = 2;
     KV_TXN_GET_ERR = 3;
     KV_TXN_COMMIT_ERR = 4;
-
     PROTOBUF_PARSE_ERR = 5;
     PROTOBUF_SERIALIZE_ERR = 6;
 
     //Doris error
     TXN_GEN_ID_ERR = 7;
-    TXN_DUPLICATED_REQ_ERR = 8;
-    TXN_LABEL_ALREADY_USED_ERR = 9;
-    TXN_INVALID_STATUS_ERR = 10;
-    TXN_LABEL_NOT_FOUND_ERR = 11;
-    TXN_ID_NOT_FOUND_ERR = 12;
+    TXN_DUPLICATED_REQ = 8;
+    TXN_LABEL_ALREADY_USED = 9;
+    TXN_INVALID_STATUS = 10;
+    TXN_LABEL_NOT_FOUND = 11;
+    TXN_ID_NOT_FOUND = 12;
+    TXN_ALREADY_ABORTED = 13;
+    TXN_ALTEADY_VISIBLE = 14;
 
-    VERSION_NOT_FOUND_ERR = 13;
-    CLUSTER_NOT_FOUND_ERR = 14;
+    VERSION_NOT_FOUND = 15;
+    CLUSTER_NOT_FOUND = 16;
 }
 
 service ResourceManagerService {
@@ -391,6 +406,8 @@ service MetaService {
     rpc begin_txn(BeginTxnRequest) returns (BeginTxnResponse);
     rpc precommit_txn(PrecommitTxnRequest) returns (PrecommitTxnResponse);
     rpc commit_txn(CommitTxnRequest) returns (CommitTxnResponse);
+    rpc abort_txn(AbortTxnRequest) returns (AbortTxnResponse);
+
     rpc get_version(GetVersionRequest) returns (GetVersionResponse);
 
     rpc create_tablet(CreateTabletRequest) returns (MetaServiceGenericResponse);

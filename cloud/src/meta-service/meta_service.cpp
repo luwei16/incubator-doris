@@ -1,13 +1,14 @@
 
 // clang-format off
-#include "brpc/closure_guard.h"
-#include "brpc/controller.h"
-#include "common/config.h"
-#include "common/util.h"
-#include "google/protobuf/util/json_util.h"
 #include "meta_service.h"
 #include "meta-service/doris_txn.h"
 #include "meta-service/keys.h"
+#include "common/config.h"
+#include "common/util.h"
+
+#include "brpc/closure_guard.h"
+#include "brpc/controller.h"
+#include "google/protobuf/util/json_util.h"
 
 #include <chrono>
 #include <limits>
@@ -183,7 +184,7 @@ void MetaServiceImpl::begin_txn(::google::protobuf::RpcController* controller,
 
             if (ret == 1) {
                 //label_to_idx and txn info inconsistency.
-                code = MetaServiceCode::TXN_ID_NOT_FOUND_ERR;
+                code = MetaServiceCode::TXN_ID_NOT_FOUND;
                 ss << "txn->get() failed, cur_txn_id=" << cur_txn_id << " label=" << label
                    << " ret=" << ret;
                 msg = ss.str();
@@ -209,14 +210,14 @@ void MetaServiceImpl::begin_txn(::google::protobuf::RpcController* controller,
                     ((cur_txn_info.request_unique_id().hi() == txn_info.request_unique_id().hi()) && 
                      (cur_txn_info.request_unique_id().lo() == txn_info.request_unique_id().lo()))) {
 
-                    code = MetaServiceCode::TXN_DUPLICATED_REQ_ERR;
+                    code = MetaServiceCode::TXN_DUPLICATED_REQ;
                     ss << "db_id=" << db_id << " label=" << label << " dup begin txn request.";
                     msg = ss.str();
                     return;
                 }
                 // clang-format on
             }
-            code = MetaServiceCode::TXN_LABEL_ALREADY_USED_ERR;
+            code = MetaServiceCode::TXN_LABEL_ALREADY_USED;
             ss << "db_id=" << db_id << " label=" << label << " already used.";
             msg = ss.str();
             return;
@@ -361,7 +362,7 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
     txn_info_key(txn_inf_key_info, &txn_inf_key);
     ret = txn->get(txn_inf_key, &txn_inf_val);
     if (ret != 0) {
-        code = MetaServiceCode::KV_TXN_GET_ERR;
+        code = ret > 0 ? MetaServiceCode::TXN_ID_NOT_FOUND : MetaServiceCode::KV_TXN_GET_ERR;
         ss << "failed to get db id with db_id=" << db_id << " txn_id=" << txn_id << " ret=" << ret;
         msg = ss.str();
         return;
@@ -378,7 +379,7 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
     // TODO: do more check like txn state, 2PC etc.
     DCHECK(txn_info.txn_id() == txn_id);
     if (txn_info.status() == TxnStatusPB::TXN_STATUS_ABORTED) {
-        code = MetaServiceCode::TXN_INVALID_STATUS_ERR;
+        code = MetaServiceCode::TXN_ALREADY_ABORTED;
         ss << "transaction is already aborted: txn_id=" << txn_id;
         msg = ss.str();
         return;
@@ -391,7 +392,7 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
     }
 
     if (request->has_is_2pc() && TxnStatusPB::TXN_STATUS_PREPARED) {
-        code = MetaServiceCode::TXN_INVALID_STATUS_ERR;
+        code = MetaServiceCode::TXN_INVALID_STATUS;
         ss << "transaction is prepare, not pre-committed: txn_id=" << txn_id;
         msg = ss.str();
         return;
@@ -530,6 +531,217 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
     }
 }
 
+void MetaServiceImpl::abort_txn(::google::protobuf::RpcController* controller,
+                                const ::selectdb::AbortTxnRequest* request,
+                                ::selectdb::AbortTxnResponse* response,
+                                ::google::protobuf::Closure* done) {
+    auto ctrl = static_cast<brpc::Controller*>(controller);
+    LOG(INFO) << "abort_txn rpc from " << ctrl->remote_side()
+              << " request=" << request->DebugString();
+    brpc::ClosureGuard closure_guard(done);
+    int ret = 0;
+    MetaServiceCode code = MetaServiceCode::OK;
+    std::string msg = "OK";
+    std::string instance_id = "instance_id_deadbeef";
+    [[maybe_unused]] std::stringstream ss;
+    std::unique_ptr<int, std::function<void(int*)>> defer_status(
+            (int*)0x01, [&code, &msg, &response, &ctrl](int*) {
+                response->mutable_status()->set_code(code);
+                response->mutable_status()->set_msg(msg);
+                LOG(INFO) << "finish " << __PRETTY_FUNCTION__ << " " << ctrl->remote_side() << " "
+                          << msg;
+            });
+
+    // Get txn id
+    int64_t txn_id = request->has_txn_id() ? request->txn_id() : -1;
+    std::string label = request->has_label() ? request->label() : "";
+    int64_t db_id = request->has_db_id() ? request->db_id() : -1;
+    if (txn_id < 0 && (label.size() == 0 || db_id < 0)) {
+        code = MetaServiceCode::INVALID_ARGUMENT_ERR;
+        msg = "invalid txn id and lable.";
+        return;
+    }
+
+    std::unique_ptr<Transaction> txn;
+    ret = txn_kv_->create_txn(&txn);
+    if (ret != 0) {
+        code = MetaServiceCode::KV_TXN_CREATE_ERR;
+        LOG(WARNING) << "failed to create meta serivce txn ret= " << ret;
+        ss << "filed to txn_kv_->create_txn(), txn_id=" << txn_id << " label=" << label;
+        msg = ss.str();
+        return;
+    }
+
+    std::string txn_inf_key; // Will be used when saving updated txn
+    std::string txn_inf_val; // Will be reused when saving updated txn
+    TxnInfoPB txn_info;
+
+    //TODO: split with two function.
+    //there two ways to abort txn:
+    //1. abort txn by txn id
+    //2. abort txn by label and db_id
+    if (db_id < 0) {
+        //abort txn by txn id
+        // Get db id with txn id
+
+        std::string txn_db_key;
+        std::string txn_db_val;
+
+        //not provide db_id, we need read from disk.
+        if (!request->has_db_id()) {
+            TxnDbTblKeyInfo txn_db_key_info {instance_id, txn_id};
+            txn_db_tbl_key(txn_db_key_info, &txn_db_key);
+            ret = txn->get(txn_db_key, &txn_db_val);
+            if (ret != 0) {
+                code = ret > 0 ? MetaServiceCode::TXN_ID_NOT_FOUND
+                               : MetaServiceCode::KV_TXN_GET_ERR;
+                ss << "failed to get db id with txn_id=" << txn_id << " ret=" << ret;
+                msg = ss.str();
+                return;
+            }
+            db_id = *reinterpret_cast<const int64_t*>(txn_db_val.data());
+        } else {
+            db_id = request->db_id();
+        }
+
+        // Get txn info with db_id and txn_id
+        TxnInfoKeyInfo txn_inf_key_info {instance_id, db_id, txn_id};
+        txn_info_key(txn_inf_key_info, &txn_inf_key);
+        ret = txn->get(txn_inf_key, &txn_inf_val);
+        if (ret != 0) {
+            code = ret > 0 ? MetaServiceCode::TXN_ID_NOT_FOUND : MetaServiceCode::KV_TXN_GET_ERR;
+            ss << "failed to get db id with db_id=" << db_id << "txn_id=" << txn_id
+               << "ret=" << ret;
+            msg = ss.str();
+            return;
+        }
+
+        if (!txn_info.ParseFromString(txn_inf_val)) {
+            code = MetaServiceCode::PROTOBUF_PARSE_ERR;
+            ss << "failed to parse txn_info db_id=" << db_id << "txn_id=" << txn_id;
+            msg = ss.str();
+            return;
+        }
+
+        DCHECK(txn_info.txn_id() == txn_id);
+
+        //check state is valid.
+        if (txn_info.status() == TxnStatusPB::TXN_STATUS_ABORTED) {
+            code = MetaServiceCode::TXN_ALREADY_ABORTED;
+            ss << "transaction is already abort db_id=" << db_id << "txn_id=" << txn_id;
+            msg = ss.str();
+            return;
+        }
+        if (txn_info.status() == TxnStatusPB::TXN_STATUS_VISIBLE) {
+            code = MetaServiceCode::TXN_ALTEADY_VISIBLE;
+            ss << "transaction is already visible db_id=" << db_id << "txn_id=" << txn_id;
+            msg = ss.str();
+            return;
+        }
+    } else {
+        //abort txn by label.
+        std::string txn_idx_key;
+        std::string txn_idx_val;
+
+        TxnIndexKeyInfo txn_idx_key_info {instance_id, db_id, label};
+        txn_index_key(txn_idx_key_info, &txn_idx_key);
+        ret = txn->get(txn_idx_key, &txn_idx_val);
+        if (ret < 0) {
+            code = MetaServiceCode::KV_TXN_GET_ERR;
+            ss << "txn->get() failed, ret=" << ret;
+            msg = ss.str();
+            return;
+        }
+        //label index not exist
+        if (ret > 0) {
+            code = MetaServiceCode::TXN_LABEL_NOT_FOUND;
+            ss << "label not found db_id=" << db_id << " label=" << label << " ret=" << ret;
+            msg = ss.str();
+            return;
+        }
+
+        TxnLabelToIdsPB label_to_ids;
+        DCHECK(txn_idx_val.size() > 10);
+        std::string label_to_ids_str = txn_idx_val.substr(0, txn_idx_val.size() - 10);
+        if (!label_to_ids.ParseFromString(label_to_ids_str)) {
+            code = MetaServiceCode::PROTOBUF_PARSE_ERR;
+            msg = "label_to_ids->ParseFromString() failed.";
+            return;
+        }
+
+        int64_t prepare_txn_id = 0;
+        //found prepare state txn for abort
+        for (auto& cur_txn_id : label_to_ids.txn_ids()) {
+            std::string cur_txn_inf_key;
+            std::string cur_txn_inf_val;
+            TxnInfoKeyInfo cur_txn_inf_key_info {instance_id, db_id, cur_txn_id};
+            txn_info_key(cur_txn_inf_key_info, &cur_txn_inf_key);
+            ret = txn->get(cur_txn_inf_key, &cur_txn_inf_val);
+            if (ret != 0) {
+                code = MetaServiceCode::KV_TXN_GET_ERR;
+                std::stringstream ss;
+                ss << "txn->get() failed, cur_txn_id=" << cur_txn_id << " ret=" << ret;
+                msg = ss.str();
+                return;
+            }
+
+            if (ret == 0) {
+                TxnInfoPB cur_txn_info;
+                if (!cur_txn_info.ParseFromString(cur_txn_inf_val)) {
+                    code = MetaServiceCode::PROTOBUF_PARSE_ERR;
+                    std::stringstream ss;
+                    ss << "cur_txn_info->ParseFromString() failed, cur_txn_id=" << cur_txn_id;
+                    msg = ss.str();
+                    return;
+                }
+                //TODO: 2pc alse need to check TxnStatusPB::TXN_STATUS_PRECOMMITTED
+                if (cur_txn_info.status() == TxnStatusPB::TXN_STATUS_PREPARED) {
+                    prepare_txn_id = cur_txn_id;
+                    txn_info = std::move(cur_txn_info);
+                    txn_inf_key = std::move(cur_txn_inf_key);
+                    break;
+                }
+            }
+        }
+
+        if (prepare_txn_id == 0) {
+            code = MetaServiceCode::TXN_INVALID_STATUS;
+            std::stringstream ss;
+            ss << "running transaction not found, db_id=" << db_id << " label=" << label;
+            msg = ss.str();
+            return;
+        }
+    }
+
+    auto now_time = system_clock::now();
+    uint64_t finish_time = duration_cast<milliseconds>(now_time.time_since_epoch()).count();
+
+    // Update txn_info
+    txn_info.set_status(TxnStatusPB::TXN_STATUS_ABORTED);
+    txn_info.set_finish_time(finish_time);
+    if (request->has_reason()) {
+        txn_info.set_reason(request->reason());
+    }
+    //TODO: update txn attachment
+    LOG(INFO) << "txn_info=" << txn_info.DebugString();
+    txn_inf_val.clear();
+    if (!txn_info.SerializeToString(&txn_inf_val)) {
+        code = MetaServiceCode::PROTOBUF_SERIALIZE_ERR;
+        msg = "failed to serialize txn_info when saving";
+        return;
+    }
+    txn->put(txn_inf_key, txn_inf_val);
+    LOG(INFO) << "xxx put txn_inf_key=" << hex(txn_inf_key);
+    return;
+
+    ret = txn->commit();
+    if (ret != 0) {
+        code = MetaServiceCode::KV_TXN_COMMIT_ERR;
+        msg = "failed to abort meta service txn";
+        return;
+    }
+}
+
 void MetaServiceImpl::get_version(::google::protobuf::RpcController* controller,
                                   const ::selectdb::GetVersionRequest* request,
                                   ::selectdb::GetVersionResponse* response,
@@ -590,7 +802,7 @@ void MetaServiceImpl::get_version(::google::protobuf::RpcController* controller,
     } else if (ret == 1) {
         msg = "not found";
         // TODO(dx): find error code enum in proto, or add
-        code = MetaServiceCode::VERSION_NOT_FOUND_ERR;
+        code = MetaServiceCode::VERSION_NOT_FOUND;
         return;
     }
     msg = "failed to get txn";
@@ -1247,7 +1459,7 @@ void MetaServiceImpl::get_cluster(google::protobuf::RpcController* controller,
         ss << "fail to get cluster with " << request->DebugString();
         msg = ss.str();
         std::replace(msg.begin(), msg.end(), '\n', ' ');
-        ret = MetaServiceCode::CLUSTER_NOT_FOUND_ERR;
+        ret = MetaServiceCode::CLUSTER_NOT_FOUND;
         return;
     }
 
