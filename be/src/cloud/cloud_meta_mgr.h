@@ -31,8 +31,7 @@ public:
 
     Status precommit_txn(int64_t db_id, int64_t txn_id) override;
 
-    Status get_s3_info(const std::string& resource_id,
-                       std::map<std::string, std::string>* s3_info) override;
+    Status get_s3_info(const std::string& resource_id, S3Conf* s3_info) override;
 
 private:
     std::unique_ptr<selectdb::MetaService_Stub> _stub;

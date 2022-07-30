@@ -36,6 +36,7 @@ S3FileWriter::~S3FileWriter() {
 }
 
 Status S3FileWriter::open() {
+    VLOG_DEBUG << "S3FileWriter::open, path: " << _path.native();
     auto tmp_file_name = _key;
     std::replace(tmp_file_name.begin(), tmp_file_name.end(), '/', '_');
     auto st = io::global_local_filesystem()->create_file(Path(config::tmp_file_dir) / tmp_file_name,
@@ -51,6 +52,7 @@ Status S3FileWriter::abort() {
     if (_closed) {
         return Status::OK();
     }
+    VLOG_DEBUG << "S3FileWriter::abort, path: " << _path.native();
     _closed = true;
     if (_handle) {
         _handle->Cancel();
@@ -63,6 +65,7 @@ Status S3FileWriter::close() {
     if (_closed) {
         return Status::OK();
     }
+    VLOG_DEBUG << "S3FileWriter::close, path: " << _path.native();
     _closed = true;
     if (!_handle) {
         RETURN_IF_ERROR(finalize());

@@ -4,6 +4,7 @@
 
 #include "common/status.h"
 #include "olap/tablet_meta.h"
+#include "util/s3_util.h"
 
 namespace doris::cloud {
 
@@ -28,8 +29,7 @@ public:
 
     virtual Status precommit_txn(int64_t db_id, int64_t txn_id) = 0;
 
-    virtual Status get_s3_info(const std::string& resource_id,
-                               std::map<std::string, std::string>* s3_info) = 0;
+    virtual Status get_s3_info(const std::string& resource_id, S3Conf* s3_info) = 0;
 };
 
 } // namespace doris::cloud

@@ -63,6 +63,7 @@ Status S3FileReader::read_at(size_t offset, Slice result, size_t* bytes_read) {
         return Status::OK();
     }
 
+    VLOG_DEBUG << "S3FileReader::read_at, path: " << _path.native();
     Aws::S3::Model::GetObjectRequest request;
     request.WithBucket(_bucket).WithKey(_key);
     request.SetRange(fmt::format("bytes={}-{}", offset, offset + bytes_req - 1));

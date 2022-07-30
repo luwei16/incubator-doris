@@ -38,8 +38,10 @@
 #include "agent/task_worker_pool.h"
 #include "cloud/cloud_meta_mgr.h"
 #include "cloud/utils.h"
+#include "common/config.h"
 #include "env/env.h"
 #include "env/env_util.h"
+#include "io/fs/file_system_map.h"
 #include "io/fs/s3_file_system.h"
 #include "olap/base_compaction.h"
 #include "olap/cumulative_compaction.h"
@@ -201,7 +203,12 @@ Status StorageEngine::_open() {
     CHECK(dirs.size() == 1);
     _meta_mgr = std::make_unique<cloud::CloudMetaMgr>();
     RETURN_IF_ERROR(_meta_mgr->open());
-
+    S3Conf s3_conf;
+    RETURN_IF_ERROR(_meta_mgr->get_s3_info(config::test_s3_resource, &s3_conf));
+    VLOG_DEBUG << "s3 conf: " << s3_conf.to_string();
+    auto s3_fs = std::make_shared<io::S3FileSystem>(std::move(s3_conf), config::test_s3_resource);
+    RETURN_IF_ERROR(s3_fs->connect());
+    io::FileSystemMap::instance()->insert(config::test_s3_resource, std::move(s3_fs));
 #else
     load_data_dirs(dirs);
 #endif

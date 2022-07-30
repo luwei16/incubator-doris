@@ -163,8 +163,13 @@ Status CloudMetaMgr::precommit_txn(int64_t db_id, int64_t txn_id) {
     return Status::OK();
 }
 
-Status CloudMetaMgr::get_s3_info(const std::string& resource_id,
-                                 std::map<std::string, std::string>* s3_info) {
+Status CloudMetaMgr::get_s3_info(const std::string& resource_id, S3Conf* s3_info) {
+    s3_info->ak = config::test_s3_ak;
+    s3_info->sk = config::test_s3_sk;
+    s3_info->endpoint = config::test_s3_endpoint;
+    s3_info->region = config::test_s3_region;
+    s3_info->bucket = config::test_s3_bucket;
+    s3_info->prefix = config::test_s3_prefix;
     return Status::OK();
 }
 
