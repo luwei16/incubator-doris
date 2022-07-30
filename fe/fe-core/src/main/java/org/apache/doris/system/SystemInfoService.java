@@ -136,7 +136,7 @@ public class SystemInfoService {
     private List<Backend> transferToBackend(List<SelectdbCloud.NodeInfoPB> nodes) {
         List<Backend> ret = new ArrayList<>();
         for (SelectdbCloud.NodeInfoPB node : nodes) {
-            Backend b = new Backend(Catalog.getCurrentCatalog().getNextId(), node.getIp(), node.getHeartbeatPort());
+            Backend b = new Backend(Env.getCurrentEnv().getNextId(), node.getIp(), node.getHeartbeatPort());
             ret.add(b);
         }
         return ret;
@@ -150,7 +150,8 @@ public class SystemInfoService {
         }
         // not in memory, get cluster info from meta service
         SelectdbCloud.GetClusterResponse response = rpcToMetaGetClusterInfo(cloudUniqueId, clusterName);
-        if (response.hasStatus() && response.getStatus().hasCode() && response.getStatus().getCode() == 0) {
+        if (response.hasStatus() && response.getStatus().hasCode()
+                && response.getStatus().getCode() == SelectdbCloud.MetaServiceCode.OK) {
             String clusterId = response.getCluster().getClusterId();
             String clusterNameMeta = response.getCluster().getClusterName();
             if (!clusterNameMeta.equals(clusterName)) {
@@ -158,7 +159,7 @@ public class SystemInfoService {
                 return;
             }
             List<Backend> backends = transferToBackend(new ArrayList<>(response.getCluster().getComputeNodeList()));
-            List<Backend> statusOkBackends = Catalog.getCurrentHeartbeatMgr().checkBeStatus(backends);
+            List<Backend> statusOkBackends = Env.getCurrentHeartbeatMgr().checkBeStatus(backends);
 
             // heart beat
             addBackends(statusOkBackends, clusterName, clusterId);
@@ -244,7 +245,7 @@ public class SystemInfoService {
 
         for (Backend be : backends) {
             // log
-            Catalog.getCurrentCatalog().getEditLog().logAddBackend(be);
+            Env.getCurrentEnv().getEditLog().logAddBackend(be);
             setBackendOwner(be, DEFAULT_CLUSTER);
             LOG.info("finished to add {} ", be);
 
@@ -1357,8 +1358,8 @@ public class SystemInfoService {
 
     public SelectdbCloud.GetClusterResponse rpcToMetaGetClusterInfo(String cloudUniqueId, String clusterName) {
         TNetworkAddress metaAddress =
-                new TNetworkAddress(Catalog.getCurrentSystemInfo().metaServiceHostPort.first,
-                Catalog.getCurrentSystemInfo().metaServiceHostPort.second);
+                new TNetworkAddress(Env.getCurrentSystemInfo().metaServiceHostPort.first,
+                Env.getCurrentSystemInfo().metaServiceHostPort.second);
         SelectdbCloud.GetClusterRequest.Builder builder =
                 SelectdbCloud.GetClusterRequest.newBuilder();
         // TODO(dx): instanceId

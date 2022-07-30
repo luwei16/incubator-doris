@@ -1691,7 +1691,8 @@ public enum ErrorCode {
     ERR_CATALOG_ACCESS_DENIED(5087, new byte[]{'4', '2', '0', '0', '0'},
             "Access denied for user '%s' to catalog '%s'"),
     ERR_NONSUPPORT_HMS_TABLE(5088, new byte[]{'4', '2', '0', '0', '0'},
-            "Nonsupport hive metastore table named '%s' in database '%s' with catalog '%s'.");
+            "Nonsupport hive metastore table named '%s' in database '%s' with catalog '%s'."),
+    ERR_NO_CLUSTER_ERROR(5089, new byte[]{'4', '2', '0', '0', '0'}, "No cluster selected");
 
     // This is error code
     private final int code;

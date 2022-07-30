@@ -2,7 +2,7 @@ package com.selectdb.cloud.catalog;
 
 import com.selectdb.cloud.proto.SelectdbCloud;
 
-import org.apache.doris.catalog.Catalog;
+import org.apache.doris.catalog.Env;
 import org.apache.doris.common.FeConstants;
 import org.apache.doris.common.util.MasterDaemon;
 import org.apache.doris.system.Backend;
@@ -23,7 +23,6 @@ public class ClusterBeChecker extends MasterDaemon {
         super("cloud cluster be check", FeConstants.cloud_cluster_check_interval_second * 1000);
     }
 
-
     private void backendsDiffWithCurrent(List<SelectdbCloud.NodeInfoPB> nodes, List<Backend> currentBes,
                                             List<Backend> needAdd, List<Backend> needDel) {
         if (needAdd == null || needDel == null) {
@@ -38,7 +37,7 @@ public class ClusterBeChecker extends MasterDaemon {
         Map<String, Backend> nodeMap = new HashMap<>();
         for (SelectdbCloud.NodeInfoPB node : nodes) {
             String endpoint = node.getIp() + ":" + node.getHeartbeatPort();
-            Backend b = new Backend(Catalog.getCurrentCatalog().getNextId(), node.getIp(), node.getHeartbeatPort());
+            Backend b = new Backend(Env.getCurrentEnv().getNextId(), node.getIp(), node.getHeartbeatPort());
             nodeMap.put(endpoint, b);
         }
 
@@ -51,7 +50,7 @@ public class ClusterBeChecker extends MasterDaemon {
         for (String node : nodeMap.keySet()) {
             if (!currentMap.containsKey(node)) {
                 Backend backend = nodeMap.get(node);
-                backend.setId(Catalog.getCurrentCatalog().getNextId());
+                backend.setId(Env.getCurrentEnv().getNextId());
                 needAdd.add(backend);
             }
         }
@@ -62,11 +61,12 @@ public class ClusterBeChecker extends MasterDaemon {
     @Override
     protected void runAfterCatalogReady() {
         Map<String, List<Backend>> copiedClusterNameToBackendRef =
-                Catalog.getCurrentSystemInfo().copiedClusterNameToBackendRef();
+                Env.getCurrentSystemInfo().copiedClusterNameToBackendRef();
         for (String clusterName : copiedClusterNameToBackendRef.keySet()) {
-            SelectdbCloud.GetClusterResponse response = Catalog.getCurrentSystemInfo()
-                    .rpcToMetaGetClusterInfo(Catalog.getCurrentSystemInfo().cloudUniqueId, clusterName);
-            if (response.hasStatus() && response.getStatus().hasCode() && response.getStatus().getCode() == 0) {
+            SelectdbCloud.GetClusterResponse response = Env.getCurrentSystemInfo()
+                    .rpcToMetaGetClusterInfo(Env.getCurrentSystemInfo().cloudUniqueId, clusterName);
+            if (response.hasStatus() && response.getStatus().hasCode()
+                    && response.getStatus().getCode() == SelectdbCloud.MetaServiceCode.OK) {
                 List<Backend> currentClusterBes = copiedClusterNameToBackendRef.get(clusterName);
                 List<Backend> needAdd = new ArrayList<>();
                 List<Backend> needDel = new ArrayList<>();
@@ -78,14 +78,14 @@ public class ClusterBeChecker extends MasterDaemon {
                     continue;
                 }
                 if (needAdd.size() != 0) {
-                    List<Backend> statusOkBackends = Catalog.getCurrentHeartbeatMgr().checkBeStatus(needAdd);
-                    List<Long> backendIds = Catalog.getCurrentSystemInfo().getBackendIds(false);
+                    List<Backend> statusOkBackends = Env.getCurrentHeartbeatMgr().checkBeStatus(needAdd);
+                    List<Long> backendIds = Env.getCurrentSystemInfo().getBackendIds(false);
                     // heart beat
                     for (Backend statusOkBackend : statusOkBackends) {
                         if (!backendIds.contains(statusOkBackend.getId())) {
-                            Catalog.getCurrentSystemInfo().addBackend(statusOkBackend);
-                            Catalog.getCurrentSystemInfo().addClusterNameToBackendRef(statusOkBackend);
-                            Catalog.getCurrentSystemInfo().addClusterIdToBackendRef(statusOkBackend);
+                            Env.getCurrentSystemInfo().addBackend(statusOkBackend);
+                            Env.getCurrentSystemInfo().addClusterNameToBackendRef(statusOkBackend);
+                            Env.getCurrentSystemInfo().addClusterIdToBackendRef(statusOkBackend);
                         }
                     }
                 }
@@ -93,17 +93,17 @@ public class ClusterBeChecker extends MasterDaemon {
                     Set<Long> toDel = needDel.stream().map(Backend::getId).collect(Collectors.toSet());
                     List<Backend> afterRemove = currentClusterBes.stream()
                             .filter(backend -> !toDel.contains(backend.getId())).collect(Collectors.toList());
-                    Catalog.getCurrentSystemInfo().updateClusterNameToBackendRefBackends(clusterName, afterRemove);
-                    Catalog.getCurrentSystemInfo().updateClusterIdToBackendRefBackends(clusterName, afterRemove);
+                    Env.getCurrentSystemInfo().updateClusterNameToBackendRefBackends(clusterName, afterRemove);
+                    Env.getCurrentSystemInfo().updateClusterIdToBackendRefBackends(clusterName, afterRemove);
                 }
 
             } else {
                 LOG.warn("daemon cluster mgr get cluster info err. {}, {}, {}",
-                        Catalog.getCurrentSystemInfo().cloudUniqueId, clusterName, response);
+                        Env.getCurrentSystemInfo().cloudUniqueId, clusterName, response);
             }
         }
 
         LOG.debug("daemon cluster get cluster info succ, current uniqueIdToClusterNameMap: {}",
-                Catalog.getCurrentSystemInfo().copiedClusterNameToBackendRef());
+                Env.getCurrentSystemInfo().copiedClusterNameToBackendRef());
     }
 }

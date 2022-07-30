@@ -17,30 +17,68 @@
 
 package org.apache.doris.catalog;
 
+import org.apache.doris.qe.ConnectContext;
+import org.apache.doris.system.Backend;
+
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 public class CloudReplica extends Replica {
     private static final Logger LOG = LogManager.getLogger(CloudReplica.class);
 
-    public CloudReplica(long replicaId, List<Long> backendIds, long version, int schemaHash,
-                        long dataSize, long remoteDataSize, long rowCount, ReplicaState state,
-                        long lastFailedVersion,
-                        long lastSuccessVersion) {
-        //super(replicaId, -1, version, schemaHash, dataSize, remoteDataSize,
-        //       rowCount, state, lastFailedVersion, lastSuccessVersion);
-        super(replicaId, backendIds.get(0), version, schemaHash, dataSize, remoteDataSize,
-                rowCount, state, lastFailedVersion, lastSuccessVersion);
+    public CloudReplica(long replicaId, List<Long> backendIds, ReplicaState state, long version, int schemaHash) {
+        super(replicaId, -1, state, version, schemaHash);
+        clusterToBackends = new HashMap<String, List<Long>>();
     }
 
-    public CloudReplica(long replicaId, List<Long> backendIds, ReplicaState state, long version, int schemaHash) {
-        super(replicaId, backendIds.get(0), state, version, schemaHash);
+    @Override
+    public long getBackendId() {
+        String cluster = ConnectContext.get().getCloudCluster();
+        if (clusterToBackends.containsKey(cluster)) {
+            long backendId = clusterToBackends.get(cluster).get(0);
+            Backend be = Env.getCurrentSystemInfo().getBackend(backendId);
+            if (be.isQueryAvailable()) {
+                LOG.info("lw test be id {} ", backendId);
+                return backendId;
+            }
+        }
+
+        // TODO(luwei) list shoule be sorted
+        List<Backend> availableBes = Env.getCurrentSystemInfo().getBackendsByClusterName(cluster);
+        LOG.info("lw test backends {} ", availableBes);
+        long index = getId() % availableBes.size();
+
+        // save to clusterToBackends map
+        List<Long> bes = new ArrayList<Long>();
+        bes.add(availableBes.get((int) index).getId());
+        LOG.info("lw test backends {} ", availableBes.get((int) index).getId());
+        clusterToBackends.put(cluster, bes);
+
+        LOG.info("lw test be id {} ", availableBes.get((int) index).getId());
+        return availableBes.get((int) index).getId();
+    }
+
+    @Override
+    public boolean checkVersionCatchUp(long expectedVersion, boolean ignoreAlter) {
+        if (ignoreAlter && getState() == ReplicaState.ALTER
+                && getVersion() == Partition.PARTITION_INIT_VERSION) {
+            return true;
+        }
+
+        if (expectedVersion == Partition.PARTITION_INIT_VERSION) {
+            // no data is loaded into this replica, just return true
+            return true;
+        }
+
+        return true;
     }
 
     // In the future, a replica may be mapped to multiple BEs in a cluster,
     // so this value is be list
-    private Map<List<Long>, List<Long>> clusterToBackends;
+    private Map<String, List<Long>> clusterToBackends;
 }

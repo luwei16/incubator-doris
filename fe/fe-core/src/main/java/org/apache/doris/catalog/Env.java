@@ -1368,9 +1368,12 @@ public class Env {
         // Export checker
         ExportChecker.init(Config.export_checker_interval_second * 1000L);
         ExportChecker.startAll();
-        // Tablet checker and scheduler
-        tabletChecker.start();
-        tabletScheduler.start();
+
+        if (Config.cloud_unique_id.isEmpty()) {
+            // Tablet checker and scheduler
+            tabletChecker.start();
+            tabletScheduler.start();
+        }
         // Colocate tables checker and balancer
         ColocateTableCheckerAndBalancer.getInstance().start();
         // Publish Version Daemon

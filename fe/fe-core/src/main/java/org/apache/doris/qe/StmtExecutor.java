@@ -52,6 +52,7 @@ import org.apache.doris.analysis.TransactionRollbackStmt;
 import org.apache.doris.analysis.TransactionStmt;
 import org.apache.doris.analysis.UnlockTablesStmt;
 import org.apache.doris.analysis.UnsupportedStmt;
+import org.apache.doris.analysis.UseCloudClusterStmt;
 import org.apache.doris.analysis.UseStmt;
 import org.apache.doris.catalog.Column;
 import org.apache.doris.catalog.Database;
@@ -460,6 +461,8 @@ public class StmtExecutor implements ProfileWriter {
                 handleSwitchStmt();
             } else if (parsedStmt instanceof UseStmt) {
                 handleUseStmt();
+            } else if (parsedStmt instanceof UseCloudClusterStmt) {
+                handleUseCloudClusterStmt();
             } else if (parsedStmt instanceof TransactionStmt) {
                 handleTransactionStmt();
             } else if (parsedStmt instanceof CreateTableAsSelectStmt) {
@@ -1501,6 +1504,19 @@ public class StmtExecutor implements ProfileWriter {
             }
             context.getEnv().changeDb(context, useStmt.getDatabase());
         } catch (DdlException e) {
+            context.getState().setError(e.getMysqlErrorCode(), e.getMessage());
+            return;
+        }
+        context.getState().setOk();
+    }
+
+    private void handleUseCloudClusterStmt() throws AnalysisException {
+        UseCloudClusterStmt useCloudClusterStmt = (UseCloudClusterStmt) parsedStmt;
+        String cluster = useCloudClusterStmt.getCluster();
+        context.setCloudCluster(cluster);
+        try {
+            Env.getCurrentSystemInfo().addClusterInfo(cluster);
+        } catch (UserException e) {
             context.getState().setError(e.getMysqlErrorCode(), e.getMessage());
             return;
         }

@@ -61,6 +61,7 @@ import org.apache.doris.analysis.UserDesc;
 import org.apache.doris.analysis.UserIdentity;
 import org.apache.doris.catalog.BrokerTable;
 import org.apache.doris.catalog.CloudReplica;
+import org.apache.doris.catalog.CloudTablet;
 import org.apache.doris.catalog.ColocateGroupSchema;
 import org.apache.doris.catalog.ColocateTableIndex;
 import org.apache.doris.catalog.ColocateTableIndex.GroupId;
@@ -1018,6 +1019,11 @@ public class InternalDataSource implements DataSourceIf<Database> {
      * 11. add this table to ColocateGroup if necessary
      */
     public void createTable(CreateTableStmt stmt) throws UserException {
+        if (!Config.cloud_unique_id.isEmpty()) {
+            createCloudTable(stmt);
+            return;
+        }
+
         String engineName = stmt.getEngineName();
         String dbName = stmt.getDbName();
         String tableName = stmt.getTableName();
@@ -1570,10 +1576,10 @@ public class InternalDataSource implements DataSourceIf<Database> {
 
         // create partition with base index
         Partition partition;
-        if (!Config.cloud_unique_id.equals("")) {
-            partition = new CloudPartition(partitionId, partitionName, baseIndex, distributionInfo, dbId, tableId);
-        } else {
+        if (Config.cloud_unique_id.equals("")) {
             partition = new Partition(partitionId, partitionName, baseIndex, distributionInfo);
+        } else {
+            partition = new CloudPartition(partitionId, partitionName, baseIndex, distributionInfo, dbId, tableId);
         }
 
         // add to index map
@@ -3589,6 +3595,21 @@ public class InternalDataSource implements DataSourceIf<Database> {
             }
         } // end for indexMap
         return partition;
+    }
+
+    public void createCloudTable(CreateTableStmt stmt) throws UserException {
+        String engineName = stmt.getEngineName();
+        String dbName = stmt.getDbName();
+
+        // check if db exists
+        Database db = (Database) getDbOrDdlException(dbName);
+
+        if (engineName.equals("olap")) {
+            createOlapTable(db, stmt);
+            return;
+        } else {
+            ErrorReport.reportDdlException(ErrorCode.ERR_UNKNOWN_STORAGE_ENGINE, engineName);
+        }
     }
 }
 

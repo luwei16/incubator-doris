@@ -92,6 +92,7 @@ import org.apache.doris.qe.SqlModeHelper;
     static {
         keywordMap.put("&&", new Integer(SqlParserSymbols.KW_AND));
         keywordMap.put("||", new Integer(SqlParserSymbols.KW_PIPE));
+        keywordMap.put("access", new Integer(SqlParserSymbols.KW_ACCESS));
         keywordMap.put("add", new Integer(SqlParserSymbols.KW_ADD));
         keywordMap.put("admin", new Integer(SqlParserSymbols.KW_ADMIN));
         keywordMap.put("after", new Integer(SqlParserSymbols.KW_AFTER));
