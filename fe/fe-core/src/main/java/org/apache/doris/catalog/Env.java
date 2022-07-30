@@ -1354,7 +1354,7 @@ public class Env {
         heartbeatMgr.start();
 
         // cluster be checker
-        clusterBeChecker.start();
+        // clusterBeChecker.start();
         // Load checker
         LoadChecker.init(Config.load_checker_interval_second * 1000L);
         LoadChecker.startAll();
