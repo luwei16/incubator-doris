@@ -46,9 +46,7 @@ BetaRowsetWriter::BetaRowsetWriter()
           _total_index_size(0) {}
 
 BetaRowsetWriter::~BetaRowsetWriter() {
-    // TODO(lingbin): Should wrapper exception logic, no need to know file ops directly.
-    if (!_already_built) {       // abnormal exit, remove all files generated
-        _segment_writer.reset(); // ensure all files are closed
+    if (!_already_built && _rowset_meta->is_local()) { // abnormal exit, remove all files generated
         auto fs = _rowset_meta->fs();
         if (!fs) {
             return;
@@ -276,8 +274,15 @@ RowsetSharedPtr BetaRowsetWriter::build() {
 
 Status BetaRowsetWriter::_create_segment_writer(
         std::unique_ptr<segment_v2::SegmentWriter>* writer) {
-    auto path = BetaRowset::local_segment_path(_context.tablet_path, _context.rowset_id,
+    std::string path;
+    if (_rowset_meta->is_local()) {
+        path = BetaRowset::local_segment_path(_context.tablet_path, _context.rowset_id,
+                                              _num_segment++);
+    } else {
+        path = BetaRowset::remote_segment_path(_context.tablet_id, _context.rowset_id,
                                                _num_segment++);
+    }
+
     auto fs = _rowset_meta->fs();
     if (!fs) {
         return Status::OLAPInternalError(OLAP_ERR_INIT_FAILED);
