@@ -86,6 +86,11 @@ public class MetaServiceClient {
         return blockingStub.commitTxn(request);
     }
 
+    public SelectdbCloud.AbortTxnResponse
+            abortTxn(SelectdbCloud.AbortTxnRequest request) {
+        return blockingStub.abortTxn(request);
+    }
+
     public SelectdbCloud.GetClusterResponse getCluster(SelectdbCloud.GetClusterRequest request) {
         return blockingStub.getCluster(request);
     }

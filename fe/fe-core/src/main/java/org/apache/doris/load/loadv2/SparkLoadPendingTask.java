@@ -60,7 +60,6 @@ import org.apache.doris.load.loadv2.etl.EtlJobConfig.EtlPartitionInfo;
 import org.apache.doris.load.loadv2.etl.EtlJobConfig.EtlTable;
 import org.apache.doris.load.loadv2.etl.EtlJobConfig.FilePatternVersion;
 import org.apache.doris.load.loadv2.etl.EtlJobConfig.SourceType;
-import org.apache.doris.transaction.TransactionState;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
@@ -167,12 +166,12 @@ public class SparkLoadPendingTask extends LoadTask {
                     tables.put(tableId, etlTable);
 
                     // add table indexes to transaction state
-                    TransactionState txnState = Env.getCurrentGlobalTransactionMgr()
-                            .getTransactionState(dbId, transactionId);
-                    if (txnState == null) {
-                        throw new LoadException("txn does not exist. id: " + transactionId);
+                    try {
+                        Env.getCurrentGlobalTransactionMgr()
+                                .addTableIndexes(db.getId(), transactionId, table);
+                    } catch (UserException e) {
+                        throw new LoadException("txn does not exist: " + transactionId);
                     }
-                    txnState.addTableIndexes(table);
                 }
 
                 // file group

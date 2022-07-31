@@ -19,6 +19,7 @@ package org.apache.doris.transaction;
 
 import org.apache.doris.catalog.Database;
 import org.apache.doris.catalog.Env;
+import org.apache.doris.catalog.OlapTable;
 import org.apache.doris.catalog.Table;
 import org.apache.doris.common.AnalysisException;
 import org.apache.doris.common.Config;
@@ -424,7 +425,7 @@ public class NativeGlobalTransactionMgr implements GlobalTransactionMgrInterface
         }
     }
 
-    public void replayBatchRemoveTransactions(BatchRemoveTransactionsOperation operation) {
+    public void replayBatchRemoveTransactions(BatchRemoveTransactionsOperation operation) throws MetaNotFoundException {
         Map<Long, List<Long>> dbTxnIds = operation.getDbTxnIds();
         for (Long dbId : dbTxnIds.keySet()) {
             try {
@@ -536,6 +537,7 @@ public class NativeGlobalTransactionMgr implements GlobalTransactionMgrInterface
         idGenerator.write(out);
     }
 
+    @Override
     public void readFields(DataInput in) throws IOException {
         int numTransactions = in.readInt();
         for (int i = 0; i < numTransactions; ++i) {
@@ -643,5 +645,25 @@ public class NativeGlobalTransactionMgr implements GlobalTransactionMgrInterface
             }
         }
         throw new TimeoutException("Operation is timeout");
+    }
+
+    @Override
+    public int getRunningTxnNums(long dbId) {
+        return dbIdToDatabaseTransactionMgrs.get(dbId).getRunningTxnNums();
+    }
+
+    @Override
+    public List<TransactionState> getPreCommittedTxnList(long dbId) {
+        DatabaseTransactionMgr dbTransactionMgr = dbIdToDatabaseTransactionMgrs.get(dbId);
+        return dbTransactionMgr.getPreCommittedTxnList();
+    }
+
+    @Override
+    public void addTableIndexes(long dbId, long transactionId, OlapTable table) throws UserException {
+        TransactionState transactionState = getTransactionState(dbId, transactionId);
+        if (transactionState == null) {
+            throw new UserException("txn does not exist: " + transactionId);
+        }
+        transactionState.addTableIndexes(table);
     }
 }

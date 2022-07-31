@@ -33,6 +33,7 @@ import org.apache.doris.catalog.PrimitiveType;
 import org.apache.doris.catalog.RangePartitionInfo;
 import org.apache.doris.common.LoadException;
 import org.apache.doris.common.Pair;
+import org.apache.doris.common.UserException;
 import org.apache.doris.load.DppConfig;
 import org.apache.doris.load.DppScheduler;
 import org.apache.doris.load.EtlSubmitResult;
@@ -43,7 +44,6 @@ import org.apache.doris.load.PartitionLoadInfo;
 import org.apache.doris.load.Source;
 import org.apache.doris.load.TableLoadInfo;
 import org.apache.doris.thrift.TStatusCode;
-import org.apache.doris.transaction.TransactionState;
 
 import com.google.common.base.Function;
 import com.google.common.base.Preconditions;
@@ -89,17 +89,14 @@ public class HadoopLoadPendingTask extends LoadPendingTask {
         Preconditions.checkNotNull(etlTaskConf);
 
         // add table indexes to transaction state
-        TransactionState txnState = Env.getCurrentGlobalTransactionMgr()
-                .getTransactionState(job.getDbId(), job.getTransactionId());
-        if (txnState == null) {
-            throw new LoadException("txn does not exist: " + job.getTransactionId());
-        }
         for (long tableId : job.getIdToTableLoadInfo().keySet()) {
             OlapTable table = (OlapTable) db.getTableOrException(
                     tableId, s -> new LoadException("table does not exist. id: " + s));
             table.readLock();
             try {
-                txnState.addTableIndexes(table);
+                Env.getCurrentGlobalTransactionMgr().addTableIndexes(job.getDbId(), job.getTransactionId(), table);
+            } catch (UserException e) {
+                throw new LoadException("txn does not exist: " + job.getTransactionId());
             } finally {
                 table.readUnlock();
             }

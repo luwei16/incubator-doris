@@ -70,13 +70,13 @@ import java.util.Set;
 import java.util.UUID;
 
 
-public class GlobalTransactionMgrTest {
+public class NativeGlobalTransactionMgrTest {
 
     private static FakeEditLog fakeEditLog;
     private static FakeEnv fakeEnv;
     private static FakeTransactionIDGenerator fakeTransactionIDGenerator;
-    private static GlobalTransactionMgrInterface masterTransMgr;
-    private static GlobalTransactionMgrInterface slaveTransMgr;
+    private static NativeGlobalTransactionMgr masterTransMgr;
+    private static NativeGlobalTransactionMgr slaveTransMgr;
     private static Env masterEnv;
     private static Env slaveEnv;
 
@@ -94,10 +94,10 @@ public class GlobalTransactionMgrTest {
         metaContext.setMetaVersion(FeMetaVersion.VERSION_CURRENT);
         metaContext.setThreadLocalInfo();
 
-        masterTransMgr = masterEnv.getGlobalTransactionMgr();
+        masterTransMgr = (NativeGlobalTransactionMgr) masterEnv.getGlobalTransactionMgr();
         masterTransMgr.setEditLog(masterEnv.getEditLog());
 
-        slaveTransMgr = slaveEnv.getGlobalTransactionMgr();
+        slaveTransMgr = (NativeGlobalTransactionMgr) slaveEnv.getGlobalTransactionMgr();
         slaveTransMgr.setEditLog(slaveEnv.getEditLog());
     }
 

@@ -18,6 +18,7 @@
 package org.apache.doris.transaction;
 
 import org.apache.doris.catalog.Database;
+import org.apache.doris.catalog.OlapTable;
 import org.apache.doris.catalog.Table;
 import org.apache.doris.common.AnalysisException;
 import org.apache.doris.common.DuplicatedRequestException;
@@ -44,8 +45,6 @@ public interface GlobalTransactionMgrInterface extends Writable {
 
     public TxnStateCallbackFactory getCallbackFactory();
 
-    public DatabaseTransactionMgr getDatabaseTransactionMgr(long dbId) throws AnalysisException;
-
     public void addDatabaseTransactionMgr(Long dbId);
 
     public void removeDatabaseTransactionMgr(Long dbId);
@@ -60,17 +59,9 @@ public interface GlobalTransactionMgrInterface extends Writable {
             throws AnalysisException, LabelAlreadyUsedException, BeginTransactionException, DuplicatedRequestException,
             QuotaExceedException, MetaNotFoundException;
 
-    public TransactionStatus getLabelState(long dbId, String label);
-
-    public Long getTransactionId(long dbId, String label);
-
     public void preCommitTransaction2PC(Database db, List<Table> tableList, long transactionId,
                                                List<TabletCommitInfo> tabletCommitInfos, long timeoutMillis,
                                                TxnCommitAttachment txnCommitAttachment) throws UserException;
-
-    public void preCommitTransaction2PC(long dbId, List<Table> tableList, long transactionId,
-            List<TabletCommitInfo> tabletCommitInfos, TxnCommitAttachment txnCommitAttachment)
-            throws UserException;
 
     public void commitTransaction(long dbId, List<Table> tableList,
             long transactionId, List<TabletCommitInfo> tabletCommitInfos)
@@ -111,16 +102,15 @@ public interface GlobalTransactionMgrInterface extends Writable {
 
     public void removeExpiredAndTimeoutTxns();
 
+    public TransactionStatus getLabelState(long dbId, String label);
+
+    public Long getTransactionId(long dbId, String label);
+
     public TransactionState getTransactionState(long dbId, long transactionId);
 
     public void setEditLog(EditLog editLog);
 
-    public void replayUpsertTransactionState(TransactionState transactionState) throws MetaNotFoundException;
-
-    @Deprecated
-    public void replayDeleteTransactionState(TransactionState transactionState) throws MetaNotFoundException;
-
-    public void replayBatchRemoveTransactions(BatchRemoveTransactionsOperation operation);
+    public void addTableIndexes(long dbId, long transactionId, OlapTable table) throws UserException;
 
     public List<List<Comparable>> getDbInfo();
 
@@ -139,6 +129,10 @@ public interface GlobalTransactionMgrInterface extends Writable {
 
     public int getTransactionNum();
 
+    public int getRunningTxnNums(long dbId);
+
+    public List<TransactionState> getPreCommittedTxnList(long dbId);
+
     public long getNextTransactionId(long dbId);
 
     public void abortTxnWhenCoordinateBeDown(String coordinateHost, int limit);
@@ -151,5 +145,13 @@ public interface GlobalTransactionMgrInterface extends Writable {
     public void readFields(DataInput in) throws IOException;
 
     public long getTxnNumByStatus(TransactionStatus status);
+
+    public void replayUpsertTransactionState(TransactionState transactionState) throws MetaNotFoundException;
+
+    @Deprecated
+    // Use replayBatchDeleteTransactions instead
+    public void replayDeleteTransactionState(TransactionState transactionState) throws MetaNotFoundException;
+
+    public void replayBatchRemoveTransactions(BatchRemoveTransactionsOperation operation) throws MetaNotFoundException;
 }
 

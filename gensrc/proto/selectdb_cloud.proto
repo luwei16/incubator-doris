@@ -196,7 +196,7 @@ message TxnInfoPB {
     optional UniqueIdPB request_unique_id = 5;
     optional TxnCoordinatorPB coordinator = 6;
     optional LoadJobSourceTypePB load_job_source_type = 7;
-    optional int64 timeout_second = 8;
+    optional int64 timeout_ms = 8;
     optional int64 prepare_time = 9;
     optional int64 precommit_time = 10;
     optional int64 commit_time = 11;

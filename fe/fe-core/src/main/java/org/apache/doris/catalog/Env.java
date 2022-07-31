@@ -1845,10 +1845,15 @@ public class Env {
     }
 
     public long loadTransactionState(DataInputStream dis, long checksum) throws IOException {
+        if (!Config.cloud_unique_id.isEmpty()) {
+            //for CloudGlobalTransactionMgr do nothing.
+            return checksum;
+        }
         int size = dis.readInt();
         long newChecksum = checksum ^ size;
         globalTransactionMgr.readFields(dis);
         LOG.info("finished replay transactionState from image");
+
         return newChecksum;
     }
 
@@ -2145,6 +2150,10 @@ public class Env {
     }
 
     public long saveTransactionState(CountingDataOutputStream dos, long checksum) throws IOException {
+        if (!Config.cloud_unique_id.isEmpty()) {
+            //for CloudGlobalTransactionMgr do nothing.
+            return checksum;
+        }
         int size = globalTransactionMgr.getTransactionNum();
         checksum ^= size;
         dos.writeInt(size);

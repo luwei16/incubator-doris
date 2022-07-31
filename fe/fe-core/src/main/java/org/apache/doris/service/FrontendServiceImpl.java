@@ -106,7 +106,6 @@ import org.apache.doris.thrift.TTableStatus;
 import org.apache.doris.thrift.TUpdateExportTaskStatusRequest;
 import org.apache.doris.thrift.TWaitingTxnStatusRequest;
 import org.apache.doris.thrift.TWaitingTxnStatusResult;
-import org.apache.doris.transaction.DatabaseTransactionMgr;
 import org.apache.doris.transaction.TabletCommitInfo;
 import org.apache.doris.transaction.TransactionState;
 import org.apache.doris.transaction.TransactionState.TxnCoordinator;
@@ -714,9 +713,8 @@ public class FrontendServiceImpl implements FrontendService.Iface {
             throw new UserException("unknown database, database=" + fullDbName);
         }
 
-        DatabaseTransactionMgr dbTransactionMgr = Env.getCurrentGlobalTransactionMgr()
-                .getDatabaseTransactionMgr(database.getId());
-        TransactionState transactionState = dbTransactionMgr.getTransactionState(request.getTxnId());
+        TransactionState transactionState = Env.getCurrentGlobalTransactionMgr()
+                                               .getTransactionState(database.getId(), request.getTxnId());
         if (transactionState == null) {
             throw new UserException("transaction [" + request.getTxnId() + "] not found");
         }
@@ -910,12 +908,11 @@ public class FrontendServiceImpl implements FrontendService.Iface {
             StreamLoadPlanner planner = new StreamLoadPlanner(db, (OlapTable) table, streamLoadTask);
             TExecPlanFragmentParams plan = planner.plan(streamLoadTask.getId());
             // add table indexes to transaction state
-            TransactionState txnState = Env.getCurrentGlobalTransactionMgr()
-                    .getTransactionState(db.getId(), request.getTxnId());
-            if (txnState == null) {
+            try {
+                Env.getCurrentGlobalTransactionMgr().addTableIndexes(db.getId(), request.getTxnId(), (OlapTable) table);
+            } catch (UserException e) {
                 throw new UserException("txn does not exist: " + request.getTxnId());
             }
-            txnState.addTableIndexes((OlapTable) table);
             return plan;
         } finally {
             table.readUnlock();

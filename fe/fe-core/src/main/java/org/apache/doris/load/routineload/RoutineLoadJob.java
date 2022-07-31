@@ -31,7 +31,6 @@ import org.apache.doris.catalog.Database;
 import org.apache.doris.catalog.Env;
 import org.apache.doris.catalog.OlapTable;
 import org.apache.doris.catalog.Table;
-import org.apache.doris.common.AnalysisException;
 import org.apache.doris.common.Config;
 import org.apache.doris.common.DdlException;
 import org.apache.doris.common.FeMetaVersion;
@@ -798,12 +797,11 @@ public abstract class RoutineLoadJob extends AbstractTxnStateChangeCallback impl
         try {
             TExecPlanFragmentParams planParams = planner.plan(loadId);
             // add table indexes to transaction state
-            TransactionState txnState = Env.getCurrentGlobalTransactionMgr().getTransactionState(db.getId(), txnId);
-            if (txnState == null) {
-                throw new MetaNotFoundException("txn does not exist: " + txnId);
+            try {
+                Env.getCurrentGlobalTransactionMgr().addTableIndexes(dbId, txnId, planner.getDestTable());
+            } catch (Exception e) {
+                throw new MetaNotFoundException("txn does not exist: " + dbId);
             }
-            txnState.addTableIndexes(planner.getDestTable());
-
             return planParams;
         } finally {
             table.readUnlock();
@@ -1327,10 +1325,14 @@ public abstract class RoutineLoadJob extends AbstractTxnStateChangeCallback impl
         List<List<String>> rows = Lists.newArrayList();
         routineLoadTaskInfoList.forEach(entity -> {
             try {
-                entity.setTxnStatus(Env.getCurrentEnv().getGlobalTransactionMgr().getDatabaseTransactionMgr(dbId)
-                        .getTransactionState(entity.getTxnId()).getTransactionStatus());
+                TransactionState transactionState = Env.getCurrentEnv().getGlobalTransactionMgr()
+                                                       .getTransactionState(dbId, entity.getTxnId());
+                if (transactionState == null) {
+                    throw new UserException("txn does not exist: " + entity.getTxnId());
+                }
+                entity.setTxnStatus(transactionState.getTransactionStatus());
                 rows.add(entity.getTaskShowInfo());
-            } catch (AnalysisException e) {
+            } catch (UserException e) {
                 LOG.warn("failed to setTxnStatus db: {}, txnId: {}, err: {}", dbId, entity.getTxnId(), e.getMessage());
             }
         });

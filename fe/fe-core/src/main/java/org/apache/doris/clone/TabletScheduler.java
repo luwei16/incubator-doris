@@ -56,7 +56,6 @@ import org.apache.doris.task.DropReplicaTask;
 import org.apache.doris.task.StorageMediaMigrationTask;
 import org.apache.doris.thrift.TFinishTaskRequest;
 import org.apache.doris.thrift.TStatusCode;
-import org.apache.doris.transaction.DatabaseTransactionMgr;
 import org.apache.doris.transaction.TransactionState;
 
 import com.google.common.base.Preconditions;
@@ -545,18 +544,14 @@ public class TabletScheduler extends MasterDaemon {
             }
 
             if (tabletCtx.getType() == TabletSchedCtx.Type.BALANCE) {
-                try {
-                    DatabaseTransactionMgr dbTransactionMgr
-                            = Env.getCurrentGlobalTransactionMgr().getDatabaseTransactionMgr(db.getId());
-                    for (TransactionState transactionState : dbTransactionMgr.getPreCommittedTxnList()) {
-                        if (transactionState.getTableIdList().contains(tbl.getId())) {
-                            // If table releate to transaction with precommitted status, do not allow to do balance.
-                            throw new SchedException(Status.UNRECOVERABLE,
-                                    "There exists PRECOMMITTED transaction related to table");
-                        }
+                List<TransactionState> transactionStateList = Env.getCurrentGlobalTransactionMgr()
+                                                                 .getPreCommittedTxnList(db.getId());
+                for (TransactionState transactionState : transactionStateList) {
+                    if (transactionState.getTableIdList().contains(tbl.getId())) {
+                        // If table releate to transaction with precommitted status, do not allow to do balance.
+                        throw new SchedException(Status.UNRECOVERABLE,
+                                "There exists PRECOMMITTED transaction related to table");
                     }
-                } catch (AnalysisException e) {
-                    // CHECKSTYLE IGNORE THIS LINE
                 }
             }
 

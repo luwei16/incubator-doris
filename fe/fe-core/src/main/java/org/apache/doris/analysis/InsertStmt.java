@@ -732,12 +732,12 @@ public class InsertStmt extends DdlStmt {
         if (!isExplain() && targetTable instanceof OlapTable) {
             ((OlapTableSink) dataSink).complete();
             // add table indexes to transaction state
-            TransactionState txnState = Env.getCurrentGlobalTransactionMgr()
-                    .getTransactionState(db.getId(), transactionId);
-            if (txnState == null) {
-                throw new DdlException("txn does not exist: " + transactionId);
+            try {
+                Env.getCurrentGlobalTransactionMgr()
+                        .addTableIndexes(db.getId(), transactionId, (OlapTable) targetTable);
+            } catch (UserException e) {
+                throw new DdlException(e.getMessage());
             }
-            txnState.addTableIndexes((OlapTable) targetTable);
         }
     }
 

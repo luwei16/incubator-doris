@@ -43,6 +43,7 @@ import org.apache.doris.load.Load;
 import org.apache.doris.persist.CleanLabelOperationLog;
 import org.apache.doris.thrift.TUniqueId;
 import org.apache.doris.transaction.DatabaseTransactionMgr;
+import org.apache.doris.transaction.NativeGlobalTransactionMgr;
 import org.apache.doris.transaction.TransactionState;
 
 import com.google.common.annotations.VisibleForTesting;
@@ -663,10 +664,16 @@ public class LoadManager implements Writable {
 
         // 2. Remove from DatabaseTransactionMgr
         try {
-            DatabaseTransactionMgr dbTxnMgr = Env.getCurrentGlobalTransactionMgr().getDatabaseTransactionMgr(dbId);
+            if (!Config.cloud_unique_id.isEmpty()) {
+                // FIXME(zhanglei): process CloudGloabalTransactionManager
+                LOG.error("not supported in cloud mode yet");
+                throw new AnalysisException("not supported in cloud mode yet");
+            }
+            DatabaseTransactionMgr dbTxnMgr = ((NativeGlobalTransactionMgr) Env.getCurrentGlobalTransactionMgr()).getDatabaseTransactionMgr(dbId);
             dbTxnMgr.cleanLabel(label);
         } catch (AnalysisException e) {
             // just ignore, because we don't want to throw any exception here.
+            LOG.warn("{}", e.getMessage());
         }
 
         // 3. Log
