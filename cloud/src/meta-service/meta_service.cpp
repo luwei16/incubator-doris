@@ -1442,6 +1442,8 @@ void MetaServiceImpl::get_cluster(google::protobuf::RpcController* controller,
 
     for (int i = 0; i < instance.clusters_size(); ++i) {
         auto& c = instance.clusters(i);
+        // The last wins
+        // TODO: deduplicate cluster
         if ((c.has_cluster_name() && c.cluster_name() == cluster_name) ||
             (c.has_cluster_id() && c.cluster_id() == cluster_id)) {
             response->mutable_cluster()->CopyFrom(c);
@@ -1451,7 +1453,6 @@ void MetaServiceImpl::get_cluster(google::protobuf::RpcController* controller,
             google::protobuf::util::MessageToJsonString(response->cluster(), &str, opts);
             msg = str;
             LOG(INFO) << "found a cluster=" << str;
-            break;
         }
     }
 

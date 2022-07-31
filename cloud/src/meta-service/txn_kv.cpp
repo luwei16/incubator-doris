@@ -223,7 +223,12 @@ void Transaction::atomic_set_ver_key(std::string_view key_prefix, std::string_vi
 
 void Transaction::atomic_set_ver_value(std::string_view key, std::string_view value) {
     std::unique_ptr<std::string> val(new std::string(value));
+    int prefix_size = val->size();
+    // ATTN:
+    // 10 bytes for versiontimestamp must be 0, trailing 4 bytes is for prefix len
     val->resize(val->size() + 14, '\0');
+    std::memcpy(val->data() + (val->size() - 4), &prefix_size, 4);
+
     fdb_transaction_atomic_op(txn_, (uint8_t*)key.data(), key.size(), (uint8_t*)val->data(),
                               val->size(),
                               FDBMutationType::FDB_MUTATION_TYPE_SET_VERSIONSTAMPED_VALUE);
