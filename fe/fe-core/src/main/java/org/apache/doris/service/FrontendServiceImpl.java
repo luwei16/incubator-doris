@@ -882,6 +882,8 @@ public class FrontendServiceImpl implements FrontendService.Iface {
     }
 
     private TExecPlanFragmentParams streamLoadPutImpl(TStreamLoadPutRequest request) throws UserException {
+        ConnectContext ctx = new ConnectContext();
+        ctx.setThreadLocalInfo();
         String cluster = request.getCluster();
         if (Strings.isNullOrEmpty(cluster)) {
             cluster = SystemInfoService.DEFAULT_CLUSTER;

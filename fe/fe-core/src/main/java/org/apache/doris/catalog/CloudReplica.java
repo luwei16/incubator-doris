@@ -39,6 +39,18 @@ public class CloudReplica extends Replica {
     @Override
     public long getBackendId() {
         String cluster = ConnectContext.get().getCloudCluster();
+        if (cluster == null || cluster.isEmpty()) {
+            Map<String, List<Backend>> clusterMap = Catalog.getCurrentSystemInfo()
+                    .copiedClusterNameToBackendRef();
+
+            for (String clusterName : clusterMap.keySet()) {
+                if (!clusterName.isEmpty()) {
+                    cluster = clusterName;
+                    break;
+                }
+            }
+        }
+
         if (clusterToBackends.containsKey(cluster)) {
             long backendId = clusterToBackends.get(cluster).get(0);
             Backend be = Env.getCurrentSystemInfo().getBackend(backendId);
