@@ -50,7 +50,6 @@ public:
     size_t bytes_appended() const override { return _tmp_file_writer->bytes_appended(); }
 
 private:
-    Path _path;
     S3FileSystem* _fs;
 
     std::string _bucket;

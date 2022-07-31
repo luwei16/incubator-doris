@@ -208,6 +208,7 @@ Status StorageEngine::_open() {
     VLOG_DEBUG << "s3 conf: " << s3_conf.to_string();
     auto s3_fs = std::make_shared<io::S3FileSystem>(std::move(s3_conf), config::test_s3_resource);
     RETURN_IF_ERROR(s3_fs->connect());
+    dirs.front()->set_fs(s3_fs);
     io::FileSystemMap::instance()->insert(config::test_s3_resource, std::move(s3_fs));
 #else
     load_data_dirs(dirs);
