@@ -63,6 +63,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
@@ -77,10 +78,10 @@ public class SystemInfoService {
 
     private volatile ImmutableMap<Long, Backend> idToBackendRef = ImmutableMap.of();
     private volatile ImmutableMap<Long, AtomicLong> idToReportVersionRef = ImmutableMap.of();
-    // clusterName <-> List<Backend>
-    private volatile ImmutableMap<String, List<Backend>> clusterNameToBackendRef = ImmutableMap.of();
-    // clusterId <-> List<Backend>
-    private volatile ImmutableMap<String, List<Backend>> clusterIdToBackendRef = ImmutableMap.of();
+    // clusterId -> List<Backend>
+    private Map<String, List<Backend>> clusterIdToBackend = new ConcurrentHashMap<>();
+    // clusterName -> clusterId
+    private Map<String, String> clusterNameToId = new ConcurrentHashMap<>();
 
     // last backend id used by round robin for sequential selecting backends for replica creation
     private Map<Tag, Long> lastBackendIdForReplicaCreation = Maps.newConcurrentMap();
@@ -91,12 +92,9 @@ public class SystemInfoService {
     private volatile ImmutableMap<Long, DiskInfo> pathHashToDishInfoRef = ImmutableMap.of();
 
     public static Pair<String, Integer> metaServiceHostPort;
-    public static String cloudUniqueId;
 
     static {
-        cloudUniqueId = Config.cloud_unique_id;
-        if (!cloudUniqueId.equals("")) {
-
+        if (!Config.cloud_unique_id.isEmpty()) {
             try {
                 metaServiceHostPort = validateHostAndPort(Config.meta_service_endpoint);
             } catch (AnalysisException e) {
@@ -117,83 +115,106 @@ public class SystemInfoService {
         }
     };
 
-    public Map<String, List<Backend>> copiedClusterNameToBackendRef() {
-        return Maps.newHashMap(clusterNameToBackendRef);
-    }
-
     public List<Backend> getBackendsByClusterName(final String clusterName) {
-        LOG.debug("getBackendsByClusterName, name: {}, backends: {}",
-                clusterName, clusterNameToBackendRef.get(clusterName));
-        return clusterNameToBackendRef.get(clusterName);
+        String clusterId = clusterNameToId.get(clusterName);
+        return clusterIdToBackend.get(clusterId);
     }
 
-    public List<Backend> getBackendsByClusterId(final String clusterId) {
-        LOG.debug("getBackendsByClusterId, Id: {}, backends: {}",
-                clusterId, clusterNameToBackendRef.get(clusterId));
-        return clusterNameToBackendRef.get(clusterId);
-    }
-
-    private List<Backend> transferToBackend(List<SelectdbCloud.NodeInfoPB> nodes) {
-        List<Backend> ret = new ArrayList<>();
-        for (SelectdbCloud.NodeInfoPB node : nodes) {
-            Backend b = new Backend(Env.getCurrentEnv().getNextId(), node.getIp(), node.getHeartbeatPort());
-            ret.add(b);
-        }
-        return ret;
+    public List<String> getCloudClusterNames() {
+        return clusterNameToId.keySet().stream().collect(Collectors.toList());
     }
 
     // use cluster $clusterName
-    public void addClusterInfo(final String clusterName) throws UserException {
-        if (clusterInfoInMem(clusterName)) {
-            // fe memory has cluster info
+    public void addCloudCluster(final String clusterName) throws UserException {
+        // TODO(gaivn): process data race with `CloudClusterCheck`
+
+        LOG.info("try to add a cloud cluster, clusterName={}", clusterName);
+        String clusterId = clusterNameToId.get(clusterName);
+        clusterId = clusterId == null ? "" : clusterId;
+        List<Backend> backendsByClusterName = clusterIdToBackend.get(clusterId);
+        if (backendsByClusterName != null) { // Cluster already added
+            LOG.info("cloud cluster already added, clusterName={}, clusterId={}", clusterName, clusterId);
             return;
         }
-        // not in memory, get cluster info from meta service
-        SelectdbCloud.GetClusterResponse response = rpcToMetaGetClusterInfo(cloudUniqueId, clusterName);
-        if (response.hasStatus() && response.getStatus().hasCode()
-                && response.getStatus().getCode() == SelectdbCloud.MetaServiceCode.OK) {
-            String clusterId = response.getCluster().getClusterId();
-            String clusterNameMeta = response.getCluster().getClusterName();
-            if (!clusterNameMeta.equals(clusterName)) {
-                LOG.warn("meta service return clusterName: {} not eq input name: {}", clusterNameMeta, clusterName);
-                return;
+
+        LOG.info("get cloud cluster from remote, clusterName={}", clusterName);
+        // Get cluster info from meta service
+        SelectdbCloud.GetClusterResponse response = getCloudCluster(Config.cloud_unique_id, clusterName);
+        if (!response.hasStatus() || !response.getStatus().hasCode()
+                || response.getStatus().getCode() != SelectdbCloud.MetaServiceCode.OK) {
+            LOG.warn("get cluster info from meta failed, incomplete response: {}", response);
+            throw new UserException("no cluster " + clusterName + "found");
+        }
+
+        clusterId = response.getCluster().getClusterId();
+        String clusterNameMeta = response.getCluster().getClusterName();
+        if (!clusterNameMeta.equals(clusterName)) { // Unlikely
+            LOG.warn("remote return clusterName={} not equal to input clusterName={}", clusterNameMeta, clusterName);
+            return;
+        }
+
+        Map<String, String> newTagMap = Tag.DEFAULT_BACKEND_TAG.toMap();
+        newTagMap.put(Tag.CLOUD_CLUSTER_NAME, clusterName);
+        newTagMap.put(Tag.CLOUD_CLUSTER_ID, clusterId);
+        List<Backend> backends = new ArrayList<>();
+        for (SelectdbCloud.NodeInfoPB node : response.getCluster().getComputeNodeList()) {
+            Backend b = new Backend(Env.getCurrentEnv().getNextId(), node.getIp(), node.getHeartbeatPort());
+            b.setTagMap(newTagMap);
+            backends.add(b);
+            LOG.info("new backend to add, clusterName={} clusterId={} backend={}",
+                                             clusterName, clusterId, b.toString());
+        }
+
+        // FIXME(gavin): is it safe to send hearbeat to an unadded Backend?
+        //               Check be/src/agent/heartbeat_server.cpp for more details.
+        // backends = Catalog.getCurrentHeartbeatMgr().checkBeStatus(backends);
+
+        updateCloudBackends(backends, new ArrayList<>());
+    }
+
+    public synchronized void updateCloudClusterMap(List<Backend> toAdd, List<Backend> toDel) {
+        for (Backend b : toAdd) {
+            String clusterName = b.getCloudClusterName();
+            String clusterId = b.getCloudClusterId();
+            if (clusterName.isEmpty() || clusterId.isEmpty()) {
+                LOG.warn("cloud cluster name or id empty: id={}, name={}", clusterId, clusterName);
+                continue;
             }
-            List<Backend> backends = transferToBackend(new ArrayList<>(response.getCluster().getComputeNodeList()));
-            List<Backend> statusOkBackends = Env.getCurrentHeartbeatMgr().checkBeStatus(backends);
-
-            // heart beat
-            addBackends(statusOkBackends, clusterName, clusterId);
-
-            // cache it.
-            addClusterInfo(clusterName, clusterId, statusOkBackends);
+            clusterNameToId.put(clusterName, clusterId); // The last wins
+            List<Backend> be = clusterIdToBackend.get(clusterId);
+            if (be == null) {
+                be = new ArrayList<>();
+                clusterIdToBackend.put(clusterId, be);
+            }
+            // TODO(gavin): deduplicate the BE
+            be.add(b);
+            LOG.info("update (add) cloud cluster map, clusterName={} clusterId={} backendSize={} current backend={}",
+                     clusterName, clusterId, be.size(), b);
         }
-        LOG.warn("get cluster info from meta failed, reason: {}", response);
 
+        for (Backend b : toDel) {
+            String clusterName = b.getCloudClusterName();
+            String clusterId = b.getCloudClusterId();
+            // We actually don't care about cluster name here
+            if (clusterName.isEmpty() || clusterId.isEmpty()) {
+                LOG.warn("cloud cluster name or id empty: id={}, name={}", clusterId, clusterName);
+                continue;
+            }
+            List<Backend> be = clusterIdToBackend.get(clusterId);
+            if (be == null) {
+                LOG.warn("try to remove a non-existing cluster, clusterId={} clusterName={}", clusterId, clusterName);
+                continue;
+            }
+            Set<Long> d = toDel.stream().map(i -> i.getId()).collect(Collectors.toSet());
+            be = be.stream().filter(i -> !d.contains(i.getId())).collect(Collectors.toList());
+            clusterIdToBackend.replace(clusterId, be);
+            LOG.info("update (del) cloud cluster map, clusterName={} clusterId={} backendSize={} current backend={}",
+                     clusterName, clusterId, be.size(), b);
+        }
     }
 
-    private boolean clusterInfoInMem(String clusterName) {
-        List<Backend> backendsByClusterName = getBackendsByClusterName(clusterName);
-        if (backendsByClusterName == null) {
-            ArrayList<Backend> backends = new ArrayList<>();
-            Map<String, List<Backend>> copiedClusterNameToBackendRef = Maps.newHashMap(clusterNameToBackendRef);
-            copiedClusterNameToBackendRef.put(clusterName, backends);
-            clusterNameToBackendRef = ImmutableMap.copyOf(copiedClusterNameToBackendRef);
-            return false;
-        }
-        if (backendsByClusterName.size() == 0) {
-            return false;
-        }
-        return true;
-    }
-
-    public void addClusterInfo(final String clusterName, final String clusterId, List<Backend> bes) {
-        Map<String, List<Backend>> copiedClusterNameToBackendRef = Maps.newHashMap(clusterNameToBackendRef);
-        copiedClusterNameToBackendRef.put(clusterName, bes);
-        clusterNameToBackendRef = ImmutableMap.copyOf(copiedClusterNameToBackendRef);
-
-        Map<String, List<Backend>> copiedClusterIdToBackendRef = Maps.newHashMap(clusterIdToBackendRef);
-        copiedClusterIdToBackendRef.put(clusterId, bes);
-        clusterIdToBackendRef = ImmutableMap.copyOf(copiedClusterIdToBackendRef);
+    public Map<String, List<Backend>> getCloudClusterIdToBackend() {
+        return clusterIdToBackend;
     }
 
     // for deploy manager
@@ -221,15 +242,9 @@ public class SystemInfoService {
         }
     }
 
-    public void addBackends(List<Backend> backends, String clusterName, String clusterId) {
-        Map<String, String> newTagMap = Tag.DEFAULT_BACKEND_TAG.toMap();
-        newTagMap.put(Backend.CLOUD_CLUSTER_NAME, clusterName);
-        newTagMap.put(Backend.CLOUD_CLUSTER_ID, clusterId);
-
+    public synchronized void updateCloudBackends(List<Backend> toAdd, List<Backend> toDel) {
         Map<Long, Backend> copiedBackends = Maps.newHashMap(idToBackendRef);
-        for (Backend be : backends) {
-            // set tags
-            be.setTagMap(newTagMap);
+        for (Backend be : toAdd) {
             copiedBackends.put(be.getId(), be);
         }
         ImmutableMap<Long, Backend> newIdToBackend = ImmutableMap.copyOf(copiedBackends);
@@ -237,21 +252,28 @@ public class SystemInfoService {
 
         // set new backend's report version as 0L
         Map<Long, AtomicLong> copiedReportVersions = Maps.newHashMap(idToReportVersionRef);
-        for (Backend be : backends) {
+        for (Backend be : toAdd) {
             copiedReportVersions.put(be.getId(), new AtomicLong(0L));
         }
         ImmutableMap<Long, AtomicLong> newIdToReportVersion = ImmutableMap.copyOf(copiedReportVersions);
         idToReportVersionRef = newIdToReportVersion;
 
-        for (Backend be : backends) {
-            // log
+        for (Backend be : toAdd) {
             Env.getCurrentEnv().getEditLog().logAddBackend(be);
             setBackendOwner(be, DEFAULT_CLUSTER);
-            LOG.info("finished to add {} ", be);
-
+            LOG.info("added backend={} ", be);
             // backends is changed, regenerated tablet number metrics
             MetricRepo.generateBackendsTabletMetrics();
         }
+
+        // TODO(gavin): process drop backend
+        // for (Backend be : toDel) {
+        //     Catalog.getCurrentCatalog().getEditLog().logDropBackend(be);
+        //     // backends is changed, regenerated tablet number metrics
+        //     MetricRepo.generateBackendsTabletMetrics();
+        // }
+
+        updateCloudClusterMap(toAdd, toDel);
     }
 
     // for test
@@ -1080,39 +1102,6 @@ public class SystemInfoService {
         }
     }
 
-    public void updateClusterNameToBackendRefBackends(final String clusterName, List<Backend> bes) {
-        Map<String, List<Backend>> copiedClusterNameToBackendRef = Maps.newHashMap(clusterNameToBackendRef);
-
-        copiedClusterNameToBackendRef.put(clusterName, bes);
-        clusterNameToBackendRef = ImmutableMap.copyOf(copiedClusterNameToBackendRef);
-    }
-
-    public void updateClusterIdToBackendRefBackends(final String clusterId, List<Backend> bes) {
-        Map<String, List<Backend>> copiedClusterIdToBackendRef = Maps.newHashMap(clusterIdToBackendRef);
-
-        copiedClusterIdToBackendRef.put(clusterId, bes);
-        clusterIdToBackendRef = ImmutableMap.copyOf(copiedClusterIdToBackendRef);
-    }
-
-
-    public void addClusterNameToBackendRef(Backend be) {
-        Map<String, List<Backend>> copiedClusterNameToBackendRef = Maps.newHashMap(clusterNameToBackendRef);
-        List<Backend> besFromName = copiedClusterNameToBackendRef
-                .getOrDefault(be.getCloudClusterName(), new ArrayList<>());
-        besFromName.add(be);
-        copiedClusterNameToBackendRef.put(be.getCloudClusterName(), besFromName);
-        clusterNameToBackendRef = ImmutableMap.copyOf(copiedClusterNameToBackendRef);
-    }
-
-    public void addClusterIdToBackendRef(Backend be) {
-        Map<String, List<Backend>> copiedClusterIdToBackendRef = Maps.newHashMap(clusterIdToBackendRef);
-        List<Backend> besFromId = copiedClusterIdToBackendRef
-                .getOrDefault(be.getCloudClusterId(), new ArrayList<>());
-        besFromId.add(be);
-        copiedClusterIdToBackendRef.put(be.getCloudClusterId(), besFromId);
-        clusterIdToBackendRef = ImmutableMap.copyOf(copiedClusterIdToBackendRef);
-    }
-
     public void replayAddBackend(Backend newBackend) {
         // update idToBackend
         Map<Long, Backend> copiedBackends = Maps.newHashMap(idToBackendRef);
@@ -1124,11 +1113,11 @@ public class SystemInfoService {
         copiedReportVersions.put(newBackend.getId(), new AtomicLong(0L));
         idToReportVersionRef = ImmutableMap.copyOf(copiedReportVersions);
 
-        // add clusterNameToBackendRef
-        addClusterNameToBackendRef(newBackend);
-
-        // add clusterIdToBackendRef
-        addClusterIdToBackendRef(newBackend);
+        if (!Config.cloud_unique_id.isEmpty()) {
+            List<Backend> be = new ArrayList<>();
+            be.add(newBackend);
+            updateCloudClusterMap(be, new ArrayList<>());
+        }
 
         // to add be to DEFAULT_CLUSTER
         if (newBackend.getBackendState() == BackendState.using) {
@@ -1356,7 +1345,7 @@ public class SystemInfoService {
         return bes.stream().filter(b -> b.getLocationTag().equals(tag)).collect(Collectors.toList());
     }
 
-    public SelectdbCloud.GetClusterResponse rpcToMetaGetClusterInfo(String cloudUniqueId, String clusterName) {
+    public SelectdbCloud.GetClusterResponse getCloudCluster(String cloudUniqueId, String clusterName) {
         TNetworkAddress metaAddress =
                 new TNetworkAddress(Env.getCurrentSystemInfo().metaServiceHostPort.first,
                 Env.getCurrentSystemInfo().metaServiceHostPort.second);

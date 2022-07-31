@@ -66,9 +66,6 @@ public class Backend implements Writable {
 
     private static final Logger LOG = LogManager.getLogger(Backend.class);
 
-    public static final String CLOUD_CLUSTER_NAME = "cloud_cluster_name";
-    public static final String CLOUD_CLUSTER_ID = "cloud_cluster_id";
-
     @SerializedName("id")
     private long id;
     @SerializedName("host")
@@ -172,11 +169,11 @@ public class Backend implements Writable {
     }
 
     public String getCloudClusterName() {
-        return tagMap.getOrDefault(CLOUD_CLUSTER_NAME, "");
+        return tagMap.getOrDefault(Tag.CLOUD_CLUSTER_NAME, "");
     }
 
     public String getCloudClusterId() {
-        return tagMap.getOrDefault(CLOUD_CLUSTER_ID, "");
+        return tagMap.getOrDefault(Tag.CLOUD_CLUSTER_ID, "");
     }
 
     public void setId(long id) {
