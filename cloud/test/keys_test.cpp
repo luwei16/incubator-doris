@@ -53,7 +53,7 @@ TEST(KeysTest, KeysTest) {
     std::string instance_id = "instance_id_deadbeef";
 
     // rowset meta key
-    // 0x01 "meta" ${instance_id} "rowset" ${tablet_id} ${version} ${rowset_id}
+    // 0x01 "meta" ${instance_id} "rowset" ${tablet_id} ${version}
     {
         int64_t tablet_id = 10086;
         int64_t version = 100;
@@ -62,10 +62,10 @@ TEST(KeysTest, KeysTest) {
         meta_rowset_key(rowset_key, &encoded_rowset_key0);
         std::cout << hex(encoded_rowset_key0) << std::endl;
 
+
         std::string dec_instance_id;
         int64_t dec_tablet_id = 0;
         int64_t dec_version = 0;
-        std::string dec_rowset_id;
 
         std::string_view key_sv(encoded_rowset_key0);
         std::string dec_meta_prefix;
@@ -76,7 +76,6 @@ TEST(KeysTest, KeysTest) {
         ASSERT_EQ(decode_bytes(&key_sv, &dec_rowset_prefix), 0);
         ASSERT_EQ(decode_int64(&key_sv, &dec_tablet_id), 0) << hex(key_sv);
         ASSERT_EQ(decode_int64(&key_sv, &dec_version), 0);
-        ASSERT_EQ(decode_bytes(&key_sv, &dec_rowset_id), 0);
 
         EXPECT_EQ(instance_id, dec_instance_id);
         EXPECT_EQ(tablet_id, dec_tablet_id);

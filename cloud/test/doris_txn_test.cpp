@@ -1,13 +1,18 @@
 
 // clang-format off
-#include "meta-service/doris_txn.h"
+#include "common/config.h"
 #include "common/util.h"
+#include "meta-service/doris_txn.h"
+#include "meta-service/meta_service.h"
+#include "meta-service/txn_kv.h"
 
+#include "brpc/closure_guard.h"
+#include "brpc/controller.h"
 #include "gtest/gtest.h"
-
 // clang-format on
 
 int main(int argc, char** argv) {
+    selectdb::config::init(nullptr, true);
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
 }
@@ -78,5 +83,24 @@ TEST(TxnIdConvert, TxnIdTest) {
         ASSERT_EQ(ret, 1);
     }
 }
+
+TEST(MetaServiceTest, BeginTxnTest) {
+    using namespace selectdb;
+    config::fdb_cluster_file_path = "fdb.cluster";
+    auto txn_kv = std::dynamic_pointer_cast<TxnKv>(std::make_shared<FdbTxnKv>());
+    ASSERT_NE(txn_kv.get(), nullptr);
+    int ret = txn_kv->init();
+    ASSERT_EQ(ret, 0);
+
+    // Add service
+    auto meta_service = std::make_unique<MetaServiceImpl>(txn_kv);
+    brpc::Controller cntl;
+    BeginTxnRequest req;
+    BeginTxnResponse res;
+    meta_service->begin_txn(reinterpret_cast<::google::protobuf::RpcController*>(&cntl), &req, &res, nullptr);
+
+    ASSERT_EQ(res.status().code(), MetaServiceCode::INVALID_ARGUMENT_ERR);
+}
+
 
 // vim: et tw=100 ts=4 sw=4 cc=80:

@@ -14,6 +14,7 @@ add_library(MetaService
     txn_kv.cpp
     codec.cpp
     keys.cpp
+    doris_txn.cpp
 )
 
 
