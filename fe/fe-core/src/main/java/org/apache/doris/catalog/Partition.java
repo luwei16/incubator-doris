@@ -20,7 +20,6 @@ package org.apache.doris.catalog;
 import org.apache.doris.catalog.DistributionInfo.DistributionInfoType;
 import org.apache.doris.catalog.MaterializedIndex.IndexExtState;
 import org.apache.doris.catalog.MaterializedIndex.IndexState;
-import org.apache.doris.common.Config;
 import org.apache.doris.common.FeConstants;
 import org.apache.doris.common.io.Text;
 import org.apache.doris.common.io.Writable;
@@ -361,17 +360,11 @@ public class Partition extends MetaObject implements Writable {
 
         visibleVersion = in.readLong();
         visibleVersionTime = in.readLong();
-        if (Config.cloud_unique_id.isEmpty()) {
-            visibleVersionHash = in.readLong();
-            nextVersion = in.readLong();
-            nextVersionHash = in.readLong();
-            committedVersionHash = in.readLong();
-        } else {
-            visibleVersionHash = -1;
-            nextVersion = -1;
-            nextVersionHash = -1;
-            committedVersionHash = -1;
-        }
+        visibleVersionHash = in.readLong();
+
+        nextVersion = in.readLong();
+        nextVersionHash = in.readLong();
+        committedVersionHash = in.readLong();
 
         DistributionInfoType distriType = DistributionInfoType.valueOf(Text.readString(in));
         if (distriType == DistributionInfoType.HASH) {
