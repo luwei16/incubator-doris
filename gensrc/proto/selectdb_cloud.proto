@@ -193,7 +193,7 @@ message TxnInfoPB {
     repeated int64 table_ids = 2;
     optional int64 txn_id = 3;
     optional string label = 4;
-    optional UniqueIdPB request_unique_id = 5;
+    optional UniqueIdPB request_id = 5;
     optional TxnCoordinatorPB coordinator = 6;
     optional LoadJobSourceTypePB load_job_source_type = 7;
     optional int64 timeout_ms = 8;
@@ -219,6 +219,7 @@ message BeginTxnRequest {
 message BeginTxnResponse {
     optional MetaServiceResponseStatus status = 1;
     optional int64 txn_id = 2;
+    optional int64 dup_txn_id = 3;
     // TODO: There may be more fields TBD
 }
 

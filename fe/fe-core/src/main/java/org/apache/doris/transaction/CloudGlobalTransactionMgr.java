@@ -29,6 +29,7 @@ import org.apache.doris.common.LabelAlreadyUsedException;
 import org.apache.doris.common.MetaNotFoundException;
 import org.apache.doris.common.QuotaExceedException;
 import org.apache.doris.common.UserException;
+import org.apache.doris.common.util.DebugUtil;
 import org.apache.doris.persist.BatchRemoveTransactionsOperation;
 import org.apache.doris.persist.EditLog;
 import org.apache.doris.rpc.RpcException;
@@ -101,7 +102,6 @@ public class CloudGlobalTransactionMgr implements GlobalTransactionMgrInterface 
             TxnCoordinator coordinator, LoadJobSourceType sourceType, long listenerId, long timeoutSecond)
             throws AnalysisException, LabelAlreadyUsedException, BeginTransactionException, DuplicatedRequestException,
             QuotaExceedException, MetaNotFoundException {
-
         LOG.info("try to begin transaction.");
         if (Config.disable_load_job) {
             throw new AnalysisException("disable_load_job is set to true, all load jobs are prevented");
@@ -131,7 +131,7 @@ public class CloudGlobalTransactionMgr implements GlobalTransactionMgrInterface 
             UniqueIdPB.Builder uniqueIdBuilder = UniqueIdPB.newBuilder();
             uniqueIdBuilder.setHi(requestId.getHi());
             uniqueIdBuilder.setLo(requestId.getLo());
-            txnInfoBuilder.setRequestUniqueId(uniqueIdBuilder);
+            txnInfoBuilder.setRequestId(uniqueIdBuilder);
         }
 
         txnInfoBuilder.setCoordinator(coordinator.toPB());
@@ -147,11 +147,26 @@ public class CloudGlobalTransactionMgr implements GlobalTransactionMgrInterface 
             LOG.info("beginTxnRequest: {}", beginTxnRequest);
             beginTxnResponse = MetaServiceProxy.getInstance().beginTxn(metaAddress, beginTxnRequest);
             LOG.info("beginTxnResponse: {}", beginTxnResponse);
-            return beginTxnResponse.getTxnId();
         } catch (RpcException e) {
-            LOG.error("beginTxnResponse: {}", beginTxnResponse);
-            throw new BeginTransactionException("todo");
+            LOG.warn("beginTransaction() rpc failed, RpcException= {}", e);
+            throw new BeginTransactionException("beginTransaction() rpc failed, RpcException=" + e.toString());
         }
+
+        Preconditions.checkNotNull(beginTxnResponse);
+        Preconditions.checkNotNull(beginTxnResponse.getStatus());
+        switch (beginTxnResponse.getStatus().getCode()) {
+            case OK:
+                break;
+            case TXN_DUPLICATED_REQ:
+                throw new DuplicatedRequestException(DebugUtil.printId(requestId),
+                        beginTxnResponse.getDupTxnId(), beginTxnResponse.getStatus().getMsg());
+            case TXN_LABEL_ALREADY_USED:
+                throw new LabelAlreadyUsedException(beginTxnResponse.getStatus().getMsg());
+            default:
+                throw new BeginTransactionException(beginTxnResponse.getStatus().getMsg());
+        }
+
+        return beginTxnResponse.getTxnId();
     }
 
     @Override

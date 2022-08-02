@@ -206,10 +206,11 @@ void MetaServiceImpl::begin_txn(::google::protobuf::RpcController* controller,
             if (cur_txn_info.status() == TxnStatusPB::TXN_STATUS_PREPARED ||
                 cur_txn_info.status() == TxnStatusPB::TXN_STATUS_PRECOMMITTED) {
                 // clang-format off
-                if (cur_txn_info.has_request_unique_id() && txn_info.has_request_unique_id() &&
-                    ((cur_txn_info.request_unique_id().hi() == txn_info.request_unique_id().hi()) && 
-                     (cur_txn_info.request_unique_id().lo() == txn_info.request_unique_id().lo()))) {
+                if (cur_txn_info.has_request_id() && txn_info.has_request_id() &&
+                    ((cur_txn_info.request_id().hi() == txn_info.request_id().hi()) && 
+                     (cur_txn_info.request_id().lo() == txn_info.request_id().lo()))) {
 
+                    response->set_dup_txn_id(cur_txn_info.txn_id());
                     code = MetaServiceCode::TXN_DUPLICATED_REQ;
                     ss << "db_id=" << db_id << " label=" << label << " dup begin txn request.";
                     msg = ss.str();
@@ -391,7 +392,7 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
         msg = ss.str();
     }
 
-    if (request->has_is_2pc() && TxnStatusPB::TXN_STATUS_PREPARED) {
+    if (request->has_is_2pc() && request->is_2pc() && TxnStatusPB::TXN_STATUS_PREPARED) {
         code = MetaServiceCode::TXN_INVALID_STATUS;
         ss << "transaction is prepare, not pre-committed: txn_id=" << txn_id;
         msg = ss.str();
