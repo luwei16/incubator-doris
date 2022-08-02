@@ -1024,6 +1024,7 @@ void MetaServiceImpl::get_rowset(::google::protobuf::RpcController* controller,
     int ret = 0;
     MetaServiceCode code = MetaServiceCode::OK;
     std::string msg = "OK";
+    std::stringstream ss;
     std::unique_ptr<int, std::function<void(int*)>> defer_status(
             (int*)0x01, [ret, &code, &msg, &response, &ctrl](int*) {
                 response->mutable_status()->set_code(code);
@@ -1048,25 +1049,40 @@ void MetaServiceImpl::get_rowset(::google::protobuf::RpcController* controller,
     meta_rowset_key(key_info0, &key0);
     meta_rowset_key(key_info1, &key1);
     std::unique_ptr<RangeGetIterator> it;
-    ret = txn->get(key0, key1, &it);
-    if (ret != 0) {
-        code = MetaServiceCode::KV_TXN_GET_ERR;
-        msg = "failed to get rowset";
-        msg += (ret == 1 ? ": not found" : "");
-        return;
-    }
 
-    while (it->has_next()) {
-        auto [k, v] = it->next();
-        LOG(INFO) << "xxx range get rowset_key=" << hex(k);
-        std::string val(v.data(), v.size());
-        auto rs = response->add_rowset_meta();
-        if (!rs->ParseFromString(val)) {
-            code = MetaServiceCode::PROTOBUF_PARSE_ERR;
-            msg = "malformed tablet meta, unable to initialize";
+    int num_rowsets = 0;
+    std::unique_ptr<int, std::function<void(int*)>> defer_log_range(
+            (int*)0x01, [key0, key1, &num_rowsets](int*) {
+                LOG(INFO) << "get rowset meta, num_rowsets=" << num_rowsets
+                          << " range=[" << hex(key0) << "," << hex(key1) << "]";
+            });
+
+    do {
+        ret = txn->get(key0, key1, &it);
+        if (ret != 0) {
+            code = MetaServiceCode::KV_TXN_GET_ERR;
+            ss << "internal error, failed to get rowset, ret=" << ret;
+            msg = ss.str();
+            LOG(WARNING) << msg;
             return;
         }
-    }
+
+        while (it->has_next()) {
+            auto [k, v] = it->next();
+            ++num_rowsets;
+            LOG(INFO) << "xxx range get rowset_key=" << hex(k);
+            std::string val(v.data(), v.size());
+            auto rs = response->add_rowset_meta();
+            if (!rs->ParseFromString(val)) {
+                code = MetaServiceCode::PROTOBUF_PARSE_ERR;
+                msg = "malformed rowset meta, unable to deserialize";
+                LOG(WARNING) << msg << " key=" << hex(k);
+                return;
+            }
+            if (!it->has_next()) key0 = k;
+        }
+        key0.push_back('\x00'); // Update to next smallest key for iteration
+    } while (it->more());
 }
 
 void MetaServiceImpl::http(::google::protobuf::RpcController* controller,

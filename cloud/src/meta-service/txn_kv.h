@@ -58,7 +58,7 @@ public:
     /**
      * Closed-open range
      *
-     * @return 0 for success get a key, 1 for key not found, negative for error
+     * @return 0 for success, negative for error
      */
     virtual int get(std::string_view begin, std::string_view end,
                     std::unique_ptr<RangeGetIterator>* iter) = 0;
@@ -337,7 +337,7 @@ public:
     /**
      * Closed-open range
      *
-     * @return 0 for success get a key, 1 for key not found, negative for error
+     * @return 0 for success, negative for error
      */
     int get(std::string_view begin, std::string_view end,
             std::unique_ptr<selectdb::RangeGetIterator>* iter) override;
