@@ -270,7 +270,7 @@ void MetaServiceImpl::begin_txn(::google::protobuf::RpcController* controller,
     }
     txn->atomic_set_ver_value(txn_idx_key, txn_idx_val);
     LOG(INFO) << "txn->atomic_set_ver_value txn_idx_key=" << hex(txn_idx_key)
-              << " txn_idx_val=" << txn_idx_val;
+              << " txn_idx_val=" << hex(txn_idx_val);
 
     txn->put(txn_inf_key, txn_inf_val);
     txn->put(txn_db_key, txn_db_val);
@@ -416,20 +416,43 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
         msg = ss.str();
         return;
     }
-    // TODO: check more rowset_meta, it->more()?
     // Get rowset meta that should be commited
     std::vector<doris::RowsetMetaPB> rowset_meta;
-    while (it->has_next()) {
-        auto [k, v] = it->next();
-        LOG(INFO) << "xxx range_get rowset_tmp_key=" << hex(k);
-        rowset_meta.emplace_back();
-        if (!rowset_meta.back().ParseFromArray(v.data(), v.size())) {
-            code = MetaServiceCode::PROTOBUF_PARSE_ERR;
-            ss << "malformed rowset meta, unable to initialize, txn_id=" << txn_id;
+
+    int num_rowsets = 0;
+    std::unique_ptr<int, std::function<void(int*)>> defer_log_range(
+            (int*)0x01, [rs_tmp_key0, rs_tmp_key1, &num_rowsets](int*) {
+                LOG(INFO) << "get tmp rowset meta, num_rowsets=" << num_rowsets
+                          << " range=[" << hex(rs_tmp_key0) << "," << hex(rs_tmp_key1) << "]";
+            });
+
+    do {
+        ret = txn->get(rs_tmp_key0, rs_tmp_key1, &it);
+        if (ret != 0) {
+            code = MetaServiceCode::KV_TXN_GET_ERR;
+            ss << "internal error, failed to get tmp rowset while committing, ret=" << ret;
             msg = ss.str();
+            LOG(WARNING) << msg;
             return;
         }
-    }
+
+        while (it->has_next()) {
+            auto [k, v] = it->next();
+            LOG(INFO) << "xxx range_get rowset_tmp_key=" << hex(k);
+            rowset_meta.emplace_back();
+            if (!rowset_meta.back().ParseFromArray(v.data(), v.size())) {
+                code = MetaServiceCode::PROTOBUF_PARSE_ERR;
+                ss << "malformed rowset meta, unable to initialize, txn_id=" << txn_id;
+                msg = ss.str();
+                ss << " key=" << hex(k);
+                LOG(WARNING) << ss.str();
+                return;
+            }
+            ++num_rowsets;
+            if (!it->has_next()) rs_tmp_key0 = k;
+        }
+        rs_tmp_key0.push_back('\x00'); // Update to next smallest key for iteration
+    } while (it->more());
 
     // Prepare rowset meta and new_versions
     std::vector<std::pair<std::string, std::string>> rowsets;
@@ -1069,16 +1092,15 @@ void MetaServiceImpl::get_rowset(::google::protobuf::RpcController* controller,
 
         while (it->has_next()) {
             auto [k, v] = it->next();
-            ++num_rowsets;
             LOG(INFO) << "xxx range get rowset_key=" << hex(k);
-            std::string val(v.data(), v.size());
             auto rs = response->add_rowset_meta();
-            if (!rs->ParseFromString(val)) {
+            if (!rs->ParseFromArray(v.data(), v.size())) {
                 code = MetaServiceCode::PROTOBUF_PARSE_ERR;
                 msg = "malformed rowset meta, unable to deserialize";
                 LOG(WARNING) << msg << " key=" << hex(k);
                 return;
             }
+            ++num_rowsets;
             if (!it->has_next()) key0 = k;
         }
         key0.push_back('\x00'); // Update to next smallest key for iteration
