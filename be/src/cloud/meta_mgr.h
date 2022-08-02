@@ -4,6 +4,7 @@
 
 #include "common/status.h"
 #include "olap/tablet_meta.h"
+#include "runtime/stream_load/stream_load_context.h"
 #include "util/s3_util.h"
 
 namespace doris::cloud {
@@ -23,11 +24,11 @@ public:
 
     virtual Status write_rowset_meta(const RowsetMetaSharedPtr& rs_meta, bool is_tmp) = 0;
 
-    virtual Status commit_txn(int64_t db_id, int64_t txn_id, bool is_2pc) = 0;
+    virtual Status commit_txn(StreamLoadContext* ctx, bool is_2pc) = 0;
 
-    virtual Status abort_txn(int64_t db_id, int64_t txn_id) = 0;
+    virtual Status abort_txn(StreamLoadContext* ctx) = 0;
 
-    virtual Status precommit_txn(int64_t db_id, int64_t txn_id) = 0;
+    virtual Status precommit_txn(StreamLoadContext* ctx) = 0;
 
     virtual Status get_s3_info(const std::string& resource_id, S3Conf* s3_info) = 0;
 };

@@ -44,7 +44,7 @@ Status CloudMetaMgr::get_tablet_meta(int64_t tablet_id, TabletMetaSharedPtr* tab
     if (cntl.Failed()) {
         return Status::IOError("failed to get tablet meta: {}", cntl.ErrorText());
     }
-    if (resp.status().code() != 0) {
+    if (resp.status().code() != selectdb::MetaServiceCode::OK) {
         return Status::InternalError("failed to get tablet meta: {}", resp.status().msg());
     }
     *tablet_meta = std::make_shared<TabletMeta>();
@@ -68,7 +68,7 @@ Status CloudMetaMgr::get_rowset_meta(int64_t tablet_id, Version version_range,
     if (cntl.Failed()) {
         return Status::IOError("failed to get rowset meta: {}", cntl.ErrorText());
     }
-    if (resp.status().code() != 0) {
+    if (resp.status().code() != selectdb::MetaServiceCode::OK) {
         return Status::InternalError("failed to get rowset meta: {}", resp.status().msg());
     }
     rs_metas->clear();
@@ -96,7 +96,7 @@ Status CloudMetaMgr::write_tablet_meta(const TabletMetaSharedPtr& tablet_meta) {
     if (cntl.Failed()) {
         return Status::IOError("failed to write tablet meta: {}", cntl.ErrorText());
     }
-    if (resp.status().code() != 0) {
+    if (resp.status().code() != selectdb::MetaServiceCode::OK) {
         return Status::InternalError("failed to tablet rowset meta: {}", resp.status().msg());
     }
     return Status::OK();
@@ -115,49 +115,69 @@ Status CloudMetaMgr::write_rowset_meta(const RowsetMetaSharedPtr& rs_meta, bool 
     if (cntl.Failed()) {
         return Status::IOError("failed to write rowset meta: {}", cntl.ErrorText());
     }
-    if (resp.status().code() != 0) {
+    if (resp.status().code() != selectdb::MetaServiceCode::OK) {
         return Status::InternalError("failed to write rowset meta: {}", resp.status().msg());
     }
     return Status::OK();
 }
 
-Status CloudMetaMgr::commit_txn(int64_t db_id, int64_t txn_id, bool is_2pc) {
-    VLOG_DEBUG << "commit txn, db_id: " << db_id << ", txn_id: " << txn_id
-               << ", is_2pc: " << is_2pc;
+Status CloudMetaMgr::commit_txn(StreamLoadContext* ctx, bool is_2pc) {
+    VLOG_DEBUG << "commit txn, db_id: " << ctx->db_id << ", txn_id: " << ctx->txn_id
+               << ", label: " << ctx->label << ", is_2pc: " << is_2pc;
     brpc::Controller cntl;
     selectdb::CommitTxnRequest req;
     selectdb::CommitTxnResponse resp;
     req.set_cloud_unique_id(config::cloud_unique_id);
-    req.set_db_id(db_id);
-    req.set_txn_id(txn_id);
+    req.set_db_id(ctx->db_id);
+    req.set_txn_id(ctx->txn_id);
     req.set_is_2pc(is_2pc);
     _stub->commit_txn(&cntl, &req, &resp, nullptr);
     if (cntl.Failed()) {
         return Status::IOError("failed to commit txn: {}", cntl.ErrorText());
     }
-    if (resp.status().code() != 0) {
+    if (resp.status().code() != selectdb::MetaServiceCode::OK) {
         return Status::InternalError("failed to commit txn: {}", resp.status().msg());
     }
     return Status::OK();
 }
 
-Status CloudMetaMgr::abort_txn(int64_t db_id, int64_t txn_id) {
+Status CloudMetaMgr::abort_txn(StreamLoadContext* ctx) {
+    VLOG_DEBUG << "abort txn, db_id: " << ctx->db_id << ", txn_id: " << ctx->txn_id
+               << ", label: " << ctx->label;
+    brpc::Controller cntl;
+    selectdb::AbortTxnRequest req;
+    selectdb::AbortTxnResponse resp;
+    req.set_cloud_unique_id(config::cloud_unique_id);
+    if (ctx->db_id > 0 && !ctx->label.empty()) {
+        req.set_db_id(ctx->db_id);
+        req.set_label(ctx->label);
+    } else {
+        req.set_txn_id(ctx->txn_id);
+    }
+    _stub->abort_txn(&cntl, &req, &resp, nullptr);
+    if (cntl.Failed()) {
+        return Status::IOError("failed to abort txn: {}", cntl.ErrorText());
+    }
+    if (resp.status().code() != selectdb::MetaServiceCode::OK) {
+        return Status::InternalError("failed to abort txn: {}", resp.status().msg());
+    }
     return Status::OK();
 }
 
-Status CloudMetaMgr::precommit_txn(int64_t db_id, int64_t txn_id) {
-    VLOG_DEBUG << "precommit txn, db_id: " << db_id << ", txn_id: " << txn_id;
+Status CloudMetaMgr::precommit_txn(StreamLoadContext* ctx) {
+    VLOG_DEBUG << "precommit txn, db_id: " << ctx->db_id << ", txn_id: " << ctx->txn_id
+               << ", label: " << ctx->label;
     brpc::Controller cntl;
     selectdb::PrecommitTxnRequest req;
     selectdb::PrecommitTxnResponse resp;
     req.set_cloud_unique_id(config::cloud_unique_id);
-    req.set_db_id(db_id);
-    req.set_txn_id(txn_id);
+    req.set_db_id(ctx->db_id);
+    req.set_txn_id(ctx->txn_id);
     _stub->precommit_txn(&cntl, &req, &resp, nullptr);
     if (cntl.Failed()) {
         return Status::IOError("failed to precommit txn: {}", cntl.ErrorText());
     }
-    if (resp.status().code() != 0) {
+    if (resp.status().code() != selectdb::MetaServiceCode::OK) {
         return Status::InternalError("failed to precommit txn: {}", resp.status().msg());
     }
     return Status::OK();

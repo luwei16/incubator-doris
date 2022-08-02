@@ -25,11 +25,11 @@ public:
 
     Status write_rowset_meta(const RowsetMetaSharedPtr& rs_meta, bool is_tmp) override;
 
-    Status commit_txn(int64_t db_id, int64_t txn_id, bool is_2pc) override;
+    Status commit_txn(StreamLoadContext* ctx, bool is_2pc) override;
 
-    Status abort_txn(int64_t db_id, int64_t txn_id) override;
+    Status abort_txn(StreamLoadContext* ctx) override;
 
-    Status precommit_txn(int64_t db_id, int64_t txn_id) override;
+    Status precommit_txn(StreamLoadContext* ctx) override;
 
     Status get_s3_info(const std::string& resource_id, S3Conf* s3_info) override;
 
