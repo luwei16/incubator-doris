@@ -374,7 +374,7 @@ public class Env {
     private SystemInfoService systemInfo;
     private HeartbeatMgr heartbeatMgr;
 
-    private CloudClusterChecker clusterBeChecker;
+    private CloudClusterChecker cloudClusterCheck;
     private TabletInvertedIndex tabletInvertedIndex;
     private ColocateTableIndex colocateTableIndex;
 
@@ -555,7 +555,7 @@ public class Env {
 
         this.systemInfo = new SystemInfoService();
         this.heartbeatMgr = new HeartbeatMgr(systemInfo, !isCheckpointCatalog);
-        this.clusterBeChecker = new CloudClusterChecker();
+        this.cloudClusterCheck = new CloudClusterChecker();
         this.tabletInvertedIndex = new TabletInvertedIndex();
         this.colocateTableIndex = new ColocateTableIndex();
         this.recycleBin = new CatalogRecycleBin();
@@ -1349,12 +1349,14 @@ public class Env {
         checkpointer.start();
         LOG.info("checkpointer thread started. thread id is {}", checkpointThreadId);
 
+        if (!Config.cloud_unique_id.isEmpty()) {
+            cloudClusterCheck.start();
+        }
+
         // heartbeat mgr
         heartbeatMgr.setMaster(clusterId, token, epoch);
         heartbeatMgr.start();
 
-        // cluster be checker
-        // clusterBeChecker.start();
         // Load checker
         LoadChecker.init(Config.load_checker_interval_second * 1000L);
         LoadChecker.startAll();

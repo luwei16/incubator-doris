@@ -64,5 +64,5 @@ public class FeConstants {
     public static String csv_with_names_and_types = "csv_with_names_and_types";
 
     public static String text = "text";
-    public static int cloud_cluster_check_interval_second = 6;
+    public static int cloud_cluster_check_interval_second = 10;
 }
