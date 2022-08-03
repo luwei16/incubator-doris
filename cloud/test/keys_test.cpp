@@ -382,6 +382,10 @@ TEST(KeysTest, DecodeKeysTest) {
     auto pretty_key = prettify_key(key);
     ASSERT_TRUE(!pretty_key.empty()) << key;
     std::cout << "\n" << pretty_key << std::endl;
+
+    pretty_key = prettify_key(key, true);
+    ASSERT_TRUE(!pretty_key.empty()) << key;
+    std::cout << "\n" << pretty_key << std::endl;
 }
 
 // vim: et tw=100 ts=4 sw=4 cc=80:

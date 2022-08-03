@@ -47,30 +47,61 @@ std::string unhex(std::string_view hex_str) {
 }
 
 static std::string explain_fields(std::string_view text, const std::vector<std::string>& fields,
-                                  const std::vector<int>& pos) {
+                                  const std::vector<int>& pos, bool unicode = false) {
     if (fields.size() != pos.size() || fields.size() == 0 || pos.size() == 0) {
         return std::string(text.data(), text.size());
     }
     size_t last_hyphen_pos = pos.back() + 1;
     std::stringstream ss;
-    std::string blank_line;
-    for (size_t i = 0; i <= last_hyphen_pos; ++i) {
-        ss << ' ';
-    }
-    blank_line = ss.str();
-    ss.str("");
+    std::string blank_line(last_hyphen_pos + 1, ' ');
+
+    // clang-format off
+    static const std::string hyphen("\xe2\x94\x80"); // ─ e2 94 80
+    static const std::string bar   ("\xe2\x94\x82"); // │ e2 94 82
+    static const std::string angle ("\xe2\x94\x8c"); // ┌ e2 94 8c
+    static const std::string arrow ("\xe2\x96\xbc"); // ▼ e2 96 bc
+    // clang-format on
 
     // Each line with hyphens
     for (size_t i = 0; i < fields.size(); ++i) {
         std::string line = blank_line;
         line[pos[i]] = '/';
+        int nbar = i;
         for (size_t j = 0; j < i; ++j) {
             line[pos[j]] = '|';
         }
+        int nhyphen = 0;
         for (size_t j = pos[i] + 1; j <= last_hyphen_pos; ++j) {
             line[j] = '-';
+            ++nhyphen;
         }
-        ss << line << " " << i << ". " << fields[i] << std::endl;
+
+        if (unicode) {
+            int i = line.size();
+            line.resize(line.size() + 2 * (1 /*angle*/ + nbar + nhyphen), ' ');
+            int j = line.size();
+            while (--i >= 0) {
+                if (line[i] == '-') {
+                    line[--j] = hyphen[2];
+                    line[--j] = hyphen[1];
+                    line[--j] = hyphen[0];
+                } else if (line[i] == '|') {
+                    line[--j] = bar[2];
+                    line[--j] = bar[1];
+                    line[--j] = bar[0];
+                } else if (line[i] == '/') {
+                    line[--j] = angle[2];
+                    line[--j] = angle[1];
+                    line[--j] = angle[0];
+                } else {
+                    --j;
+                    continue;
+                }
+                line[i] = i != j ? ' ' : line[i]; // Replace if needed
+            }
+        }
+
+        ss << line << " " << i << ". " << fields[i] << "\n";
     }
 
     // Mark position indicator
@@ -78,19 +109,55 @@ static std::string explain_fields(std::string_view text, const std::vector<std::
     for (size_t i = 0; i < fields.size(); ++i) {
         line[pos[i]] = '|';
     }
-    ss << line << std::endl;
+
+    if (unicode) {
+        int i = line.size();
+        line.resize(line.size() + 2 * fields.size(), ' ');
+        int j = line.size();
+        while (--i >= 0) {
+            if (line[i] != '|') {
+                --j;
+                continue;
+            }
+            line[--j] = bar[2];
+            line[--j] = bar[1];
+            line[--j] = bar[0];
+            line[i] = i != j ? ' ' : line[i]; // Replace if needed
+        }
+    }
+
+    ss << line << "\n";
+
+    line = blank_line;
     for (size_t i = 0; i < fields.size(); ++i) {
         line[pos[i]] = 'v';
     }
-    ss << line << std::endl;
+
+    if (unicode) {
+        int i = line.size();
+        line.resize(line.size() + 2 * fields.size(), ' ');
+        int j = line.size();
+        while (--i >= 0) {
+            if (line[i] != 'v') {
+                --j;
+                continue;
+            }
+            line[--j] = arrow[2];
+            line[--j] = arrow[1];
+            line[--j] = arrow[0];
+            line[i] = i != j ? ' ' : line[i]; // Replace if needed
+        }
+    }
+
+    ss << line << "\n";
 
     // Original text to explain
-    ss << text << std::endl;
+    ss << text << "\n";
 
     return ss.str();
 }
 
-std::string prettify_key(std::string_view key_hex) {
+std::string prettify_key(std::string_view key_hex, bool unicode) {
     // Decoded result containner
     //                                    val                  tag  pos
     //                     .---------------^----------------.  .^.  .^.
@@ -117,7 +184,7 @@ std::string prettify_key(std::string_view key_hex) {
         fields_pos.push_back((std::get<2>(i) + 1) * 2);
     }
 
-    return explain_fields(key_hex, fields_str, fields_pos);
+    return explain_fields(key_hex, fields_str, fields_pos, unicode);
 }
 
 } // namespace selectdb

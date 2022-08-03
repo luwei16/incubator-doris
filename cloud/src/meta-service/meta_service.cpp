@@ -1167,8 +1167,12 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
             status_code = 400;
             return;
         }
+        bool unicode = false;
+        if (uri.GetQuery("unicode") != nullptr && *uri.GetQuery("unicode") != "false") {
+            unicode = true;
+        }
         std::string_view key = *uri.GetQuery("key");
-        response_body = prettify_key(key);
+        response_body = prettify_key(key, unicode);
         if (key.empty()) {
             msg = "failed to decode key, key=" + std::string(key);
             response_body = "failed to decode key, it may be malformed";
