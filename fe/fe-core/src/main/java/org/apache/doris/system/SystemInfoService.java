@@ -281,8 +281,8 @@ public class SystemInfoService {
         LOG.debug("after deduplication toAdd={} toDel={}", toAdd, toDel);
 
         for (Backend be : toAdd) {
-            Env.getCurrentEnv().getEditLog().logAddBackend(be);
             setBackendOwner(be, DEFAULT_CLUSTER);
+            Env.getCurrentEnv().getEditLog().logAddBackend(be);
             LOG.info("added cloud backend={} ", be);
             // backends is changed, regenerated tablet number metrics
             MetricRepo.generateBackendsTabletMetrics();
