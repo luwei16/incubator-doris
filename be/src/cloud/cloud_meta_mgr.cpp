@@ -102,8 +102,8 @@ Status CloudMetaMgr::write_tablet_meta(const TabletMetaSharedPtr& tablet_meta) {
     return Status::OK();
 }
 
-Status CloudMetaMgr::write_rowset_meta(const RowsetMetaSharedPtr& rs_meta, bool is_tmp) {
-    VLOG_DEBUG << "write rowset meta, tablet_id: " << rs_meta->tablet_id()
+Status CloudMetaMgr::prepare_rowset(const RowsetMetaSharedPtr& rs_meta, bool is_tmp) {
+    VLOG_DEBUG << "prepare rowset, tablet_id: " << rs_meta->tablet_id()
                << ", rowset_id: " << rs_meta->rowset_id() << ", is_tmp: " << is_tmp;
     brpc::Controller cntl;
     selectdb::CreateRowsetRequest req;
@@ -111,14 +111,37 @@ Status CloudMetaMgr::write_rowset_meta(const RowsetMetaSharedPtr& rs_meta, bool 
     req.set_cloud_unique_id(config::cloud_unique_id);
     *req.mutable_rowset_meta() = rs_meta->get_rowset_pb();
     req.set_temporary(is_tmp);
-    _stub->create_rowset(&cntl, &req, &resp, nullptr);
+    _stub->prepare_rowset(&cntl, &req, &resp, nullptr);
     if (cntl.Failed()) {
-        return Status::IOError("failed to write rowset meta: {}", cntl.ErrorText());
+        return Status::IOError("failed to prepare rowset: {}", cntl.ErrorText());
     }
-    if (resp.status().code() != selectdb::MetaServiceCode::OK) {
-        return Status::InternalError("failed to write rowset meta: {}", resp.status().msg());
+    if (resp.status().code() == selectdb::MetaServiceCode::OK) {
+        return Status::OK();
+    } else if (resp.status().code() == selectdb::MetaServiceCode::ROWSET_ALREADY_EXIST) {
+        return Status::AlreadyExist("failed to prepare rowset: {}", resp.status().msg());
     }
-    return Status::OK();
+    return Status::InternalError("failed to prepare rowset: {}", resp.status().msg());
+}
+
+Status CloudMetaMgr::commit_rowset(const RowsetMetaSharedPtr& rs_meta, bool is_tmp) {
+    VLOG_DEBUG << "commit rowset, tablet_id: " << rs_meta->tablet_id()
+               << ", rowset_id: " << rs_meta->rowset_id() << ", is_tmp: " << is_tmp;
+    brpc::Controller cntl;
+    selectdb::CreateRowsetRequest req;
+    selectdb::MetaServiceGenericResponse resp;
+    req.set_cloud_unique_id(config::cloud_unique_id);
+    *req.mutable_rowset_meta() = rs_meta->get_rowset_pb();
+    req.set_temporary(is_tmp);
+    _stub->commit_rowset(&cntl, &req, &resp, nullptr);
+    if (cntl.Failed()) {
+        return Status::IOError("failed to commit rowset: {}", cntl.ErrorText());
+    }
+    if (resp.status().code() == selectdb::MetaServiceCode::OK) {
+        return Status::OK();
+    } else if (resp.status().code() == selectdb::MetaServiceCode::ROWSET_ALREADY_EXIST) {
+        return Status::AlreadyExist("failed to commit rowset: {}", resp.status().msg());
+    }
+    return Status::InternalError("failed to commit rowset: {}", resp.status().msg());
 }
 
 Status CloudMetaMgr::commit_txn(StreamLoadContext* ctx, bool is_2pc) {

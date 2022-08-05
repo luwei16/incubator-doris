@@ -110,7 +110,9 @@ message RowsetMetaPB {
     // tablet meta pb, for compaction
     optional TabletSchemaPB tablet_schema = 28;
     // spare field id for future use
-    optional AlphaRowsetExtraMetaPB alpha_rowset_extra_meta_pb = 50;
+    optional string s3_bucket = 48;
+    optional string s3_prefix = 49;
+    // optional AlphaRowsetExtraMetaPB alpha_rowset_extra_meta_pb = 50;
     // to indicate whether the data between the segments overlap
     optional SegmentsOverlapPB segments_overlap_pb = 51 [default = OVERLAP_UNKNOWN];
 }

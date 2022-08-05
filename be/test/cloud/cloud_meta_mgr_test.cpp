@@ -44,31 +44,54 @@ static TabletMetaSharedPtr create_tablet_meta(int64_t table_id, int64_t tablet_i
 }
 
 TEST_F(CloudMetaMgrTest, write_rowset_meta) {
-    auto rs_meta1 = create_rowset_meta(10005, {0, 1}, 114115);
-    ASSERT_EQ(Status::OK(), meta_mgr->write_rowset_meta(rs_meta1, false));
-    ASSERT_EQ(Status::OK(), meta_mgr->write_rowset_meta(rs_meta1, true));
-    auto rs_meta2 = create_rowset_meta(10005, {2, 2}, 114115);
-    ASSERT_EQ(Status::OK(), meta_mgr->write_rowset_meta(rs_meta2, false));
-    ASSERT_EQ(Status::OK(), meta_mgr->write_rowset_meta(rs_meta2, true));
+    int64_t ts = time(nullptr);
+    {
+        auto rs_meta1 = create_rowset_meta(10005, {0, 0}, ts);
+        auto rs_meta2 = create_rowset_meta(10005, {0, 0}, ts);
+        ASSERT_EQ(Status::OK(), meta_mgr->prepare_rowset(rs_meta1, true));
+        ASSERT_EQ(Status::OK(), meta_mgr->commit_rowset(rs_meta1, true));
+        ASSERT_TRUE(meta_mgr->prepare_rowset(rs_meta2, true).is_already_exist());
+    }
+    {
+        auto rs_meta1 = create_rowset_meta(10006, {0, 0}, ts + 1);
+        auto rs_meta2 = create_rowset_meta(10006, {0, 0}, ts + 1);
+        ASSERT_EQ(Status::OK(), meta_mgr->prepare_rowset(rs_meta1, true));
+        ASSERT_EQ(Status::OK(), meta_mgr->prepare_rowset(rs_meta2, true));
+        ASSERT_EQ(Status::OK(), meta_mgr->commit_rowset(rs_meta1, true));
+        ASSERT_TRUE(meta_mgr->commit_rowset(rs_meta2, true).is_already_exist());
+    }
+    {
+        auto rs_meta1 = create_rowset_meta(10007, {0, 0}, ts + 2);
+        auto rs_meta2 = create_rowset_meta(10007, {0, 0}, ts + 2);
+        ASSERT_EQ(Status::OK(), meta_mgr->prepare_rowset(rs_meta1, true));
+        ASSERT_EQ(Status::OK(), meta_mgr->prepare_rowset(rs_meta2, true));
+        ASSERT_EQ(Status::OK(), meta_mgr->commit_rowset(rs_meta2, true));
+        ASSERT_TRUE(meta_mgr->commit_rowset(rs_meta1, true).is_already_exist());
+    }
 }
 
 TEST_F(CloudMetaMgrTest, write_and_get_rowset_meta) {
-    auto rs_meta1 = create_rowset_meta(10015, {0, 1}, 114125);
-    ASSERT_EQ(Status::OK(), meta_mgr->write_rowset_meta(rs_meta1, false));
-    auto rs_meta2 = create_rowset_meta(10015, {2, 2}, 114126);
-    ASSERT_EQ(Status::OK(), meta_mgr->write_rowset_meta(rs_meta2, false));
-    auto rs_meta3 = create_rowset_meta(10015, {3, 3}, 114127);
-    ASSERT_EQ(Status::OK(), meta_mgr->write_rowset_meta(rs_meta3, false));
-    auto rs_meta4 = create_rowset_meta(10015, {4, 4}, 114128);
-    ASSERT_EQ(Status::OK(), meta_mgr->write_rowset_meta(rs_meta4, false));
+    int64_t ts = time(nullptr);
+    auto rs_meta1 = create_rowset_meta(ts, {0, 1}, 0);
+    ASSERT_EQ(Status::OK(), meta_mgr->prepare_rowset(rs_meta1, false));
+    ASSERT_EQ(Status::OK(), meta_mgr->commit_rowset(rs_meta1, false));
+    auto rs_meta2 = create_rowset_meta(ts, {2, 2}, 0);
+    ASSERT_EQ(Status::OK(), meta_mgr->prepare_rowset(rs_meta2, false));
+    ASSERT_EQ(Status::OK(), meta_mgr->commit_rowset(rs_meta2, false));
+    auto rs_meta3 = create_rowset_meta(ts, {3, 3}, 0);
+    ASSERT_EQ(Status::OK(), meta_mgr->prepare_rowset(rs_meta3, false));
+    ASSERT_EQ(Status::OK(), meta_mgr->commit_rowset(rs_meta3, false));
+    auto rs_meta4 = create_rowset_meta(ts, {4, 4}, 0);
+    ASSERT_EQ(Status::OK(), meta_mgr->prepare_rowset(rs_meta4, false));
+    ASSERT_EQ(Status::OK(), meta_mgr->commit_rowset(rs_meta4, false));
     std::vector<RowsetMetaSharedPtr> rs_metas;
-    ASSERT_EQ(Status::OK(), meta_mgr->get_rowset_meta(10015, {0, 4}, &rs_metas));
+    ASSERT_EQ(Status::OK(), meta_mgr->get_rowset_meta(ts, {0, 4}, &rs_metas));
     ASSERT_EQ(4, rs_metas.size());
     ASSERT_EQ(*rs_metas[0], *rs_meta1);
     ASSERT_EQ(*rs_metas[1], *rs_meta2);
     ASSERT_EQ(*rs_metas[2], *rs_meta3);
     ASSERT_EQ(*rs_metas[3], *rs_meta4);
-    ASSERT_EQ(Status::OK(), meta_mgr->get_rowset_meta(10015, {0, 2}, &rs_metas));
+    ASSERT_EQ(Status::OK(), meta_mgr->get_rowset_meta(ts, {0, 2}, &rs_metas));
     ASSERT_EQ(2, rs_metas.size());
     ASSERT_EQ(*rs_metas[0], *rs_meta1);
     ASSERT_EQ(*rs_metas[1], *rs_meta2);

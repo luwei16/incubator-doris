@@ -25,6 +25,7 @@
 #include "gutil/strings/substitute.h"
 #include "io/fs/file_system.h"
 #include "io/fs/file_writer.h"
+#include "io/fs/s3_file_system.h"
 #include "olap/memtable.h"
 #include "olap/olap_define.h"
 #include "olap/row.h"        // ContiguousRow
@@ -70,6 +71,14 @@ Status BetaRowsetWriter::init(const RowsetWriterContext& rowset_writer_context) 
         _rowset_meta->set_fs(_context.data_dir->fs());
         _rowset_meta->set_resource_id(_context.data_dir->fs()->resource_id());
     }
+#ifdef CLOUD_MODE
+    _rowset_meta->set_creation_time(time(nullptr));
+    DCHECK(_rowset_meta->fs()->type() == io::FileSystemType::S3);
+    auto fs = reinterpret_cast<io::S3FileSystem*>(_rowset_meta->fs());
+    _rowset_meta->set_s3_bucket(fs->bucket());
+    _rowset_meta->set_s3_prefix(
+            fmt::format("{}/{}/{}", fs->prefix(), DATA_PREFIX, _context.tablet_id));
+#endif
     _rowset_meta->set_rowset_id(_context.rowset_id);
     _rowset_meta->set_partition_id(_context.partition_id);
     _rowset_meta->set_tablet_id(_context.tablet_id);
@@ -241,7 +250,9 @@ RowsetSharedPtr BetaRowsetWriter::build() {
     _rowset_meta->set_index_disk_size(_total_index_size);
     // TODO write zonemap to meta
     _rowset_meta->set_empty(_num_rows_written == 0);
+#ifndef CLOUD_MODE
     _rowset_meta->set_creation_time(time(nullptr));
+#endif
     _rowset_meta->set_num_segments(_num_segment);
     if (_num_segment <= 1) {
         _rowset_meta->set_segments_overlap(NONOVERLAPPING);

@@ -1,6 +1,7 @@
 
 #pragma once
 // clang-format off
+#include <cstdint>
 #include <string>
 #include <tuple>
 #include <variant>
@@ -56,8 +57,8 @@ using VersionKeyInfo       = std::tuple<std::string,  int64_t, int64_t,  int64_t
 //                                     0:instance_id  1:tablet_id  2:version
 using MetaRowsetKeyInfo    = std::tuple<std::string,  int64_t,     int64_t>;
 
-//                                     0:instance_id  1:txn_id  3:rowset_id
-using MetaRowsetTmpKeyInfo = std::tuple<std::string,  int64_t,  std::string>;
+//                                     0:instance_id  1:txn_id  2:tablet_id
+using MetaRowsetTmpKeyInfo = std::tuple<std::string,  int64_t,  int64_t>;
 
 //                                     0:instance_id  1:table_id  2:tablet_id
 using MetaTabletKeyInfo    = std::tuple<std::string,  int64_t,    int64_t>;
@@ -67,6 +68,10 @@ using MetaTabletTblKeyInfo = std::tuple<std::string,  int64_t>;
 
 //                                     0:instance_id  1:table_id  2:tablet_id
 using MetaTabletTmpKeyInfo = std::tuple<std::string,  int64_t,    int64_t>;
+
+//                                     0:instance_id  1:tablet_id 2:rowset_id
+using RecycleRowsetKeyInfo = std::tuple<std::string,  int64_t,    std::string>;
+
 // clang-format on
 
 void instance_key(const InstanceKeyInfo& in, std::string* out);
@@ -78,6 +83,7 @@ void txn_running_key(const TxnRunningKeyInfo& in, std::string* out);
 
 void version_key(const VersionKeyInfo& in, std::string* out);
 
+void recycle_rowset_key(const RecycleRowsetKeyInfo& in, std::string* out);
 void meta_rowset_key(const MetaRowsetKeyInfo& in, std::string* out);
 void meta_rowset_tmp_key(const MetaRowsetTmpKeyInfo& in, std::string* out);
 void meta_tablet_key(const MetaTabletKeyInfo& in, std::string* out);

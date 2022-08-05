@@ -402,8 +402,8 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
 
     // Get temporary rowsets involved in the txn
     // This is a range scan
-    MetaRowsetTmpKeyInfo rs_tmp_key_info0 {instance_id, txn_id, ""};
-    MetaRowsetTmpKeyInfo rs_tmp_key_info1 {instance_id, txn_id + 1, ""};
+    MetaRowsetTmpKeyInfo rs_tmp_key_info0 {instance_id, txn_id, 0};
+    MetaRowsetTmpKeyInfo rs_tmp_key_info1 {instance_id, txn_id + 1, 0};
     std::string rs_tmp_key0;
     std::string rs_tmp_key1;
     meta_rowset_tmp_key(rs_tmp_key_info0, &rs_tmp_key0);
@@ -422,8 +422,8 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
     int num_rowsets = 0;
     std::unique_ptr<int, std::function<void(int*)>> defer_log_range(
             (int*)0x01, [rs_tmp_key0, rs_tmp_key1, &num_rowsets](int*) {
-                LOG(INFO) << "get tmp rowset meta, num_rowsets=" << num_rowsets
-                          << " range=[" << hex(rs_tmp_key0) << "," << hex(rs_tmp_key1) << "]";
+                LOG(INFO) << "get tmp rowset meta, num_rowsets=" << num_rowsets << " range=["
+                          << hex(rs_tmp_key0) << "," << hex(rs_tmp_key1) << "]";
             });
 
     do {
@@ -978,7 +978,108 @@ void MetaServiceImpl::get_tablet(::google::protobuf::RpcController* controller,
     }
 }
 
-void MetaServiceImpl::create_rowset(::google::protobuf::RpcController* controller,
+/**
+ * 0. Construct the corresponding rowset commit_key according to the info in request
+ * 1. Check whether this rowset has already been committed through commit_key
+ *     a. if has been committed, abort prepare_rowset 
+ *     b. else, goto 2
+ * 2. Construct recycle rowset kv which contains object path
+ * 3. Put recycle rowset kv
+ */
+void MetaServiceImpl::prepare_rowset(::google::protobuf::RpcController* controller,
+                                     const ::selectdb::CreateRowsetRequest* request,
+                                     ::selectdb::MetaServiceGenericResponse* response,
+                                     ::google::protobuf::Closure* done) {
+    auto ctrl = static_cast<brpc::Controller*>(controller);
+    LOG(INFO) << "rpc from " << ctrl->remote_side() << " request=" << request->DebugString();
+    brpc::ClosureGuard closure_guard(done);
+    int ret = 0;
+    MetaServiceCode code = MetaServiceCode::OK;
+    std::string msg = "OK";
+    std::unique_ptr<int, std::function<void(int*)>> defer_status(
+            (int*)0x01, [&code, &msg, &response, &ctrl](int*) {
+                response->mutable_status()->set_code(code);
+                response->mutable_status()->set_msg(msg);
+                LOG(INFO) << (code == MetaServiceCode::OK ? "succ to " : "failed to ")
+                          << __PRETTY_FUNCTION__ << " " << ctrl->remote_side() << " " << msg;
+            });
+    if (!request->has_rowset_meta()) {
+        code = MetaServiceCode::INVALID_ARGUMENT_ERR;
+        msg = "no rowset meta";
+        return;
+    }
+    // temporary == true is for loading rowset from user,
+    // temporary == false is for doris internal rowset put, such as data conversion in schema change procedure.
+    bool temporary = request->has_temporary() ? request->temporary() : false;
+    int64_t tablet_id = request->rowset_meta().tablet_id();
+    int64_t end_version = request->rowset_meta().end_version();
+    const auto& rowset_id = request->rowset_meta().rowset_id_v2();
+
+    std::string commit_key;
+    std::string commit_val;
+
+    if (temporary) {
+        int64_t txn_id = request->rowset_meta().txn_id();
+        MetaRowsetTmpKeyInfo key_info {"instance_id_deadbeef", txn_id, tablet_id};
+        meta_rowset_tmp_key(key_info, &commit_key);
+    } else {
+        MetaRowsetKeyInfo key_info {"instance_id_deadbeef", tablet_id, end_version};
+        meta_rowset_key(key_info, &commit_key);
+    }
+
+    std::unique_ptr<Transaction> txn;
+    ret = txn_kv_->create_txn(&txn);
+    if (ret != 0) {
+        code = MetaServiceCode::KV_TXN_CREATE_ERR;
+        msg = "failed to create txn";
+        return;
+    }
+
+    // Check if commit key already exists.
+    ret = txn->get(commit_key, &commit_val);
+    if (ret == 0) {
+        code = MetaServiceCode::ROWSET_ALREADY_EXIST;
+        msg = "rowset already exists";
+        return;
+    }
+    if (ret != 1) {
+        code = MetaServiceCode::KV_TXN_GET_ERR;
+        msg = "failed to check whether rowset exists";
+        return;
+    }
+
+    std::string prepare_key;
+    std::string prepare_val;
+    RecycleRowsetKeyInfo prepare_key_info {"instance_id_deadbeef", tablet_id, rowset_id};
+    recycle_rowset_key(prepare_key_info, &prepare_key);
+    RecycleRowsetPB prepare_rowset;
+    prepare_rowset.set_obj_bucket(request->rowset_meta().s3_bucket());
+    prepare_rowset.set_obj_prefix(request->rowset_meta().s3_prefix());
+    prepare_rowset.set_creation_time(request->rowset_meta().creation_time());
+    prepare_rowset.SerializeToString(&prepare_val);
+
+    txn->put(prepare_key, prepare_val);
+    LOG(INFO) << "xxx put" << (temporary ? " tmp " : " ") << "prepare_rowset_key "
+              << hex(prepare_key);
+    ret = txn->commit();
+    if (ret != 0) {
+        ret = MetaServiceCode::KV_TXN_COMMIT_ERR;
+        msg = "failed to save recycle rowset";
+        return;
+    }
+}
+
+/**
+ * 0. Construct the corresponding rowset commit_key and commit_value according to the info in request
+ * 1. Check whether this rowset has already been committed through commit_key
+ *     a. if has been committed
+ *         1. if committed value is same with commit_value, it may be a redundant retry request, return ok
+ *         2. else, abort commit_rowset 
+ *     b. else, goto 2
+ * 2. Construct the corresponding rowset prepare_key(recycle rowset)
+ * 3. Remove prepare_key and put commit rowset kv
+ */
+void MetaServiceImpl::commit_rowset(::google::protobuf::RpcController* controller,
                                     const ::selectdb::CreateRowsetRequest* request,
                                     ::selectdb::MetaServiceGenericResponse* response,
                                     ::google::protobuf::Closure* done) {
@@ -989,37 +1090,37 @@ void MetaServiceImpl::create_rowset(::google::protobuf::RpcController* controlle
     MetaServiceCode code = MetaServiceCode::OK;
     std::string msg = "OK";
     std::unique_ptr<int, std::function<void(int*)>> defer_status(
-            (int*)0x01, [&ret, &code, &msg, &response, &ctrl](int*) {
+            (int*)0x01, [&code, &msg, &response, &ctrl](int*) {
                 response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
-                LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
-                          << ctrl->remote_side() << " " << msg;
+                LOG(INFO) << (code == MetaServiceCode::OK ? "succ to " : "failed to ")
+                          << __PRETTY_FUNCTION__ << " " << ctrl->remote_side() << " " << msg;
             });
-
     if (!request->has_rowset_meta()) {
         code = MetaServiceCode::INVALID_ARGUMENT_ERR;
         msg = "no rowset meta";
         return;
     }
-    // TODO: validate rowset meta, check existence
-    bool temporary = request->has_temporary() && request->temporary() ? true : false;
+    // temporary == true is for loading rowset from user,
+    // temporary == false is for doris internal rowset put, such as data conversion in schema change procedure.
+    bool temporary = request->has_temporary() ? request->temporary() : false;
     int64_t tablet_id = request->rowset_meta().tablet_id();
     int64_t end_version = request->rowset_meta().end_version();
-    std::string rowset_id = request->rowset_meta().rowset_id_v2();
+    const auto& rowset_id = request->rowset_meta().rowset_id_v2();
 
-    std::string key;
-    std::string val;
+    std::string commit_key;
+    std::string commit_val;
 
     if (temporary) {
         int64_t txn_id = request->rowset_meta().txn_id();
-        MetaRowsetTmpKeyInfo key_info {"instance_id_deadbeef", txn_id, rowset_id};
-        meta_rowset_tmp_key(key_info, &key);
+        MetaRowsetTmpKeyInfo key_info {"instance_id_deadbeef", txn_id, tablet_id};
+        meta_rowset_tmp_key(key_info, &commit_key);
     } else {
         MetaRowsetKeyInfo key_info {"instance_id_deadbeef", tablet_id, end_version};
-        meta_rowset_key(key_info, &key);
+        meta_rowset_key(key_info, &commit_key);
     }
 
-    if (!request->rowset_meta().SerializeToString(&val)) {
+    if (!request->rowset_meta().SerializeToString(&commit_val)) {
         code = MetaServiceCode::PROTOBUF_SERIALIZE_ERR;
         msg = "failed to serialize rowset meta";
         return;
@@ -1027,8 +1128,44 @@ void MetaServiceImpl::create_rowset(::google::protobuf::RpcController* controlle
 
     std::unique_ptr<Transaction> txn;
     ret = txn_kv_->create_txn(&txn);
-    txn->put(key, val);
-    LOG(INFO) << "xxx put" << (temporary ? " tmp " : " ") << "create_rowset_key " << hex(key);
+    if (ret != 0) {
+        code = MetaServiceCode::KV_TXN_CREATE_ERR;
+        msg = "failed to create txn";
+        return;
+    }
+
+    // Check if commit key already exists.
+    std::string existed_commit_val;
+    ret = txn->get(commit_key, &existed_commit_val);
+    if (ret == 0) {
+        if (existed_commit_val == commit_val) {
+            // Same request, return OK
+            return;
+        }
+        code = MetaServiceCode::ROWSET_ALREADY_EXIST;
+        msg = "rowset already exists";
+        return;
+    }
+    if (ret != 1) {
+        code = MetaServiceCode::KV_TXN_GET_ERR;
+        msg = "failed to check whether rowset exists";
+        return;
+    }
+
+    std::string prepare_key;
+    RecycleRowsetKeyInfo prepare_key_info {"instance_id_deadbeef", tablet_id, rowset_id};
+    recycle_rowset_key(prepare_key_info, &prepare_key);
+
+    if (!request->rowset_meta().SerializeToString(&commit_val)) {
+        code = MetaServiceCode::PROTOBUF_SERIALIZE_ERR;
+        msg = "failed to serialize rowset meta";
+        return;
+    }
+
+    txn->remove(prepare_key);
+    txn->put(commit_key, commit_val);
+    LOG(INFO) << "xxx put" << (temporary ? " tmp " : " ") << "commit_rowset_key "
+              << hex(prepare_key);
     ret = txn->commit();
     if (ret != 0) {
         code = MetaServiceCode::KV_TXN_COMMIT_ERR;
@@ -1076,8 +1213,8 @@ void MetaServiceImpl::get_rowset(::google::protobuf::RpcController* controller,
     int num_rowsets = 0;
     std::unique_ptr<int, std::function<void(int*)>> defer_log_range(
             (int*)0x01, [key0, key1, &num_rowsets](int*) {
-                LOG(INFO) << "get rowset meta, num_rowsets=" << num_rowsets
-                          << " range=[" << hex(key0) << "," << hex(key1) << "]";
+                LOG(INFO) << "get rowset meta, num_rowsets=" << num_rowsets << " range=["
+                          << hex(key0) << "," << hex(key1) << "]";
             });
 
     do {

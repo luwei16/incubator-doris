@@ -51,7 +51,12 @@ public:
                     ::selectdb::GetTabletResponse* response,
                     ::google::protobuf::Closure* done) override;
 
-    void create_rowset(::google::protobuf::RpcController* controller,
+    void prepare_rowset(::google::protobuf::RpcController* controller,
+                        const ::selectdb::CreateRowsetRequest* request,
+                        ::selectdb::MetaServiceGenericResponse* response,
+                        ::google::protobuf::Closure* done) override;
+
+    void commit_rowset(::google::protobuf::RpcController* controller,
                        const ::selectdb::CreateRowsetRequest* request,
                        ::selectdb::MetaServiceGenericResponse* response,
                        ::google::protobuf::Closure* done) override;

@@ -232,6 +232,10 @@ if [[ -z ${USE_DWARF} ]]; then
     USE_DWARF=OFF
 fi
 
+if [[ -z ${CLOUD_MODE} ]]; then
+    CLOUD_MODE=ON
+fi
+
 echo "Get params:
     BUILD_FE            -- $BUILD_FE
     BUILD_BE            -- $BUILD_BE

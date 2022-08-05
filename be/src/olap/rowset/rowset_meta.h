@@ -341,10 +341,17 @@ public:
     int64_t oldest_write_timestamp() const { return _rowset_meta_pb.oldest_write_timestamp(); }
 
     int64_t newest_write_timestamp() const { return _rowset_meta_pb.newest_write_timestamp(); }
+
     void set_tablet_schema(const TabletSchemaSPtr& tablet_schema) {
         DCHECK(_schema == nullptr);
         _schema = TabletSchemaCache::instance()->insert(tablet_schema->to_key());
     }
+
+    // CLOUD_MODE
+    void set_s3_bucket(const std::string& s3_bucket) { _rowset_meta_pb.set_s3_bucket(s3_bucket); }
+
+    // CLOUD_MODE
+    void set_s3_prefix(const std::string& s3_prefix) { _rowset_meta_pb.set_s3_prefix(s3_prefix); }
 
     TabletSchemaSPtr tablet_schema() { return _schema; }
 

@@ -207,6 +207,12 @@ message TxnInfoPB {
     // TODO: There are more fields TBD
 }
 
+message RecycleRowsetPB {
+    optional string obj_bucket = 1;
+    optional string obj_prefix = 2;
+    optional int64 creation_time = 3;
+}
+
 //==============================================================================
 // Rpc structures
 //==============================================================================
@@ -311,10 +317,6 @@ message CreateRowsetRequest {
     optional bool temporary = 3;
 }
 
-message CreateRowsetResponse {
-    optional MetaServiceResponseStatus status = 1;
-}
-
 message GetRowsetRequest {
     optional string cloud_unique_id = 1; // For auth
     optional int64 tablet_id = 2;
@@ -389,6 +391,8 @@ enum MetaServiceCode {
 
     VERSION_NOT_FOUND = 15;
     CLUSTER_NOT_FOUND = 16;
+
+    ROWSET_ALREADY_EXIST = 17;
 }
 
 service ResourceManagerService {
@@ -414,7 +418,8 @@ service MetaService {
     rpc create_tablet(CreateTabletRequest) returns (MetaServiceGenericResponse);
     rpc drop_tablet(DropTabletRequest) returns (MetaServiceGenericResponse);
     rpc get_tablet(GetTabletRequest) returns (GetTabletResponse);
-    rpc create_rowset(CreateRowsetRequest) returns (MetaServiceGenericResponse);
+    rpc prepare_rowset(CreateRowsetRequest) returns (MetaServiceGenericResponse);
+    rpc commit_rowset(CreateRowsetRequest) returns (MetaServiceGenericResponse);
     rpc get_rowset(GetRowsetRequest) returns (GetRowsetResponse);
 
     rpc http(MetaServiceHttpRequest) returns (MetaServiceHttpResponse);

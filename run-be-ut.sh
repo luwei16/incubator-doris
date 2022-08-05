@@ -43,7 +43,6 @@ usage() {
 Usage: $0 <options>
   Optional options:
      --benchmark        build benchmark-tool
-     --cloud_mode       build in cloud mode
      --clean            clean and build ut
      --run              build and run all ut
      --run --filter=xx  build and run specified ut
@@ -65,7 +64,7 @@ Usage: $0 <options>
   exit 1
 }
 
-OPTS=$(getopt  -n $0 -o vhj:f: -l benchmark,cloud_mode,run,clean,filter: -- "$@")
+OPTS=$(getopt  -n $0 -o vhj:f: -l benchmark,run,clean,filter: -- "$@")
 if [ "$?" != "0" ]; then
   usage
 fi
@@ -76,10 +75,13 @@ eval set -- "$OPTS"
 
 PARALLEL=$[$(nproc)/5+1]
 
+if [[ -z ${CLOUD_MODE} ]]; then
+    CLOUD_MODE=ON
+fi
+
 CLEAN=0
 RUN=0
 BUILD_BENCHMARK_TOOL=OFF
-CLOUD_MODE=OFF
 FILTER=""
 if [ $# != 1 ] ; then
     while true; do 
@@ -87,7 +89,6 @@ if [ $# != 1 ] ; then
             --clean) CLEAN=1 ; shift ;;
             --run) RUN=1 ; shift ;;
             --benchmark) BUILD_BENCHMARK_TOOL=ON ; shift ;;
-            --cloud_mode) CLOUD_MODE=ON ; shift ;;
             -f | --filter) FILTER="--gtest_filter=$2"; shift 2;;
             -j) PARALLEL=$2; shift 2 ;;
             --) shift ;  break ;;

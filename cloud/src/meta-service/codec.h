@@ -7,14 +7,14 @@ namespace selectdb {
 
 struct EncodingTag {
     // Tags for each type
-    enum Tag : int {
+    enum Tag : unsigned char {
         BYTES_TAG = 0x10,
         NEGATIVE_FIXED_INT_TAG = 0x11,
         POSITIVE_FIXED_INT_TAG = 0x12,
     };
 
     // Magic value used for encoding
-    enum E1 : int {
+    enum E1 : unsigned char {
         BYTE_ESCAPE = 0x00,
         BYTES_ENDING = 0x01,
         ESCAPED_00 = 0xff,

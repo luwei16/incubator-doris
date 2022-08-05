@@ -140,7 +140,7 @@ Status DeltaWriter::init() {
                                                 _tablet_schema, &_rowset_writer));
     _schema.reset(new Schema(_tablet_schema));
 #ifdef CLOUD_MODE
-    cloud::meta_mgr()->write_rowset_meta(_rowset_writer->rowset_meta(), true);
+    RETURN_IF_ERROR(cloud::meta_mgr()->prepare_rowset(_rowset_writer->rowset_meta(), true));
 #endif
     _reset_mem_table();
 
@@ -340,7 +340,7 @@ Status DeltaWriter::close_wait(const PSlaveTabletNodes& slave_tablet_nodes,
         return Status::OLAPInternalError(OLAP_ERR_MALLOC_ERROR);
     }
 #ifdef CLOUD_MODE
-    cloud::meta_mgr()->write_rowset_meta(_cur_rowset->rowset_meta(), true);
+    RETURN_IF_ERROR(cloud::meta_mgr()->commit_rowset(_cur_rowset->rowset_meta(), true));
 #else
     Status res = _storage_engine->txn_manager()->commit_txn(_req.partition_id, _tablet, _req.txn_id,
                                                             _req.load_id, _cur_rowset, false);

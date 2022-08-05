@@ -23,13 +23,14 @@ namespace selectdb {
 //
 // 0x01 "version" ${instance_id} "version_id" ${db_id} ${tbl_id} ${partition_id} -> ${version}
 // 
-// 0x01 "meta" ${instance_id} "rowset" ${tablet_id} ${version} ${rowset_id} -> RowsetMetaPB
-// 0x01 "meta" ${instance_id} "rowset_tmp" ${txn_id} ${rowset_id} -> RowsetMetaPB
+// 0x01 "meta" ${instance_id} "rowset" ${tablet_id} ${version} -> RowsetMetaPB
+// 0x01 "meta" ${instance_id} "rowset_tmp" ${txn_id} ${tablet_id} -> RowsetMetaPB
 // 0x01 "meta" ${instance_id} "tablet" ${table_id} ${tablet_id} -> TabletMetaPB
 // 0x01 "meta" ${instance_id} "tablet_table" ${tablet_id} -> ${table_id}
 // 0x01 "meta" ${instance_id} "tablet_tmp" ${table_id} ${tablet_id} -> TabletMetaPB
 // 
 // 0x01 "trash" ${instacne_id} "table" -> TableTrashPB
+// 0x01 "recycle" ${instance_id} "rowset" ${tablet_id} ${rowset_id} -> RecycleRowsetPB 
 // 
 // 0x01 "node_status" ${instance_id} "compute" ${backend_id} -> ComputeNodeStatusPB
 
@@ -39,6 +40,7 @@ namespace selectdb {
 [[maybe_unused]] static const char* VERSION_KEY_PREFIX = "version";
 [[maybe_unused]] static const char* META_KEY_PREFIX    = "meta";
 [[maybe_unused]] static const char* TRASH_KEY_PREFIX   = "trash";
+[[maybe_unused]] static const char* RECYCLE_KEY_PREFIX = "recycle";
 
 [[maybe_unused]] static const char* TXN_KEY_INFIX_INDEX   = "txn_index";
 [[maybe_unused]] static const char* TXN_KEY_INFIX_INFO    = "txn_info";
@@ -70,6 +72,7 @@ static void encode_prefix(const T& t, std::string* key) {
                || std::is_same_v<T, MetaTabletTblKeyInfo>
                || std::is_same_v<T, MetaTabletTmpKeyInfo>
                || std::is_same_v<T, VersionKeyInfo      >
+               || std::is_same_v<T, RecycleRowsetKeyInfo> 
                , "Invalid Key Type");
 
     key->push_back(CLOUD_KEY_SPACE01);
@@ -89,6 +92,8 @@ static void encode_prefix(const T& t, std::string* key) {
         encode_bytes(META_KEY_PREFIX, key);
     } else if constexpr (std::is_same_v<T, VersionKeyInfo>) {
         encode_bytes(VERSION_KEY_PREFIX, key);
+    } else if constexpr (std::is_same_v<T, RecycleRowsetKeyInfo>) {
+        encode_bytes(RECYCLE_KEY_PREFIX, key); 
     } else {
         std::abort(); // Impossible
     }
@@ -162,7 +167,7 @@ void meta_rowset_tmp_key(const MetaRowsetTmpKeyInfo& in, std::string* out) {
     encode_prefix(in, out);                       // 0x01 "meta" ${instance_id}
     encode_bytes(META_KEY_INFIX_ROWSET_TMP, out); // "rowset_tmp"
     encode_int64(std::get<1>(in), out);           // txn_id
-    encode_bytes(std::get<2>(in), out);           // rowset_id
+    encode_int64(std::get<2>(in), out);           // tablet_id
 }
 
 void meta_tablet_key(const MetaTabletKeyInfo& in, std::string* out) {
@@ -174,15 +179,26 @@ void meta_tablet_key(const MetaTabletKeyInfo& in, std::string* out) {
 
 void meta_tablet_table_key(const MetaTabletTblKeyInfo& in, std::string* out) {
     encode_prefix(in, out);                       // 0x01 "meta" ${instance_id}
-    encode_bytes(META_KEY_INFIX_TABLET_TBL, out); // "tablet"
+    encode_bytes(META_KEY_INFIX_TABLET_TBL, out); // "tablet_table"
     encode_int64(std::get<1>(in), out);           // tablet_id
 }
 
 void meta_tablet_tmp_key(const MetaTabletTmpKeyInfo& in, std::string* out) {
     encode_prefix(in, out);                       // 0x01 "meta" ${instance_id}
-    encode_bytes(META_KEY_INFIX_TABLET_TMP, out); // "tablet"
+    encode_bytes(META_KEY_INFIX_TABLET_TMP, out); // "tablet_tmp"
     encode_int64(std::get<1>(in), out);           // table_id
     encode_int64(std::get<2>(in), out);           // tablet_id
+}
+
+//==============================================================================
+// Recycle keys
+//==============================================================================
+
+void recycle_rowset_key(const RecycleRowsetKeyInfo& in, std::string* out) {
+    encode_prefix(in, out);                   // 0x01 "recycle" ${instance_id}
+    encode_bytes(META_KEY_INFIX_ROWSET, out); // "rowset"
+    encode_int64(std::get<1>(in), out);       // tablet_id
+    encode_bytes(std::get<2>(in), out);       // rowset_id
 }
 
 //==============================================================================

@@ -7,7 +7,7 @@
 // clang-format on
 
 int main(int argc, char** argv) {
-    selectdb::config::init(nullptr, true); // Use default from config.h
+    selectdb::config::init("./conf/meta_service.conf", true); // Use default from config.h
     selectdb::MetaServer meta_server;
     int ret = meta_server.start();
     if (ret != 0) {

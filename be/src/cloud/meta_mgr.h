@@ -22,7 +22,9 @@ public:
 
     virtual Status write_tablet_meta(const TabletMetaSharedPtr& tablet_meta) = 0;
 
-    virtual Status write_rowset_meta(const RowsetMetaSharedPtr& rs_meta, bool is_tmp) = 0;
+    virtual Status prepare_rowset(const RowsetMetaSharedPtr& rs_meta, bool is_tmp) = 0;
+
+    virtual Status commit_rowset(const RowsetMetaSharedPtr& rs_meta, bool is_tmp) = 0;
 
     virtual Status commit_txn(StreamLoadContext* ctx, bool is_2pc) = 0;
 
