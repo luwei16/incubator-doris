@@ -15,14 +15,18 @@
 // specific language governing permissions and limitations
 // under the License.
 
-package org.apache.doris.catalog;
+package com.selectdb.cloud.catalog;
 
+import org.apache.doris.catalog.Env;
+import org.apache.doris.catalog.Partition;
+import org.apache.doris.catalog.Replica;
 import org.apache.doris.qe.ConnectContext;
 import org.apache.doris.system.Backend;
-
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import java.io.DataInput;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -31,40 +35,54 @@ import java.util.Map;
 public class CloudReplica extends Replica {
     private static final Logger LOG = LogManager.getLogger(CloudReplica.class);
 
+    // In the future, a replica may be mapped to multiple BEs in a cluster,
+    // so this value is be list
+    private Map<String, List<Long>> clusterToBackends = new HashMap<String, List<Long>>();
+
+    public CloudReplica() {
+    }
+
     public CloudReplica(long replicaId, List<Long> backendIds, ReplicaState state, long version, int schemaHash) {
         super(replicaId, -1, state, version, schemaHash);
-        clusterToBackends = new HashMap<String, List<Long>>();
     }
 
     @Override
     public long getBackendId() {
+        // Not in a connect session
+        if (ConnectContext.get() == null) {
+            return -1;
+        }
         String cluster = ConnectContext.get().getCloudCluster();
         if (cluster == null || cluster.isEmpty()) {
             cluster = Env.getCurrentSystemInfo().getCloudClusterNames().stream()
                                                     .filter(i -> !i.isEmpty()).findFirst().get();
+        }
+        // No cluster right now
+        if (cluster == null || cluster.isEmpty()) {
+            return -1;
         }
 
         if (clusterToBackends.containsKey(cluster)) {
             long backendId = clusterToBackends.get(cluster).get(0);
             Backend be = Env.getCurrentSystemInfo().getBackend(backendId);
             if (be.isQueryAvailable()) {
-                LOG.info("lw test be id {} ", backendId);
+                LOG.debug("backendId={} ", backendId);
                 return backendId;
             }
         }
 
         // TODO(luwei) list shoule be sorted
         List<Backend> availableBes = Env.getCurrentSystemInfo().getBackendsByClusterName(cluster);
-        LOG.info("lw test backends {} ", availableBes);
+        LOG.debug("backends={} ", availableBes);
         long index = getId() % availableBes.size();
 
         // save to clusterToBackends map
         List<Long> bes = new ArrayList<Long>();
         bes.add(availableBes.get((int) index).getId());
-        LOG.info("lw test backends {} ", availableBes.get((int) index).getId());
+        LOG.info("backendId={} ", availableBes.get((int) index).getId());
         clusterToBackends.put(cluster, bes);
 
-        LOG.info("lw test be id {} ", availableBes.get((int) index).getId());
+        LOG.info("backendId={} ", availableBes.get((int) index).getId());
         return availableBes.get((int) index).getId();
     }
 
@@ -83,7 +101,10 @@ public class CloudReplica extends Replica {
         return true;
     }
 
-    // In the future, a replica may be mapped to multiple BEs in a cluster,
-    // so this value is be list
-    private Map<String, List<Long>> clusterToBackends;
+    public static CloudReplica read(DataInput in) throws IOException {
+        CloudReplica replica = new CloudReplica();
+        replica.readFields(in);
+        // TODO(luwei): perisist and fillup clusterToBackends to take full advantage of data cache
+        return replica;
+    }
 }

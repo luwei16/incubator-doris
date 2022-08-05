@@ -91,6 +91,7 @@ public class CloudPartition extends Partition {
         return;
     }
 
+    @Override
     public void updateVersionForRestore(long visibleVersion) {
         //TODO(dx): this log just for debug, delete later.
         LOG.info("updateVersionForRestore use CloudPartition {} version for restore: visible: {}",
@@ -98,6 +99,7 @@ public class CloudPartition extends Partition {
         return;
     }
 
+    @Override
     public void updateVisibleVersion(long visibleVersion) {
         // use meta service visibleVersion
         //TODO(dx): this log just for debug, delete later.
@@ -107,8 +109,17 @@ public class CloudPartition extends Partition {
         return;
     }
 
+    @Override
     public void updateVisibleVersionAndTime(long visibleVersion, long visibleVersionTime) {
         //TODO(dx): this log just for debug, delete later.
+    }
+
+    /**
+     * CloudPartition always has data
+     */
+    @Override
+    public boolean hasData() {
+        return true;
     }
 
     /**
@@ -182,6 +193,7 @@ public class CloudPartition extends Partition {
         return partition;
     }
 
+    @Override
     public void write(DataOutput out) throws IOException {
         super.write(out);
         out.writeLong(this.dbId);

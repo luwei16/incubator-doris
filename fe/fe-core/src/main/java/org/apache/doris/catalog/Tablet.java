@@ -33,6 +33,7 @@ import com.google.common.collect.Maps;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.Sets;
 import com.google.gson.annotations.SerializedName;
+import com.selectdb.cloud.catalog.CloudReplica;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -154,6 +155,11 @@ public class Tablet extends MetaObject implements Writable {
     }
 
     public void addReplica(Replica replica, boolean isRestore) {
+        if (!Config.cloud_unique_id.isEmpty()) {
+            replicas.add(replica);
+            // TODO(luwei): process isRestore
+            return;
+        }
         if (deleteRedundantReplica(replica.getBackendId(), replica.getVersion())) {
             replicas.add(replica);
             if (!isRestore) {
@@ -346,6 +352,10 @@ public class Tablet extends MetaObject implements Writable {
         id = in.readLong();
         int replicaCount = in.readInt();
         for (int i = 0; i < replicaCount; ++i) {
+            if (!Config.cloud_unique_id.isEmpty()) {
+                replicas.add(CloudReplica.read(in));
+                continue;
+            }
             Replica replica = Replica.read(in);
             if (deleteRedundantReplica(replica.getBackendId(), replica.getVersion())) {
                 replicas.add(replica);
