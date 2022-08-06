@@ -266,7 +266,8 @@ public class CloudGlobalTransactionMgr implements GlobalTransactionMgrInterface 
             LOG.info("commitTxnResponse: {}", commitTxnResponse);
             TxnStateChangeCallback cb = callbackFactory.getCallback(state.getCallbackId());
             if (cb == null) {
-                LOG.info("no callback to run for this txn, txnId={} callbackId={}", transactionId, state.getCallbackId());
+                LOG.info("no callback to run for this txn, txnId={} callbackId={}", transactionId,
+                         state.getCallbackId());
                 return;
             }
             LOG.info("run txn callback, txnId={} callbackId={}", transactionId, state.getCallbackId());

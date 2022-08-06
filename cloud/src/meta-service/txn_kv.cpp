@@ -69,6 +69,7 @@ int Network::init() {
     // Optional setting
     // FDBNetworkOption opt;
     // fdb_network_set_option()
+    (void) opt_;
     err = fdb_setup_network(); // Must be called only once before any
                                // other functions of C-API
     if (err) return 1;

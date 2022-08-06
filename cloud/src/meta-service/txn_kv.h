@@ -207,7 +207,7 @@ public:
 
 private:
     std::shared_ptr<std::thread> network_thread_;
-    [[maybe_unused]] FDBNetworkOption opt_;
+    FDBNetworkOption opt_;
 
     // Global state, only one instance of Network is allowed
     static std::atomic<bool> working;
