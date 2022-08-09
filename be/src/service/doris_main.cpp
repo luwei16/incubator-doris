@@ -47,6 +47,8 @@
 #include "common/status.h"
 #include "common/utils.h"
 #include "env/env.h"
+#include "io/cache/file_cache_factory.h"
+#include "io/cache/file_cache_settings.h"
 #include "olap/options.h"
 #include "olap/storage_engine.h"
 #include "runtime/exec_env.h"
@@ -357,6 +359,19 @@ int main(int argc, char** argv) {
     if (paths.empty()) {
         LOG(FATAL) << "All disks are broken, exit.";
         exit(-1);
+    }
+    if (doris::config::enable_file_cache) {
+        std::vector<doris::CachePath> cache_paths;
+        olap_res = doris::parse_conf_cache_paths(doris::config::file_cache_path, cache_paths);
+        if (!olap_res) {
+            LOG(FATAL) << "parse config file cache path failed, path="
+                       << doris::config::file_cache_path;
+            exit(-1);
+        }
+        for (auto cache_it = cache_paths.begin(); cache_it != cache_paths.end(); ++cache_it) {
+            doris::io::FileCacheFactory::instance().create_file_cache(cache_it->path,
+                                                                      cache_it->init_settings());
+        }
     }
 
     // initialize libcurl here to avoid concurrent initialization

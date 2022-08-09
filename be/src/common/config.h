@@ -842,7 +842,15 @@ CONF_String(test_s3_prefix, "prefix");
 
 // reader prefetch
 CONF_Bool(enable_column_reader_prefetch, "true");
+CONF_Bool(enable_file_cache, "false");
 CONF_Int32(max_column_reader_prefetch_size, "5");
+
+// file cache
+CONF_String(file_cache_path, "${DORIS_HOME}/cache");
+CONF_Bool(cache_on_write_operations, "false");
+CONF_Int64(max_file_segment_size, "0"); // kb
+CONF_Int64(max_elements, "0");
+CONF_Bool(clear_file_cache, "false");
 
 // cloud
 CONF_String(cloud_unique_id, "");

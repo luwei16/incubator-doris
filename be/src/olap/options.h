@@ -20,9 +20,9 @@
 #include <string>
 #include <vector>
 
+#include "io/cache/file_cache_settings.h"
 #include "olap/olap_define.h"
 #include "util/uid_util.h"
-
 namespace doris {
 
 struct StorePath {
@@ -41,6 +41,16 @@ struct StorePath {
 Status parse_root_path(const std::string& root_path, StorePath* path);
 
 Status parse_conf_store_paths(const std::string& config_path, std::vector<StorePath>* path);
+
+inline constexpr size_t GB = 1 * 1024 * 1024 * 1024;
+inline constexpr size_t KB = 1024;
+struct CachePath {
+    io::FileCacheSettings init_settings() const;
+    std::string path;
+    int64_t capacity_bytes = 0;
+};
+Status parse_root_path(const std::string& root_path, CachePath* path);
+Status parse_conf_cache_paths(const std::string& config_path, std::vector<CachePath>& path);
 
 struct EngineOptions {
     // list paths that tablet will be put into.

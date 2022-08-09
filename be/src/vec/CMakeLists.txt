@@ -55,6 +55,7 @@ set(VEC_FILES
   common/mremap.cpp
   common/pod_array.cpp
   common/string_utils/string_utils.cpp
+  common/hex.cpp
   core/block.cpp
   core/block_info.cpp
   core/column_with_type_and_name.cpp
