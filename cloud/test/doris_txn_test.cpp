@@ -97,10 +97,10 @@ TEST(MetaServiceTest, BeginTxnTest) {
     brpc::Controller cntl;
     BeginTxnRequest req;
     BeginTxnResponse res;
-    meta_service->begin_txn(reinterpret_cast<::google::protobuf::RpcController*>(&cntl), &req, &res, nullptr);
+    meta_service->begin_txn(reinterpret_cast<::google::protobuf::RpcController*>(&cntl), &req, &res,
+                            nullptr);
 
-    ASSERT_EQ(res.status().code(), MetaServiceCode::INVALID_ARGUMENT_ERR);
+    ASSERT_EQ(res.status().code(), MetaServiceCode::INVALID_ARGUMENT);
 }
-
 
 // vim: et tw=100 ts=4 sw=4 cc=80:

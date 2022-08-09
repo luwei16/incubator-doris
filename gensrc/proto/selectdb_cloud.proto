@@ -104,10 +104,8 @@ message TxnRunningInfoPB {
 }
 
 message TxnCommitAttachmentPB {
-    enum TxnCommitAttachmenTypePB {
+    enum Type {
         LODD_JOB_FINAL_OPERATION = 0;
-        MINI_LOAD_TXN_COMMIT_ATTACHMENT = 1;
-        RL_TASK_TXN_COMMIT_ATTACHMENT = 2;
     }
     message LoadJobFinalOperationPB {
         message EtlStatusPB {
@@ -124,7 +122,7 @@ message TxnCommitAttachmentPB {
             map<string, string> counters = 4;
         }
 
-        enum JobStatPB {
+        enum JobStatePB {
             UNKNOWN = 0;
             PENDING = 1;
             ETL = 2;
@@ -151,37 +149,14 @@ message TxnCommitAttachmentPB {
 
         optional int64 id = 1;
         optional EtlStatusPB loading_status = 2;
-        optional int64 progress = 3;
+        optional int32 progress = 3;
         optional int64 load_start_timestamp = 4;
         optional int64 finish_timestamp = 5;
-        optional JobStatPB job_state = 6;
+        optional JobStatePB job_state = 6;
         optional FailMsgPB fail_msg = 7;
     }
-
-    message MiniLoadTxnCommitAttachmentPB {
-        optional int64 loaded_rows = 1;
-        optional int64 filtered_rows = 2;
-        optional int64 error_log_url = 3;
-    }
-
-    message RLTaskTxnCommitAttachmentPB {
-        message KafkaProgressPB {
-            map<int64, int64> partition_id_to_offset = 1;
-        }
-        optional int64 job_id = 1;
-        optional UniqueIdPB task_id = 2;
-        optional int64 filtered_rows = 3;
-        optional int64 loaded_rows = 4;
-        optional int64 unselected_rows = 5;
-        optional int64 received_bytes = 6;
-        optional int64 task_execution_time_ms = 7;
-        optional KafkaProgressPB kb_progress = 8;
-        optional string error_log_url = 9;
-    }
-    optional TxnCommitAttachmenTypePB txn_commit_attachmen_type = 1;
+    optional Type type = 1;
     optional LoadJobFinalOperationPB load_job_final_operation = 2;
-    optional MiniLoadTxnCommitAttachmentPB mini_load_txn_commit_attachment = 3;
-    optional RLTaskTxnCommitAttachmentPB rl_task_txn_commit_attachment = 4;
 }
 
 message TxnLabelToIdsPB {
@@ -203,7 +178,8 @@ message TxnInfoPB {
     optional int64 finish_time = 12;
     optional string reason = 13;
     optional TxnStatusPB status = 14;
-    optional TxnCommitAttachmentPB commit_attachment = 15;
+    optional TxnCommitAttachmentPB txn_commit_attachment = 15;
+    optional int64 listener_id = 16; //callback id
     // TODO: There are more fields TBD
 }
 
@@ -233,6 +209,7 @@ message PrecommitTxnRequest {
     optional string cloud_unique_id = 1; // For auth
     optional int64 db_id = 2;
     optional int64 txn_id = 3;
+    optional TxnCommitAttachmentPB txn_commit_attachment = 4;
 }
 
 message PrecommitTxnResponse {
@@ -246,10 +223,12 @@ message CommitTxnRequest {
     optional int64 db_id = 2;
     optional int64 txn_id = 3;
     optional bool is_2pc = 4;
+    optional TxnCommitAttachmentPB txn_commit_attachment = 5;
 }
 
 message CommitTxnResponse {
     optional MetaServiceResponseStatus status = 1;
+    optional TxnInfoPB txn_info = 2;
     // TODO: There may be more fields TBD
 }
 
@@ -372,7 +351,7 @@ enum MetaServiceCode {
     OK = 0;
 
     //Meta service internal error
-    INVALID_ARGUMENT_ERR = 1;
+    INVALID_ARGUMENT = 1;
     KV_TXN_CREATE_ERR = 2;
     KV_TXN_GET_ERR = 3;
     KV_TXN_COMMIT_ERR = 4;
@@ -387,12 +366,13 @@ enum MetaServiceCode {
     TXN_LABEL_NOT_FOUND = 11;
     TXN_ID_NOT_FOUND = 12;
     TXN_ALREADY_ABORTED = 13;
-    TXN_ALTEADY_VISIBLE = 14;
+    TXN_ALREADY_VISIBLE = 14;
+    TXN_ALREADY_PRECOMMITED = 15;
 
-    VERSION_NOT_FOUND = 15;
-    CLUSTER_NOT_FOUND = 16;
+    VERSION_NOT_FOUND = 16;
+    CLUSTER_NOT_FOUND = 17;
 
-    ROWSET_ALREADY_EXIST = 17;
+    ROWSET_ALREADY_EXIST = 18;
 }
 
 service ResourceManagerService {

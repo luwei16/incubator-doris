@@ -30,6 +30,7 @@ import org.apache.doris.common.MetaNotFoundException;
 import org.apache.doris.common.QuotaExceedException;
 import org.apache.doris.common.UserException;
 import org.apache.doris.common.util.DebugUtil;
+import org.apache.doris.load.loadv2.LoadJobFinalOperation;
 import org.apache.doris.persist.BatchRemoveTransactionsOperation;
 import org.apache.doris.persist.EditLog;
 import org.apache.doris.rpc.RpcException;
@@ -49,11 +50,13 @@ import com.selectdb.cloud.proto.SelectdbCloud.BeginTxnRequest;
 import com.selectdb.cloud.proto.SelectdbCloud.BeginTxnResponse;
 import com.selectdb.cloud.proto.SelectdbCloud.CommitTxnRequest;
 import com.selectdb.cloud.proto.SelectdbCloud.CommitTxnResponse;
+import com.selectdb.cloud.proto.SelectdbCloud.MetaServiceCode;
 import com.selectdb.cloud.proto.SelectdbCloud.PrecommitTxnRequest;
 import com.selectdb.cloud.proto.SelectdbCloud.PrecommitTxnResponse;
 import com.selectdb.cloud.proto.SelectdbCloud.TxnInfoPB;
 import com.selectdb.cloud.proto.SelectdbCloud.UniqueIdPB;
 import com.selectdb.cloud.rpc.MetaServiceProxy;
+import com.selectdb.cloud.transaction.TxnUtil;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -193,8 +196,7 @@ public class CloudGlobalTransactionMgr implements GlobalTransactionMgrInterface 
     public void preCommitTransaction2PC(Database db, List<Table> tableList, long transactionId,
             List<TabletCommitInfo> tabletCommitInfos, long timeoutMillis, TxnCommitAttachment txnCommitAttachment)
             throws UserException {
-
-        LOG.info("try to commit transaction: {}", transactionId);
+        LOG.info("try to precommit transaction: {}", transactionId);
         if (Config.disable_load_job) {
             throw new TransactionCommitFailedException("disable_load_job is set to true, all load jobs are prevented");
         }
@@ -205,15 +207,29 @@ public class CloudGlobalTransactionMgr implements GlobalTransactionMgrInterface 
         builder.setDbId(db.getId());
         builder.setTxnId(transactionId);
 
+        if (txnCommitAttachment != null) {
+            if (txnCommitAttachment instanceof LoadJobFinalOperation) {
+                LoadJobFinalOperation loadJobFinalOperation = (LoadJobFinalOperation) txnCommitAttachment;
+                builder.setTxnCommitAttachment(TxnUtil
+                        .loadJobFinalOperationToPb(loadJobFinalOperation));
+            } else {
+                throw new UserException("Invalid txnCommitAttachment");
+            }
+        }
+
         final PrecommitTxnRequest precommitTxnRequest = builder.build();
+        PrecommitTxnResponse precommitTxnResponse = null;
         try {
             LOG.info("precommitTxnRequest: {}", precommitTxnRequest);
-            PrecommitTxnResponse precommitTxnResponse = MetaServiceProxy
+            precommitTxnResponse = MetaServiceProxy
                     .getInstance().precommitTxn(metaAddress, precommitTxnRequest);
             LOG.info("precommitTxnResponse: {}", precommitTxnResponse);
-            return;
         } catch (RpcException e) {
-            throw new TransactionCommitFailedException("TODO");
+            throw new TransactionCommitFailedException(e.getMessage());
+        }
+
+        if (precommitTxnResponse.getStatus().getCode() != MetaServiceCode.OK) {
+            throw new TransactionCommitFailedException(precommitTxnResponse.getStatus().getMsg());
         }
     }
 
@@ -245,6 +261,16 @@ public class CloudGlobalTransactionMgr implements GlobalTransactionMgrInterface 
         builder.setDbId(dbId);
         builder.setTxnId(transactionId);
         builder.setIs2Pc(is2PC);
+
+        if (txnCommitAttachment != null) {
+            if (txnCommitAttachment instanceof LoadJobFinalOperation) {
+                LoadJobFinalOperation loadJobFinalOperation = (LoadJobFinalOperation) txnCommitAttachment;
+                builder.setTxnCommitAttachment(TxnUtil
+                        .loadJobFinalOperationToPb(loadJobFinalOperation));
+            } else {
+                throw new UserException("Invalid txnCommitAttachment");
+            }
+        }
 
         txnLock.writeLock().lock();
         TransactionState state = dbIdTxnIdToTxnState.get(dbId, transactionId);
@@ -320,14 +346,18 @@ public class CloudGlobalTransactionMgr implements GlobalTransactionMgrInterface 
         builder.setReason(reason);
 
         final AbortTxnRequest abortTxnRequest = builder.build();
+        AbortTxnResponse abortTxnResponse = null;
         try {
             LOG.info("abortTxnRequest:{}", abortTxnRequest);
-            AbortTxnResponse abortTxnResponse = MetaServiceProxy
+            abortTxnResponse = MetaServiceProxy
                     .getInstance().abortTxn(metaAddress, abortTxnRequest);
             LOG.info("abortTxnResponse: {}", abortTxnResponse);
-            return;
         } catch (RpcException e) {
             throw new UserException(e);
+        }
+
+        if (abortTxnResponse.getStatus().getCode() != MetaServiceCode.OK) {
+            throw new UserException(abortTxnResponse.getStatus().getMsg());
         }
     }
 
@@ -348,15 +378,38 @@ public class CloudGlobalTransactionMgr implements GlobalTransactionMgrInterface 
             abortTxnResponse = MetaServiceProxy
                     .getInstance().abortTxn(metaAddress, abortTxnRequest);
             LOG.info("abortTxnResponse: {}", abortTxnResponse);
-            return;
         } catch (RpcException e) {
             throw new UserException(e);
+        }
+
+        if (abortTxnResponse.getStatus().getCode() != MetaServiceCode.OK) {
+            throw new UserException(abortTxnResponse.getStatus().getMsg());
         }
     }
 
     @Override
     public void abortTransaction2PC(Long dbId, long transactionId) throws UserException {
+        LOG.info("try to abort 2pc transaction, dbId:{}, transactionId:{}", dbId, transactionId);
 
+        TNetworkAddress metaAddress = getMetaSerivceAddress();
+        AbortTxnRequest.Builder builder = AbortTxnRequest.newBuilder();
+        builder.setDbId(dbId);
+        builder.setTxnId(transactionId);
+
+        final AbortTxnRequest abortTxnRequest = builder.build();
+        AbortTxnResponse abortTxnResponse = null;
+        try {
+            LOG.info("abortTxnRequest:{}", abortTxnRequest);
+            abortTxnResponse = MetaServiceProxy
+                    .getInstance().abortTxn(metaAddress, abortTxnRequest);
+            LOG.info("abortTxnResponse: {}", abortTxnResponse);
+        } catch (RpcException e) {
+            throw new UserException(e);
+        }
+
+        if (abortTxnResponse.getStatus().getCode() != MetaServiceCode.OK) {
+            throw new UserException(abortTxnResponse.getStatus().getMsg());
+        }
     }
 
     @Override
