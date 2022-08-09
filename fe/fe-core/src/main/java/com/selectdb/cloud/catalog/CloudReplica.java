@@ -48,17 +48,20 @@ public class CloudReplica extends Replica {
 
     @Override
     public long getBackendId() {
-        // Not in a connect session
         String cluster = null;
+        // Not in a connect session
         if (ConnectContext.get() != null) {
             cluster = ConnectContext.get().getCloudCluster();
         }
+
         if (cluster == null || cluster.isEmpty()) {
             cluster = Env.getCurrentSystemInfo().getCloudClusterNames().stream()
                                                     .filter(i -> !i.isEmpty()).findFirst().get();
         }
+
         // No cluster right now
         if (cluster == null || cluster.isEmpty()) {
+            LOG.warn("lw test get backend, return -1");
             return -1;
         }
 
