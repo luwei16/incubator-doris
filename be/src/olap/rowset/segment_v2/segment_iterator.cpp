@@ -192,6 +192,13 @@ Status SegmentIterator::_init(bool is_vec) {
         RETURN_IF_ERROR(_get_row_ranges_by_keys());
     }
     RETURN_IF_ERROR(_get_row_ranges_by_column_conditions());
+    // Remove rows that have been marked deleted
+    if (_opts.delete_bitmap.count(segment_id()) > 0 &&
+        _opts.delete_bitmap[segment_id()] != nullptr) {
+        size_t pre_size = _row_bitmap.cardinality();
+        _row_bitmap -= *(_opts.delete_bitmap[segment_id()]);
+        _opts.stats->rows_del_by_bitmap += (pre_size - _row_bitmap.cardinality());
+    }
     BitmapRangeIterator iter(_row_bitmap);
     _ranges = iter.get_all_contiguous_ranges();
     if (is_vec) {
@@ -202,14 +209,6 @@ Status SegmentIterator::_init(bool is_vec) {
         _init_lazy_materialization();
         _init_prefetch_column_pages();
     }
-    // Remove rows that have been marked deleted
-    if (_opts.delete_bitmap.count(segment_id()) > 0 &&
-        _opts.delete_bitmap[segment_id()] != nullptr) {
-        size_t pre_size = _row_bitmap.cardinality();
-        _row_bitmap -= *(_opts.delete_bitmap[segment_id()]);
-        _opts.stats->rows_del_by_bitmap += (pre_size - _row_bitmap.cardinality());
-    }
-    _range_iter.reset(new BitmapRangeIterator(_row_bitmap));
     return Status::OK();
 }
 
@@ -219,11 +218,11 @@ void SegmentIterator::_vec_init_prefetch_column_pages() {
         return;
     }
     for (auto cid : _first_read_column_ids) {
-        _column_iterators[cid]->get_all_contiguous_pages(_ranges);
+        _column_iterators[_schema.unique_id(cid)]->get_all_contiguous_pages(_ranges);
     }
     if (_lazy_materialization_read && (_is_need_vec_eval || _is_need_short_eval)) {
         for (auto cid : _non_predicate_columns) {
-            _column_iterators[cid]->get_all_contiguous_pages(_ranges);
+            _column_iterators[_schema.unique_id(cid)]->get_all_contiguous_pages(_ranges);
         }
     }
 }
@@ -233,8 +232,8 @@ void SegmentIterator::_init_prefetch_column_pages() {
         _file_reader->fs()->type() == io::FileSystemType::LOCAL) {
         return;
     }
-    for (auto cid : _schema.column_ids()) {
-        _column_iterators[cid]->get_all_contiguous_pages(_ranges);
+    for (auto cuid : _schema.unique_ids()) {
+        _column_iterators[cuid]->get_all_contiguous_pages(_ranges);
     }
 }
 
@@ -1095,6 +1094,7 @@ Status SegmentIterator::_read_columns_by_rowids(std::vector<ColumnId>& read_colu
 }
 
 Status SegmentIterator::next_batch(vectorized::Block* block) {
+    LOG(INFO) << "xxx block " << block->dump_structure();
     bool is_mem_reuse = block->mem_reuse();
     DCHECK(is_mem_reuse);
 

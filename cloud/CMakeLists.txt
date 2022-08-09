@@ -446,6 +446,7 @@ install(FILES
 
 install(FILES
     ${BASE_DIR}/conf/fdb.cluster
+    ${BASE_DIR}/conf/meta_service.conf
     DESTINATION ${OUTPUT_DIR}/conf)
 
 install(FILES

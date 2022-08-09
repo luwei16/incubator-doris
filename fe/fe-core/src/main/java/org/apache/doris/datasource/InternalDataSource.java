@@ -1981,24 +1981,24 @@ public class InternalDataSource implements DataSourceIf<Database> {
                                     + totalReplicaNum + " of replica exceeds quota[" + db.getReplicaQuota() + "]");
                 }
                 // create partition
-                if (!Config.cloud_unique_id.isEmpty()) {
-                    Partition partition = createCloudPartitionWithIndices(db.getClusterName(), db.getId(),
-                            olapTable.getId(), olapTable.getBaseIndexId(), partitionId, partitionName,
-                            olapTable.getIndexIdToMeta(), partitionDistributionInfo,
-                            partitionInfo.getDataProperty(partitionId).getStorageMedium(),
-                            partitionInfo.getReplicaAllocation(partitionId), versionInfo, bfColumns, bfFpp, tabletIdSet,
-                            olapTable.getCopiedIndexes(), isInMemory, storageFormat, tabletType, compressionType,
-                            olapTable.getDataSortInfo(), olapTable.getEnableUniqueKeyMergeOnWrite(), storagePolicy);
-                    olapTable.addPartition(partition);
-                    return;
-                }
-                Partition partition = createPartitionWithIndices(db.getClusterName(), db.getId(), olapTable.getId(),
+                Partition partition;
+                if (Config.cloud_unique_id.isEmpty()) {
+                    partition = createPartitionWithIndices(db.getClusterName(), db.getId(), olapTable.getId(),
                         olapTable.getBaseIndexId(), partitionId, partitionName, olapTable.getIndexIdToMeta(),
                         partitionDistributionInfo, partitionInfo.getDataProperty(partitionId).getStorageMedium(),
                         partitionInfo.getReplicaAllocation(partitionId), versionInfo, bfColumns, bfFpp, tabletIdSet,
                         olapTable.getCopiedIndexes(), isInMemory, storageFormat, tabletType, compressionType,
                         olapTable.getDataSortInfo(), olapTable.getEnableUniqueKeyMergeOnWrite(), storagePolicy,
                         idGeneratorBuffer);
+                } else {
+                    partition = createCloudPartitionWithIndices(db.getClusterName(), db.getId(),
+                        olapTable.getId(), olapTable.getBaseIndexId(), partitionId, partitionName,
+                        olapTable.getIndexIdToMeta(), partitionDistributionInfo,
+                        partitionInfo.getDataProperty(partitionId).getStorageMedium(),
+                        partitionInfo.getReplicaAllocation(partitionId), versionInfo, bfColumns, bfFpp, tabletIdSet,
+                        olapTable.getCopiedIndexes(), isInMemory, storageFormat, tabletType, compressionType,
+                        olapTable.getDataSortInfo(), olapTable.getEnableUniqueKeyMergeOnWrite(), storagePolicy);
+                }
                 olapTable.addPartition(partition);
             } else if (partitionInfo.getType() == PartitionType.RANGE
                     || partitionInfo.getType() == PartitionType.LIST) {
@@ -3342,15 +3342,6 @@ public class InternalDataSource implements DataSourceIf<Database> {
                 chosenBackendIds = Maps.newHashMap();
                 for (Map.Entry<Tag, List<List<Long>>> entry : backendsPerBucketSeq.entrySet()) {
                     chosenBackendIds.put(entry.getKey(), entry.getValue().get(i));
-                }
-            } else {
-                if (!Config.disable_storage_medium_check) {
-                    chosenBackendIds = Env.getCurrentSystemInfo()
-                            .selectBackendIdsForReplicaCreation(replicaAlloc, clusterName,
-                                    tabletMeta.getStorageMedium());
-                } else {
-                    chosenBackendIds = Env.getCurrentSystemInfo()
-                            .selectBackendIdsForReplicaCreation(replicaAlloc, clusterName, null);
                 }
             }
             // create replica

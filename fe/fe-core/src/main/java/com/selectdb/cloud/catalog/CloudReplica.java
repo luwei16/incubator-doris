@@ -49,10 +49,10 @@ public class CloudReplica extends Replica {
     @Override
     public long getBackendId() {
         // Not in a connect session
-        if (ConnectContext.get() == null) {
-            return -1;
+        String cluster = null;
+        if (ConnectContext.get() != null) {
+            cluster = ConnectContext.get().getCloudCluster();
         }
-        String cluster = ConnectContext.get().getCloudCluster();
         if (cluster == null || cluster.isEmpty()) {
             cluster = Env.getCurrentSystemInfo().getCloudClusterNames().stream()
                                                     .filter(i -> !i.isEmpty()).findFirst().get();
