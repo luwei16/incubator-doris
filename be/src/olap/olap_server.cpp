@@ -43,6 +43,11 @@ volatile uint32_t g_schema_change_active_threads = 0;
 
 Status StorageEngine::start_bg_threads() {
 #ifdef CLOUD_MODE
+    // fd cache clean thread
+    RETURN_IF_ERROR(Thread::create(
+            "StorageEngine", "fd_cache_clean_thread",
+            [this]() { this->_fd_cache_clean_callback(); }, &_fd_cache_clean_thread));
+    LOG(INFO) << "fd cache clean thread started";
 #else
     RETURN_IF_ERROR(Thread::create(
             "StorageEngine", "unused_rowset_monitor_thread",
@@ -100,7 +105,6 @@ Status StorageEngine::start_bg_threads() {
             [this, data_dirs]() { this->_tablet_checkpoint_callback(data_dirs); },
             &_tablet_checkpoint_tasks_producer_thread));
     LOG(INFO) << "tablet checkpoint tasks producer thread started";
-#endif
 
     // fd cache clean thread
     RETURN_IF_ERROR(Thread::create(
@@ -108,7 +112,6 @@ Status StorageEngine::start_bg_threads() {
             [this]() { this->_fd_cache_clean_callback(); }, &_fd_cache_clean_thread));
     LOG(INFO) << "fd cache clean thread started";
 
-#ifndef CLOUD_MODE
     // path scan and gc thread
     if (config::path_gc_check) {
         for (auto data_dir : get_stores()) {

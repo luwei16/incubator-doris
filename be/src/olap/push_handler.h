@@ -46,6 +46,12 @@ public:
     PushHandler() = default;
     ~PushHandler() = default;
 
+    // CLOUD_MODE
+    // `tablet_info_vec` is used for `finish_task_request`
+    Status cloud_process_streaming_ingestion(const TabletSharedPtr& tablet, const TPushReq& request,
+                                             PushType push_type,
+                                             std::vector<TTabletInfo>* tablet_info_vec);
+
     // Load local data file into specified tablet.
     Status process_streaming_ingestion(TabletSharedPtr tablet, const TPushReq& request,
                                        PushType push_type,

@@ -137,7 +137,7 @@ void TaskWorkerPool::start() {
         break;
     case TaskWorkerType::DELETE:
         _worker_count = config::delete_worker_count;
-        cb = std::bind<void>(&TaskWorkerPool::_push_worker_thread_callback, this);
+        cb = std::bind<void>(&TaskWorkerPool::_delete_worker_thread_callback, this);
         break;
     case TaskWorkerType::ALTER_TABLE:
         _worker_count = config::alter_tablet_worker_count;
@@ -668,6 +668,57 @@ void TaskWorkerPool::_push_worker_thread_callback() {
         }
         task_status.__set_error_msgs(error_msgs);
         finish_task_request.__set_task_status(task_status);
+        finish_task_request.__set_report_version(_s_report_version);
+
+        _finish_task(finish_task_request);
+        _remove_task_info(agent_task_req.task_type, agent_task_req.signature);
+    }
+}
+
+void TaskWorkerPool::_delete_worker_thread_callback() {
+    while (_is_work) {
+        Status status;
+        TAgentTaskRequest agent_task_req;
+        do {
+            std::unique_lock<std::mutex> worker_thread_lock(_worker_thread_lock);
+            while (_is_work && _tasks.empty()) {
+                _worker_thread_condition_variable.wait(worker_thread_lock);
+            }
+            if (!_is_work) {
+                return;
+            }
+
+            agent_task_req = _tasks.front();
+            _tasks.pop_front();
+        } while (false);
+
+        auto& push_req = agent_task_req.push_req;
+        LOG(INFO) << "Get delete task, signature: " << agent_task_req.signature
+                  << ", tablet_id: " << push_req.tablet_id << ", push_type: " << push_req.push_type;
+        std::vector<TTabletInfo> tablet_infos;
+
+        EngineBatchLoadTask engine_task(push_req, &tablet_infos, agent_task_req.signature, &status);
+        _env->storage_engine()->execute_task(&engine_task);
+
+        TFinishTaskRequest finish_task_request;
+        finish_task_request.__set_backend(_backend);
+        finish_task_request.__set_task_type(agent_task_req.task_type);
+        finish_task_request.__set_signature(agent_task_req.signature);
+        if (push_req.push_type == TPushType::DELETE) {
+            finish_task_request.__set_request_version(push_req.version);
+        }
+
+        if (status.ok()) {
+            VLOG_NOTICE << "Delete ok. signature: " << agent_task_req.signature
+                        << ", tablet_id: " << push_req.tablet_id
+                        << ", push_type: " << push_req.push_type;
+            ++_s_report_version;
+            finish_task_request.__set_finish_tablet_infos(tablet_infos);
+        } else {
+            LOG(WARNING) << "Delete failed, signature: " << agent_task_req.signature
+                         << ", tablet_id: " << push_req.tablet_id << ", err: " << status;
+        }
+        finish_task_request.__set_task_status(status.to_thrift());
         finish_task_request.__set_report_version(_s_report_version);
 
         _finish_task(finish_task_request);

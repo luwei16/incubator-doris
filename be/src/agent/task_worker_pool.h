@@ -174,6 +174,7 @@ private:
     void _create_tablet_worker_thread_callback();
     void _drop_tablet_worker_thread_callback();
     void _push_worker_thread_callback();
+    void _delete_worker_thread_callback();
     void _publish_version_worker_thread_callback();
     void _clear_transaction_task_worker_thread_callback();
     void _alter_tablet_worker_thread_callback();

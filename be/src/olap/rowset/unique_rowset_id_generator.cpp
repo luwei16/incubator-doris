@@ -42,10 +42,12 @@ UniqueRowsetIdGenerator::~UniqueRowsetIdGenerator() {
 RowsetId UniqueRowsetIdGenerator::next_id() {
     RowsetId rowset_id;
     rowset_id.init(_version, ++_inc_id, _backend_uid.hi, _backend_uid.lo);
+#ifndef CLOUD_MODE
     {
         std::lock_guard<SpinLock> l(_lock);
         _valid_rowset_id_hi.insert(rowset_id.hi);
     }
+#endif
     return rowset_id;
 }
 

@@ -128,7 +128,9 @@ Status S3FileSystem::batch_upload(const std::vector<Path>& local_paths,
         handle->WaitUntilFinished();
         if (handle->GetStatus() != Aws::Transfer::TransferStatus::COMPLETED) {
             // TODO(cyx): Maybe we can cancel remaining handles.
-            return Status::IOError(handle->GetLastError().GetMessage());
+            return Status::IOError("failed to upload(endpoint={}, bucket={}, key={}): {}",
+                                   _s3_conf.endpoint, _s3_conf.bucket, handle->GetKey(),
+                                   handle->GetLastError().GetMessage());
         }
     }
     return Status::OK();

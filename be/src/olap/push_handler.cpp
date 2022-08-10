@@ -22,6 +22,7 @@
 #include <iostream>
 #include <sstream>
 
+#include "cloud/utils.h"
 #include "common/object_pool.h"
 #include "common/status.h"
 #include "exec/parquet_scanner.h"
@@ -35,6 +36,45 @@
 #include "runtime/exec_env.h"
 
 namespace doris {
+
+Status PushHandler::cloud_process_streaming_ingestion(const TabletSharedPtr& tablet,
+                                                      const TPushReq& request, PushType push_type,
+                                                      std::vector<TTabletInfo>* tablet_info_vec) {
+    if (push_type != PUSH_FOR_DELETE) {
+        LOG(FATAL) << "Not support for push_type " << push_type;
+    }
+    // check delete condition if push for delete
+    DeletePredicatePB del_pred;
+    auto tablet_schema = tablet->tablet_schema();
+    if (!request.columns_desc.empty() && request.columns_desc[0].col_unique_id >= 0) {
+        tablet_schema.clear_columns();
+        for (const auto& column_desc : request.columns_desc) {
+            tablet_schema.append_column(TabletColumn(column_desc));
+        }
+    }
+    RETURN_IF_ERROR(DeleteHandler::generate_delete_predicate(tablet_schema,
+                                                             request.delete_conditions, &del_pred));
+    PUniqueId load_id;
+    load_id.set_hi(0);
+    load_id.set_lo(0);
+    std::unique_ptr<RowsetWriter> rowset_writer;
+    RETURN_IF_ERROR(tablet->create_rowset_writer(request.transaction_id, load_id, PREPARED,
+                                                 OVERLAP_UNKNOWN, &tablet_schema, &rowset_writer));
+    auto rowset = rowset_writer->build();
+    if (!rowset) {
+        return Status::InternalError("failed to build rowset");
+    }
+    rowset->rowset_meta()->set_delete_predicate(del_pred);
+    auto st = cloud::meta_mgr()->commit_rowset(rowset->rowset_meta(), true);
+    if (!st.ok() && !st.is_already_exist()) {
+        return st;
+    }
+    TTabletInfo tablet_info;
+    // just need tablet_id
+    tablet_info.tablet_id = tablet->tablet_id();
+    tablet_info_vec->push_back(tablet_info);
+    return Status::OK();
+}
 
 // Process push command, the main logical is as follows:
 //    a. related tablets not exist:

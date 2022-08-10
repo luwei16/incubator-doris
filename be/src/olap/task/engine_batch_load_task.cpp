@@ -359,8 +359,13 @@ Status EngineBatchLoadTask::_delete_data(const TPushReq& request,
     // 2. Process delete data by push interface
     PushHandler push_handler;
     if (request.__isset.transaction_id) {
+#ifdef CLOUD_MODE
+        res = push_handler.cloud_process_streaming_ingestion(tablet, request, PUSH_FOR_DELETE,
+                                                             tablet_info_vec);
+#else
         res = push_handler.process_streaming_ingestion(tablet, request, PUSH_FOR_DELETE,
                                                        tablet_info_vec);
+#endif
     } else {
         res = Status::OLAPInternalError(OLAP_ERR_PUSH_BATCH_PROCESS_REMOVED);
     }
