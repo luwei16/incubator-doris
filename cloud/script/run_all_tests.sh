@@ -1,6 +1,11 @@
 #!/bin/bash
 
 for i in `ls *_test`; do
+	if [ "$1" != "" ]; then
+		if [ "$1" != "${i}" ]; then
+			continue;
+		fi
+	fi
 	if [ -x ${i} ]; then
 		echo "========== ${i} =========="
 		fdb=`ldd ${i} | grep libfdb_c`

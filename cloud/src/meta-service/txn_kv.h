@@ -104,8 +104,23 @@ public:
      */
     virtual int commit() = 0;
 
+    /**
+     * Gets the read version used by the txn.
+     * Note that it does not make any sense we call this function before
+     * any `Transaction::get()` is called.
+     *
+     *@return positive number for success otehrwise error
+     */
     virtual int64_t get_read_version() = 0;
-    virtual int64_t get_commited_version() = 0;
+
+    /**
+     * Gets the commited version used by the txn.
+     * Note that it does not make any sense we call this function before
+     * a successful call to `Transaction::commit()`.
+     *
+     *@return positive number for success otehrwise error
+     */
+    virtual int64_t get_committed_version() = 0;
 
     /**
      * Aborts this transaction
@@ -384,7 +399,7 @@ public:
     int commit() override;
 
     int64_t get_read_version() override;
-    int64_t get_commited_version() override;
+    int64_t get_committed_version() override;
 
     int abort() override;
 

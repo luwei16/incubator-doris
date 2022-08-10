@@ -273,11 +273,36 @@ int Transaction::commit() {
 }
 
 int64_t Transaction::get_read_version() {
-    return 0;
+    auto fut = fdb_transaction_get_read_version(txn_);
+    std::unique_ptr<int, std::function<void(int*)>> defer((int*)0x01, 
+                                       [fut](...) { fdb_future_destroy(fut); });
+    auto err = fdb_future_block_until_ready(fut);
+    if (err) {
+        LOG(WARNING) << " " << fdb_get_error(err);
+        return -1;
+    }
+    err = fdb_future_get_error(fut);
+    if (err) {
+        LOG(WARNING) << " " << fdb_get_error(err);
+        return -2;
+    }
+    int64_t ver;
+    err = fdb_future_get_int64(fut, &ver);
+    if (err) {
+        LOG(WARNING) << " " << fdb_get_error(err);
+        return -3;
+    }
+    return ver;
 }
 
-int64_t Transaction::get_commited_version() {
-    return 0;
+int64_t Transaction::get_committed_version() {
+    int64_t ver;
+    auto err = fdb_transaction_get_committed_version(txn_, &ver);
+    if (err) {
+        LOG(WARNING) << " " << fdb_get_error(err);
+        return -1;
+    }
+    return ver;
 }
 
 int Transaction::abort() {
