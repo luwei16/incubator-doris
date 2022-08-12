@@ -1708,7 +1708,6 @@ void MetaServiceImpl::create_instance(google::protobuf::RpcController* controlle
     }
 }
 
-// Current implementation for adding an existing cluster is "the last wins"
 void MetaServiceImpl::alter_cluster(google::protobuf::RpcController* controller,
                                     const ::selectdb::AlterClusterRequest* request,
                                     ::selectdb::MetaServiceGenericResponse* response,
@@ -1862,16 +1861,14 @@ void MetaServiceImpl::get_cluster(google::protobuf::RpcController* controller,
 
     for (int i = 0; i < instance.clusters_size(); ++i) {
         auto& c = instance.clusters(i);
-        // The last wins
-        // TODO: deduplicate cluster
+        // The last wins if add_cluster() does not ensure uniqueness of
+        // cluster_id and cluster_name respectively
         if ((c.has_cluster_name() && c.cluster_name() == cluster_name) ||
             (c.has_cluster_id() && c.cluster_id() == cluster_id)) {
             response->mutable_cluster()->CopyFrom(c);
-            google::protobuf::util::JsonPrintOptions opts;
-            opts.preserve_proto_field_names = true;
-            std::string json = proto_to_json(response->cluster());
-            msg = json;
-            LOG(INFO) << "found a cluster=" << json;
+            msg = proto_to_json(response->cluster());
+            LOG(INFO) << "found a cluster, instance_id=" << instance.instance_id()
+                      << " cluster=" << msg;
         }
     }
 

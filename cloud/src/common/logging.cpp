@@ -42,11 +42,10 @@ bool init_glog(const char* basename) {
     // clang-format off
     // set log level
     std::string& loglevel = config::log_level;
-
     // Can be 0 1 2 3 ... the larger the higher level for loggin,
     // corrensponding to INFO WARNING ERROR FATAL
     // const int GLOG_INFO = 0, GLOG_WARNING = 1, GLOG_ERROR = 2, GLOG_FATAL = 3, NUM_SEVERITIES = 4;
-    auto tolower = [](std::string s) { for (auto& i : s) i |= 0x40; return s; };
+    auto tolower = [](std::string s) { for (auto& i : s) i |= 0x20; return s; };
     FLAGS_minloglevel = tolower(loglevel) == "info"  ? 0
                       : tolower(loglevel) == "warn"  ? 1
                       : tolower(loglevel) == "error" ? 2 
@@ -58,10 +57,9 @@ bool init_glog(const char* basename) {
     // Log messages at a higher level are flushed immediately.
     FLAGS_logbuflevel = config::log_immediate_flush ? -1 : 0;
 
-    // set verbose modules.
+    // Set verbose modules
     FLAGS_v = -1;
-    std::vector<std::string>& verbose_modules = config::log_verbose_modules;
-    for (auto& i : verbose_modules) {
+    for (auto& i : config::log_verbose_modules) {
         if (i.empty()) continue;
         google::SetVLOGLevel(i.c_str(), config::log_verbose_level);
     }
