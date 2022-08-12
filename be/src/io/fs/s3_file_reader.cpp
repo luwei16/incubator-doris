@@ -20,7 +20,9 @@
 #include <aws/s3/S3Client.h>
 #include <aws/s3/model/GetObjectRequest.h>
 
+#include "common/config.h"
 #include "io/fs/s3_common.h"
+#include "io/fs/s3_file_writer.h"
 #include "util/doris_metrics.h"
 
 namespace doris {
@@ -33,6 +35,9 @@ S3FileReader::S3FileReader(Path path, size_t file_size, std::string key, std::st
           _fs(fs),
           _bucket(std::move(bucket)),
           _key(std::move(key)) {
+    auto tmp_file_name = _key;
+    std::replace(tmp_file_name.begin(), tmp_file_name.end(), '/', '_');
+    _local_path = Path(config::tmp_file_dir) / tmp_file_name;
     DorisMetrics::instance()->s3_file_open_reading->increment(1);
     DorisMetrics::instance()->s3_file_reader_total->increment(1);
 }
@@ -51,6 +56,12 @@ Status S3FileReader::close() {
 
 Status S3FileReader::read_at(size_t offset, Slice result, size_t* bytes_read) {
     DCHECK(!closed());
+    if (config::enable_write_as_cache) {
+        FileReaderSPtr _cache_file_reader = S3FileWriter::lookup(_local_path);
+        if (_cache_file_reader) {
+            return _cache_file_reader->read_at(offset, result, bytes_read);
+        }
+    }
     if (offset > _file_size) {
         return Status::IOError("offset exceeds file size(offset: {), file size: {}, path: {})",
                                offset, _file_size, _path.native());

@@ -67,6 +67,7 @@
 #include "util/thrift_rpc_helper.h"
 #include "util/thrift_server.h"
 #include "util/uid_util.h"
+#include "io/fs/local_file_system.h"
 
 static void help(const char*);
 
@@ -410,6 +411,8 @@ int main(int argc, char** argv) {
     exec_env->set_storage_engine(engine);
     engine->set_heartbeat_flags(exec_env->heartbeat_flags());
 
+    doris::io::global_local_filesystem()->delete_directory(doris::config::tmp_file_dir);
+    doris::io::global_local_filesystem()->create_directory(doris::config::tmp_file_dir);
     // start all background threads of storage engine.
     // SHOULD be called after exec env is initialized.
     EXIT_IF_ERROR(engine->start_bg_threads());

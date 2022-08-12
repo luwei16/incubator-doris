@@ -17,7 +17,16 @@
 
 #pragma once
 
+#include "common/config.h"
+#include "gutil/int128.h"
+#include "io/fs/file_reader.h"
 #include "io/fs/file_writer.h"
+
+#include "io/cache/file_cache.h"
+#include "io/cache/file_cache_fwd.h"
+
+#include <unordered_set>
+#include <list>
 
 namespace Aws::Transfer {
 class TransferHandle;
@@ -49,6 +58,9 @@ public:
 
     size_t bytes_appended() const override { return _tmp_file_writer->bytes_appended(); }
 
+    // s3_file_reader lookup tmp file
+    static FileReaderSPtr lookup(const Path& path);
+
 private:
     S3FileSystem* _fs;
 
@@ -58,6 +70,9 @@ private:
 
     FileWriterPtr _tmp_file_writer;
     std::shared_ptr<Aws::Transfer::TransferHandle> _handle;
+    
+    // insert tmp file to mgr
+    static void _insert(const Path& path);
 };
 
 } // namespace io

@@ -88,9 +88,11 @@ Status CachedRemoteFileReader::read_at(size_t offset, Slice result, size_t* byte
         }
     }
 
-    size_t empty_start = empty_segments.front()->range().left;
-    size_t empty_end = empty_segments.back()->range().right;
+    size_t empty_start = 0;
+    size_t empty_end = 0;
     if (!empty_segments.empty()) {
+        empty_start = empty_segments.front()->range().left;
+        empty_end = empty_segments.back()->range().right;
         size_t size = empty_end - empty_start + 1;
         std::unique_ptr<char[]> buffer(new char[size]);
         RETURN_IF_ERROR(

@@ -42,8 +42,6 @@ Status parse_root_path(const std::string& root_path, StorePath* path);
 
 Status parse_conf_store_paths(const std::string& config_path, std::vector<StorePath>* path);
 
-inline constexpr size_t GB = 1 * 1024 * 1024 * 1024;
-inline constexpr size_t KB = 1024;
 struct CachePath {
     io::FileCacheSettings init_settings() const;
     std::string path;

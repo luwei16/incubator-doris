@@ -2,6 +2,9 @@
 #include <memory>
 
 #include "vec/common/uint128.h"
+
+static constexpr size_t GB = 1 * 1024 * 1024 * 1024;
+static constexpr size_t KB = 1024;
 namespace doris {
 namespace io {
 
