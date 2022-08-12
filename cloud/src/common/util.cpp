@@ -5,6 +5,8 @@
 #include "meta-service/keys.h"
 #include "meta-service/codec.h"
 
+#include "google/protobuf/util/json_util.h"
+
 #include <iomanip>
 #include <sstream>
 #include <unordered_map>
@@ -185,6 +187,14 @@ std::string prettify_key(std::string_view key_hex, bool unicode) {
     }
 
     return explain_fields(key_hex, fields_str, fields_pos, unicode);
+}
+
+std::string proto_to_json(const ::google::protobuf::Message& msg) {
+    std::string json;
+    google::protobuf::util::JsonPrintOptions opts;
+    opts.preserve_proto_field_names = true;
+    google::protobuf::util::MessageToJsonString(msg, &json, opts);
+    return json;
 }
 
 } // namespace selectdb

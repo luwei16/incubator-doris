@@ -7,6 +7,10 @@ import "olap_file.proto";
 
 option cc_generic_services = true;
 
+//==============================================================================
+// Resources
+//==============================================================================
+
 message InstanceInfoPB {
     optional string user_id = 1;
     optional string instance_id = 2;
@@ -14,15 +18,20 @@ message InstanceInfoPB {
     repeated string lb_ip = 4;
     optional int64 ctime = 5;
     optional int64 mtime = 6;
-    repeated NodeInfoPB sql_server = 7;
-    repeated ClusterPB clusters = 8;
-    optional ObjectStoreInfoPB obj_store = 9;
+    repeated ClusterPB clusters = 7;
+    optional ObjectStoreInfoPB obj_store = 8;
 }
 
 message ClusterPB {
+    enum Type {
+        SQL = 0;
+        COMPUTE = 1;
+    }
     optional string cluster_id = 1;
     optional string cluster_name = 2;
-    repeated NodeInfoPB compute_node = 3;
+    optional Type type = 3;
+    optional string desc = 4;
+    repeated NodeInfoPB nodes = 5;
 }
 
 message NodeInfoPB {
@@ -63,17 +72,23 @@ message UniqueIdPB {
   optional int64 lo = 2;
 }
 
+// ATTN: keep the values the same as 
+//       org.apache.doris.transaction.TransactionState.TxnSourceType
 enum TxnSourceTypePB {
-    FE = 1;
-    BE = 2;
+    UKNOWN_TXN_SOURCE_TYPE = 0;
+    TXN_SOURCE_TYPE_FE     = 1;
+    TXN_SOURCE_TYPE_BE     = 2;
 }
 
+// ATTN: keep the same values as
+//       org.apache.doris.transaction.TransactionState.LoadJobSourceType
 enum LoadJobSourceTypePB {
-    FRONTEND          = 1;
-    BACKEND_STREAMING = 2; // streaming load use this type
-    INSERT_STREAMING  = 3; // insert stmt (streaming type), update stmt use this type
-    ROUTINE_LOAD_TASK = 4; // routine load task use this type
-    BATCH_LOAD_JOB    = 5; // load job v2 for broker load
+    LOAD_JOB_SRC_TYPE_UNKNOWN           = 0;
+    LOAD_JOB_SRC_TYPE_FRONTEND          = 1;
+    LOAD_JOB_SRC_TYPE_BACKEND_STREAMING = 2; // streaming load use this type
+    LOAD_JOB_SRC_TYPE_INSERT_STREAMING  = 3; // insert stmt (streaming type), update stmt use this type
+    LOAD_JOB_SRC_TYPE_ROUTINE_LOAD_TASK = 4; // routine load task use this type
+    LOAD_JOB_SRC_TYPE_BATCH_LOAD_JOB    = 5; // load job v2 for broker load
 }
 
 enum TxnStatusPB {
@@ -330,9 +345,18 @@ message CreateInstanceRequest {
     optional string name = 3; // Alias
 }
 
-message AddClusterRequest {
+message AlterClusterRequest {
+    enum Operation {
+        UNKNOWN        = 0;
+        ADD_CLUSTER    = 1;
+        DROP_CLUSTER   = 2;
+        ADD_NODE       = 3;
+        DROP_NODE      = 4;
+        RENAME_CLUSTER = 5;
+    }
     optional string instance_id = 1;
     optional ClusterPB cluster = 2;
+    optional Operation op = 3;
 }
 
 message GetClusterRequest {
@@ -372,13 +396,18 @@ enum MetaServiceCode {
     VERSION_NOT_FOUND = 16;
     CLUSTER_NOT_FOUND = 17;
 
-    ROWSET_ALREADY_EXIST = 18;
+    ROWSET_ALREADY_EXISTED = 18;
+
+    // Resources
+    INSTANCE_ALREADY_EXISTED = 19;
+
+    UNDEFINED_ERR = 100000;
 }
 
 service ResourceManagerService {
 //     rpc get_obj_store_info(GetObjStoreInfoRequest) returns (GetObjStoreInfoResponse);
 //     rpc create_instance(CreateInstanceRequest) returns (MetaServiceGenericResponse);
-//     rpc add_cluster(AddClusterRequest) returns (MetaServiceGenericResponse);
+//     rpc alter_cluster(AlterClusterRequest) returns (MetaServiceGenericResponse);
 //     rpc get_cluster(GetClusterRequest) returns (GetClusterResponse);
 
     // TODO:
@@ -404,10 +433,9 @@ service MetaService {
 
     rpc http(MetaServiceHttpRequest) returns (MetaServiceHttpResponse);
 
-
     rpc get_obj_store_info(GetObjStoreInfoRequest) returns (GetObjStoreInfoResponse);
     rpc create_instance(CreateInstanceRequest) returns (MetaServiceGenericResponse);
-    rpc add_cluster(AddClusterRequest) returns (MetaServiceGenericResponse);
+    rpc alter_cluster(AlterClusterRequest) returns (MetaServiceGenericResponse);
     rpc get_cluster(GetClusterRequest) returns (GetClusterResponse);
 };
 

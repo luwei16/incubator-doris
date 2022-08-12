@@ -172,7 +172,7 @@ public class SystemInfoService {
         newTagMap.put(Tag.CLOUD_CLUSTER_NAME, clusterName);
         newTagMap.put(Tag.CLOUD_CLUSTER_ID, clusterId);
         List<Backend> backends = new ArrayList<>();
-        for (SelectdbCloud.NodeInfoPB node : response.getCluster().getComputeNodeList()) {
+        for (SelectdbCloud.NodeInfoPB node : response.getCluster().getNodesList()) {
             Backend b = new Backend(Env.getCurrentEnv().getNextId(), node.getIp(), node.getHeartbeatPort());
             b.setTagMap(newTagMap);
             backends.add(b);

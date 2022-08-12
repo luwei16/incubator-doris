@@ -3,12 +3,13 @@
 
 #include "gen_cpp/selectdb_cloud.pb.h"
 #include "meta-service/txn_kv.h"
+#include "resource-manager/resource_manager.h"
 
 namespace selectdb {
 
 class MetaServiceImpl : public selectdb::MetaService {
 public:
-    MetaServiceImpl(std::shared_ptr<TxnKv> txn_kv);
+    MetaServiceImpl(std::shared_ptr<TxnKv> txn_kv, std::shared_ptr<ResourceManager> resource_mgr);
     ~MetaServiceImpl() override;
 
     void begin_txn(::google::protobuf::RpcController* controller,
@@ -81,10 +82,10 @@ public:
                          ::selectdb::MetaServiceGenericResponse* response,
                          ::google::protobuf::Closure* done) override;
 
-    void add_cluster(google::protobuf::RpcController* controller,
-                     const ::selectdb::AddClusterRequest* request,
-                     ::selectdb::MetaServiceGenericResponse* response,
-                     ::google::protobuf::Closure* done) override;
+    void alter_cluster(google::protobuf::RpcController* controller,
+                       const ::selectdb::AlterClusterRequest* request,
+                       ::selectdb::MetaServiceGenericResponse* response,
+                       ::google::protobuf::Closure* done) override;
 
     void get_cluster(google::protobuf::RpcController* controller,
                      const ::selectdb::GetClusterRequest* request,
@@ -93,6 +94,7 @@ public:
 
 private:
     std::shared_ptr<TxnKv> txn_kv_;
+    std::shared_ptr<ResourceManager> resource_mgr_;
 };
 
 } // namespace selectdb

@@ -4,6 +4,7 @@
 
 #include "common/config.h"
 #include "meta-service/meta_service.h"
+#include "resource-manager/resource_manager.h"
 
 #include "brpc/server.h"
 
@@ -24,12 +25,19 @@ int MetaServer::start() {
     }
     int ret = txn_kv_->init();
     if (ret != 0) {
-        LOG(WARNING) << "failed to init txnkv";
+        LOG(WARNING) << "failed to init txnkv, ret=" << ret;
+        return 1;
+    }
+
+    auto rc_mgr = std::make_shared<ResourceManager>(txn_kv_);
+    ret = rc_mgr->init();
+    if (ret != 0) {
+        LOG(WARNING) << "failed to init resrouce manager, ret=" << ret;
         return 1;
     }
 
     // Add service
-    auto meta_service = new MetaServiceImpl(txn_kv_);
+    auto meta_service = new MetaServiceImpl(txn_kv_, rc_mgr);
     server_->AddService(meta_service, brpc::SERVER_OWNS_SERVICE);
     // start service
     brpc::ServerOptions options;

@@ -245,7 +245,7 @@ endif()
 # For any gcc builds:
 #   -g: Enable symbols for profiler tools. Produce debugging information in the operating system’s native formt
 #   -Wno-unused-local-typedefs: Do not warn for local typedefs that are unused.
-set(CXX_GCC_FLAGS "${CXX_GCC_FLAGS} -g -Wno-unused-local-typedefs")
+set(CXX_GCC_FLAGS "${CXX_GCC_FLAGS} -ggdb -Wno-unused-local-typedefs")
 
 if (USE_DWARF)
     set(CXX_GCC_FLAGS "${CXX_GCC_FLAGS} -gdwarf-5")
@@ -414,8 +414,13 @@ endif ()
 
 # Add libs if needed, download to current dir -- ${BUILD_DIR}
 if (NOT EXISTS "ldb_lib.xz")
-    execute_process(COMMAND "curl" "https://justtmp-1308700295.cos.ap-hongkong.myqcloud.com/ldb_lib.xz"
-                            "-o" "ldb_lib.xz" "-k")
+    set(FDB_LIB_URL "https://justtmp-1308700295.cos.ap-hongkong.myqcloud.com/ldb_lib.xz")
+    execute_process(COMMAND "curl" "${FDB_LIB_URL}"
+                            "-o" "ldb_lib.xz" "-k"
+                    RESULTS_VARIABLE DOWNLOAD_RET)
+    if (NOT ${DOWNLOAD_RET} STREQUAL "0")
+        message(FATAL_ERROR "Failed to download dependency of fdb ${FDB_LIB_URL}")
+    endif ()
 endif ()
 # Add fdb dependencies
 if (NOT EXISTS ${THIRDPARTY_DIR}/include/foundationdb)

@@ -258,9 +258,10 @@ public class CloudGlobalTransactionMgr implements GlobalTransactionMgrInterface 
 
         TNetworkAddress metaAddress = getMetaSerivceAddress();
         CommitTxnRequest.Builder builder = CommitTxnRequest.newBuilder();
-        builder.setDbId(dbId);
-        builder.setTxnId(transactionId);
-        builder.setIs2Pc(is2PC);
+        builder.setDbId(dbId)
+                .setTxnId(transactionId)
+                .setIs2Pc(is2PC)
+                .setCloudUniqueId(Config.cloud_unique_id);
 
         if (txnCommitAttachment != null) {
             if (txnCommitAttachment instanceof LoadJobFinalOperation) {
@@ -290,6 +291,9 @@ public class CloudGlobalTransactionMgr implements GlobalTransactionMgrInterface 
             CommitTxnResponse commitTxnResponse = MetaServiceProxy
                     .getInstance().commitTxn(metaAddress, commitTxnRequest);
             LOG.info("commitTxnResponse: {}", commitTxnResponse);
+            if (commitTxnResponse.getStatus().getCode() != MetaServiceCode.OK) {
+                throw new Exception(commitTxnResponse.getStatus().getMsg());
+            }
             TxnStateChangeCallback cb = callbackFactory.getCallback(state.getCallbackId());
             if (cb == null) {
                 LOG.info("no callback to run for this txn, txnId={} callbackId={}", transactionId,
@@ -301,8 +305,9 @@ public class CloudGlobalTransactionMgr implements GlobalTransactionMgrInterface 
             cb.afterCommitted(state, true);
             state.setTransactionStatus(TransactionStatus.VISIBLE);
             cb.afterVisible(state, true);
-        } catch (RpcException e) {
+        } catch (Exception e) {
             state.setTransactionStatus(TransactionStatus.ABORTED);
+            LOG.info("failed to commit txn {}", e.getMessage(), e);
             throw new RuntimeException(e);
         }
     }

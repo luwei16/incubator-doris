@@ -3557,7 +3557,8 @@ public class InternalDataSource implements DataSourceIf<Database> {
                 OlapFile.TabletMetaPB tabletMetaPb = builder.build();
                 SelectdbCloud.CreateTabletRequest.Builder requestBuilder
                         = SelectdbCloud.CreateTabletRequest.newBuilder();
-                requestBuilder.setTabletMeta(tabletMetaPb);
+                requestBuilder.setTabletMeta(tabletMetaPb)
+                              .setCloudUniqueId(Config.cloud_unique_id);
                 SelectdbCloud.CreateTabletRequest createTableReq = requestBuilder.build();
                 LOG.info("lw test debug req: {} ", createTableReq.toString());
 

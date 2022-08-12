@@ -80,11 +80,11 @@ public class CloudClusterChecker extends MasterDaemon {
                          Config.cloud_unique_id, clusterId, response);
                 continue;
             }
-            LOG.info("get cloud cluster, clusterId={} nodes={}", clusterId, response.getCluster().getComputeNodeList());
+            LOG.info("get cloud cluster, clusterId={} nodes={}", clusterId, response.getCluster().getNodesList());
             List<Backend> currentBes = clusterIdToBackend.get(clusterId);
             List<Backend> toAdd = new ArrayList<>();
             List<Backend> toDel = new ArrayList<>();
-            List<SelectdbCloud.NodeInfoPB> expectedBes = response.getCluster().getComputeNodeList();
+            List<SelectdbCloud.NodeInfoPB> expectedBes = response.getCluster().getNodesList();
             diffBackends(expectedBes, currentBes, toAdd, toDel);
             if (toAdd.isEmpty() && toDel.isEmpty()) {
                 LOG.debug("runAfterCatalogReady nothing todo");

@@ -15,6 +15,7 @@
 #include <memory>
 #include <string>
 #include <sstream>
+#include <type_traits>
 // clang-format on
 
 using namespace std::chrono;
@@ -23,11 +24,36 @@ namespace selectdb {
 
 static constexpr uint32_t VERSION_STAMP_LEN = 10;
 
-MetaServiceImpl::MetaServiceImpl(std::shared_ptr<TxnKv> txn_kv) {
+MetaServiceImpl::MetaServiceImpl(std::shared_ptr<TxnKv> txn_kv,
+                                 std::shared_ptr<ResourceManager> resource_mgr) {
     txn_kv_ = txn_kv;
+    resource_mgr_ = resource_mgr;
 }
 
 MetaServiceImpl::~MetaServiceImpl() {}
+
+// FIXME(gavin): should it be a member function of ResourceManager?
+static std::string get_instance_id(const std::shared_ptr<ResourceManager>& rc_mgr,
+                                   const std::string& cloud_unique_id) {
+    std::vector<NodeInfo> nodes;
+    std::string err = rc_mgr->get_node(cloud_unique_id, &nodes);
+    if (!err.empty()) {
+        LOG(INFO) << "failed to check instance info, err=" << err;
+        return "";
+    }
+
+    std::string instance_id;
+    for (auto& i : nodes) {
+        if (!instance_id.empty() && instance_id != i.instance_id) {
+            LOG(WARNING) << "cloud_unique_id is one-to-many instance_id, "
+                         << " cloud_unique_id=" << cloud_unique_id
+                         << " current_instance_id=" << instance_id
+                         << " later_instance_id=" << i.instance_id;
+        }
+        instance_id = i.instance_id; // The last wins
+    }
+    return instance_id;
+}
 
 //TODO: we need move begin/commit etc txn to TxnManager
 void MetaServiceImpl::begin_txn(::google::protobuf::RpcController* controller,
@@ -77,7 +103,17 @@ void MetaServiceImpl::begin_txn(::google::protobuf::RpcController* controller,
         return;
     }
 
-    std::string instance_id = "instance_id_deadbeef";
+    std::string cloud_unique_id = request->cloud_unique_id();
+    std::string instance_id = get_instance_id(resource_mgr_, cloud_unique_id);
+    if (instance_id.empty()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        ss << "cannot find instance_id with cloud_unique_id="
+           << (cloud_unique_id.empty() ? "(empty)" : cloud_unique_id);
+        msg = ss.str();
+        LOG(INFO) << msg;
+        return;
+    }
+
     std::string txn_idx_key;
     std::string txn_idx_val;
 
@@ -297,7 +333,6 @@ void MetaServiceImpl::precommit_txn(::google::protobuf::RpcController* controlle
     int ret = 0;
     MetaServiceCode code = MetaServiceCode::OK;
     std::string msg = "OK";
-    std::string instance_id = "instance_id_deadbeef";
     [[maybe_unused]] std::stringstream ss;
     std::unique_ptr<int, std::function<void(int*)>> defer_status(
             (int*)0x01, [&code, &msg, &response, &ctrl](int*) {
@@ -306,6 +341,13 @@ void MetaServiceImpl::precommit_txn(::google::protobuf::RpcController* controlle
                 LOG(INFO) << "finish " << __PRETTY_FUNCTION__ << " " << ctrl->remote_side() << " "
                           << msg;
             });
+    std::string instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
+    if (instance_id.empty()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "empty instance_id";
+        LOG(INFO) << msg << ", cloud_unique_id=" << request->cloud_unique_id();
+        return;
+    }
     std::unique_ptr<Transaction> txn;
     ret = txn_kv_->create_txn(&txn);
     if (ret != 0) {
@@ -436,7 +478,6 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
     int ret = 0;
     MetaServiceCode code = MetaServiceCode::OK;
     std::string msg = "OK";
-    std::string instance_id = "instance_id_deadbeef";
     [[maybe_unused]] std::stringstream ss;
     std::unique_ptr<int, std::function<void(int*)>> defer_status(
             (int*)0x01, [&code, &msg, &response, &ctrl](int*) {
@@ -445,6 +486,13 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
                 LOG(INFO) << "finish " << __PRETTY_FUNCTION__ << " " << ctrl->remote_side() << " "
                           << msg;
             });
+    std::string instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
+    if (instance_id.empty()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "empty instance_id";
+        LOG(INFO) << msg << ", cloud_unique_id=" << request->cloud_unique_id();
+        return;
+    }
 
     std::unique_ptr<Transaction> txn;
     ret = txn_kv_->create_txn(&txn);
@@ -679,7 +727,7 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
         msg = "failed to save tablet meta";
         return;
     }
-    response->set_allocated_txn_info(&txn_info);
+    response->mutable_txn_info()->CopyFrom(txn_info);
 }
 
 void MetaServiceImpl::abort_txn(::google::protobuf::RpcController* controller,
@@ -693,7 +741,6 @@ void MetaServiceImpl::abort_txn(::google::protobuf::RpcController* controller,
     int ret = 0;
     MetaServiceCode code = MetaServiceCode::OK;
     std::string msg = "OK";
-    std::string instance_id = "instance_id_deadbeef";
     [[maybe_unused]] std::stringstream ss;
     std::unique_ptr<int, std::function<void(int*)>> defer_status(
             (int*)0x01, [&code, &msg, &response, &ctrl](int*) {
@@ -702,6 +749,13 @@ void MetaServiceImpl::abort_txn(::google::protobuf::RpcController* controller,
                 LOG(INFO) << "finish " << __PRETTY_FUNCTION__ << " " << ctrl->remote_side() << " "
                           << msg;
             });
+    std::string instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
+    if (instance_id.empty()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "empty instance_id";
+        LOG(INFO) << msg << ", cloud_unique_id=" << request->cloud_unique_id();
+        return;
+    }
 
     // Get txn id
     int64_t txn_id = request->has_txn_id() ? request->txn_id() : -1;
@@ -930,8 +984,16 @@ void MetaServiceImpl::get_version(::google::protobuf::RpcController* controller,
         return;
     }
 
+    std::string instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
+    if (instance_id.empty()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "empty instance_id";
+        LOG(INFO) << msg << ", cloud_unique_id=" << request->cloud_unique_id();
+        return;
+    }
+
     // TODO(dx): fix it, use instance_id later.
-    VersionKeyInfo ver_key_info {"instance_id_deadbeef", db_id, table_id, partition_id};
+    VersionKeyInfo ver_key_info {instance_id, db_id, table_id, partition_id};
     std::string ver_key;
     version_key(ver_key_info, &ver_key);
 
@@ -983,6 +1045,13 @@ void MetaServiceImpl::create_tablet(::google::protobuf::RpcController* controlle
         code = MetaServiceCode::INVALID_ARGUMENT;
         return;
     }
+    std::string instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
+    if (instance_id.empty()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "empty instance_id";
+        LOG(INFO) << msg << ", cloud_unique_id=" << request->cloud_unique_id();
+        return;
+    }
 
     auto& tablet_meta = const_cast<doris::TabletMetaPB&>(request->tablet_meta());
     // TODO:
@@ -1002,7 +1071,7 @@ void MetaServiceImpl::create_tablet(::google::protobuf::RpcController* controlle
     std::unique_ptr<Transaction> txn;
     ret = txn_kv_->create_txn(&txn);
 
-    MetaTabletKeyInfo key_info {"instance_id_deadbeef", table_id, tablet_id};
+    MetaTabletKeyInfo key_info {instance_id, table_id, tablet_id};
     std::string key;
     std::string val;
     meta_tablet_key(key_info, &key);
@@ -1018,8 +1087,7 @@ void MetaServiceImpl::create_tablet(::google::protobuf::RpcController* controlle
     std::string rs_key;
     std::string rs_val;
     if (has_first_rowset) {
-        MetaRowsetKeyInfo rs_key_info {"instance_id_deadbeef", tablet_id,
-                                       first_rowset.end_version()};
+        MetaRowsetKeyInfo rs_key_info {instance_id, tablet_id, first_rowset.end_version()};
         meta_rowset_key(rs_key_info, &rs_key);
         if (!first_rowset.SerializeToString(&rs_val)) {
             code = MetaServiceCode::PROTOBUF_SERIALIZE_ERR;
@@ -1033,7 +1101,7 @@ void MetaServiceImpl::create_tablet(::google::protobuf::RpcController* controlle
     // Index tablet_id -> table_id
     std::string key1;
     std::string val1(reinterpret_cast<char*>(&table_id), sizeof(table_id));
-    MetaTabletTblKeyInfo key_info1 {"instance_id_deadbeef", tablet_id};
+    MetaTabletTblKeyInfo key_info1 {instance_id, tablet_id};
     meta_tablet_table_key(key_info1, &key1);
     txn->put(key1, val1);
     LOG(INFO) << "xxx put tablet_table_key=" << hex(key);
@@ -1068,13 +1136,20 @@ void MetaServiceImpl::get_tablet(::google::protobuf::RpcController* controller,
                 LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
                           << ctrl->remote_side() << " " << msg;
             });
+    std::string instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
+    if (instance_id.empty()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "empty instance_id";
+        LOG(INFO) << msg << ", cloud_unique_id=" << request->cloud_unique_id();
+        return;
+    }
 
     std::unique_ptr<Transaction> txn;
     ret = txn_kv_->create_txn(&txn);
 
     // TODO: validate request
     int64_t tablet_id = request->tablet_id();
-    MetaTabletTblKeyInfo key_info0 {"instance_id_deadbeef", tablet_id};
+    MetaTabletTblKeyInfo key_info0 {instance_id, tablet_id};
     std::string key0;
     std::string val0;
     meta_tablet_table_key(key_info0, &key0);
@@ -1086,7 +1161,7 @@ void MetaServiceImpl::get_tablet(::google::protobuf::RpcController* controller,
     }
 
     int64_t table_id = *reinterpret_cast<int64_t*>(val0.data());
-    MetaTabletKeyInfo key_info1 {"instance_id_deadbeef", table_id, tablet_id};
+    MetaTabletKeyInfo key_info1 {instance_id, table_id, tablet_id};
     std::string key1;
     std::string val1;
     meta_tablet_key(key_info1, &key1);
@@ -1135,6 +1210,13 @@ void MetaServiceImpl::prepare_rowset(::google::protobuf::RpcController* controll
         msg = "no rowset meta";
         return;
     }
+    std::string instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
+    if (instance_id.empty()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "empty instance_id";
+        LOG(INFO) << msg << ", cloud_unique_id=" << request->cloud_unique_id();
+        return;
+    }
     // temporary == true is for loading rowset from user,
     // temporary == false is for doris internal rowset put, such as data conversion in schema change procedure.
     bool temporary = request->has_temporary() ? request->temporary() : false;
@@ -1147,10 +1229,10 @@ void MetaServiceImpl::prepare_rowset(::google::protobuf::RpcController* controll
 
     if (temporary) {
         int64_t txn_id = request->rowset_meta().txn_id();
-        MetaRowsetTmpKeyInfo key_info {"instance_id_deadbeef", txn_id, tablet_id};
+        MetaRowsetTmpKeyInfo key_info {instance_id, txn_id, tablet_id};
         meta_rowset_tmp_key(key_info, &commit_key);
     } else {
-        MetaRowsetKeyInfo key_info {"instance_id_deadbeef", tablet_id, end_version};
+        MetaRowsetKeyInfo key_info {instance_id, tablet_id, end_version};
         meta_rowset_key(key_info, &commit_key);
     }
 
@@ -1165,7 +1247,7 @@ void MetaServiceImpl::prepare_rowset(::google::protobuf::RpcController* controll
     // Check if commit key already exists.
     ret = txn->get(commit_key, &commit_val);
     if (ret == 0) {
-        code = MetaServiceCode::ROWSET_ALREADY_EXIST;
+        code = MetaServiceCode::ROWSET_ALREADY_EXISTED;
         msg = "rowset already exists";
         return;
     }
@@ -1177,7 +1259,7 @@ void MetaServiceImpl::prepare_rowset(::google::protobuf::RpcController* controll
 
     std::string prepare_key;
     std::string prepare_val;
-    RecycleRowsetKeyInfo prepare_key_info {"instance_id_deadbeef", tablet_id, rowset_id};
+    RecycleRowsetKeyInfo prepare_key_info {instance_id, tablet_id, rowset_id};
     recycle_rowset_key(prepare_key_info, &prepare_key);
     RecycleRowsetPB prepare_rowset;
     prepare_rowset.set_obj_bucket(request->rowset_meta().s3_bucket());
@@ -1197,10 +1279,12 @@ void MetaServiceImpl::prepare_rowset(::google::protobuf::RpcController* controll
 }
 
 /**
- * 0. Construct the corresponding rowset commit_key and commit_value according to the info in request
+ * 0. Construct the corresponding rowset commit_key and commit_value according
+ *    to the info in request
  * 1. Check whether this rowset has already been committed through commit_key
  *     a. if has been committed
- *         1. if committed value is same with commit_value, it may be a redundant retry request, return ok
+ *         1. if committed value is same with commit_value, it may be a redundant
+ *            retry request, return ok
  *         2. else, abort commit_rowset 
  *     b. else, goto 2
  * 2. Construct the corresponding rowset prepare_key(recycle rowset)
@@ -1228,6 +1312,13 @@ void MetaServiceImpl::commit_rowset(::google::protobuf::RpcController* controlle
         msg = "no rowset meta";
         return;
     }
+    std::string instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
+    if (instance_id.empty()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "empty instance_id";
+        LOG(INFO) << msg << ", cloud_unique_id=" << request->cloud_unique_id();
+        return;
+    }
     // temporary == true is for loading rowset from user,
     // temporary == false is for doris internal rowset put, such as data conversion in schema change procedure.
     bool temporary = request->has_temporary() ? request->temporary() : false;
@@ -1240,10 +1331,10 @@ void MetaServiceImpl::commit_rowset(::google::protobuf::RpcController* controlle
 
     if (temporary) {
         int64_t txn_id = request->rowset_meta().txn_id();
-        MetaRowsetTmpKeyInfo key_info {"instance_id_deadbeef", txn_id, tablet_id};
+        MetaRowsetTmpKeyInfo key_info {instance_id, txn_id, tablet_id};
         meta_rowset_tmp_key(key_info, &commit_key);
     } else {
-        MetaRowsetKeyInfo key_info {"instance_id_deadbeef", tablet_id, end_version};
+        MetaRowsetKeyInfo key_info {instance_id, tablet_id, end_version};
         meta_rowset_key(key_info, &commit_key);
     }
 
@@ -1269,7 +1360,7 @@ void MetaServiceImpl::commit_rowset(::google::protobuf::RpcController* controlle
             // Same request, return OK
             return;
         }
-        code = MetaServiceCode::ROWSET_ALREADY_EXIST;
+        code = MetaServiceCode::ROWSET_ALREADY_EXISTED;
         msg = "rowset already exists";
         return;
     }
@@ -1280,7 +1371,7 @@ void MetaServiceImpl::commit_rowset(::google::protobuf::RpcController* controlle
     }
 
     std::string prepare_key;
-    RecycleRowsetKeyInfo prepare_key_info {"instance_id_deadbeef", tablet_id, rowset_id};
+    RecycleRowsetKeyInfo prepare_key_info {instance_id, tablet_id, rowset_id};
     recycle_rowset_key(prepare_key_info, &prepare_key);
 
     if (!request->rowset_meta().SerializeToString(&commit_val)) {
@@ -1320,6 +1411,13 @@ void MetaServiceImpl::get_rowset(::google::protobuf::RpcController* controller,
                           << ctrl->remote_side() << " " << msg;
             });
 
+    std::string instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
+    if (instance_id.empty()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "empty instance_id";
+        LOG(INFO) << msg << ", cloud_unique_id=" << request->cloud_unique_id();
+        return;
+    }
     int64_t tablet_id = request->tablet_id();
     int64_t start = request->start_version();
     int64_t end = request->end_version();
@@ -1329,8 +1427,8 @@ void MetaServiceImpl::get_rowset(::google::protobuf::RpcController* controller,
     ret = txn_kv_->create_txn(&txn);
 
     // TODO: validate request
-    MetaRowsetKeyInfo key_info0 {"instance_id_deadbeef", tablet_id, start};
-    MetaRowsetKeyInfo key_info1 {"instance_id_deadbeef", tablet_id, end + 1};
+    MetaRowsetKeyInfo key_info0 {instance_id, tablet_id, start};
+    MetaRowsetKeyInfo key_info1 {instance_id, tablet_id, end + 1};
     std::string key0;
     std::string key1;
     meta_rowset_key(key_info0, &key0);
@@ -1464,16 +1562,17 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
     }
 
     if (unresolved_path == "add_cluster") {
-        AddClusterRequest req;
+        AlterClusterRequest req;
         auto st = google::protobuf::util::JsonStringToMessage(request_body, &req);
         if (!st.ok()) {
-            msg = "failed to parse AddClusterRequest, error: " + st.message().ToString();
+            msg = "failed to parse AlterClusterRequest, error: " + st.message().ToString();
             response_body = msg;
             LOG(WARNING) << msg;
             return;
         }
+        req.set_op(AlterClusterRequest::ADD_CLUSTER);
         MetaServiceGenericResponse res;
-        add_cluster(cntl, &req, &res, nullptr);
+        alter_cluster(cntl, &req, &res, nullptr);
         ret = res.status().code();
         msg = res.status().msg();
         response_body = msg;
@@ -1492,6 +1591,24 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
         }
         GetClusterResponse res;
         get_cluster(cntl, &req, &res, nullptr);
+        ret = res.status().code();
+        msg = res.status().msg();
+        response_body = msg;
+        return;
+    }
+
+    if (unresolved_path == "drop_cluster") {
+        AlterClusterRequest req;
+        auto st = google::protobuf::util::JsonStringToMessage(request_body, &req);
+        if (!st.ok()) {
+            msg = "failed to parse AlterClusterRequest, error: " + st.message().ToString();
+            response_body = msg;
+            LOG(WARNING) << msg;
+            return;
+        }
+        req.set_op(AlterClusterRequest::DROP_CLUSTER);
+        MetaServiceGenericResponse res;
+        alter_cluster(cntl, &req, &res, nullptr);
         ret = res.status().code();
         msg = res.status().msg();
         response_body = msg;
@@ -1544,8 +1661,6 @@ void MetaServiceImpl::create_instance(google::protobuf::RpcController* controlle
         return;
     }
 
-    // TODO: check existence before proceeding
-
     InstanceKeyInfo key_info {request->instance_id()};
     std::string key;
     std::string val = instance.SerializeAsString();
@@ -1557,11 +1672,7 @@ void MetaServiceImpl::create_instance(google::protobuf::RpcController* controlle
         return;
     }
 
-    LOG(INFO) << "xxx instance json=" << ([&] {
-        std::string str;
-        google::protobuf::util::MessageToJsonString(instance, &str);
-        return str;
-    }());
+    LOG(INFO) << "xxx instance json=" << proto_to_json(instance);
 
     std::unique_ptr<Transaction> txn;
     ret = txn_kv_->create_txn(&txn);
@@ -1572,29 +1683,44 @@ void MetaServiceImpl::create_instance(google::protobuf::RpcController* controlle
         return;
     }
 
+    // Check existence before proceeding
+    ret = txn->get(key, &val);
+    if (ret != 1) {
+        std::stringstream ss;
+        ss << (ret == 0 ? "instance already existed" : "internal error failed to check instance")
+           << ", instance_id=" << request->instance_id();
+        code = ret == 0 ? MetaServiceCode::INSTANCE_ALREADY_EXISTED
+                        : MetaServiceCode::UNDEFINED_ERR;
+        msg = ss.str();
+        LOG(WARNING) << msg << " ret=" << ret;
+        return;
+    }
+
     txn->put(key, val);
-    LOG(INFO) << "put instance_key=" << hex(key);
+    LOG(INFO) << "put instance_id=" << request->instance_id() << " instance_key=" << hex(key);
     ret = txn->commit();
     if (ret != 0) {
         code = MetaServiceCode::KV_TXN_COMMIT_ERR;
-        msg = "failed to commit txn";
+        msg = "failed to commit kv txn";
         LOG(WARNING) << msg << " ret=" << ret;
     }
 }
 
-void MetaServiceImpl::add_cluster(google::protobuf::RpcController* controller,
-                                  const ::selectdb::AddClusterRequest* request,
-                                  ::selectdb::MetaServiceGenericResponse* response,
-                                  ::google::protobuf::Closure* done) {
+// Current implementation for adding an existing cluster is "the last wins"
+void MetaServiceImpl::alter_cluster(google::protobuf::RpcController* controller,
+                                    const ::selectdb::AlterClusterRequest* request,
+                                    ::selectdb::MetaServiceGenericResponse* response,
+                                    ::google::protobuf::Closure* done) {
     auto ctrl = static_cast<brpc::Controller*>(controller);
     LOG(INFO) << "rpc from " << ctrl->remote_side() << " request=" << request->DebugString();
     brpc::ClosureGuard closure_guard(done);
     int ret = 0;
     MetaServiceCode code = MetaServiceCode::OK;
-    std::string msg = "OK";
+    std::string msg;
     [[maybe_unused]] std::stringstream ss;
     std::unique_ptr<int, std::function<void(int*)>> defer_status(
             (int*)0x01, [&ret, &code, &msg, &response, &ctrl](int*) {
+                msg = msg.empty() ? "OK" : msg;
                 response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
                 LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
@@ -1607,71 +1733,41 @@ void MetaServiceImpl::add_cluster(google::protobuf::RpcController* controller,
         return;
     }
 
-    std::string instance_id = request->instance_id();
-
-    InstanceKeyInfo key_info {instance_id};
-    std::string key;
-    std::string val;
-    instance_key(key_info, &key);
-
-    std::unique_ptr<Transaction> txn;
-    ret = txn_kv_->create_txn(&txn);
-    if (ret != 0) {
-        code = MetaServiceCode::KV_TXN_CREATE_ERR;
-        msg = "failed to create txn";
-        LOG(WARNING) << msg << " ret=" << ret;
+    if (!request->has_op()) {
+        msg = "op not given";
+        code = MetaServiceCode::INVALID_ARGUMENT;
         return;
     }
-    ret = txn->get(key, &val);
-    LOG(INFO) << "get instnace_key=" << hex(key);
 
-    if (ret != 0) {
-        code = MetaServiceCode::KV_TXN_GET_ERR;
-        ss << "failed to get intancece, instance_id=" << instance_id << " ret=" << ret;
+    std::string instance_id = request->instance_id();
+    LOG(INFO) << "alter cluster instance_id=" << instance_id << " op=" << request->op();
+    ClusterInfo cluster;
+    cluster.cluster.CopyFrom(request->cluster());
+
+    switch (request->op()) {
+    case AlterClusterRequest::ADD_CLUSTER: {
+        msg = resource_mgr_->add_cluster(instance_id, cluster);
+    } break;
+    case AlterClusterRequest::DROP_CLUSTER: {
+        msg = resource_mgr_->drop_cluster(instance_id, cluster);
+    } break;
+    case AlterClusterRequest::ADD_NODE: {
+    } break;
+    case AlterClusterRequest::DROP_NODE: {
+    } break;
+    case AlterClusterRequest::RENAME_CLUSTER: {
+    } break;
+    default: {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        ss << "invalid request op, op=" << request->op();
         msg = ss.str();
         return;
     }
-
-    InstanceInfoPB instance;
-    if (!instance.ParseFromString(val)) {
-        msg = "failed to parse InstanceInfoPB";
-        code = MetaServiceCode::PROTOBUF_PARSE_ERR;
-        return;
+    }
+    if (!msg.empty()) {
+        code = MetaServiceCode::UNDEFINED_ERR;
     }
 
-    google::protobuf::util::JsonPrintOptions opts;
-    opts.preserve_proto_field_names = true;
-    LOG(INFO) << "xxx cluster to add json=" << ([&] {
-        std::string str;
-        google::protobuf::util::MessageToJsonString(request->cluster(), &str);
-        return str;
-    }());
-    LOG(INFO) << "xxx instance json=" << ([&] {
-        std::string str;
-        google::protobuf::util::MessageToJsonString(instance, &str);
-        return str;
-    }());
-
-    // TODO:
-    // do some check before adding, dedup is needed
-    instance.add_clusters()->CopyFrom(request->cluster());
-    LOG(INFO) << "instance " << instance_id << " has " << instance.clusters().size() << " clusters";
-
-    val = instance.SerializeAsString();
-    if (val.empty()) {
-        code = MetaServiceCode::PROTOBUF_SERIALIZE_ERR;
-        msg = "failed to serialize";
-        return;
-    }
-
-    txn->put(key, val);
-    LOG(INFO) << "put instnace_key=" << hex(key);
-    ret = txn->commit();
-    if (ret != 0) {
-        code = MetaServiceCode::KV_TXN_COMMIT_ERR;
-        msg = "failed to commit txn";
-        LOG(WARNING) << msg << " ret=" << ret;
-    }
 } // add cluster
 
 void MetaServiceImpl::get_cluster(google::protobuf::RpcController* controller,
@@ -1693,7 +1789,6 @@ void MetaServiceImpl::get_cluster(google::protobuf::RpcController* controller,
                           << ctrl->remote_side() << " " << msg;
             });
 
-    std::string instance_id = request->has_instance_id() ? request->instance_id() : "";
     std::string cloud_unique_id = request->has_cloud_unique_id() ? request->cloud_unique_id() : "";
     std::string cluster_id = request->has_cluster_id() ? request->cluster_id() : "";
     std::string cluster_name = request->has_cluster_name() ? request->cluster_name() : "";
@@ -1702,6 +1797,22 @@ void MetaServiceImpl::get_cluster(google::protobuf::RpcController* controller,
         code = MetaServiceCode::INVALID_ARGUMENT;
         msg = "cloud_unique_id must be given";
         return;
+    }
+
+    std::string instance_id = get_instance_id(resource_mgr_, cloud_unique_id);
+    if (instance_id.empty()) {
+        if (request->has_instance_id()) {
+            instance_id = request->instance_id();
+            // FIXME(gavin): this mechanism benifits debugging and
+            //               administration, is it dangerous?
+            LOG(WARNING) << "failed to get instance_id with cloud_unique_id=" << cloud_unique_id
+                         << " use the given instance_id=" << instance_id << " instead";
+        } else {
+            code = MetaServiceCode::INVALID_ARGUMENT;
+            msg = "empty instance_id";
+            LOG(INFO) << msg << ", cloud_unique_id=" << cloud_unique_id;
+            return;
+        }
     }
 
     if (cluster_id.empty() && cluster_name.empty()) {
@@ -1756,10 +1867,9 @@ void MetaServiceImpl::get_cluster(google::protobuf::RpcController* controller,
             response->mutable_cluster()->CopyFrom(c);
             google::protobuf::util::JsonPrintOptions opts;
             opts.preserve_proto_field_names = true;
-            std::string str;
-            google::protobuf::util::MessageToJsonString(response->cluster(), &str, opts);
-            msg = str;
-            LOG(INFO) << "found a cluster=" << str;
+            std::string json = proto_to_json(response->cluster());
+            msg = json;
+            LOG(INFO) << "found a cluster=" << json;
         }
     }
 

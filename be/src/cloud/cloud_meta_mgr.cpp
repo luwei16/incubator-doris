@@ -117,7 +117,7 @@ Status CloudMetaMgr::prepare_rowset(const RowsetMetaSharedPtr& rs_meta, bool is_
     }
     if (resp.status().code() == selectdb::MetaServiceCode::OK) {
         return Status::OK();
-    } else if (resp.status().code() == selectdb::MetaServiceCode::ROWSET_ALREADY_EXIST) {
+    } else if (resp.status().code() == selectdb::MetaServiceCode::ROWSET_ALREADY_EXISTED) {
         return Status::AlreadyExist("failed to prepare rowset: {}", resp.status().msg());
     }
     return Status::InternalError("failed to prepare rowset: {}", resp.status().msg());
@@ -138,7 +138,7 @@ Status CloudMetaMgr::commit_rowset(const RowsetMetaSharedPtr& rs_meta, bool is_t
     }
     if (resp.status().code() == selectdb::MetaServiceCode::OK) {
         return Status::OK();
-    } else if (resp.status().code() == selectdb::MetaServiceCode::ROWSET_ALREADY_EXIST) {
+    } else if (resp.status().code() == selectdb::MetaServiceCode::ROWSET_ALREADY_EXISTED) {
         return Status::AlreadyExist("failed to commit rowset: {}", resp.status().msg());
     }
     return Status::InternalError("failed to commit rowset: {}", resp.status().msg());

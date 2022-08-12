@@ -3,6 +3,10 @@
 
 #include <string>
 
+namespace google::protobuf {
+class Message;
+}
+
 namespace selectdb {
 
 std::string hex(std::string_view str);
@@ -30,6 +34,13 @@ std::string unhex(std::string_view str);
  * @return the pretty format, empty result if error occurs
  */
 std::string prettify_key(std::string_view key_hex, bool unicode = false);
+
+/**
+ * Converts proto message to json string
+ *
+ * @return empty string if conversion failed
+ */
+std::string proto_to_json(const ::google::protobuf::Message& msg);
 
 } // namespace selectdb
 

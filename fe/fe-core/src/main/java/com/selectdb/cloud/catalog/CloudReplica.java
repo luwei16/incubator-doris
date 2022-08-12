@@ -55,8 +55,14 @@ public class CloudReplica extends Replica {
         }
 
         if (cluster == null || cluster.isEmpty()) {
-            cluster = Env.getCurrentSystemInfo().getCloudClusterNames().stream()
+            try {
+                cluster = Env.getCurrentSystemInfo().getCloudClusterNames().stream()
                                                     .filter(i -> !i.isEmpty()).findFirst().get();
+            } catch (Exception e) {
+                LOG.warn("failed to get cluster, clusterNames={}",
+                         Env.getCurrentSystemInfo().getCloudClusterNames(), e);
+                return -1;
+            }
         }
 
         // No cluster right now

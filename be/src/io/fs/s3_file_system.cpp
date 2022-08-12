@@ -150,7 +150,7 @@ Status S3FileSystem::open_file(const Path& path, FileReaderSPtr* reader) {
     auto key = get_key(path);
     auto fs_path = Path(_s3_conf.endpoint) / _s3_conf.bucket / key;
     *reader = std::make_shared<S3FileReader>(std::move(fs_path), fsize, std::move(key),
-                                                  _s3_conf.bucket, this);
+                                             _s3_conf.bucket, this);
     if (config::enable_file_cache) {
         *reader = std::make_shared<CachedRemoteFileReader>(std::move(*reader));
     }

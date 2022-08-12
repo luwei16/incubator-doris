@@ -17,7 +17,6 @@ add_library(MetaService
     doris_txn.cpp
 )
 
-
 if (${MAKE_TEST} STREQUAL "OFF")
     add_executable(meta_service
         meta_service_main.cpp
@@ -28,6 +27,7 @@ if (${MAKE_TEST} STREQUAL "OFF")
 
     target_link_libraries(meta_service
         MetaService
+        ResourceManager
         ${DORIS_LINK_LIBS}
     )
 
