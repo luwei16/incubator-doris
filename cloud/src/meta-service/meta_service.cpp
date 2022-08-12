@@ -4,11 +4,13 @@
 #include "meta-service/doris_txn.h"
 #include "meta-service/keys.h"
 #include "common/config.h"
+#include "common/logging.h"
 #include "common/util.h"
 
 #include "brpc/closure_guard.h"
 #include "brpc/controller.h"
 #include "google/protobuf/util/json_util.h"
+
 
 #include <chrono>
 #include <limits>

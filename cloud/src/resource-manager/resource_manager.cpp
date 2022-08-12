@@ -2,9 +2,9 @@
 // clang-format off
 #include "resource_manager.h"
 #include "meta-service/keys.h"
+#include "common/logging.h"
 #include "common/util.h"
 
-#include "glog/logging.h"
 
 #include <sstream>
 // clang-format on

@@ -166,6 +166,7 @@ extern std::map<std::string, std::string>* full_conf_map;
 // If fill_conf_map is true, the updated config will also update the `full_conf_map`.
 // If must_exist is true and `conf_file` does not exist, this function will return false.
 // If set_to_default is true, the config value will be set to default value if not found in `conf_file`.
+// Return ture if load
 bool init(const char* conf_file, bool fill_conf_map = false, bool must_exist = true,
           bool set_to_default = true);
 

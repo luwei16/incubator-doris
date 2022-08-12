@@ -26,7 +26,14 @@ CONF_Int32(brpc_listen_port, "5000");
 CONF_Int32(brpc_num_threads, "-1");
 CONF_String(fdb_cluster_file_path, "./conf/fdb.cluster");
 CONF_String(http_token, "greedisgood9999");
-// CONF_Int64(a, "1073741824");
-// CONF_Bool(b, "true");
+
+// logging
+CONF_String(log_dir, "./log/");
+CONF_String(log_level, "info"); // info warn error fatal
+CONF_Int64(log_size_mb, "1024");
+CONF_Int32(log_filenum_quota, "10");
+CONF_Bool(log_immediate_flush, "false");
+CONF_Strings(log_verbose_modules, ""); // Comma seprated list: a.*,b.*
+CONF_Int32(log_verbose_level, "5");
 
 } // namespace selectdb::config

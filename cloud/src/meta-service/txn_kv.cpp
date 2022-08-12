@@ -3,9 +3,8 @@
 #include "txn_kv.h"
 
 #include "common/config.h"
+#include "common/logging.h"
 #include "common/util.h"
-
-#include "glog/logging.h"
 
 #include <atomic>
 #include <iomanip>
@@ -69,7 +68,7 @@ int Network::init() {
     // Optional setting
     // FDBNetworkOption opt;
     // fdb_network_set_option()
-    (void) opt_;
+    (void)opt_;
     err = fdb_setup_network(); // Must be called only once before any
                                // other functions of C-API
     if (err) return 1;
@@ -274,8 +273,8 @@ int Transaction::commit() {
 
 int64_t Transaction::get_read_version() {
     auto fut = fdb_transaction_get_read_version(txn_);
-    std::unique_ptr<int, std::function<void(int*)>> defer((int*)0x01, 
-                                       [fut](...) { fdb_future_destroy(fut); });
+    std::unique_ptr<int, std::function<void(int*)>> defer((int*)0x01,
+                                                          [fut](...) { fdb_future_destroy(fut); });
     auto err = fdb_future_block_until_ready(fut);
     if (err) {
         LOG(WARNING) << " " << fdb_get_error(err);
