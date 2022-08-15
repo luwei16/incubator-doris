@@ -94,13 +94,14 @@ public:
         return _fs.get();
     }
 
-    void set_fs(io::FileSystemPtr fs) { _fs = std::move(fs); }
+    void set_fs(io::FileSystemPtr fs) {
+        if (fs && fs->type() != io::FileSystemType::LOCAL) {
+            _rowset_meta_pb.set_resource_id(fs->resource_id());
+        }
+        _fs = std::move(fs);
+    }
 
     const io::ResourceId& resource_id() const { return _rowset_meta_pb.resource_id(); }
-
-    void set_resource_id(io::ResourceId resource_id) {
-        _rowset_meta_pb.set_resource_id(std::move(resource_id));
-    }
 
     bool is_local() const { return !_rowset_meta_pb.has_resource_id(); }
 

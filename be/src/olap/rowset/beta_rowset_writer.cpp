@@ -73,7 +73,6 @@ Status BetaRowsetWriter::init(const RowsetWriterContext& rowset_writer_context) 
     if (_context.fs) {
         auto fs = std::reinterpret_pointer_cast<io::S3FileSystem>(_context.fs);
         _rowset_meta->set_fs(fs);
-        _rowset_meta->set_resource_id(fs->resource_id());
         _rowset_meta->set_creation_time(time(nullptr));
         _rowset_meta->set_s3_bucket(fs->bucket());
         _rowset_meta->set_s3_prefix(
@@ -85,7 +84,6 @@ Status BetaRowsetWriter::init(const RowsetWriterContext& rowset_writer_context) 
     }
 #else
     _rowset_meta->set_fs(_context.fs);
-    _rowset_meta->set_resource_id(_rowset_meta->fs()->resource_id());
 #endif
     _rowset_meta->set_rowset_id(_context.rowset_id);
     _rowset_meta->set_partition_id(_context.partition_id);
