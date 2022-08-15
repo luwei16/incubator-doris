@@ -47,19 +47,19 @@ Status PushHandler::cloud_process_streaming_ingestion(const TabletSharedPtr& tab
     DeletePredicatePB del_pred;
     auto tablet_schema = tablet->tablet_schema();
     if (!request.columns_desc.empty() && request.columns_desc[0].col_unique_id >= 0) {
-        tablet_schema.clear_columns();
+        tablet_schema->clear_columns();
         for (const auto& column_desc : request.columns_desc) {
-            tablet_schema.append_column(TabletColumn(column_desc));
+            tablet_schema->append_column(TabletColumn(column_desc));
         }
     }
-    RETURN_IF_ERROR(DeleteHandler::generate_delete_predicate(tablet_schema,
+    RETURN_IF_ERROR(DeleteHandler::generate_delete_predicate(*tablet_schema,
                                                              request.delete_conditions, &del_pred));
     PUniqueId load_id;
     load_id.set_hi(0);
     load_id.set_lo(0);
     std::unique_ptr<RowsetWriter> rowset_writer;
     RETURN_IF_ERROR(tablet->create_rowset_writer(request.transaction_id, load_id, PREPARED,
-                                                 OVERLAP_UNKNOWN, &tablet_schema, &rowset_writer));
+                                                 OVERLAP_UNKNOWN, tablet_schema, &rowset_writer));
     auto rowset = rowset_writer->build();
     if (!rowset) {
         return Status::InternalError("failed to build rowset");

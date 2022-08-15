@@ -1215,6 +1215,7 @@ Status SegmentIterator::next_batch(vectorized::Block* block) {
     if (UNLIKELY(_estimate_row_size) && block->rows() > 0) {
         _update_max_row(block);
     }
+    LOG(INFO) << "xxx yyy block " << block->dump_structure();
     return Status::OK();
 }
 
