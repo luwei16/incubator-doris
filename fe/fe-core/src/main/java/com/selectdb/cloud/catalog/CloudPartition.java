@@ -7,7 +7,6 @@ import org.apache.doris.catalog.DistributionInfo;
 import org.apache.doris.catalog.Env;
 import org.apache.doris.catalog.MaterializedIndex;
 import org.apache.doris.catalog.Partition;
-import org.apache.doris.common.Config;
 import org.apache.doris.rpc.RpcException;
 import org.apache.doris.thrift.TNetworkAddress;
 import org.apache.logging.log4j.LogManager;
@@ -131,10 +130,7 @@ public class CloudPartition extends Partition {
                 new TNetworkAddress(Env.getCurrentSystemInfo().metaServiceHostPort.first,
                     Env.getCurrentSystemInfo().metaServiceHostPort.second);
         SelectdbCloud.GetVersionRequest.Builder builder = SelectdbCloud.GetVersionRequest.newBuilder();
-        builder.setCloudUniqueId(Config.cloud_unique_id)
-               .setDbId(this.dbId)
-               .setTableId(this.tableId)
-               .setPartitionId(super.getId());
+        builder.setDbId(this.dbId).setTableId(this.tableId).setPartitionId(super.getId());
         final SelectdbCloud.GetVersionRequest pRequest = builder.build();
 
         try {

@@ -227,13 +227,14 @@ public class OperationType {
     // policy 310-320
     public static final short OP_CREATE_POLICY = 310;
     public static final short OP_DROP_POLICY = 311;
+    public static final short OP_ALTER_STORAGE_POLICY = 312;
 
-    // datasource 312-315
-    public static final short OP_CREATE_DS = 312;
-    public static final short OP_DROP_DS = 313;
-    public static final short OP_ALTER_DS_NAME = 314;
-    public static final short OP_ALTER_DS_PROPS = 315;
-    public static final short OP_ALTER_STORAGE_POLICY = 316;
+    // TODO(dx) pick doris master. doris master has change it.
+    // datasource 320-330
+    public static final short OP_CREATE_DS = 320;
+    public static final short OP_DROP_DS = 321;
+    public static final short OP_ALTER_DS_NAME = 322;
+    public static final short OP_ALTER_DS_PROPS = 323;
 
     // get opcode name by op codeStri
     public static String getOpName(short opCode) {

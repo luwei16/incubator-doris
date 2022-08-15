@@ -60,38 +60,86 @@ public class MetaServiceClient {
 
     public Future<SelectdbCloud.GetVersionResponse>
             getVisibleVersionAsync(SelectdbCloud.GetVersionRequest request) {
+        if (!request.hasCloudUniqueId()) {
+            SelectdbCloud.GetVersionRequest.Builder builder =
+                    SelectdbCloud.GetVersionRequest.newBuilder();
+            builder.mergeFrom(request);
+            return stub.getVersion(builder.setCloudUniqueId(Config.cloud_unique_id).build());
+        }
         return stub.getVersion(request);
     }
 
     public SelectdbCloud.GetVersionResponse getVersion(SelectdbCloud.GetVersionRequest request) {
+        if (!request.hasCloudUniqueId()) {
+            SelectdbCloud.GetVersionRequest.Builder builder =
+                    SelectdbCloud.GetVersionRequest.newBuilder();
+            builder.mergeFrom(request);
+            return blockingStub.getVersion(builder.setCloudUniqueId(Config.cloud_unique_id).build());
+        }
         return blockingStub.getVersion(request);
     }
 
     public SelectdbCloud.MetaServiceGenericResponse createTablet(SelectdbCloud.CreateTabletRequest request) {
+        if (!request.hasCloudUniqueId()) {
+            SelectdbCloud.CreateTabletRequest.Builder builder =
+                    SelectdbCloud.CreateTabletRequest.newBuilder();
+            builder.mergeFrom(request);
+            return blockingStub.createTablet(builder.setCloudUniqueId(Config.cloud_unique_id).build());
+        }
         return blockingStub.createTablet(request);
     }
 
     public SelectdbCloud.BeginTxnResponse
             beginTxn(SelectdbCloud.BeginTxnRequest request) {
+        if (!request.hasCloudUniqueId()) {
+            SelectdbCloud.BeginTxnRequest.Builder builder =
+                    SelectdbCloud.BeginTxnRequest.newBuilder();
+            builder.mergeFrom(request);
+            return blockingStub.beginTxn(builder.setCloudUniqueId(Config.cloud_unique_id).build());
+        }
         return blockingStub.beginTxn(request);
     }
 
     public SelectdbCloud.PrecommitTxnResponse
             precommitTxn(SelectdbCloud.PrecommitTxnRequest request) {
+        if (!request.hasCloudUniqueId()) {
+            SelectdbCloud.PrecommitTxnRequest.Builder builder =
+                    SelectdbCloud.PrecommitTxnRequest.newBuilder();
+            builder.mergeFrom(request);
+            return blockingStub.precommitTxn(builder.setCloudUniqueId(Config.cloud_unique_id).build());
+        }
         return blockingStub.precommitTxn(request);
     }
 
     public SelectdbCloud.CommitTxnResponse
             commitTxn(SelectdbCloud.CommitTxnRequest request) {
+        if (!request.hasCloudUniqueId()) {
+            SelectdbCloud.CommitTxnRequest.Builder builder =
+                    SelectdbCloud.CommitTxnRequest.newBuilder();
+            builder.mergeFrom(request);
+            return blockingStub.commitTxn(builder.setCloudUniqueId(Config.cloud_unique_id).build());
+        }
         return blockingStub.commitTxn(request);
     }
 
     public SelectdbCloud.AbortTxnResponse
             abortTxn(SelectdbCloud.AbortTxnRequest request) {
+        if (!request.hasCloudUniqueId()) {
+            SelectdbCloud.AbortTxnRequest.Builder builder =
+                    SelectdbCloud.AbortTxnRequest.newBuilder();
+            builder.mergeFrom(request);
+            return blockingStub.abortTxn(builder.setCloudUniqueId(Config.cloud_unique_id).build());
+        }
         return blockingStub.abortTxn(request);
     }
 
     public SelectdbCloud.GetClusterResponse getCluster(SelectdbCloud.GetClusterRequest request) {
+        if (!request.hasCloudUniqueId()) {
+            SelectdbCloud.GetClusterRequest.Builder builder =
+                    SelectdbCloud.GetClusterRequest.newBuilder();
+            builder.mergeFrom(request);
+            return blockingStub.getCluster(builder.setCloudUniqueId(Config.cloud_unique_id).build());
+        }
         return blockingStub.getCluster(request);
     }
 }
