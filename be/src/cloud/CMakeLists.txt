@@ -23,6 +23,7 @@ set(EXECUTABLE_OUTPUT_PATH "${BUILD_DIR}/src/cloud")
   
 add_library(Cloud STATIC
 cloud_meta_mgr.cpp
+cloud_schema_change.cpp
 cloud_stream_load_executor.cpp
 utils.cpp
 )

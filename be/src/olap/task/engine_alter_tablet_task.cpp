@@ -17,6 +17,7 @@
 
 #include "olap/task/engine_alter_tablet_task.h"
 
+#include "cloud/cloud_schema_change.h"
 #include "olap/schema_change.h"
 #include "runtime/memory/mem_tracker.h"
 #include "runtime/thread_context.h"
@@ -37,7 +38,12 @@ Status EngineAlterTabletTask::execute() {
     SCOPED_ATTACH_TASK(_mem_tracker, ThreadContext::TaskType::STORAGE);
     DorisMetrics::instance()->create_rollup_requests_total->increment(1);
 
-    Status res = SchemaChangeHandler::process_alter_tablet_v2(_alter_tablet_req);
+    Status res;
+#ifdef CLOUD_MODE
+    res = cloud::CloudSchemaChangeHandler::process_alter_tablet(_alter_tablet_req);
+#else
+    res = SchemaChangeHandler::process_alter_tablet_v2(_alter_tablet_req);
+#endif
 
     if (!res.ok()) {
         LOG(WARNING) << "failed to do alter task. res=" << res

@@ -464,9 +464,75 @@ void Tablet::add_rowset_by_meta(const RowsetMetaSharedPtr& rs_meta) {
     }
     // check should not contain same version
     CHECK(_contains_version(rowset->version()).ok());
-    CHECK(_tablet_meta->add_rs_meta(rowset->rowset_meta()));
+    CHECK(_tablet_meta->add_rs_meta(rs_meta));
     _rs_version_map[rs_meta->version()] = std::move(rowset);
     _timestamped_version_tracker.add_version(rs_meta->version());
+}
+
+void Tablet::add_new_rowset(const RowsetSharedPtr& rowset) {
+    DCHECK(rowset != nullptr);
+    std::lock_guard<std::shared_mutex> wrlock(_meta_lock);
+    // check should not contain same version
+    CHECK(_contains_version(rowset->version()).ok());
+    CHECK(_tablet_meta->add_rs_meta(rowset->rowset_meta()));
+    _rs_version_map[rowset->version()] = rowset;
+    _timestamped_version_tracker.add_version(rowset->version());
+}
+
+Versions Tablet::cloud_calc_missed_versions(int64_t spec_version) {
+    DCHECK(spec_version > 0) << "invalid spec_version: " << spec_version;
+
+    Versions missed_versions;
+    Versions existing_versions;
+    {
+        std::shared_lock rdlock(_meta_lock);
+        for (auto& rs : _tablet_meta->all_rs_metas()) {
+            existing_versions.emplace_back(rs->version());
+        }
+    }
+
+    if (existing_versions.empty()) {
+        missed_versions.push_back({0, spec_version});
+        return missed_versions;
+    }
+
+    // sort the existing versions in ascending order
+    std::sort(existing_versions.begin(), existing_versions.end(),
+              [](const Version& a, const Version& b) {
+                  // simple because 2 versions are certainly not overlapping
+                  return a.first < b.first;
+              });
+
+    auto min_version = existing_versions.front().first;
+    if (min_version > 0) {
+        missed_versions.push_back({0, std::min(spec_version, min_version - 1)});
+    }
+    for (auto it = existing_versions.begin(); it != existing_versions.end() - 1; ++it) {
+        auto prev_v = it->second;
+        if (prev_v >= spec_version) {
+            return missed_versions;
+        }
+        auto next_v = (it + 1)->first;
+        if (next_v > prev_v + 1) {
+            // there is a hole between versions
+            missed_versions.push_back({prev_v + 1, std::min(spec_version, next_v - 1)});
+        }
+    }
+    auto max_version = existing_versions.back().second;
+    if (max_version < spec_version) {
+        missed_versions.push_back({max_version + 1, spec_version});
+    }
+    return missed_versions;
+}
+
+Status Tablet::cloud_capture_rs_readers(const Version& spec_version,
+                                        std::vector<RowsetReaderSharedPtr>* rs_readers) {
+    rs_readers->clear();
+    Versions version_path;
+    std::shared_lock rlock(_meta_lock);
+    RETURN_IF_ERROR(
+            _timestamped_version_tracker.capture_consistent_versions(spec_version, &version_path));
+    return capture_rs_readers(version_path, rs_readers);
 }
 
 void Tablet::_delete_stale_rowset_by_version(const Version& version) {
@@ -1685,6 +1751,12 @@ Status Tablet::create_rowset_writer(const int64_t& txn_id, const PUniqueId& load
     context.enable_unique_key_merge_on_write = enable_unique_key_merge_on_write();
     _init_context_common_fields(context);
     return RowsetFactory::create_rowset_writer(context, rowset_writer);
+}
+
+Status Tablet::create_rowset_writer(RowsetWriterContext* context,
+                                    std::unique_ptr<RowsetWriter>* rowset_writer) {
+    _init_context_common_fields(*context);
+    return RowsetFactory::create_rowset_writer(*context, rowset_writer);
 }
 
 void Tablet::_init_context_common_fields(RowsetWriterContext& context) {

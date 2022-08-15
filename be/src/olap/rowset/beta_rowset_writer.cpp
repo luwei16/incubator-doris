@@ -18,6 +18,7 @@
 #include "olap/rowset/beta_rowset_writer.h"
 
 #include <ctime> // time
+#include <memory>
 
 #include "common/config.h"
 #include "common/logging.h"
@@ -47,11 +48,12 @@ BetaRowsetWriter::BetaRowsetWriter()
           _total_index_size(0) {}
 
 BetaRowsetWriter::~BetaRowsetWriter() {
-    if (!_already_built && _rowset_meta->is_local()) { // abnormal exit, remove all files generated
+    if (_already_built || !_rowset_meta) {
+        return;
+    }
+    if (_rowset_meta->is_local()) {
+        // abnormal exit, remove all files generated
         auto fs = _rowset_meta->fs();
-        if (!fs) {
-            return;
-        }
         for (int i = 0; i < _num_segment; ++i) {
             auto seg_path =
                     BetaRowset::local_segment_path(_context.tablet_path, _context.rowset_id, i);
@@ -67,17 +69,23 @@ BetaRowsetWriter::~BetaRowsetWriter() {
 Status BetaRowsetWriter::init(const RowsetWriterContext& rowset_writer_context) {
     _context = rowset_writer_context;
     _rowset_meta.reset(new RowsetMeta);
-    if (_context.data_dir) {
-        _rowset_meta->set_fs(_context.data_dir->fs());
-        _rowset_meta->set_resource_id(_context.data_dir->fs()->resource_id());
-    }
 #ifdef CLOUD_MODE
-    _rowset_meta->set_creation_time(time(nullptr));
-    DCHECK(_rowset_meta->fs()->type() == io::FileSystemType::S3);
-    auto fs = reinterpret_cast<io::S3FileSystem*>(_rowset_meta->fs());
-    _rowset_meta->set_s3_bucket(fs->bucket());
-    _rowset_meta->set_s3_prefix(
-            fmt::format("{}/{}/{}", fs->prefix(), DATA_PREFIX, _context.tablet_id));
+    if (_context.fs) {
+        auto fs = std::reinterpret_pointer_cast<io::S3FileSystem>(_context.fs);
+        _rowset_meta->set_fs(fs);
+        _rowset_meta->set_resource_id(fs->resource_id());
+        _rowset_meta->set_creation_time(time(nullptr));
+        _rowset_meta->set_s3_bucket(fs->bucket());
+        _rowset_meta->set_s3_prefix(
+                fmt::format("{}/{}/{}", fs->prefix(), DATA_PREFIX, _context.tablet_id));
+    } else {
+        // In cloud mode, this branch implies it is an intermediate rowset for external merge sort,
+        // we use `global_local_filesystem` to write data to `tmp_file_dir`(see `BetaRowset::local_segment_path`).
+        _context.tablet_path = config::tmp_file_dir;
+    }
+#else
+    _rowset_meta->set_fs(_context.fs);
+    _rowset_meta->set_resource_id(_rowset_meta->fs()->resource_id());
 #endif
     _rowset_meta->set_rowset_id(_context.rowset_id);
     _rowset_meta->set_partition_id(_context.partition_id);
@@ -237,9 +245,14 @@ Status BetaRowsetWriter::flush_single_memtable(const vectorized::Block* block) {
 }
 
 RowsetSharedPtr BetaRowsetWriter::build() {
+    Status status;
     // TODO(lingbin): move to more better place, or in a CreateBlockBatch?
     for (auto& file_writer : _file_writers) {
-        file_writer->close();
+        status = file_writer->close();
+        if (!status.ok()) {
+            LOG(WARNING) << status;
+            return nullptr;
+        }
     }
     // When building a rowset, we must ensure that the current _segment_writer has been
     // flushed, that is, the current _segment_writer is nullptr
@@ -273,8 +286,8 @@ RowsetSharedPtr BetaRowsetWriter::build() {
     }
 
     RowsetSharedPtr rowset;
-    auto status = RowsetFactory::create_rowset(_context.tablet_schema, _context.tablet_path,
-                                               _rowset_meta, &rowset);
+    status = RowsetFactory::create_rowset(_context.tablet_schema, _context.tablet_path,
+                                          _rowset_meta, &rowset);
     if (!status.ok()) {
         LOG(WARNING) << "rowset init failed when build new rowset, res=" << status;
         return nullptr;

@@ -28,6 +28,9 @@
 #include "vec/core/block.h"
 
 namespace doris {
+namespace cloud {
+class CloudSchemaChangeHandler;
+}
 
 bool to_bitmap(RowCursor* read_helper, RowCursor* write_helper, const TabletColumn& ref_column,
                int field_idx, int ref_field_idx, MemPool* mem_pool);
@@ -90,8 +93,8 @@ public:
     SchemaChange() : _filtered_rows(0), _merged_rows(0) {}
     virtual ~SchemaChange() = default;
 
-    virtual Status process(RowsetReaderSharedPtr rowset_reader, RowsetWriter* rowset_writer,
-                           TabletSharedPtr new_tablet, TabletSharedPtr base_tablet) {
+    virtual Status process(const RowsetReaderSharedPtr& rowset_reader, RowsetWriter* rowset_writer,
+                           const TabletSharedPtr& new_tablet, const TabletSharedPtr& base_tablet) {
         if (rowset_reader->rowset()->empty() || rowset_reader->rowset()->num_rows() == 0) {
             RETURN_WITH_WARN_IF_ERROR(
                     rowset_writer->flush(),
@@ -128,12 +131,13 @@ protected:
 
     void _add_merged_rows(uint64_t merged_rows) { _merged_rows += merged_rows; }
 
-    virtual Status _inner_process(RowsetReaderSharedPtr rowset_reader, RowsetWriter* rowset_writer,
-                                  TabletSharedPtr new_tablet, TabletSharedPtr base_tablet) {
+    virtual Status _inner_process(const RowsetReaderSharedPtr& rowset_reader,
+                                  RowsetWriter* rowset_writer, const TabletSharedPtr& new_tablet,
+                                  const TabletSharedPtr& base_tablet) {
         return Status::NotSupported("inner process unsupported.");
     };
 
-    bool _check_row_nums(RowsetReaderSharedPtr reader, const RowsetWriter& writer) const {
+    bool _check_row_nums(const RowsetReaderSharedPtr& reader, const RowsetWriter& writer) const {
         if (reader->rowset()->num_rows() != writer.num_rows() + _merged_rows + _filtered_rows) {
             LOG(WARNING) << "fail to check row num! "
                          << "source_rows=" << reader->rowset()->num_rows()
@@ -156,8 +160,8 @@ public:
             : _row_block_changer(row_block_changer) {}
     ~LinkedSchemaChange() override = default;
 
-    Status process(RowsetReaderSharedPtr rowset_reader, RowsetWriter* rowset_writer,
-                   TabletSharedPtr new_tablet, TabletSharedPtr base_tablet) override;
+    Status process(const RowsetReaderSharedPtr& rowset_reader, RowsetWriter* rowset_writer,
+                   const TabletSharedPtr& new_tablet, const TabletSharedPtr& base_tablet) override;
 
 private:
     const RowBlockChanger& _row_block_changer;
@@ -173,8 +177,9 @@ public:
     ~SchemaChangeDirectly() override;
 
 private:
-    Status _inner_process(RowsetReaderSharedPtr rowset_reader, RowsetWriter* rowset_writer,
-                          TabletSharedPtr new_tablet, TabletSharedPtr base_tablet) override;
+    Status _inner_process(const RowsetReaderSharedPtr& rowset_reader, RowsetWriter* rowset_writer,
+                          const TabletSharedPtr& new_tablet,
+                          const TabletSharedPtr& base_tablet) override;
 
     const RowBlockChanger& _row_block_changer;
     RowBlockAllocator* _row_block_allocator;
@@ -190,8 +195,9 @@ public:
     VSchemaChangeDirectly(const RowBlockChanger& row_block_changer) : _changer(row_block_changer) {}
 
 private:
-    Status _inner_process(RowsetReaderSharedPtr rowset_reader, RowsetWriter* rowset_writer,
-                          TabletSharedPtr new_tablet, TabletSharedPtr base_tablet) override;
+    Status _inner_process(const RowsetReaderSharedPtr& rowset_reader, RowsetWriter* rowset_writer,
+                          const TabletSharedPtr& new_tablet,
+                          const TabletSharedPtr& base_tablet) override;
 
     const RowBlockChanger& _changer;
 };
@@ -204,8 +210,9 @@ public:
     ~SchemaChangeWithSorting() override;
 
 private:
-    Status _inner_process(RowsetReaderSharedPtr rowset_reader, RowsetWriter* rowset_writer,
-                          TabletSharedPtr new_tablet, TabletSharedPtr base_tablet) override;
+    Status _inner_process(const RowsetReaderSharedPtr& rowset_reader, RowsetWriter* rowset_writer,
+                          const TabletSharedPtr& new_tablet,
+                          const TabletSharedPtr& base_tablet) override;
 
     bool _internal_sorting(const std::vector<RowBlock*>& row_block_arr,
                            const Version& temp_delta_versions, int64_t oldest_write_timestamp,
@@ -229,8 +236,9 @@ public:
     ~VSchemaChangeWithSorting() override = default;
 
 private:
-    Status _inner_process(RowsetReaderSharedPtr rowset_reader, RowsetWriter* rowset_writer,
-                          TabletSharedPtr new_tablet, TabletSharedPtr base_tablet) override;
+    Status _inner_process(const RowsetReaderSharedPtr& rowset_reader, RowsetWriter* rowset_writer,
+                          const TabletSharedPtr& new_tablet,
+                          const TabletSharedPtr& base_tablet) override;
 
     Status _internal_sorting(const std::vector<std::unique_ptr<vectorized::Block>>& blocks,
                              const Version& temp_delta_versions, int64_t oldest_write_timestamp,
@@ -238,13 +246,32 @@ private:
                              RowsetTypePB new_rowset_type, SegmentsOverlapPB segments_overlap,
                              RowsetSharedPtr* rowset);
 
-    Status _external_sorting(std::vector<RowsetSharedPtr>& src_rowsets, RowsetWriter* rowset_writer,
-                             TabletSharedPtr new_tablet);
+    Status _external_sorting(const std::vector<RowsetSharedPtr>& src_rowsets,
+                             RowsetWriter* rowset_writer, const TabletSharedPtr& new_tablet);
 
     const RowBlockChanger& _changer;
     size_t _memory_limitation;
     Version _temp_delta_versions;
     std::unique_ptr<MemTracker> _mem_tracker;
+};
+
+struct AlterMaterializedViewParam {
+    std::string column_name;
+    std::string origin_column_name;
+    std::string mv_expr;
+    std::shared_ptr<TExpr> expr;
+};
+
+struct SchemaChangeParams {
+    AlterTabletType alter_tablet_type;
+    TabletSharedPtr base_tablet;
+    TabletSharedPtr new_tablet;
+    TabletSchema* base_tablet_schema = nullptr;
+    std::vector<RowsetReaderSharedPtr> ref_rowset_readers;
+    DeleteHandler* delete_handler = nullptr;
+    std::unordered_map<std::string, AlterMaterializedViewParam> materialized_params_map;
+    DescriptorTbl* desc_tbl = nullptr;
+    ObjectPool pool;
 };
 
 class SchemaChangeHandler {
@@ -278,46 +305,30 @@ public:
     static bool tablet_in_converting(int64_t tablet_id);
 
 private:
+    friend class cloud::CloudSchemaChangeHandler;
+
     // Check the status of schema change and clear information between "a pair" of Schema change tables
     // Since A->B's schema_change information for A will be overwritten in subsequent processing (no extra cleanup here)
     // Returns:
     //  Success: If there is historical information, then clear it if there is no problem; or no historical information
     //  Failure: otherwise, if there is history information and it cannot be emptied (version has not been completed)
-    static Status _check_and_clear_schema_change_info(TabletSharedPtr tablet,
+    static Status _check_and_clear_schema_change_info(const TabletSharedPtr& tablet,
                                                       const TAlterTabletReq& request);
 
-    static Status _get_versions_to_be_changed(TabletSharedPtr base_tablet,
+    static Status _get_versions_to_be_changed(const TabletSharedPtr& base_tablet,
                                               std::vector<Version>* versions_to_be_changed,
                                               RowsetSharedPtr* max_rowset);
 
-    struct AlterMaterializedViewParam {
-        std::string column_name;
-        std::string origin_column_name;
-        std::string mv_expr;
-        std::shared_ptr<TExpr> expr;
-    };
-
-    struct SchemaChangeParams {
-        AlterTabletType alter_tablet_type;
-        TabletSharedPtr base_tablet;
-        TabletSharedPtr new_tablet;
-        TabletSchemaSPtr base_tablet_schema = nullptr;
-        std::vector<RowsetReaderSharedPtr> ref_rowset_readers;
-        DeleteHandler* delete_handler = nullptr;
-        std::unordered_map<std::string, AlterMaterializedViewParam> materialized_params_map;
-        DescriptorTbl* desc_tbl = nullptr;
-        ObjectPool pool;
-    };
-
     static Status _do_process_alter_tablet_v2(const TAlterTabletReqV2& request);
 
-    static Status _validate_alter_result(TabletSharedPtr new_tablet,
+    static Status _validate_alter_result(const TabletSharedPtr& new_tablet,
                                          const TAlterTabletReqV2& request);
 
     static Status _convert_historical_rowsets(const SchemaChangeParams& sc_params);
 
-    static Status _parse_request(TabletSharedPtr base_tablet, TabletSharedPtr new_tablet,
-                                 RowBlockChanger* rb_changer, bool* sc_sorting, bool* sc_directly,
+    static Status _parse_request(const TabletSharedPtr& base_tablet,
+                                 const TabletSharedPtr& new_tablet, RowBlockChanger* rb_changer,
+                                 bool* sc_sorting, bool* sc_directly,
                                  const std::unordered_map<std::string, AlterMaterializedViewParam>&
                                          materialized_function_map,
                                  DescriptorTbl desc_tbl, TabletSchemaSPtr base_tablet_schema);

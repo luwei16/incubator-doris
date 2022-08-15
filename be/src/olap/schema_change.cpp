@@ -26,6 +26,7 @@
 #include "olap/row.h"
 #include "olap/row_block.h"
 #include "olap/row_cursor.h"
+#include "olap/rowset/rowset_writer_context.h"
 #include "olap/rowset/segment_v2/column_reader.h"
 #include "olap/storage_engine.h"
 #include "olap/tablet.h"
@@ -95,7 +96,7 @@ private:
 
 class MultiBlockMerger {
 public:
-    MultiBlockMerger(TabletSharedPtr tablet) : _tablet(tablet), _cmp(tablet) {}
+    MultiBlockMerger(const TabletSharedPtr& tablet) : _tablet(tablet), _cmp(tablet.get()) {}
 
     Status merge(const std::vector<std::unique_ptr<vectorized::Block>>& blocks,
                  RowsetWriter* rowset_writer, uint64_t* merged_rows) {
@@ -224,7 +225,7 @@ private:
     };
 
     struct RowRefComparator {
-        RowRefComparator(TabletSharedPtr tablet) : _num_columns(tablet->num_key_columns()) {}
+        RowRefComparator(Tablet* tablet) : _num_columns(tablet->num_key_columns()) {}
 
         int compare(const RowRef& lhs, const RowRef& rhs) const {
             return lhs.block->compare_at(lhs.position, rhs.position, _num_columns, *rhs.block, -1);
@@ -1133,8 +1134,12 @@ void RowBlockMerger::_pop_heap() {
     _heap.push(element);
 }
 
-Status LinkedSchemaChange::process(RowsetReaderSharedPtr rowset_reader, RowsetWriter* rowset_writer,
-                                   TabletSharedPtr new_tablet, TabletSharedPtr base_tablet) {
+Status LinkedSchemaChange::process(const RowsetReaderSharedPtr& rowset_reader,
+                                   RowsetWriter* rowset_writer, const TabletSharedPtr& new_tablet,
+                                   const TabletSharedPtr& base_tablet) {
+#ifdef CLOUD_MODE
+    LOG(FATAL) << "Not support LinkedSchemaChange in cloud mode";
+#endif
     // In some cases, there may be more than one type of rowset in a tablet,
     // in which case the conversion cannot be done directly by linked schema change,
     // but requires direct schema change to rewrite the data.
@@ -1197,9 +1202,13 @@ Status reserve_block(std::unique_ptr<RowBlock, RowBlockDeleter>* block_handle_pt
     return Status::OK();
 }
 
-Status SchemaChangeDirectly::_inner_process(RowsetReaderSharedPtr rowset_reader,
-                                            RowsetWriter* rowset_writer, TabletSharedPtr new_tablet,
-                                            TabletSharedPtr base_tablet) {
+Status SchemaChangeDirectly::_inner_process(const RowsetReaderSharedPtr& rowset_reader,
+                                            RowsetWriter* rowset_writer,
+                                            const TabletSharedPtr& new_tablet,
+                                            const TabletSharedPtr& base_tablet) {
+#ifdef CLOUD_MODE
+    LOG(FATAL) << "Not support SchemaChangeDirectly in cloud mode";
+#endif
     if (_row_block_allocator == nullptr) {
         _row_block_allocator = new RowBlockAllocator(new_tablet->tablet_schema(), 0);
         if (_row_block_allocator == nullptr) {
@@ -1266,10 +1275,10 @@ Status SchemaChangeDirectly::_inner_process(RowsetReaderSharedPtr rowset_reader,
     return res;
 }
 
-Status VSchemaChangeDirectly::_inner_process(RowsetReaderSharedPtr rowset_reader,
+Status VSchemaChangeDirectly::_inner_process(const RowsetReaderSharedPtr& rowset_reader,
                                              RowsetWriter* rowset_writer,
-                                             TabletSharedPtr new_tablet,
-                                             TabletSharedPtr base_tablet) {
+                                             const TabletSharedPtr& new_tablet,
+                                             const TabletSharedPtr& base_tablet) {
     auto new_block =
             std::make_unique<vectorized::Block>(new_tablet->tablet_schema()->create_block());
     auto ref_block =
@@ -1315,10 +1324,13 @@ VSchemaChangeWithSorting::VSchemaChangeWithSorting(const RowBlockChanger& row_bl
             "VSchemaChangeWithSorting:changer={}", std::to_string(int64(&row_block_changer))));
 }
 
-Status SchemaChangeWithSorting::_inner_process(RowsetReaderSharedPtr rowset_reader,
+Status SchemaChangeWithSorting::_inner_process(const RowsetReaderSharedPtr& rowset_reader,
                                                RowsetWriter* rowset_writer,
-                                               TabletSharedPtr new_tablet,
-                                               TabletSharedPtr base_tablet) {
+                                               const TabletSharedPtr& new_tablet,
+                                               const TabletSharedPtr& base_tablet) {
+#ifdef CLOUD_MODE
+    LOG(FATAL) << "Not support SchemaChangeWithSorting in cloud mode";
+#endif
     if (_row_block_allocator == nullptr) {
         _row_block_allocator =
                 new (nothrow) RowBlockAllocator(new_tablet->tablet_schema(), _memory_limitation);
@@ -1476,10 +1488,10 @@ Status SchemaChangeWithSorting::_inner_process(RowsetReaderSharedPtr rowset_read
     return res;
 }
 
-Status VSchemaChangeWithSorting::_inner_process(RowsetReaderSharedPtr rowset_reader,
+Status VSchemaChangeWithSorting::_inner_process(const RowsetReaderSharedPtr& rowset_reader,
                                                 RowsetWriter* rowset_writer,
-                                                TabletSharedPtr new_tablet,
-                                                TabletSharedPtr base_tablet) {
+                                                const TabletSharedPtr& new_tablet,
+                                                const TabletSharedPtr& base_tablet) {
     // for internal sorting
     std::vector<std::unique_ptr<vectorized::Block>> blocks;
 
@@ -1488,10 +1500,16 @@ Status VSchemaChangeWithSorting::_inner_process(RowsetReaderSharedPtr rowset_rea
     std::vector<RowsetSharedPtr> src_rowsets;
 
     Defer defer {[&]() {
-        // remove the intermediate rowsets generated by internal sorting
+    // remove the intermediate rowsets generated by internal sorting
+#ifdef CLOUD_MODE
+        for (auto& rs : src_rowsets) {
+            WARN_IF_ERROR(rs->remove(), "Failed to remove rowsets generated by internal sorting");
+        }
+#else
         for (auto& row_set : src_rowsets) {
             StorageEngine::instance()->add_unused_rowset(row_set);
         }
+#endif
     }};
 
     RowsetSharedPtr rowset = rowset_reader->rowset();
@@ -1652,14 +1670,14 @@ bool SchemaChangeWithSorting::_external_sorting(vector<RowsetSharedPtr>& src_row
     return true;
 }
 
-Status VSchemaChangeWithSorting::_external_sorting(vector<RowsetSharedPtr>& src_rowsets,
+Status VSchemaChangeWithSorting::_external_sorting(const vector<RowsetSharedPtr>& src_rowsets,
                                                    RowsetWriter* rowset_writer,
-                                                   TabletSharedPtr new_tablet) {
+                                                   const TabletSharedPtr& new_tablet) {
     std::vector<RowsetReaderSharedPtr> rs_readers;
     for (auto& rowset : src_rowsets) {
         RowsetReaderSharedPtr rs_reader;
         RETURN_IF_ERROR(rowset->create_reader(&rs_reader));
-        rs_readers.push_back(rs_reader);
+        rs_readers.push_back(std::move(rs_reader));
     }
 
     // get cur schema if rowset schema exist, rowset schema must be newer than tablet schema
@@ -1994,7 +2012,7 @@ bool SchemaChangeHandler::tablet_in_converting(int64_t tablet_id) {
 }
 
 Status SchemaChangeHandler::_get_versions_to_be_changed(
-        TabletSharedPtr base_tablet, std::vector<Version>* versions_to_be_changed,
+        const TabletSharedPtr& base_tablet, std::vector<Version>* versions_to_be_changed,
         RowsetSharedPtr* max_rowset) {
     RowsetSharedPtr rowset = base_tablet->rowset_with_max_version();
     if (rowset == nullptr) {
@@ -2134,8 +2152,8 @@ Status SchemaChangeHandler::_convert_historical_rowsets(const SchemaChangeParams
 // @static
 // Analyze the mapping of the column and the mapping of the filter key
 Status SchemaChangeHandler::_parse_request(
-        TabletSharedPtr base_tablet, TabletSharedPtr new_tablet, RowBlockChanger* rb_changer,
-        bool* sc_sorting, bool* sc_directly,
+        const TabletSharedPtr& base_tablet, const TabletSharedPtr& new_tablet,
+        RowBlockChanger* rb_changer, bool* sc_sorting, bool* sc_directly,
         const std::unordered_map<std::string, AlterMaterializedViewParam>&
                 materialized_function_map,
         DescriptorTbl desc_tbl, TabletSchemaSPtr base_tablet_schema) {
@@ -2299,7 +2317,7 @@ Status SchemaChangeHandler::_init_column_mapping(ColumnMapping* column_mapping,
     return Status::OK();
 }
 
-Status SchemaChangeHandler::_validate_alter_result(TabletSharedPtr new_tablet,
+Status SchemaChangeHandler::_validate_alter_result(const TabletSharedPtr& new_tablet,
                                                    const TAlterTabletReqV2& request) {
     Version max_continuous_version = {-1, 0};
     new_tablet->max_continuous_version_from_beginning(&max_continuous_version);

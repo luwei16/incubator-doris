@@ -84,6 +84,25 @@ Status VOlapScanner::prepare(
             }
         }
         VLOG_DEBUG << "VOlapScanner version: " << _version;
+#ifdef CLOUD_MODE
+        if (!_tablet->cloud_capture_rs_readers({0, _version}, &_tablet_reader_params.rs_readers)) {
+            auto max_version = -1;
+            {
+                std::shared_lock rlock(_tablet->get_header_lock());
+                max_version = _tablet->max_version().second;
+            }
+            CHECK(max_version > 0);
+            std::vector<RowsetMetaSharedPtr> rs_metas;
+            RETURN_IF_ERROR(cloud::meta_mgr()->get_rowset_meta(
+                    _tablet->tablet_id(), {max_version + 1, _version}, &rs_metas));
+            for (const auto& rs_meta : rs_metas) {
+                // acquire tablet exclusive header_lock in add_rowset_by_meta
+                _tablet->add_rowset_by_meta(rs_meta);
+            }
+            RETURN_IF_ERROR(_tablet->cloud_capture_rs_readers({0, _version},
+                                                              &_tablet_reader_params.rs_readers));
+        }
+#else
         {
             std::shared_lock rdlock(_tablet->get_header_lock());
             const RowsetSharedPtr rowset = _tablet->rowset_with_max_version();
@@ -100,21 +119,6 @@ Status VOlapScanner::prepare(
             Version rd_version(0, _version);
             Status acquire_reader_st =
                     _tablet->capture_rs_readers(rd_version, &_tablet_reader_params.rs_readers);
-#ifdef CLOUD_MODE
-            rdlock.unlock();
-            if (!acquire_reader_st.ok()) {
-                std::vector<RowsetMetaSharedPtr> rs_metas;
-                RETURN_IF_ERROR(cloud::meta_mgr()->get_rowset_meta(
-                        tablet_id, {rowset->end_version() + 1, _version}, &rs_metas));
-                for (const auto& rs_meta : rs_metas) {
-                    // acquire tablet exclusive header_lock in add_rowset_by_meta
-                    _tablet->add_rowset_by_meta(rs_meta);
-                }
-                std::shared_lock rdlock(_tablet->get_header_lock());
-                acquire_reader_st =
-                        _tablet->capture_rs_readers(rd_version, &_tablet_reader_params.rs_readers);
-            }
-#endif
             if (!acquire_reader_st.ok()) {
                 LOG(WARNING) << "fail to init reader.res=" << acquire_reader_st;
                 std::stringstream ss;
@@ -124,15 +128,9 @@ Status VOlapScanner::prepare(
                 return Status::InternalError(ss.str());
             }
         }
+#endif
     }
-
-    {
-        // Initialize tablet_reader_params
-        RETURN_IF_ERROR(
-                _init_tablet_reader_params(key_ranges, filters, bloom_filters, function_filters));
-    }
-
-    return Status::OK();
+    return _init_tablet_reader_params(key_ranges, filters, bloom_filters);
 }
 
 Status VOlapScanner::open() {

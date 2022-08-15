@@ -28,6 +28,7 @@
 #include "gen_cpp/AgentService_types.h"
 #include "gen_cpp/MasterService_types.h"
 #include "gen_cpp/olap_file.pb.h"
+#include "io/fs/file_system.h"
 #include "olap/base_tablet.h"
 #include "olap/cumulative_compaction_policy.h"
 #include "olap/data_dir.h"
@@ -131,8 +132,22 @@ public:
     Status add_inc_rowset(const RowsetSharedPtr& rowset);
 
     // CLOUD_MODE
-    // Add rowset required for query to tablet in cloud mode.
+    // Add a rowset required for query to tablet in cloud mode.
     void add_rowset_by_meta(const RowsetMetaSharedPtr& rs_meta);
+
+    // CLOUD_MODE
+    // Add a new created rowset to tablet in cloud mode.
+    void add_new_rowset(const RowsetSharedPtr& rowset);
+
+    // CLOUD_MODE
+    // for example:
+    //     [0-4][5-5][8-8][9-9][13-13]
+    // if spec_version = 12, it will return [6-7],[10-12]
+    Versions cloud_calc_missed_versions(int64_t spec_version);
+
+    // CLOUD_MODE
+    Status cloud_capture_rs_readers(const Version& spec_version,
+                                    std::vector<RowsetReaderSharedPtr>* rs_readers);
 
     /// Delete stale rowset by timing. This delete policy uses now() minutes
     /// config::tablet_rowset_expired_stale_sweep_time_sec to compute the deadline of expired rowset
@@ -297,6 +312,9 @@ public:
     Status create_rowset_writer(const int64_t& txn_id, const PUniqueId& load_id,
                                 const RowsetStatePB& rowset_state, const SegmentsOverlapPB& overlap,
                                 TabletSchemaSPtr tablet_schema,
+                                std::unique_ptr<RowsetWriter>* rowset_writer);
+
+    Status create_rowset_writer(RowsetWriterContext* context,
                                 std::unique_ptr<RowsetWriter>* rowset_writer);
 
     Status create_rowset(RowsetMetaSharedPtr rowset_meta, RowsetSharedPtr* rowset);

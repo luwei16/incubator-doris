@@ -18,6 +18,7 @@
 #pragma once
 
 #include "gen_cpp/olap_file.pb.h"
+#include "io/fs/file_system.h"
 #include "olap/data_dir.h"
 #include "olap/storage_engine.h"
 #include "olap/tablet.h"
@@ -25,15 +26,12 @@
 
 namespace doris {
 
-class RowsetWriterContextBuilder;
-using RowsetWriterContextBuilderSharedPtr = std::shared_ptr<RowsetWriterContextBuilder>;
-
 struct RowsetWriterContext {
     RowsetWriterContext()
             : tablet_id(0),
               tablet_schema_hash(0),
               partition_id(0),
-              rowset_type(ALPHA_ROWSET),
+              rowset_type(BETA_ROWSET),
               tablet_schema(nullptr),
               rowset_state(PREPARED),
               version(Version(0, 0)),
@@ -94,8 +92,12 @@ struct RowsetWriterContext {
     // (because it hard to refactor, and RowsetConvertor will be deprecated in future)
     DataDir* data_dir = nullptr;
 
-    int64_t oldest_write_timestamp;
-    int64_t newest_write_timestamp;
+    // If `fs == nullptr`, use `global_local_filesystem` as default fs to perform IO operation.
+    // (see `RowsetMeta::fs()`)
+    io::FileSystemPtr fs;
+
+    int64_t oldest_write_timestamp = -1;
+    int64_t newest_write_timestamp = -1;
     bool enable_unique_key_merge_on_write = false;
 };
 
