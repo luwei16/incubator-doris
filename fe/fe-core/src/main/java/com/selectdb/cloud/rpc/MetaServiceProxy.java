@@ -142,6 +142,17 @@ public class MetaServiceProxy {
         }
     }
 
+    public SelectdbCloud.GetTxnResponse
+            getTxn(TNetworkAddress address, SelectdbCloud.GetTxnRequest request)
+            throws RpcException {
+        try {
+            final MetaServiceClient client = getProxy(address);
+            return client.getTxn(request);
+        } catch (Exception e) {
+            throw new RpcException(address.hostname, e.getMessage(), e);
+        }
+    }
+
     public SelectdbCloud.GetClusterResponse
             getCluster(TNetworkAddress address, SelectdbCloud.GetClusterRequest request) throws RpcException {
         try {

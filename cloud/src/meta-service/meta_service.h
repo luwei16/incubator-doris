@@ -32,6 +32,13 @@ public:
                    ::selectdb::AbortTxnResponse* response,
                    ::google::protobuf::Closure* done) override;
 
+    // clang-format off
+    void get_txn(::google::protobuf::RpcController* controller,
+                 const ::selectdb::GetTxnRequest* request,
+                 ::selectdb::GetTxnResponse* response,
+                 ::google::protobuf::Closure* done) override;
+    // clang-format on
+
     void get_version(::google::protobuf::RpcController* controller,
                      const ::selectdb::GetVersionRequest* request,
                      ::selectdb::GetVersionResponse* response,

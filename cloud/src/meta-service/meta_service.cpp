@@ -433,9 +433,8 @@ void MetaServiceImpl::precommit_txn(::google::protobuf::RpcController* controlle
     auto now_time = system_clock::now();
     uint64_t precommit_time = duration_cast<milliseconds>(now_time.time_since_epoch()).count();
     txn_info.set_precommit_time(precommit_time);
-    if (request->has_txn_commit_attachment()) {
-        TxnCommitAttachmentPB attachement = request->txn_commit_attachment();
-        txn_info.set_allocated_txn_commit_attachment(&attachement);
+    if (request->has_commit_attachment()) {
+        txn_info.mutable_commit_attachment()->CopyFrom(request->commit_attachment());
     }
     LOG(INFO) << "xxx new txn_info=" << txn_info.DebugString();
 
@@ -701,9 +700,8 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
     uint64_t commit_time = duration_cast<milliseconds>(now_time.time_since_epoch()).count();
     txn_info.set_commit_time(commit_time);
     txn_info.set_finish_time(commit_time);
-    if (request->has_txn_commit_attachment()) {
-        TxnCommitAttachmentPB attachement = request->txn_commit_attachment();
-        txn_info.set_allocated_txn_commit_attachment(&attachement);
+    if (request->has_commit_attachment()) {
+        txn_info.mutable_commit_attachment()->CopyFrom(request->commit_attachment());
     }
     LOG(INFO) << "new txn_info=" << txn_info.DebugString();
     txn_inf_val.clear();
@@ -929,7 +927,12 @@ void MetaServiceImpl::abort_txn(::google::protobuf::RpcController* controller,
     if (request->has_reason()) {
         txn_info.set_reason(request->reason());
     }
-    //TODO: update txn attachment
+
+    if (request->has_commit_attachment()) {
+        TxnCommitAttachmentPB attachement = request->commit_attachment();
+        txn_info.mutable_commit_attachment()->CopyFrom(request->commit_attachment());
+    }
+
     LOG(INFO) << "txn_info=" << txn_info.DebugString();
     txn_inf_val.clear();
     if (!txn_info.SerializeToString(&txn_inf_val)) {
@@ -947,6 +950,98 @@ void MetaServiceImpl::abort_txn(::google::protobuf::RpcController* controller,
         msg = "failed to abort meta service txn";
         return;
     }
+    response->mutable_txn_info()->CopyFrom(txn_info);
+}
+
+void MetaServiceImpl::get_txn(::google::protobuf::RpcController* controller,
+                              const ::selectdb::GetTxnRequest* request,
+                              ::selectdb::GetTxnResponse* response,
+                              ::google::protobuf::Closure* done) {
+    auto ctrl = static_cast<brpc::Controller*>(controller);
+    LOG(INFO) << "rpc from " << ctrl->remote_side() << " request=" << request->DebugString();
+    brpc::ClosureGuard closure_guard(done);
+    int ret = 0;
+    MetaServiceCode code = MetaServiceCode::OK;
+    std::string msg = "OK";
+    [[maybe_unused]] std::stringstream ss;
+    std::unique_ptr<int, std::function<void(int*)>> defer_status(
+            (int*)0x01, [&code, &msg, &response, &ctrl](int*) {
+                response->mutable_status()->set_code(code);
+                response->mutable_status()->set_msg(msg);
+                LOG(INFO) << "finish " << __PRETTY_FUNCTION__ << " " << ctrl->remote_side() << " "
+                          << msg;
+            });
+
+    std::string instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
+    if (instance_id.empty()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "empty instance_id";
+        LOG(INFO) << msg << ", cloud_unique_id=" << request->cloud_unique_id();
+        return;
+    }
+
+    std::unique_ptr<Transaction> txn;
+    ret = txn_kv_->create_txn(&txn);
+    if (ret != 0) {
+        code = MetaServiceCode::KV_TXN_CREATE_ERR;
+        msg = "filed to create txn";
+        return;
+    }
+
+    int64_t txn_id = request->has_txn_id() ? request->txn_id() : -1;
+    int64_t db_id = request->has_db_id() ? request->db_id() : -1;
+    if (txn_id < 0) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "invalid txn id and db_id.";
+        return;
+    }
+    //not provide db_id, we need read from disk.
+    if (db_id < 0) {
+        std::string txn_db_key;
+        std::string txn_db_val;
+        TxnDbTblKeyInfo txn_db_key_info {instance_id, txn_id};
+        txn_db_tbl_key(txn_db_key_info, &txn_db_key);
+        ret = txn->get(txn_db_key, &txn_db_val);
+        if (ret != 0) {
+            code = ret > 0 ? MetaServiceCode::TXN_ID_NOT_FOUND : MetaServiceCode::KV_TXN_GET_ERR;
+            ss << "failed to get db id with txn_id=" << txn_id << " ret=" << ret;
+            msg = ss.str();
+            return;
+        }
+        db_id = *reinterpret_cast<const int64_t*>(txn_db_val.data());
+        if (db_id <= 0) {
+            LOG(INFO) << "xxx db_id=" << db_id;
+            ss << "Internal Error: unexpected db_id " << db_id;
+            code = MetaServiceCode::UNDEFINED_ERR;
+            msg = ss.str();
+            return;
+        }
+    }
+
+    // Get txn info with db_id and txn_id
+    std::string txn_inf_key; // Will be used when saving updated txn
+    std::string txn_inf_val; // Will be reused when saving updated txn
+    TxnInfoKeyInfo txn_inf_key_info {instance_id, db_id, txn_id};
+    txn_info_key(txn_inf_key_info, &txn_inf_key);
+    ret = txn->get(txn_inf_key, &txn_inf_val);
+    if (ret != 0) {
+        code = ret > 0 ? MetaServiceCode::TXN_ID_NOT_FOUND : MetaServiceCode::KV_TXN_GET_ERR;
+        ss << "failed to get db id with db_id=" << db_id << " txn_id=" << txn_id << " ret=" << ret;
+        msg = ss.str();
+        return;
+    }
+
+    TxnInfoPB txn_info;
+    if (!txn_info.ParseFromString(txn_inf_val)) {
+        code = MetaServiceCode::PROTOBUF_PARSE_ERR;
+        ss << "failed to parse txn_inf db_id=" << db_id << " txn_id=" << txn_id;
+        msg = ss.str();
+        return;
+    }
+
+    DCHECK(txn_info.txn_id() == txn_id);
+    response->mutable_txn_info()->CopyFrom(txn_info);
+    return;
 }
 
 void MetaServiceImpl::get_version(::google::protobuf::RpcController* controller,

@@ -33,9 +33,6 @@ import com.google.common.base.Strings;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
-import com.selectdb.cloud.proto.SelectdbCloud.LoadJobSourceTypePB;
-import com.selectdb.cloud.proto.SelectdbCloud.TxnCoordinatorPB;
-import com.selectdb.cloud.proto.SelectdbCloud.TxnSourceTypePB;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -97,10 +94,6 @@ public class TransactionState implements Writable {
                     return null;
             }
         }
-
-        public LoadJobSourceTypePB toPB() {
-            return LoadJobSourceTypePB.forNumber(flag);
-        }
     }
 
     public enum TxnStatusChangeReason {
@@ -156,10 +149,6 @@ public class TransactionState implements Writable {
                     return null;
             }
         }
-
-        public TxnSourceTypePB toPB() {
-            return TxnSourceTypePB.forNumber(flag);
-        }
     }
 
     public static class TxnCoordinator {
@@ -177,13 +166,6 @@ public class TransactionState implements Writable {
         @Override
         public String toString() {
             return sourceType.toString() + ": " + ip;
-        }
-
-        public TxnCoordinatorPB toPB() {
-            TxnCoordinatorPB.Builder builder = TxnCoordinatorPB.newBuilder();
-            builder.setSourceType(sourceType.toPB());
-            builder.setIp(ip);
-            return builder.build();
         }
     }
 
@@ -291,6 +273,22 @@ public class TransactionState implements Writable {
         this.callbackId = callbackId;
         this.timeoutMs = timeoutMs;
         this.authCode = UUID.randomUUID().toString();
+    }
+
+    //for TxnInfoPB convert to TransactionState
+    public TransactionState(long dbId, List<Long> tableIdList, long transactionId, String label, TUniqueId requestId,
+            LoadJobSourceType sourceType, TxnCoordinator txnCoordinator, TransactionStatus transactionStatus,
+            String reason, long callbackId, long timeoutMs, TxnCommitAttachment txnCommitAttachment) {
+        this(dbId, tableIdList, transactionId, label, requestId, sourceType, txnCoordinator, callbackId, timeoutMs);
+
+        this.transactionStatus = transactionStatus;
+        //TODO(zhanglei): to fill prepare/commit/finish time.
+        this.prepareTime = -1;
+        this.preCommitTime = -1;
+        this.commitTime = -1;
+        this.finishTime = -1;
+        this.reason = reason;
+        this.txnCommitAttachment = txnCommitAttachment;
     }
 
     public void setAuthCode(String authCode) {

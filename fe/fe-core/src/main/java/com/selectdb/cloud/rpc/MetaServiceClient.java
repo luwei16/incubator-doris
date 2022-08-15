@@ -133,6 +133,11 @@ public class MetaServiceClient {
         return blockingStub.abortTxn(request);
     }
 
+    public SelectdbCloud.GetTxnResponse
+            getTxn(SelectdbCloud.GetTxnRequest request) {
+        return blockingStub.getTxn(request);
+    }
+
     public SelectdbCloud.GetClusterResponse getCluster(SelectdbCloud.GetClusterRequest request) {
         if (!request.hasCloudUniqueId()) {
             SelectdbCloud.GetClusterRequest.Builder builder =

@@ -193,7 +193,7 @@ message TxnInfoPB {
     optional int64 finish_time = 12;
     optional string reason = 13;
     optional TxnStatusPB status = 14;
-    optional TxnCommitAttachmentPB txn_commit_attachment = 15;
+    optional TxnCommitAttachmentPB commit_attachment = 15;
     optional int64 listener_id = 16; //callback id
     // TODO: There are more fields TBD
 }
@@ -224,7 +224,7 @@ message PrecommitTxnRequest {
     optional string cloud_unique_id = 1; // For auth
     optional int64 db_id = 2;
     optional int64 txn_id = 3;
-    optional TxnCommitAttachmentPB txn_commit_attachment = 4;
+    optional TxnCommitAttachmentPB commit_attachment = 4;
 }
 
 message PrecommitTxnResponse {
@@ -238,13 +238,12 @@ message CommitTxnRequest {
     optional int64 db_id = 2;
     optional int64 txn_id = 3;
     optional bool is_2pc = 4;
-    optional TxnCommitAttachmentPB txn_commit_attachment = 5;
+    optional TxnCommitAttachmentPB commit_attachment = 5;
 }
 
 message CommitTxnResponse {
     optional MetaServiceResponseStatus status = 1;
     optional TxnInfoPB txn_info = 2;
-    // TODO: There may be more fields TBD
 }
 
 message AbortTxnRequest {
@@ -258,7 +257,18 @@ message AbortTxnRequest {
 
 message AbortTxnResponse {
     optional MetaServiceResponseStatus status = 1;
-    // TODO: There may be more fields TBD
+    optional TxnInfoPB txn_info = 2;
+}
+
+message GetTxnRequest {
+    optional string cloud_unique_id = 1; // For auth
+    optional int64 db_id = 2;
+    optional int64 txn_id = 3;
+}
+
+message GetTxnResponse {
+    optional MetaServiceResponseStatus status = 1;
+    optional TxnInfoPB txn_info = 2;
 }
 
 message GetVersionRequest {
@@ -421,6 +431,7 @@ service MetaService {
     rpc precommit_txn(PrecommitTxnRequest) returns (PrecommitTxnResponse);
     rpc commit_txn(CommitTxnRequest) returns (CommitTxnResponse);
     rpc abort_txn(AbortTxnRequest) returns (AbortTxnResponse);
+    rpc get_txn(GetTxnRequest) returns (GetTxnResponse);
 
     rpc get_version(GetVersionRequest) returns (GetVersionResponse);
 
