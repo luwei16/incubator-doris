@@ -266,7 +266,7 @@ struct SchemaChangeParams {
     AlterTabletType alter_tablet_type;
     TabletSharedPtr base_tablet;
     TabletSharedPtr new_tablet;
-    TabletSchema* base_tablet_schema = nullptr;
+    TabletSchemaSPtr base_tablet_schema;
     std::vector<RowsetReaderSharedPtr> ref_rowset_readers;
     DeleteHandler* delete_handler = nullptr;
     std::unordered_map<std::string, AlterMaterializedViewParam> materialized_params_map;

@@ -130,7 +130,7 @@ Status VOlapScanner::prepare(
         }
 #endif
     }
-    return _init_tablet_reader_params(key_ranges, filters, bloom_filters);
+    return _init_tablet_reader_params(key_ranges, filters, bloom_filters, function_filters);
 }
 
 Status VOlapScanner::open() {

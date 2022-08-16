@@ -55,6 +55,9 @@ std::string print_plan_node_type(const TPlanNodeType::type& type) {
 std::string get_build_version(bool compact) {
     std::stringstream ss;
     ss << DORIS_BUILD_VERSION
+#ifdef CLOUD_MODE
+       << " cloud mode"
+#endif
 #ifdef NDEBUG
        << " RELEASE"
 #else

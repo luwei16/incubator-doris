@@ -50,9 +50,9 @@ Status CloudSchemaChangeHandler::process_alter_tablet(const TAlterTabletReqV2& r
     std::vector<ColumnId> return_columns;
     auto base_tablet_schema = base_tablet->tablet_schema();
     if (!request.columns.empty() && request.columns[0].col_unique_id >= 0) {
-        base_tablet_schema.clear_columns();
+        base_tablet_schema->clear_columns();
         for (const auto& column : request.columns) {
-            base_tablet_schema.append_column(TabletColumn(column));
+            base_tablet_schema->append_column(TabletColumn(column));
         }
     }
 
@@ -61,7 +61,7 @@ Status CloudSchemaChangeHandler::process_alter_tablet(const TAlterTabletReqV2& r
         // with rs_readers
         RowsetReaderContext reader_context;
         reader_context.reader_type = READER_ALTER_TABLE;
-        reader_context.tablet_schema = &base_tablet_schema;
+        reader_context.tablet_schema = base_tablet_schema;
         reader_context.need_ordered_result = true;
         reader_context.delete_handler = &delete_handler;
         reader_context.return_columns = &return_columns;
@@ -80,9 +80,9 @@ Status CloudSchemaChangeHandler::process_alter_tablet(const TAlterTabletReqV2& r
         reader_params.tablet = base_tablet;
         reader_params.reader_type = READER_ALTER_TABLE;
         reader_params.rs_readers = rs_readers;
-        reader_params.tablet_schema = &base_tablet_schema;
+        reader_params.tablet_schema = base_tablet_schema;
         const auto& schema = base_tablet_schema;
-        reader_params.return_columns.resize(schema.num_columns());
+        reader_params.return_columns.resize(schema->num_columns());
         std::iota(reader_params.return_columns.begin(), reader_params.return_columns.end(), 0);
         reader_params.origin_return_columns = &reader_params.return_columns;
         reader_params.version = {0, request.alter_version};
@@ -104,7 +104,7 @@ Status CloudSchemaChangeHandler::process_alter_tablet(const TAlterTabletReqV2& r
     sc_params.new_tablet = new_tablet;
     sc_params.ref_rowset_readers = rs_readers;
     sc_params.delete_handler = &delete_handler;
-    sc_params.base_tablet_schema = &base_tablet_schema;
+    sc_params.base_tablet_schema = base_tablet_schema;
     if (!request.__isset.materialized_view_params) {
         return _convert_historical_rowsets(sc_params);
     }
@@ -161,7 +161,7 @@ Status CloudSchemaChangeHandler::_convert_historical_rowsets(const SchemaChangeP
         context.version = rs_reader->version();
         context.rowset_state = VISIBLE;
         context.segments_overlap = rs_reader->rowset()->rowset_meta()->segments_overlap();
-        context.tablet_schema = &new_tablet->tablet_schema();
+        context.tablet_schema = new_tablet->tablet_schema();
         context.oldest_write_timestamp = rs_reader->oldest_write_timestamp();
         context.newest_write_timestamp = rs_reader->newest_write_timestamp();
         context.fs = new_tablet->data_dir()->fs();
