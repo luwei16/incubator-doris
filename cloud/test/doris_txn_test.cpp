@@ -93,7 +93,7 @@ TEST(MetaServiceTest, BeginTxnTest) {
     ASSERT_EQ(ret, 0);
 
     // Add service
-    auto meta_service = std::make_unique<MetaServiceImpl>(txn_kv);
+    auto meta_service = std::make_unique<MetaServiceImpl>(txn_kv, nullptr);
     brpc::Controller cntl;
     BeginTxnRequest req;
     BeginTxnResponse res;

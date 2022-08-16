@@ -36,42 +36,58 @@ namespace selectdb {
 static const constexpr unsigned char CLOUD_KEY_SPACE01 = 0x01;
 
 // clang-format off
-//                                     0:instance_id
-using InstanceKeyInfo      = std::tuple<std::string>;
+/**
+ * Wraps std::tuple for differnet types even if the underlying type is the same.
+ * 
+ * @param N for elemination of same underlying types of type alias when we use
+ *          `using` to declare a new type.
+ *
+ * @param Base for base tuple, the underlying type
+ */
+template<size_t N, typename Base>
+struct BasicKeyInfo : Base {
+    template<typename... Args>
+    BasicKeyInfo(Args&&... args) : Base(std::forward<Args>(args)...) {}
+    constexpr static size_t type = N; // The tricky/important part
+};
 
-//                                     0:instance_id  1:db_id  2:label
-using TxnIndexKeyInfo      = std::tuple<std::string,  int64_t, std::string>;
+// ATTN: newly added key must have different type number
 
-//                                     0:instance_id  1:db_id  2:txn_id
-using TxnInfoKeyInfo       = std::tuple<std::string,  int64_t, int64_t>;
+//                                                      0:instance_id
+using InstanceKeyInfo      = BasicKeyInfo<0 , std::tuple<std::string>>;
 
-//                                     0:instance_id  1:txn_id
-using TxnDbTblKeyInfo      = std::tuple<std::string,  int64_t>;
+//                                                      0:instance_id  1:db_id  2:label
+using TxnIndexKeyInfo      = BasicKeyInfo<1 , std::tuple<std::string,  int64_t, std::string>>;
 
-//                                     0:instance_id  1:db_id  2:txn_id
-using TxnRunningKeyInfo    = std::tuple<std::string,  int64_t, int64_t>;
+//                                                      0:instance_id  1:db_id  2:txn_id
+using TxnInfoKeyInfo       = BasicKeyInfo<2 , std::tuple<std::string,  int64_t, int64_t>>;
 
-//                                     0:instance_id  1:db_id  2:tbl_id  3:partition_id
-using VersionKeyInfo       = std::tuple<std::string,  int64_t, int64_t,  int64_t>;
+//                                                      0:instance_id  1:txn_id
+using TxnDbTblKeyInfo      = BasicKeyInfo<3 , std::tuple<std::string,  int64_t>>;
 
-//                                     0:instance_id  1:tablet_id  2:version
-using MetaRowsetKeyInfo    = std::tuple<std::string,  int64_t,     int64_t>;
+//                                                      0:instance_id  1:db_id  2:txn_id
+using TxnRunningKeyInfo    = BasicKeyInfo<5 , std::tuple<std::string,  int64_t, int64_t>>;
 
-//                                     0:instance_id  1:txn_id  2:tablet_id
-using MetaRowsetTmpKeyInfo = std::tuple<std::string,  int64_t,  int64_t>;
+//                                                      0:instance_id  1:db_id  2:tbl_id  3:partition_id
+using VersionKeyInfo       = BasicKeyInfo<6 , std::tuple<std::string,  int64_t, int64_t,  int64_t>>;
 
-//                                     0:instance_id  1:table_id  2:tablet_id
-using MetaTabletKeyInfo    = std::tuple<std::string,  int64_t,    int64_t>;
+//                                                      0:instance_id  1:tablet_id  2:version
+using MetaRowsetKeyInfo    = BasicKeyInfo<7 , std::tuple<std::string,  int64_t,     int64_t>>;
 
-//                                     0:instance_id  1:tablet_id
-using MetaTabletTblKeyInfo = std::tuple<std::string,  int64_t>;
+//                                                      0:instance_id  1:txn_id  2:tablet_id
+using MetaRowsetTmpKeyInfo = BasicKeyInfo<8 , std::tuple<std::string,  int64_t,  int64_t>>;
 
-//                                     0:instance_id  1:table_id  2:tablet_id
-using MetaTabletTmpKeyInfo = std::tuple<std::string,  int64_t,    int64_t>;
+//                                                      0:instance_id  1:table_id  2:tablet_id
+using MetaTabletKeyInfo    = BasicKeyInfo<9 , std::tuple<std::string,  int64_t,    int64_t>>;
 
-//                                     0:instance_id  1:tablet_id 2:rowset_id
-using RecycleRowsetKeyInfo = std::tuple<std::string,  int64_t,    std::string>;
+//                                                      0:instance_id  1:tablet_id
+using MetaTabletTblKeyInfo = BasicKeyInfo<10, std::tuple<std::string,  int64_t>>;
 
+//                                                      0:instance_id  1:table_id  2:tablet_id
+using MetaTabletTmpKeyInfo = BasicKeyInfo<11, std::tuple<std::string,  int64_t,    int64_t>>;
+
+//                                                      0:instance_id  1:tablet_id 2:rowset_id
+using RecycleRowsetKeyInfo = BasicKeyInfo<12, std::tuple<std::string,  int64_t,    std::string>>;
 // clang-format on
 
 void instance_key(const InstanceKeyInfo& in, std::string* out);

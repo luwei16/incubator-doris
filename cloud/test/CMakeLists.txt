@@ -4,6 +4,8 @@ set(LIBRARY_OUTPUT_PATH "${BUILD_DIR}/test")
 # where to put generated libraries
 set(EXECUTABLE_OUTPUT_PATH "${BUILD_DIR}/test")
 
+set(TEST_LINK_LIBS ${TEST_LINK_LIBS} ResourceManager)
+
 add_executable(sync_point_test
    sync_point_test.cpp
 )

@@ -97,6 +97,10 @@ static void encode_prefix(const T& t, std::string* key) {
     } else {
         std::abort(); // Impossible
     }
+    static_assert(!std::is_same_v<InstanceKeyInfo, TxnIndexKeyInfo>
+               && !std::is_same_v<TxnIndexKeyInfo, MetaRowsetKeyInfo>
+               && !std::is_same_v<MetaRowsetKeyInfo, VersionKeyInfo>
+               && !std::is_same_v<VersionKeyInfo, RecycleRowsetKeyInfo>);
     // clang-format on
     encode_bytes(std::get<0>(t), key); // instance_id
 }
