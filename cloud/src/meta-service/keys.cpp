@@ -58,22 +58,48 @@ namespace selectdb {
 [[maybe_unused]] static const char* TRASH_KEY_INFIX_TRASH   = "trash";
 // clang-format on
 
+// clang-format off
+template <typename T, typename U>
+constexpr static bool is_one_of() { return std::is_same_v<T, U>; }
+/**
+ * Checks the first type is one of the given types (type collection)
+ * @param T type to check
+ * @param U first type in the collection
+ * @param R the rest types in the collection
+ */
+template <typename T, typename U, typename... R>
+constexpr static typename std::enable_if_t<0 < sizeof...(R), bool> is_one_of() {
+    return ((std::is_same_v<T, U>) || is_one_of<T, R...>());
+}
+
+template <typename T, typename U>
+constexpr static bool has_same_among() { return std::is_same_v<T, U>; }
+/**
+ * Checks if there are 2 types in the given type list
+ */
+template <typename T, typename U, typename... R>
+constexpr static typename std::enable_if_t<0 < sizeof...(R), bool> 
+has_same_among() {
+    // The last part of this expr is `for` loop
+    return is_one_of<T, U>() || is_one_of<T, R...>() || has_same_among<U, R...>();
+}
+
 template <typename T>
 static void encode_prefix(const T& t, std::string* key) {
-    // clang-format off
-    static_assert(std::is_same_v<T, InstanceKeyInfo     >
-               || std::is_same_v<T, TxnIndexKeyInfo     >
-               || std::is_same_v<T, TxnInfoKeyInfo      >
-               || std::is_same_v<T, TxnDbTblKeyInfo     >
-               || std::is_same_v<T, TxnRunningKeyInfo   >
-               || std::is_same_v<T, MetaRowsetKeyInfo   >
-               || std::is_same_v<T, MetaRowsetTmpKeyInfo>
-               || std::is_same_v<T, MetaTabletKeyInfo   >
-               || std::is_same_v<T, MetaTabletTblKeyInfo>
-               || std::is_same_v<T, MetaTabletTmpKeyInfo>
-               || std::is_same_v<T, VersionKeyInfo      >
-               || std::is_same_v<T, RecycleRowsetKeyInfo> 
-               , "Invalid Key Type");
+    // Input type T must be one of the following, add if needed
+    static_assert(is_one_of<T,
+        InstanceKeyInfo,
+        TxnIndexKeyInfo, TxnInfoKeyInfo, TxnDbTblKeyInfo, TxnRunningKeyInfo,
+        MetaRowsetKeyInfo, MetaRowsetTmpKeyInfo, MetaTabletKeyInfo, MetaTabletTblKeyInfo, MetaTabletTmpKeyInfo,
+        VersionKeyInfo , RecycleRowsetKeyInfo
+       >(), "Invalid Key Type");
+    // Abitrary 2 types must be distingushable
+    static_assert(!has_same_among<
+        InstanceKeyInfo,
+        TxnIndexKeyInfo, TxnInfoKeyInfo, TxnDbTblKeyInfo, TxnRunningKeyInfo,
+        MetaRowsetKeyInfo, MetaRowsetTmpKeyInfo, MetaTabletKeyInfo, MetaTabletTblKeyInfo, MetaTabletTmpKeyInfo,
+        VersionKeyInfo , RecycleRowsetKeyInfo
+        >(), "Type conflict, there are at least 2 types are the same in the list.");
 
     key->push_back(CLOUD_KEY_SPACE01);
     // Prefixes for key families
@@ -97,13 +123,9 @@ static void encode_prefix(const T& t, std::string* key) {
     } else {
         std::abort(); // Impossible
     }
-    static_assert(!std::is_same_v<InstanceKeyInfo, TxnIndexKeyInfo>
-               && !std::is_same_v<TxnIndexKeyInfo, MetaRowsetKeyInfo>
-               && !std::is_same_v<MetaRowsetKeyInfo, VersionKeyInfo>
-               && !std::is_same_v<VersionKeyInfo, RecycleRowsetKeyInfo>);
-    // clang-format on
     encode_bytes(std::get<0>(t), key); // instance_id
 }
+// clang-format on
 
 //==============================================================================
 // Resource keys
