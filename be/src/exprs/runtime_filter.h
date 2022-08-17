@@ -26,6 +26,7 @@
 #include "util/runtime_profile.h"
 #include "util/time.h"
 #include "util/uid_util.h"
+#include "util/lock.h"
 
 namespace doris {
 class Predicate;
@@ -263,8 +264,8 @@ protected:
     // expr index
     int _expr_order;
     // used for await or signal
-    std::mutex _inner_mutex;
-    std::condition_variable _inner_cv;
+    doris::Mutex _inner_mutex;
+    doris::ConditionVariable _inner_cv;
 
     // if set always_true = true
     // this filter won't filter any data

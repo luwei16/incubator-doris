@@ -22,7 +22,7 @@
 
 #include "util/blocking_priority_queue.hpp"
 #include "util/thread_group.h"
-
+#include "util/lock.h"
 namespace doris {
 
 // Simple threadpool which processes items (of type T) in parallel which were placed on a
@@ -105,7 +105,7 @@ public:
     // Any work Offer()'ed during DrainAndshutdown may or may not be processed.
     virtual void drain_and_shutdown() {
         {
-            std::unique_lock<std::mutex> l(_lock);
+            std::unique_lock<doris::Mutex> l(_lock);
             while (_work_queue.get_size() != 0) {
                 _empty_cv.wait(l);
             }
@@ -121,10 +121,10 @@ protected:
     ThreadGroup _threads;
 
     // Guards _empty_cv
-    std::mutex _lock;
+    doris::Mutex _lock;
 
     // Signalled when the queue becomes empty
-    std::condition_variable _empty_cv;
+    doris::ConditionVariable _empty_cv;
 
 private:
     // Driver method for each thread in the pool. Continues to read work from the queue

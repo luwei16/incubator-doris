@@ -24,6 +24,7 @@
 #include "io/fs/s3_common.h"
 #include "io/fs/s3_file_writer.h"
 #include "util/doris_metrics.h"
+#include "util/async_io.h"
 
 namespace doris {
 namespace io {
@@ -55,6 +56,16 @@ Status S3FileReader::close() {
 }
 
 Status S3FileReader::read_at(size_t offset, Slice result, size_t* bytes_read) {
+    if (bthread_self() == 0) {
+        return read_at_impl(offset, result, bytes_read);
+    }
+    Status s;
+    auto task = [&] {s = read_at_impl(offset, result, bytes_read);};
+    AsyncIO::run_task(task, io::FileSystemType::S3);
+    return s;
+}
+
+Status S3FileReader::read_at_impl(size_t offset, Slice result, size_t* bytes_read) {
     DCHECK(!closed());
     if (config::enable_write_as_cache) {
         FileReaderSPtr _cache_file_reader = S3FileWriter::lookup(_local_path);

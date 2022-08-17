@@ -256,7 +256,7 @@ Status Compaction::construct_input_rowset_readers() {
 Status Compaction::modify_rowsets() {
     std::vector<RowsetSharedPtr> output_rowsets;
     output_rowsets.push_back(_output_rowset);
-    std::lock_guard<std::shared_mutex> wrlock(_tablet->get_header_lock());
+    std::lock_guard<doris::SharedMutex> wrlock(_tablet->get_header_lock());
 
     // update dst rowset delete bitmap
     if (_tablet->keys_type() == KeysType::UNIQUE_KEYS &&

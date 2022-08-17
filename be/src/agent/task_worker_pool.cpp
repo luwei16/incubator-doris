@@ -912,7 +912,7 @@ void TaskWorkerPool::_update_tablet_meta_worker_thread_callback() {
                              << " schema_hash=" << tablet_meta_info.schema_hash;
                 continue;
             }
-            std::lock_guard<std::shared_mutex> wrlock(tablet->get_header_lock());
+            std::lock_guard<doris::SharedMutex> wrlock(tablet->get_header_lock());
             // update tablet meta
             if (!tablet_meta_info.__isset.meta_type) {
                 tablet->set_partition_id(tablet_meta_info.partition_id);

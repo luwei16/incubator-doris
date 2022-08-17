@@ -28,6 +28,7 @@
 #include "util/progress_updater.h"
 
 namespace doris {
+
 class ObjectPool;
 class TPlanNode;
 class DescriptorTbl;
@@ -168,8 +169,12 @@ private:
     // to limit _materialized_row_batches_bytes < _max_scanner_queue_size_bytes / 2
     std::atomic_size_t _materialized_row_batches_bytes = 0;
 
-    std::atomic_int _running_thread = 0;
-    std::condition_variable _scan_thread_exit_cv;
+    doris::Mutex _scan_batches_lock;
+    doris::ConditionVariable _scan_batch_added_cv;
+    std::atomic_int64_t _running_thread = 0;
+    doris::ConditionVariable _scan_thread_exit_cv;
+
+    std::vector<bthread_t> _btids; // For async IO separation with bthread
 
     // to limit _scan_row_batches_bytes < _max_scanner_queue_size_bytes / 2
     std::atomic_size_t _scan_row_batches_bytes = 0;
@@ -306,14 +311,14 @@ private:
     std::condition_variable _block_added_cv;
     std::condition_variable _block_consumed_cv;
 
-    std::mutex _scan_blocks_lock;
-    std::condition_variable _scan_block_added_cv;
+    doris::Mutex _scan_blocks_lock;
+    doris::ConditionVariable _scan_block_added_cv;
 
     std::vector<Block*> _free_blocks;
-    std::mutex _free_blocks_lock;
+    doris::Mutex _free_blocks_lock;
 
     std::list<VOlapScanner*> _volap_scanners;
-    std::mutex _volap_scanners_lock;
+    doris::Mutex _volap_scanners_lock;
 
     int _max_materialized_blocks;
 

@@ -1791,8 +1791,8 @@ Status SchemaChangeHandler::_do_process_alter_tablet_v2(const TAlterTabletReqV2&
     {
         std::lock_guard<std::mutex> base_tablet_lock(base_tablet->get_push_lock());
         std::lock_guard<std::mutex> new_tablet_lock(new_tablet->get_push_lock());
-        std::lock_guard<std::shared_mutex> base_tablet_wlock(base_tablet->get_header_lock());
-        std::lock_guard<std::shared_mutex> new_tablet_wlock(new_tablet->get_header_lock());
+        std::lock_guard<doris::SharedMutex> base_tablet_wlock(base_tablet->get_header_lock());
+        std::lock_guard<doris::SharedMutex> new_tablet_wlock(new_tablet->get_header_lock());
         // check if the tablet has alter task
         // if it has alter task, it means it is under old alter process
         size_t num_cols = base_tablet_schema->num_columns();
@@ -1982,7 +1982,7 @@ Status SchemaChangeHandler::_do_process_alter_tablet_v2(const TAlterTabletReqV2&
             break;
         }
         // set state to ready
-        std::lock_guard<std::shared_mutex> new_wlock(new_tablet->get_header_lock());
+        std::lock_guard<doris::SharedMutex> new_wlock(new_tablet->get_header_lock());
         res = new_tablet->set_tablet_state(TabletState::TABLET_RUNNING);
         if (!res) {
             break;
@@ -2056,7 +2056,7 @@ Status SchemaChangeHandler::_convert_historical_rowsets(const SchemaChangeParams
     auto process_alter_exit = [&]() -> Status {
         {
             // save tablet meta here because rowset meta is not saved during add rowset
-            std::lock_guard<std::shared_mutex> new_wlock(sc_params.new_tablet->get_header_lock());
+            std::lock_guard<doris::SharedMutex> new_wlock(sc_params.new_tablet->get_header_lock());
             sc_params.new_tablet->save_meta();
         }
         if (res) {

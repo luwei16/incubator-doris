@@ -51,6 +51,7 @@
 #include "runtime/stream_load/stream_load_executor.h"
 #include "runtime/thread_resource_mgr.h"
 #include "runtime/tmp_file_mgr.h"
+#include "util/async_io.h"
 #include "util/bfd_parser.h"
 #include "util/brpc_client_cache.h"
 #include "util/doris_metrics.h"

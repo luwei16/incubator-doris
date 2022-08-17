@@ -48,7 +48,7 @@
 #include "util/thrift_util.h"
 #include "util/uid_util.h"
 #include "vec/runtime/vdata_stream_mgr.h"
-
+#include "util/async_io.h"
 namespace doris {
 
 const uint32_t DOWNLOAD_FILE_MAX_RETRY = 3;
@@ -90,11 +90,13 @@ PInternalServiceImpl::PInternalServiceImpl(ExecEnv* exec_env)
     REGISTER_HOOK_METRIC(add_batch_task_queue_size,
                          [this]() { return _tablet_worker_pool.get_queue_size(); });
     CHECK_EQ(0, bthread_key_create(&btls_key, thread_context_deleter));
+    CHECK_EQ(0, bthread_key_create(&AsyncIO::btls_io_ctx_key, AsyncIO::io_ctx_key_deleter));
 }
 
 PInternalServiceImpl::~PInternalServiceImpl() {
     DEREGISTER_HOOK_METRIC(add_batch_task_queue_size);
     CHECK_EQ(0, bthread_key_delete(btls_key));
+    CHECK_EQ(0, bthread_key_delete(AsyncIO::btls_io_ctx_key));
 }
 
 void PInternalServiceImpl::transmit_data(google::protobuf::RpcController* cntl_base,

@@ -21,6 +21,7 @@
 
 #include "util/doris_metrics.h"
 #include "util/errno.h"
+#include "util/async_io.h"
 
 namespace doris {
 namespace io {
@@ -39,8 +40,14 @@ Status LocalFileReader::close() {
     bool expected = false;
     if (_closed.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
         DorisMetrics::instance()->local_file_open_reading->increment(-1);
-        auto res = ::close(_fd);
-        if (-1 == res) {
+        int res = -1;
+        if (bthread_self() == 0) {
+            res = ::close(_fd);
+        } else {
+            AsyncIO::run_task([&]{ res = ::close(_fd); }, io::FileSystemType::LOCAL);
+        }
+
+        if (res == -1) {
             return Status::IOError("failed to close {}: {}", _path.native(), std::strerror(errno));
         }
         _fd = -1;
@@ -49,6 +56,16 @@ Status LocalFileReader::close() {
 }
 
 Status LocalFileReader::read_at(size_t offset, Slice result, size_t* bytes_read) {
+    if (bthread_self() == 0) {
+        return read_at_impl(offset, result, bytes_read);
+    }
+    Status s;
+    auto task = [&] {s = read_at_impl(offset, result, bytes_read);};
+    AsyncIO::run_task(task, io::FileSystemType::LOCAL);
+    return s;
+}
+
+Status LocalFileReader::read_at_impl(size_t offset, Slice result, size_t *bytes_read) {
     DCHECK(!closed());
     if (offset > _file_size) {
         return Status::IOError("offset exceeds file size(offset: {), file size: {}, path: {})",

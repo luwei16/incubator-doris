@@ -36,6 +36,8 @@ public:
 
     Status read_at(size_t offset, Slice result, size_t* bytes_read) override;
 
+    Status read_at_impl(size_t offset, Slice result, size_t* bytes_read);
+
     const Path& path() const override { return _path; }
 
     size_t size() const override { return _file_size; }

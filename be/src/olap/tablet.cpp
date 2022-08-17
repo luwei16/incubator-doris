@@ -233,7 +233,7 @@ Status Tablet::revise_tablet_meta(const std::vector<RowsetMetaSharedPtr>& rowset
 
 Status Tablet::add_rowset(RowsetSharedPtr rowset) {
     DCHECK(rowset != nullptr);
-    std::lock_guard<std::shared_mutex> wrlock(_meta_lock);
+    std::lock_guard<doris::SharedMutex> wrlock(_meta_lock);
     // If the rowset already exist, just return directly.  The rowset_id is an unique-id,
     // we can use it to check this situation.
     if (_contains_rowset(rowset->rowset_id())) {
@@ -430,7 +430,7 @@ RowsetSharedPtr Tablet::_rowset_with_largest_size() {
 // add inc rowset should not persist tablet meta, because it will be persisted when publish txn.
 Status Tablet::add_inc_rowset(const RowsetSharedPtr& rowset) {
     DCHECK(rowset != nullptr);
-    std::lock_guard<std::shared_mutex> wrlock(_meta_lock);
+    std::lock_guard<doris::SharedMutex> wrlock(_meta_lock);
     if (_contains_rowset(rowset->rowset_id())) {
         return Status::OK();
     }
@@ -457,7 +457,7 @@ void Tablet::add_rowset_by_meta(const RowsetMetaSharedPtr& rs_meta) {
     RowsetSharedPtr rowset;
     // nullptr implies using tablet schema in `rs_meta`
     RowsetFactory::create_rowset(nullptr, tablet_path(), rs_meta, &rowset);
-    std::lock_guard<std::shared_mutex> wrlock(_meta_lock);
+    std::lock_guard<doris::SharedMutex> wrlock(_meta_lock);
     if (_contains_rowset(rowset->rowset_id())) {
         // rowset is already in tablet
         return;
@@ -546,7 +546,7 @@ void Tablet::_delete_stale_rowset_by_version(const Version& version) {
 
 void Tablet::delete_expired_stale_rowset() {
     int64_t now = UnixSeconds();
-    std::lock_guard<std::shared_mutex> wrlock(_meta_lock);
+    std::lock_guard<doris::SharedMutex> wrlock(_meta_lock);
     // Compute the end time to delete rowsets, when a expired rowset createtime less then this time, it will be deleted.
     double expired_stale_sweep_endtime =
             ::difftime(now, config::tablet_rowset_stale_sweep_time_sec);
@@ -987,7 +987,7 @@ void Tablet::_max_continuous_version_from_beginning_unlocked(Version* version, V
 }
 
 void Tablet::calculate_cumulative_point() {
-    std::lock_guard<std::shared_mutex> wrlock(_meta_lock);
+    std::lock_guard<doris::SharedMutex> wrlock(_meta_lock);
     int64_t ret_cumulative_point;
     _cumulative_compaction_policy->calculate_cumulative_point(
             this, _tablet_meta->all_rs_metas(), _cumulative_point, &ret_cumulative_point);

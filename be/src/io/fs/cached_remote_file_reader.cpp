@@ -30,6 +30,8 @@
 #include "util/doris_metrics.h"
 #include "vec/common/sip_hash.h"
 
+#include "util/async_io.h"
+
 namespace doris {
 namespace io {
 
@@ -61,6 +63,16 @@ std::pair<size_t, size_t> CachedRemoteFileReader::_align_size(size_t offset,
 }
 
 Status CachedRemoteFileReader::read_at(size_t offset, Slice result, size_t* bytes_read) {
+    if (bthread_self() == 0) {
+        return read_at_impl(offset, result, bytes_read);
+    }
+    Status s;
+    auto task = [&] {s = read_at_impl(offset, result, bytes_read);};
+    AsyncIO::run_task(task, io::FileSystemType::S3);
+    return s;
+}
+
+Status CachedRemoteFileReader::read_at_impl(size_t offset, Slice result, size_t* bytes_read) {
     DCHECK(!closed());
     if (offset > size()) {
         return Status::IOError(

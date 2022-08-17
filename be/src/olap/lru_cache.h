@@ -18,7 +18,7 @@
 #include "runtime/thread_context.h"
 #include "util/metrics.h"
 #include "util/slice.h"
-
+#include "util/lock.h"
 namespace doris {
 
 #define OLAP_CACHE_STRING_TO_BUF(cur, str, r_len)                  \
@@ -337,7 +337,7 @@ private:
     size_t _capacity = 0;
 
     // _mutex protects the following state.
-    std::mutex _mutex;
+    doris::Mutex _mutex;
     size_t _usage = 0;
 
     // Dummy head of LRU list.

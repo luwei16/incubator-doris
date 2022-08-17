@@ -1074,7 +1074,7 @@ Status IRuntimeFilter::get_prepared_context(std::vector<ExprContext*>* push_expr
     }
     DCHECK(_is_ready);
     DCHECK(is_consumer());
-    std::lock_guard<std::mutex> guard(_inner_mutex);
+    std::lock_guard<doris::Mutex> guard(_inner_mutex);
 
     if (_push_down_ctxs.empty()) {
         RETURN_IF_ERROR(_wrapper->get_push_context(&_push_down_ctxs, _state, _probe_ctx));
@@ -1093,7 +1093,7 @@ Status IRuntimeFilter::get_prepared_vexprs(std::vector<doris::vectorized::VExpr*
     }
     DCHECK(_is_ready);
     DCHECK(is_consumer());
-    std::lock_guard<std::mutex> guard(_inner_mutex);
+    std::lock_guard<doris::Mutex> guard(_inner_mutex);
 
     if (_push_down_vexprs.empty()) {
         RETURN_IF_ERROR(_wrapper->get_push_vexprs(&_push_down_vexprs, _state, _vprobe_ctx));
@@ -1113,9 +1113,19 @@ bool IRuntimeFilter::await() {
         if (ms_remaining <= 0) {
             return _is_ready;
         }
-        std::unique_lock<std::mutex> lock(_inner_mutex);
+        std::unique_lock<doris::Mutex> lock(_inner_mutex);
+#if !defined(USE_BTHREAD_SCANNER)
         return _inner_cv.wait_for(lock, std::chrono::milliseconds(ms_remaining),
                                   [this] { return this->_is_ready; });
+#else
+        auto timeout_ms = butil::milliseconds_from_now(ms_remaining);
+        while (!_is_ready) {
+            if (_inner_cv.wait_until(lock, timeout_ms) != 0) {
+                // timeout
+                return _is_ready;
+            }
+        }
+#endif
     }
     return true;
 }

@@ -32,6 +32,8 @@ public:
 
     Status open_file(const Path& path, FileReaderSPtr* reader) override;
 
+    Status open_file_impl(const Path& path, FileReaderSPtr* reader);
+
     Status delete_file(const Path& path) override;
 
     Status create_directory(const Path& path) override;
@@ -43,6 +45,8 @@ public:
     Status exists(const Path& path, bool* res) const override;
 
     Status file_size(const Path& path, size_t* file_size) const override;
+
+    Status file_size_impl(const Path& path, size_t* file_size) const;
 
     Status list(const Path& path, std::vector<Path>* files) override;
 

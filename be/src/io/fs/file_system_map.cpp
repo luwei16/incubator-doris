@@ -16,6 +16,7 @@
 // under the License.
 
 #include "io/fs/file_system_map.h"
+#include "util/lock.h"
 
 namespace doris {
 namespace io {

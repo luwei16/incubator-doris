@@ -28,6 +28,7 @@
 #include "exprs/function_filter.h"
 #include "exprs/in_predicate.h"
 #include "runtime/descriptors.h"
+#include "util/lock.h"
 #include "util/progress_updater.h"
 #include "util/spinlock.h"
 #include "vec/exec/volap_scanner.h"
@@ -227,11 +228,11 @@ protected:
     // to limit _materialized_row_batches_bytes < _max_scanner_queue_size_bytes / 2
     std::atomic_size_t _materialized_row_batches_bytes = 0;
 
-    std::mutex _scan_batches_lock;
-    std::condition_variable _scan_batch_added_cv;
-    std::atomic_int _running_thread = 0;
-    std::condition_variable _scan_thread_exit_cv;
-
+    doris::Mutex _scan_batches_lock;
+    doris::ConditionVariable _scan_batch_added_cv;
+    std::atomic_int64_t _running_thread = 0;
+    doris::ConditionVariable _scan_thread_exit_cv;
+    std::vector<bthread_t> _btids;
     std::list<RowBatch*> _scan_row_batches;
     // to limit _scan_row_batches_bytes < _max_scanner_queue_size_bytes / 2
     std::atomic_size_t _scan_row_batches_bytes = 0;

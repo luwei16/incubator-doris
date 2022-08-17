@@ -20,7 +20,7 @@
 #include "io/fs/file_system.h"
 #include "io/fs/local_file_reader.h"
 #include "io/fs/local_file_writer.h"
-
+#include "util/async_io.h"
 namespace doris {
 namespace io {
 
@@ -43,6 +43,16 @@ Status LocalFileSystem::create_file(const Path& path, FileWriterPtr* writer) {
 }
 
 Status LocalFileSystem::open_file(const Path& path, FileReaderSPtr* reader) {
+    if (bthread_self() == 0) {
+        return open_file_impl(path, reader);
+    }
+    Status s;
+    auto task = [&] {s = open_file_impl(path, reader);};
+    AsyncIO::run_task(task, io::FileSystemType::LOCAL);
+    return s;
+}
+
+Status LocalFileSystem::open_file_impl(const Path& path, FileReaderSPtr* reader) {
     auto fs_path = absolute_path(path);
     size_t fsize = 0;
     RETURN_IF_ERROR(file_size(fs_path, &fsize));
@@ -115,6 +125,17 @@ Status LocalFileSystem::exists(const Path& path, bool* res) const {
 }
 
 Status LocalFileSystem::file_size(const Path& path, size_t* file_size) const {
+    if (bthread_self() == 0) {
+        return file_size_impl(path, file_size);
+    }
+ 
+    Status s;
+    auto task = [&] {s = file_size_impl(path, file_size);};
+    AsyncIO::run_task(task, io::FileSystemType::LOCAL);
+    return s;
+}
+
+Status LocalFileSystem::file_size_impl(const Path &path, size_t *file_size) const {
     auto fs_path = absolute_path(path);
     std::error_code ec;
     *file_size = std::filesystem::file_size(fs_path, ec);

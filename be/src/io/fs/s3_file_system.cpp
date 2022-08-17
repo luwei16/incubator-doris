@@ -38,6 +38,7 @@
 #include "io/fs/s3_file_reader.h"
 #include "io/fs/s3_file_writer.h"
 
+#include "util/async_io.h"
 namespace doris {
 namespace io {
 
@@ -145,6 +146,16 @@ Status S3FileSystem::create_file(const Path& path, FileWriterPtr* writer) {
 }
 
 Status S3FileSystem::open_file(const Path& path, FileReaderSPtr* reader) {
+    if (bthread_self() == 0) {
+        return open_file_impl(path, reader);
+    }
+    Status s;
+    auto task = [&] {s = open_file_impl(path, reader);};
+    AsyncIO::run_task(task, io::FileSystemType::S3);
+    return s;
+}
+
+Status S3FileSystem::open_file_impl(const Path &path, FileReaderSPtr *reader) {
     size_t fsize = 0;
     RETURN_IF_ERROR(file_size(path, &fsize));
     auto key = get_key(path);
@@ -259,6 +270,16 @@ Status S3FileSystem::exists(const Path& path, bool* res) const {
 }
 
 Status S3FileSystem::file_size(const Path& path, size_t* file_size) const {
+    if (bthread_self() == 0) {
+        return file_size_impl(path, file_size);
+    }
+    Status s;
+    auto task = [&] {s = file_size_impl(path, file_size);};
+    AsyncIO::run_task(task, io::FileSystemType::S3);
+    return s;
+}
+
+Status S3FileSystem::file_size_impl(const Path &path, size_t *file_size) const {
     auto client = get_client();
     CHECK_S3_CLIENT(client);
 

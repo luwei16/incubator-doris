@@ -22,7 +22,7 @@
 #include <unordered_map>
 
 #include "io/fs/file_system.h"
-
+#include "util/lock.h"
 namespace doris {
 namespace io {
 
@@ -40,7 +40,7 @@ private:
     FileSystemMap() = default;
 
 private:
-    std::shared_mutex _mu;
+    doris::SharedMutex _mu;
     std::unordered_map<ResourceId, FileSystemPtr> _map; // GUARED_BY(_mu)
 };
 

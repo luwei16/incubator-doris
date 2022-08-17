@@ -37,10 +37,12 @@
 #include "runtime/runtime_state.h"
 #include "runtime/string_value.h"
 #include "runtime/tuple_row.h"
+#include "util/lock.h"
 #include "util/priority_thread_pool.hpp"
 #include "util/runtime_profile.h"
 #include "util/thread.h"
 #include "util/to_string.h"
+#include "util/async_io.h"
 
 namespace doris {
 
@@ -401,6 +403,10 @@ Status OlapScanNode::close(RuntimeState* state) {
     // _transfer_thread may not be initialized. So need to check it
     if (_transfer_thread != nullptr) {
         _transfer_thread->join();
+    }
+
+    for (const auto &tid: _btids) {
+        bthread_join(tid, nullptr);
     }
 
     // clear some row batch in queue
@@ -1477,6 +1483,13 @@ Status OlapScanNode::normalize_bloom_filter_predicate(SlotDescriptor* slot) {
     return Status::OK();
 }
 
+[[maybe_unused]] static void *run_scanner_bthread(void* arg) {
+    auto f = reinterpret_cast<std::function<void()>*> (arg);
+    (*f)();
+    delete f;
+    return nullptr;
+}
+
 void OlapScanNode::transfer_thread(RuntimeState* state) {
     // scanner open pushdown to scanThread
     SCOPED_ATTACH_TASK(state);
@@ -1490,7 +1503,8 @@ void OlapScanNode::transfer_thread(RuntimeState* state) {
         }
     }
 
-    ThreadPoolToken* thread_token = nullptr;
+    // Bthread version does not need this token
+    [[maybe_unused]] ThreadPoolToken* thread_token = nullptr;
     if (limit() != -1 && limit() < 1024) {
         thread_token = state->get_query_fragments_ctx()->get_serial_token();
     } else {
@@ -1507,8 +1521,7 @@ void OlapScanNode::transfer_thread(RuntimeState* state) {
      *    The larger the nice value, the more preferentially obtained query resources
      * 4. Regularly increase the priority of the remaining tasks in the queue to avoid starvation for large queries
      *********************************/
-    PriorityThreadPool* thread_pool = state->exec_env()->scan_thread_pool();
-    PriorityThreadPool* remote_thread_pool = state->exec_env()->remote_scan_thread_pool();
+
     _total_assign_num = 0;
     _nice = 18 + std::max(0, 2 - (int)_olap_scanners.size() / 5);
     std::list<OlapScanner*> olap_scanners;
@@ -1531,7 +1544,7 @@ void OlapScanNode::transfer_thread(RuntimeState* state) {
         int assigned_thread_num = 0;
         // copy to local
         {
-            std::unique_lock<std::mutex> l(_scan_batches_lock);
+            std::unique_lock<doris::Mutex> l(_scan_batches_lock);
             assigned_thread_num = _running_thread;
             // How many thread can apply to this query
             size_t thread_slot_num = 0;
@@ -1566,6 +1579,7 @@ void OlapScanNode::transfer_thread(RuntimeState* state) {
         }
 
         auto iter = olap_scanners.begin();
+#if !defined(USE_BTHREAD_SCANNER)
         if (thread_token != nullptr) {
             while (iter != olap_scanners.end()) {
                 auto s = thread_token->submit_func(
@@ -1591,11 +1605,9 @@ void OlapScanNode::transfer_thread(RuntimeState* state) {
                 TabletStorageType type = (*iter)->get_storage_type();
                 bool ret = false;
                 COUNTER_UPDATE(_scanner_sched_counter, 1);
-                if (type == TabletStorageType::STORAGE_TYPE_LOCAL) {
-                    ret = thread_pool->offer(task);
-                } else {
-                    ret = remote_thread_pool->offer(task);
-                }
+                ret = type == TabletStorageType::STORAGE_TYPE_LOCAL
+                      ? state->exec_env()->scan_thread_pool()->offer(task)
+                      : state->exec_env()->remote_scan_thread_pool()->offer(task);
 
                 if (ret) {
                     olap_scanners.erase(iter++);
@@ -1605,11 +1617,43 @@ void OlapScanNode::transfer_thread(RuntimeState* state) {
                 ++_total_assign_num;
             }
         }
+#else
+        while (iter != olap_scanners.end()) {
+            (*iter)->start_wait_worker_timer();
+            COUNTER_UPDATE(_scanner_sched_counter, 1);
+
+            OlapScanner* scanner = *iter;
+            AsyncIOCtx ctx{.nice=_nice};
+            auto f = new std::function<void()> ([this, scanner, ctx] {
+                AsyncIOCtx *set_ctx = static_cast<AsyncIOCtx*>(bthread_getspecific(AsyncIO::btls_io_ctx_key));
+                if (set_ctx == nullptr) {
+                    set_ctx = new AsyncIOCtx(ctx);
+                    CHECK_EQ(0, bthread_setspecific(AsyncIO::btls_io_ctx_key, set_ctx));
+                } else {
+                    LOG(WARNING) << "New bthread should not have io_nice_key";
+                }
+                this->scanner_thread(scanner);
+            });
+
+            bthread_t btid;
+            int ret = bthread_start_background(&btid, nullptr, run_scanner_bthread, (void*)f);
+
+            if (ret != 0) {
+                delete f;
+                LOG(FATAL) << "Failed to assign scanner task to thread pool! ";
+                continue;
+            }
+
+            olap_scanners.erase(iter++);
+            _btids.push_back(btid);
+            ++_total_assign_num;
+        }
+#endif
 
         RowBatch* scan_batch = nullptr;
         {
             // 1 scanner idle task not empty, assign new scanner task
-            std::unique_lock<std::mutex> l(_scan_batches_lock);
+            std::unique_lock<doris::Mutex> l(_scan_batches_lock);
 
             // scanner_row_num = 16k
             // 16k * 10 * 12 * 8 = 15M(>2s)  --> nice=10
@@ -1656,17 +1700,25 @@ void OlapScanNode::transfer_thread(RuntimeState* state) {
         _row_batch_added_cv.notify_all();
     }
 
-    std::unique_lock<std::mutex> l(_scan_batches_lock);
-    _scan_thread_exit_cv.wait(l, [this] { return _running_thread == 0; });
+    std::unique_lock<doris::Mutex> l(_scan_batches_lock);
+    while (_running_thread != 0) {
+        _scan_thread_exit_cv.wait(l);
+    }
     VLOG_CRITICAL << "Scanner threads have been exited. TransferThread exit.";
 }
 
 void OlapScanNode::scanner_thread(OlapScanner* scanner) {
+#if !defined(USE_BTHREAD_SCANNER)
     SCOPED_ATTACH_TASK(_runtime_state);
     Thread::set_self_name("olap_scanner");
+#else
+    // TODO: does not support mem_tracker
+    // SCOPED_ATTACH_TASK(_runtime_state);
+    // Thread::set_self_name("olap_scanner");
+#endif
     if (UNLIKELY(_transfer_done)) {
         _scanner_done = true;
-        std::unique_lock<std::mutex> l(_scan_batches_lock);
+        std::unique_lock<doris::Mutex> l(_scan_batches_lock);
         _running_thread--;
         // We need to make sure the scanner is closed because the query has been closed or cancelled.
         scanner->close(scanner->runtime_state());
@@ -1719,11 +1771,12 @@ void OlapScanNode::scanner_thread(OlapScanner* scanner) {
                                      new_contexts.end());
         scanner->set_use_pushdown_conjuncts(true);
     }
-
+#if !defined(USE_BTHREAD_SCANNER)
     // apply to cgroup
     if (_resource_info != nullptr) {
         CgroupsMgr::apply_cgroup(_resource_info->user, _resource_info->group);
     }
+#endif
 
     std::vector<RowBatch*> row_batchs;
 
@@ -1770,7 +1823,7 @@ void OlapScanNode::scanner_thread(OlapScanner* scanner) {
     }
 
     {
-        std::unique_lock<std::mutex> l(_scan_batches_lock);
+        std::unique_lock<doris::Mutex> l(_scan_batches_lock);
         // if we failed, check status.
         if (UNLIKELY(!status.ok())) {
             _transfer_done = true;
@@ -1807,7 +1860,7 @@ void OlapScanNode::scanner_thread(OlapScanner* scanner) {
         // that can assure this object can keep live before we finish.
         scanner->close(_runtime_state);
 
-        std::unique_lock<std::mutex> l(_scan_batches_lock);
+        std::unique_lock<doris::Mutex> l(_scan_batches_lock);
         _progress.update(1);
         if (_progress.done()) {
             // this is the right out
@@ -1820,7 +1873,7 @@ void OlapScanNode::scanner_thread(OlapScanner* scanner) {
 
     // The transfer thead will wait for `_running_thread==0`, to make sure all scanner threads won't access class members.
     // Do not access class members after this code.
-    std::unique_lock<std::mutex> l(_scan_batches_lock);
+    std::unique_lock<doris::Mutex> l(_scan_batches_lock);
     _running_thread--;
     // Both cv of _scan_batch_added_cv and _scan_thread_exit_cv should be notify after
     // change the value of _running_thread, because transfer thread lock will check the value
