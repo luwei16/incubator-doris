@@ -1742,4 +1742,6 @@ public class Config extends ConfigBase {
 
     @ConfField
     public static String cloud_unique_id = "this is cloud unique id";
+    @ConfField
+    public static boolean default_enable_light_schema_change = true;
 }
