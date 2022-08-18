@@ -669,7 +669,8 @@ public class LoadManager implements Writable {
                 LOG.error("not supported in cloud mode yet");
                 throw new AnalysisException("not supported in cloud mode yet");
             }
-            DatabaseTransactionMgr dbTxnMgr = ((NativeGlobalTransactionMgr) Env.getCurrentGlobalTransactionMgr()).getDatabaseTransactionMgr(dbId);
+            DatabaseTransactionMgr dbTxnMgr = ((NativeGlobalTransactionMgr) Env.getCurrentGlobalTransactionMgr())
+                                                                               .getDatabaseTransactionMgr(dbId);
             dbTxnMgr.cleanLabel(label);
         } catch (AnalysisException e) {
             // just ignore, because we don't want to throw any exception here.

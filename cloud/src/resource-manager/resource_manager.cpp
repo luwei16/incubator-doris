@@ -323,10 +323,10 @@ void ResourceManager::remove_cluster_from_index(const std::string& instance_id,
             continue;
         }
         ++cnt;
-        it = node_info_.erase(it);
         LOG(INFO) << "remove node from index,"
                   << " role=" << static_cast<int>(n.role) << " cluster_name=" << n.cluster_name
                   << " cluster_id=" << n.cluster_id << " node_info=" << proto_to_json(n.node_info);
+        it = node_info_.erase(it);
     }
     LOG(INFO) << cnt << " nodes removed from index, cluster_id=" << cluster_id
               << " cluster_name=" << cluster_name;

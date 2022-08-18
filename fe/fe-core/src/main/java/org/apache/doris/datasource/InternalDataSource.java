@@ -152,9 +152,6 @@ import org.apache.doris.persist.PartitionPersistInfo;
 import org.apache.doris.persist.RecoverInfo;
 import org.apache.doris.persist.ReplicaPersistInfo;
 import org.apache.doris.persist.TruncateTableInfo;
-import org.apache.doris.policy.Policy;
-import org.apache.doris.policy.PolicyTypeEnum;
-import org.apache.doris.policy.StoragePolicy;
 import org.apache.doris.proto.OlapCommon;
 import org.apache.doris.proto.OlapFile;
 import org.apache.doris.proto.Types;
@@ -1340,13 +1337,26 @@ public class InternalDataSource implements DataSourceIf<Database> {
         IdGeneratorBuffer idGeneratorBuffer = Env.getCurrentEnv().getIdGeneratorBuffer(bufferSize);
         try {
             long partitionId = idGeneratorBuffer.getNextId();
-            Partition partition = createPartitionWithIndices(db.getClusterName(), db.getId(), olapTable.getId(),
-                    olapTable.getBaseIndexId(), partitionId, partitionName, indexIdToMeta, distributionInfo,
-                    dataProperty.getStorageMedium(), singlePartitionDesc.getReplicaAlloc(),
-                    singlePartitionDesc.getVersionInfo(), bfColumns, olapTable.getBfFpp(), tabletIdSet,
-                    olapTable.getCopiedIndexes(), singlePartitionDesc.isInMemory(), olapTable.getStorageFormat(),
-                    singlePartitionDesc.getTabletType(), olapTable.getCompressionType(), olapTable.getDataSortInfo(),
-                    olapTable.getEnableUniqueKeyMergeOnWrite(), olapTable.getStoragePolicy(), idGeneratorBuffer);
+            Partition partition;
+            if (Config.cloud_unique_id.isEmpty()) {
+                partition = createPartitionWithIndices(db.getClusterName(), db.getId(), olapTable.getId(),
+                        olapTable.getBaseIndexId(), partitionId, partitionName, indexIdToMeta, distributionInfo,
+                        dataProperty.getStorageMedium(), singlePartitionDesc.getReplicaAlloc(),
+                        singlePartitionDesc.getVersionInfo(), bfColumns, olapTable.getBfFpp(), tabletIdSet,
+                        olapTable.getCopiedIndexes(), singlePartitionDesc.isInMemory(), olapTable.getStorageFormat(),
+                        singlePartitionDesc.getTabletType(), olapTable.getCompressionType(),
+                        olapTable.getDataSortInfo(), olapTable.getEnableUniqueKeyMergeOnWrite(),
+                        olapTable.getStoragePolicy(), idGeneratorBuffer);
+            } else {
+                partition = createCloudPartitionWithIndices(db.getClusterName(), db.getId(), olapTable.getId(),
+                        olapTable.getBaseIndexId(), partitionId, partitionName, indexIdToMeta, distributionInfo,
+                        dataProperty.getStorageMedium(), singlePartitionDesc.getReplicaAlloc(),
+                        singlePartitionDesc.getVersionInfo(), bfColumns, olapTable.getBfFpp(), tabletIdSet,
+                        olapTable.getCopiedIndexes(), singlePartitionDesc.isInMemory(), olapTable.getStorageFormat(),
+                        singlePartitionDesc.getTabletType(), olapTable.getCompressionType(),
+                        olapTable.getDataSortInfo(), olapTable.getEnableUniqueKeyMergeOnWrite(),
+                        olapTable.getStoragePolicy());
+            }
 
             // check again
             table = db.getOlapTableOrDdlException(tableName);

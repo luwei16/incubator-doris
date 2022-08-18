@@ -1094,7 +1094,6 @@ Status SegmentIterator::_read_columns_by_rowids(std::vector<ColumnId>& read_colu
 }
 
 Status SegmentIterator::next_batch(vectorized::Block* block) {
-    LOG(INFO) << "xxx block " << block->dump_structure();
     bool is_mem_reuse = block->mem_reuse();
     DCHECK(is_mem_reuse);
 
@@ -1215,7 +1214,6 @@ Status SegmentIterator::next_batch(vectorized::Block* block) {
     if (UNLIKELY(_estimate_row_size) && block->rows() > 0) {
         _update_max_row(block);
     }
-    LOG(INFO) << "xxx yyy block " << block->dump_structure();
     return Status::OK();
 }
 

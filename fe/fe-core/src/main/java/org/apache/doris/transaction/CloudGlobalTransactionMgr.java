@@ -17,8 +17,8 @@
 
 package org.apache.doris.transaction;
 
-import org.apache.doris.catalog.Env;
 import org.apache.doris.catalog.Database;
+import org.apache.doris.catalog.Env;
 import org.apache.doris.catalog.OlapTable;
 import org.apache.doris.catalog.Table;
 import org.apache.doris.common.AnalysisException;
