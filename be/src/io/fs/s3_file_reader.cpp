@@ -74,7 +74,7 @@ Status S3FileReader::read_at_impl(size_t offset, Slice result, size_t* bytes_rea
         }
     }
     if (offset > _file_size) {
-        return Status::IOError("offset exceeds file size(offset: {), file size: {}, path: {})",
+        return Status::IOError("offset exceeds file size(offset: {}, file size: {}, path: {})",
                                offset, _file_size, _path.native());
     }
     size_t bytes_req = result.size;

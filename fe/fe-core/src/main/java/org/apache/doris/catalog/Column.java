@@ -244,11 +244,15 @@ public class Column implements Writable {
     }
 
     public boolean isDeleteSignColumn() {
-        return !visible && aggregationType == AggregateType.REPLACE && nameEquals(DELETE_SIGN, true);
+        // aggregationType is NONE for unique table with merge on write.
+        return !visible && (aggregationType == AggregateType.REPLACE
+                || aggregationType == AggregateType.NONE) && nameEquals(DELETE_SIGN, true);
     }
 
     public boolean isSequenceColumn() {
-        return !visible && aggregationType == AggregateType.REPLACE && nameEquals(SEQUENCE_COL, true);
+        // aggregationType is NONE for unique table with merge on write.
+        return !visible && (aggregationType == AggregateType.REPLACE
+                || aggregationType == AggregateType.NONE) && nameEquals(SEQUENCE_COL, true);
     }
 
     public PrimitiveType getDataType() {
@@ -638,7 +642,6 @@ public class Column implements Writable {
         if (StringUtils.isNotBlank(comment)) {
             sb.append(" COMMENT '").append(getComment(true)).append("'");
         }
-
         return sb.toString();
     }
 

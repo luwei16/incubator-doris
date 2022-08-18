@@ -24,8 +24,8 @@ import org.apache.doris.cluster.ClusterNamespace;
 import org.apache.doris.common.UserException;
 import org.apache.doris.common.telemetry.Telemetry;
 import org.apache.doris.common.util.DebugUtil;
-import org.apache.doris.datasource.DataSourceIf;
-import org.apache.doris.datasource.InternalDataSource;
+import org.apache.doris.datasource.CatalogIf;
+import org.apache.doris.datasource.InternalCatalog;
 import org.apache.doris.datasource.SessionContext;
 import org.apache.doris.mysql.MysqlCapability;
 import org.apache.doris.mysql.MysqlChannel;
@@ -115,7 +115,7 @@ public class ConnectContext {
     // Catalog: put catalog here is convenient for unit test,
     // because catalog is singleton, hard to mock
     protected Env env;
-    protected String defaultCatalog = InternalDataSource.INTERNAL_DS_NAME;
+    protected String defaultCatalog = InternalCatalog.INTERNAL_CATALOG_NAME;
     protected boolean isSend;
 
     protected AuditEventBuilder auditEventBuilder = new AuditEventBuilder();
@@ -301,7 +301,7 @@ public class ConnectContext {
 
     public void setEnv(Env env) {
         this.env = env;
-        defaultCatalog = env.getInternalDataSource().getName();
+        defaultCatalog = env.getInternalCatalog().getName();
     }
 
     public Env getEnv() {
@@ -426,12 +426,20 @@ public class ConnectContext {
         return defaultCatalog;
     }
 
-    public DataSourceIf getCurrentDataSource() {
+    public CatalogIf getCurrentCatalog() {
         // defaultCatalog is switched by SwitchStmt, so we don't need to check to exist of catalog.
+        return getCatalog(defaultCatalog);
+    }
+
+    /**
+     * Maybe return when catalogName is not exist. So need to check nullable.
+     */
+    public CatalogIf getCatalog(String catalogName) {
+        String realCatalogName = catalogName == null ? defaultCatalog : catalogName;
         if (env == null) {
-            return Env.getCurrentEnv().getDataSourceMgr().getCatalog(defaultCatalog);
+            return Env.getCurrentEnv().getCatalogMgr().getCatalog(realCatalogName);
         }
-        return env.getDataSourceMgr().getCatalog(defaultCatalog);
+        return env.getCatalogMgr().getCatalog(realCatalogName);
     }
 
     public void changeDefaultCatalog(String catalogName) {
@@ -446,7 +454,7 @@ public class ConnectContext {
 
     public void setDatabase(String db) {
         currentDb = db;
-        Optional<DatabaseIf> dbInstance = getCurrentDataSource().getDb(db);
+        Optional<DatabaseIf> dbInstance = getCurrentCatalog().getDb(db);
         currentDbId = dbInstance.map(DatabaseIf::getId).orElse(-1L);
     }
 
@@ -515,7 +523,11 @@ public class ConnectContext {
             // Close channel to break connection with client
             getMysqlChannel().close();
         }
-        // Now, cancel running process.
+        // Now, cancel running query.
+        cancelQuery();
+    }
+
+    public void cancelQuery() {
         StmtExecutor executorRef = executor;
         if (executorRef != null) {
             executorRef.cancel();

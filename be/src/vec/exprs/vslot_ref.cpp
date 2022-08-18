@@ -22,8 +22,7 @@
 #include "runtime/descriptors.h"
 
 namespace doris::vectorized {
-using doris::Status;
-using doris::SlotDescriptor;
+
 VSlotRef::VSlotRef(const doris::TExprNode& node)
         : VExpr(node), _slot_id(node.slot_ref.slot_id), _column_id(-1), _column_name(nullptr) {
     if (node.__isset.is_nullable) {
@@ -47,7 +46,7 @@ Status VSlotRef::prepare(doris::RuntimeState* state, const doris::RowDescriptor&
         return Status::OK();
     }
     const SlotDescriptor* slot_desc = state->desc_tbl().get_slot_descriptor(_slot_id);
-    if (slot_desc == NULL) {
+    if (slot_desc == nullptr) {
         return Status::InternalError("couldn't resolve slot descriptor {}", _slot_id);
     }
     _column_id = desc.get_column_id(_slot_id);
@@ -56,7 +55,11 @@ Status VSlotRef::prepare(doris::RuntimeState* state, const doris::RowDescriptor&
 }
 
 Status VSlotRef::execute(VExprContext* context, Block* block, int* result_column_id) {
-    DCHECK_GE(_column_id, 0);
+    // comment DCHECK temporarily to make fuzzy test run smoothly
+    // DCHECK_GE(_column_id, 0);
+    if (_column_id < 0) {
+        return Status::InternalError("invalid column id {}", _column_id);
+    }
     *result_column_id = _column_id;
     return Status::OK();
 }

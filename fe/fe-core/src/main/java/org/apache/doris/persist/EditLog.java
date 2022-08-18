@@ -96,6 +96,9 @@ public class EditLog {
 
     private Journal journal;
 
+    /**
+     * The constructor.
+     **/
     public EditLog(String nodeName) {
         String journalType = Config.edit_log_type;
         if (journalType.equalsIgnoreCase("bdb")) {
@@ -135,6 +138,9 @@ public class EditLog {
         return journal == null ? 0 : 1;
     }
 
+    /**
+     * Load journal.
+     **/
     public static void loadJournal(Env env, JournalEntity journal) {
         short opCode = journal.getOpCode();
         if (opCode != OperationType.OP_SAVE_NEXTID && opCode != OperationType.OP_TIMESTAMP) {
@@ -843,24 +849,29 @@ public class EditLog {
                     env.getPolicyMgr().replayStoragePolicyAlter(log);
                     break;
                 }
-                case OperationType.OP_CREATE_DS: {
+                case OperationType.OP_CREATE_CATALOG: {
                     CatalogLog log = (CatalogLog) journal.getData();
-                    env.getDataSourceMgr().replayCreateCatalog(log);
+                    env.getCatalogMgr().replayCreateCatalog(log);
                     break;
                 }
-                case OperationType.OP_DROP_DS: {
+                case OperationType.OP_DROP_CATALOG: {
                     CatalogLog log = (CatalogLog) journal.getData();
-                    env.getDataSourceMgr().replayDropCatalog(log);
+                    env.getCatalogMgr().replayDropCatalog(log);
                     break;
                 }
-                case OperationType.OP_ALTER_DS_NAME: {
+                case OperationType.OP_ALTER_CATALOG_NAME: {
                     CatalogLog log = (CatalogLog) journal.getData();
-                    env.getDataSourceMgr().replayAlterCatalogName(log);
+                    env.getCatalogMgr().replayAlterCatalogName(log);
                     break;
                 }
-                case OperationType.OP_ALTER_DS_PROPS: {
+                case OperationType.OP_ALTER_CATALOG_PROPS: {
                     CatalogLog log = (CatalogLog) journal.getData();
-                    env.getDataSourceMgr().replayAlterCatalogProps(log);
+                    env.getCatalogMgr().replayAlterCatalogProps(log);
+                    break;
+                }
+                case OperationType.OP_REFRESH_CATALOG: {
+                    CatalogLog log = (CatalogLog) journal.getData();
+                    env.getCatalogMgr().replayRefreshCatalog(log);
                     break;
                 }
                 case OperationType.OP_MODIFY_TABLE_ADD_OR_DROP_COLUMNS: {
@@ -880,7 +891,7 @@ public class EditLog {
                 }
             }
         } catch (MetaNotFoundException e) {
-            /**
+            /*
              * In the following cases, doris may record metadata modification information
              * for a table that no longer exists.
              * 1. Thread 1: get TableA object
@@ -1496,7 +1507,7 @@ public class EditLog {
         logEdit(OperationType.OP_DROP_POLICY, log);
     }
 
-    public void logDatasourceLog(short id, CatalogLog log) {
+    public void logCatalogLog(short id, CatalogLog log) {
         logEdit(id, log);
     }
 

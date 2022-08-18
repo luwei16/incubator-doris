@@ -1679,7 +1679,7 @@ public class Config extends ConfigBase {
     public static boolean enable_quantile_state_type = false;
 
     @ConfField
-    public static boolean enable_vectorized_load = false;
+    public static boolean enable_vectorized_load = true;
 
     @ConfField(mutable = false, masterOnly = true)
     public static int backend_rpc_timeout_ms = 60000; // 1 min
@@ -1735,6 +1735,7 @@ public class Config extends ConfigBase {
      */
     @ConfField
     public static String s3_compatible_object_storages = "s3,oss,cos,bos";
+
     /**
      * MetaService endpoint, ip:port, such as meta_service_endpoint = "192.0.0.10:8866"
      */
@@ -1742,6 +1743,19 @@ public class Config extends ConfigBase {
 
     @ConfField
     public static String cloud_unique_id = "this is cloud unique id";
+
     @ConfField
     public static boolean default_enable_light_schema_change = true;
+
+    /**
+     * Support complex data type ARRAY.
+     */
+    @ConfField(mutable = true, masterOnly = true)
+    public static boolean enable_array_type = false;
+
+    /**
+     * Use new fe generate es dsl.
+     */
+    @ConfField(mutable = true)
+    public static boolean enable_new_es_dsl = true;
 }

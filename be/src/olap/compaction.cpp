@@ -45,8 +45,8 @@ Compaction::Compaction(TabletSharedPtr tablet, const std::string& label)
 Compaction::~Compaction() {
 #ifndef BE_TEST
     // Compaction tracker cannot be completely accurate, offset the global impact.
-    StorageEngine::instance()->compaction_mem_tracker()->consumption_revise(
-            -_mem_tracker->consumption());
+    StorageEngine::instance()->compaction_mem_tracker()->consume_local(
+            -_mem_tracker->consumption(), ExecEnv::GetInstance()->process_mem_tracker().get());
 #endif
 }
 
@@ -303,6 +303,9 @@ Status Compaction::find_longest_consecutive_version(std::vector<RowsetSharedPtr>
 }
 
 Status Compaction::check_version_continuity(const std::vector<RowsetSharedPtr>& rowsets) {
+    if (rowsets.empty()) {
+        return Status::OK();
+    }
     RowsetSharedPtr prev_rowset = rowsets.front();
     for (size_t i = 1; i < rowsets.size(); ++i) {
         RowsetSharedPtr rowset = rowsets[i];

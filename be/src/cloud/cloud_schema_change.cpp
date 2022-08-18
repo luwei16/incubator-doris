@@ -66,7 +66,7 @@ Status CloudSchemaChangeHandler::process_alter_tablet(const TAlterTabletReqV2& r
         reader_context.delete_handler = &delete_handler;
         reader_context.return_columns = &return_columns;
         // for schema change, seek_columns is the same to return_columns
-        reader_context.seek_columns = &return_columns;
+        reader_context.return_columns = &return_columns;
         reader_context.sequence_id_idx = reader_context.tablet_schema->sequence_col_idx();
         reader_context.is_unique = base_tablet->keys_type() == UNIQUE_KEYS;
         reader_context.batch_size = ALTER_TABLE_BATCH_SIZE;

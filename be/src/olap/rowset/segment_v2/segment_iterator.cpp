@@ -44,9 +44,12 @@ namespace segment_v2 {
 // Example:
 //   input bitmap:  [0 1 4 5 6 7 10 15 16 17 18 19]
 //   output ranges: [0,2), [4,8), [10,11), [15,20) (when max_range_size=10)
-//   output ranges: [0,2), [4,8), [10,11), [15,18), [18,20) (when max_range_size=3)
+//   output ranges: [0,2), [4,7), [7,8), [10,11), [15,18), [18,20) (when max_range_size=3)
 class SegmentIterator::BitmapRangeIterator {
 public:
+    BitmapRangeIterator() {}
+    virtual ~BitmapRangeIterator() = default;
+
     explicit BitmapRangeIterator(const roaring::Roaring& bitmap) {
         roaring_init_iterator(&bitmap.roaring, &_iter);
         _read_next_batch();
@@ -100,7 +103,7 @@ public:
 
     // read next range into [*from, *to) whose size <= max_range_size.
     // return false when there is no more range.
-    bool next_range(const uint32_t max_range_size, uint32_t* from, uint32_t* to) {
+    virtual bool next_range(const uint32_t max_range_size, uint32_t* from, uint32_t* to) {
         if (_eof) {
             return false;
         }
@@ -151,6 +154,43 @@ private:
     bool _eof = false;
 };
 
+// A backward range iterator for roaring bitmap. Output ranges use closed-open form, like [from, to).
+// Example:
+//   input bitmap:  [0 1 4 5 6 7 10 15 16 17 18 19]
+//   output ranges: , [15,20), [10,11), [4,8), [0,2) (when max_range_size=10)
+//   output ranges: [17,20), [15,17), [10,11), [5,8), [4, 5), [0,2) (when max_range_size=3)
+class SegmentIterator::BackwardBitmapRangeIterator : public SegmentIterator::BitmapRangeIterator {
+public:
+    explicit BackwardBitmapRangeIterator(const roaring::Roaring& bitmap) {
+        roaring_init_iterator_last(&bitmap.roaring, &_riter);
+    }
+
+    bool has_more_range() const { return !_riter.has_value; }
+
+    // read next range into [*from, *to) whose size <= max_range_size.
+    // return false when there is no more range.
+    bool next_range(const uint32_t max_range_size, uint32_t* from, uint32_t* to) override {
+        if (!_riter.has_value) {
+            return false;
+        }
+
+        uint32_t range_size = 0;
+        *to = _riter.current_value + 1;
+
+        do {
+            *from = _riter.current_value;
+            range_size++;
+            roaring_previous_uint32_iterator(&_riter);
+        } while (range_size < max_range_size && _riter.has_value &&
+                 _riter.current_value + 1 == *from);
+
+        return true;
+    }
+
+private:
+    roaring::api::roaring_uint32_iterator_t _riter;
+};
+
 SegmentIterator::SegmentIterator(std::shared_ptr<Segment> segment, const Schema& schema)
         : _segment(std::move(segment)),
           _schema(schema),
@@ -198,6 +238,14 @@ Status SegmentIterator::_init(bool is_vec) {
         size_t pre_size = _row_bitmap.cardinality();
         _row_bitmap -= *(_opts.delete_bitmap[segment_id()]);
         _opts.stats->rows_del_by_bitmap += (pre_size - _row_bitmap.cardinality());
+        VLOG_DEBUG << "read on segment: " << segment_id() << ", delete bitmap cardinality: "
+                   << _opts.delete_bitmap[segment_id()]->cardinality() << ", "
+                   << _opts.stats->rows_del_by_bitmap << " rows deleted by bitmap";
+    }
+    if (_opts.read_orderby_key_reverse) {
+        _range_iter.reset(new BackwardBitmapRangeIterator(_row_bitmap));
+    } else {
+        _range_iter.reset(new BitmapRangeIterator(_row_bitmap));
     }
     BitmapRangeIterator iter(_row_bitmap);
     _ranges = iter.get_all_contiguous_ranges();
@@ -550,6 +598,13 @@ Status SegmentIterator::_lookup_ordinal_from_pk_index(const RowCursor& key, bool
     std::string index_key;
     encode_key_with_padding<RowCursor, true, true>(
             &index_key, key, _segment->_tablet_schema->num_key_columns(), is_include);
+    if (index_key < _segment->min_key()) {
+        *rowid = 0;
+        return Status::OK();
+    } else if (index_key > _segment->max_key()) {
+        *rowid = num_rows();
+        return Status::OK();
+    }
     bool exact_match = false;
 
     std::unique_ptr<segment_v2::IndexedColumnIterator> index_iterator;
@@ -779,6 +834,16 @@ void SegmentIterator::_vec_init_lazy_materialization() {
     std::set<ColumnId> del_cond_id_set;
     _opts.delete_condition_predicates->get_all_column_ids(del_cond_id_set);
 
+    std::set<const ColumnPredicate*> delete_predicate_set {};
+    _opts.delete_condition_predicates->get_all_column_predicate(delete_predicate_set);
+    for (const auto predicate : delete_predicate_set) {
+        if (PredicateTypeTraits::is_range(predicate->type())) {
+            _delete_range_column_ids.push_back(predicate->column_id());
+        } else if (PredicateTypeTraits::is_bloom_filter(predicate->type())) {
+            _delete_bloom_filter_column_ids.push_back(predicate->column_id());
+        }
+    }
+
     if (!_col_predicates.empty() || !del_cond_id_set.empty()) {
         std::set<ColumnId> short_cir_pred_col_id_set; // using set for distinct cid
         std::set<ColumnId> vec_pred_col_id_set;
@@ -939,10 +1004,6 @@ void SegmentIterator::_init_current_block(
                 current_columns[cid]->set_date_type();
             } else if (column_desc->type() == OLAP_FIELD_TYPE_DATETIME) {
                 current_columns[cid]->set_datetime_type();
-            } else if (column_desc->type() == OLAP_FIELD_TYPE_DATEV2) {
-                current_columns[cid]->set_date_v2_type();
-            } else if (column_desc->type() == OLAP_FIELD_TYPE_DATETIMEV2) {
-                current_columns[cid]->set_datetime_v2_type();
             } else if (column_desc->type() == OLAP_FIELD_TYPE_DECIMAL) {
                 current_columns[cid]->set_decimalv2_type();
             }
@@ -993,7 +1054,8 @@ Status SegmentIterator::_read_columns_by_index(uint32_t nrows_read_limit, uint32
         } else {
             nrows_read += rows_to_read;
         }
-    } while (nrows_read < nrows_read_limit);
+        // if _opts.read_orderby_key_reverse is true, only read one range for fast reverse purpose
+    } while (nrows_read < nrows_read_limit && !_opts.read_orderby_key_reverse);
     return Status::OK();
 }
 
@@ -1214,7 +1276,49 @@ Status SegmentIterator::next_batch(vectorized::Block* block) {
     if (UNLIKELY(_estimate_row_size) && block->rows() > 0) {
         _update_max_row(block);
     }
+
+    // reverse block row order
+    if (_opts.read_orderby_key_reverse) {
+        size_t num_rows = block->rows();
+        size_t num_columns = block->columns();
+        vectorized::IColumn::Permutation permutation;
+        for (size_t i = 0; i < num_rows; ++i) permutation.emplace_back(num_rows - 1 - i);
+
+        for (size_t i = 0; i < num_columns; ++i)
+            block->get_by_position(i).column =
+                    block->get_by_position(i).column->permute(permutation, num_rows);
+    }
+
     return Status::OK();
+}
+
+void SegmentIterator::_convert_dict_code_for_predicate_if_necessary() {
+    for (auto predicate : _short_cir_eval_predicate) {
+        _convert_dict_code_for_predicate_if_necessary_impl(predicate);
+    }
+
+    for (auto predicate : _pre_eval_block_predicate) {
+        _convert_dict_code_for_predicate_if_necessary_impl(predicate);
+    }
+
+    for (auto column_id : _delete_range_column_ids) {
+        _current_return_columns[column_id].get()->convert_dict_codes_if_necessary();
+    }
+
+    for (auto column_id : _delete_bloom_filter_column_ids) {
+        _current_return_columns[column_id].get()->generate_hash_values_for_runtime_filter();
+    }
+}
+
+void SegmentIterator::_convert_dict_code_for_predicate_if_necessary_impl(
+        ColumnPredicate* predicate) {
+    auto& column = _current_return_columns[predicate->column_id()];
+    auto* col_ptr = column.get();
+    if (PredicateTypeTraits::is_range(predicate->type())) {
+        col_ptr->convert_dict_codes_if_necessary();
+    } else if (PredicateTypeTraits::is_bloom_filter(predicate->type())) {
+        col_ptr->generate_hash_values_for_runtime_filter();
+    }
 }
 
 void SegmentIterator::_update_max_row(const vectorized::Block* block) {
