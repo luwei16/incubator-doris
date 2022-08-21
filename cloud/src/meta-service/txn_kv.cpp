@@ -156,12 +156,14 @@ int Transaction::get(std::string_view key, std::string* val) {
 
     auto err = fdb_future_block_until_ready(fut);
     if (err) {
-        LOG(WARNING) << " " << fdb_get_error(err) << " key: " << hex(key);
+        LOG(WARNING) << __PRETTY_FUNCTION__ << " failed to fdb_future_block_until_ready err="
+            << fdb_get_error(err) << " key=" << hex(key);
         return -1;
     }
     err = fdb_future_get_error(fut);
     if (err) {
-        LOG(WARNING) << " " << fdb_get_error(err) << " key: " << hex(key);
+        LOG(WARNING) << __PRETTY_FUNCTION__ << " failed to fdb_future_get_error err="
+            << fdb_get_error(err) << " key=" << hex(key);
         return -2;
     }
 
@@ -170,7 +172,11 @@ int Transaction::get(std::string_view key, std::string* val) {
     int len;
     err = fdb_future_get_value(fut, &found, &ret, &len);
 
-    if (err) return -1;
+    if (err) {
+        LOG(WARNING) << __PRETTY_FUNCTION__ << " failed to fdb_future_get_value err="
+            << fdb_get_error(err) << " key=" << hex(key);
+        return -1;
+    }
 
     if (!found) return 1;
     *val = std::string((char*)ret, len);

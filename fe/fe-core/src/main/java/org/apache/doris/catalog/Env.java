@@ -4915,7 +4915,7 @@ public class Env {
             }
         }
 
-        if (!isReplay) {
+        if (!isReplay && Config.cloud_unique_id.isEmpty()) { // Cloud mode do not need to send request
             // drop all replicas
             AgentBatchTask batchTask = new AgentBatchTask();
             for (Partition partition : olapTable.getAllPartitions()) {

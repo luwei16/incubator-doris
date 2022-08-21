@@ -462,7 +462,7 @@ public class PropertyAnalyzer {
         String value = properties.get(PROPERTIES_ENABLE_LIGHT_SCHEMA_CHANGE);
         // set light schema change false by default
         if (null == value) {
-            return false;
+            return Config.default_enable_light_schema_change;
         }
         properties.remove(PROPERTIES_ENABLE_LIGHT_SCHEMA_CHANGE);
         if (value.equalsIgnoreCase("true")) {
@@ -481,7 +481,7 @@ public class PropertyAnalyzer {
         String value = properties.get(PROPERTIES_DISABLE_AUTO_COMPACTION);
         // set light schema change false by default
         if (null == value) {
-            return Config.default_enable_light_schema_change;
+            return false;
         }
         properties.remove(PROPERTIES_DISABLE_AUTO_COMPACTION);
         if (value.equalsIgnoreCase("true")) {

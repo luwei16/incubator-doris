@@ -182,14 +182,6 @@ void MetaServiceImpl::begin_txn(::google::protobuf::RpcController* controller,
 
     LOG(INFO) << "get_txn_id_from_fdb_ts() txn_id=" << txn_id;
 
-    std::unique_ptr<int, std::function<void(int*)>> defer_(
-            (int*)0x01, [&code, &msg, &response, &ctrl](int*) {
-                response->mutable_status()->set_code(code);
-                response->mutable_status()->set_msg(msg);
-                LOG(INFO) << "finish " << __PRETTY_FUNCTION__ << " " << ctrl->remote_side() << " "
-                          << msg << " response" << response->DebugString();
-            });
-
     TxnLabelToIdsPB label_to_ids;
     if (txn_idx_val.size() > VERSION_STAMP_LEN) {
         //3. Check label
@@ -1226,12 +1218,13 @@ void MetaServiceImpl::get_tablet(::google::protobuf::RpcController* controller,
     int ret = 0;
     MetaServiceCode code = MetaServiceCode::OK;
     std::string msg = "OK";
+    std::stringstream ss;
     std::unique_ptr<int, std::function<void(int*)>> defer_status(
             (int*)0x01, [&ret, &code, &msg, &response, &ctrl](int*) {
                 response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
                 LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
-                          << ctrl->remote_side() << " " << msg;
+                          << ctrl->remote_side() << " " << msg << " ret=" << ret;
             });
     std::string instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
     if (instance_id.empty()) {
@@ -1251,9 +1244,12 @@ void MetaServiceImpl::get_tablet(::google::protobuf::RpcController* controller,
     std::string val0;
     meta_tablet_table_key(key_info0, &key0);
     ret = txn->get(key0, &val0);
+    LOG(INFO) << "get tablet meta, tablet_id=" << tablet_id << " key=" << hex(key0);
     if (ret != 0) {
         code = MetaServiceCode::KV_TXN_GET_ERR;
-        msg = "failed to get table id from tablet_id";
+        ss << "failed to get table id from tablet_id, err="
+            << (ret == 1 ? "not found" : "internal error");
+        msg = ss.str();
         return;
     }
 

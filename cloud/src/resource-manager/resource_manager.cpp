@@ -303,10 +303,10 @@ void ResourceManager::add_cluster_to_index(const std::string& instance_id, const
                     .cluster_name = c.cluster_name(),
                     .cluster_id = c.cluster_id(),
                     .node_info = i};
-        node_info_.insert({i.cloud_unique_id(), std::move(n)});
         LOG(WARNING) << (existed ? "duplicated cloud_unique_id " : "")
                      << "instance_id=" << instance_id << " cloud_unique_id=" << i.cloud_unique_id()
                      << " node_info=" << proto_to_json(i);
+        node_info_.insert({i.cloud_unique_id(), std::move(n)});
     }
 }
 
