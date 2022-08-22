@@ -57,11 +57,11 @@ public:
 
     /**
      * Closed-open range
-     *
+     * @param limit if non-zero, indicates the maximum number of key-value pairs to return
      * @return 0 for success, negative for error
      */
     virtual int get(std::string_view begin, std::string_view end,
-                    std::unique_ptr<RangeGetIterator>* iter) = 0;
+                    std::unique_ptr<RangeGetIterator>* iter, int limit = 10000) = 0;
 
     /**
      * Put a key-value pair in which key will in the form of
@@ -351,11 +351,11 @@ public:
     int get(std::string_view key, std::string* val) override;
     /**
      * Closed-open range
-     *
+     * @param limit if non-zero, indicates the maximum number of key-value pairs to return
      * @return 0 for success, negative for error
      */
     int get(std::string_view begin, std::string_view end,
-            std::unique_ptr<selectdb::RangeGetIterator>* iter) override;
+            std::unique_ptr<selectdb::RangeGetIterator>* iter, int limit = 10000) override;
 
     /**
      * Put a key-value pair in which key will in the form of

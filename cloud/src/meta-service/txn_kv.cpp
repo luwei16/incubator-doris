@@ -184,12 +184,11 @@ int Transaction::get(std::string_view key, std::string* val) {
 }
 
 int Transaction::get(std::string_view begin, std::string_view end,
-                     std::unique_ptr<selectdb::RangeGetIterator>* iter) {
+                     std::unique_ptr<selectdb::RangeGetIterator>* iter, int limit) {
     FDBFuture* fut = fdb_transaction_get_range(
             txn_, FDB_KEYSEL_FIRST_GREATER_OR_EQUAL((uint8_t*)begin.data(), begin.size()),
-            FDB_KEYSEL_FIRST_GREATER_OR_EQUAL((uint8_t*)end.data(), end.size()),
-            10000 /*limit, num entries unlimited*/, 0 /*target_bytes, unlimited*/,
-            FDBStreamingMode::FDB_STREAMING_MODE_WANT_ALL,
+            FDB_KEYSEL_FIRST_GREATER_OR_EQUAL((uint8_t*)end.data(), end.size()), limit,
+            0 /*target_bytes, unlimited*/, FDBStreamingMode::FDB_STREAMING_MODE_WANT_ALL,
             //       FDBStreamingMode::FDB_STREAMING_MODE_ITERATOR,
             0 /*iteration*/, true /*snapshot*/, false /*reverse*/);
 

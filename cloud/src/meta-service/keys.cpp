@@ -53,7 +53,9 @@ namespace selectdb {
 [[maybe_unused]] static const char* META_KEY_INFIX_ROWSET_TMP = "rowset_tmp";
 [[maybe_unused]] static const char* META_KEY_INFIX_TABLET     = "tablet";
 [[maybe_unused]] static const char* META_KEY_INFIX_TABLET_TBL = "tablet_table";
-[[maybe_unused]] static const char* META_KEY_INFIX_TABLET_TMP = "tablet_tmp";
+
+[[maybe_unused]] static const char* RECYCLE_KEY_INFIX_INDEX = "index";
+[[maybe_unused]] static const char* RECYCLE_KEY_INFIX_PART  = "partition";
 
 [[maybe_unused]] static const char* TRASH_KEY_INFIX_TRASH   = "trash";
 // clang-format on
@@ -90,15 +92,17 @@ static void encode_prefix(const T& t, std::string* key) {
     static_assert(is_one_of<T,
         InstanceKeyInfo,
         TxnIndexKeyInfo, TxnInfoKeyInfo, TxnDbTblKeyInfo, TxnRunningKeyInfo,
-        MetaRowsetKeyInfo, MetaRowsetTmpKeyInfo, MetaTabletKeyInfo, MetaTabletTblKeyInfo, MetaTabletTmpKeyInfo,
-        VersionKeyInfo , RecycleRowsetKeyInfo
+        MetaRowsetKeyInfo, MetaRowsetTmpKeyInfo, MetaTabletKeyInfo, MetaTabletTblKeyInfo,
+        VersionKeyInfo,
+        RecycleIndexKeyInfo, RecyclePartKeyInfo, RecycleRowsetKeyInfo
        >(), "Invalid Key Type");
     // Abitrary 2 types must be distingushable
     static_assert(!has_same_among<
         InstanceKeyInfo,
         TxnIndexKeyInfo, TxnInfoKeyInfo, TxnDbTblKeyInfo, TxnRunningKeyInfo,
-        MetaRowsetKeyInfo, MetaRowsetTmpKeyInfo, MetaTabletKeyInfo, MetaTabletTblKeyInfo, MetaTabletTmpKeyInfo,
-        VersionKeyInfo , RecycleRowsetKeyInfo
+        MetaRowsetKeyInfo, MetaRowsetTmpKeyInfo, MetaTabletKeyInfo, MetaTabletTblKeyInfo,
+        VersionKeyInfo,
+        RecycleIndexKeyInfo, RecyclePartKeyInfo, RecycleRowsetKeyInfo
         >(), "Type conflict, there are at least 2 types are the same in the list.");
 
     key->push_back(CLOUD_KEY_SPACE01);
@@ -113,13 +117,14 @@ static void encode_prefix(const T& t, std::string* key) {
     } else if constexpr (std::is_same_v<T, MetaRowsetKeyInfo>
                       || std::is_same_v<T, MetaRowsetTmpKeyInfo>
                       || std::is_same_v<T, MetaTabletKeyInfo>
-                      || std::is_same_v<T, MetaTabletTblKeyInfo>
-                      || std::is_same_v<T, MetaTabletTmpKeyInfo>) {
+                      || std::is_same_v<T, MetaTabletTblKeyInfo>) {
         encode_bytes(META_KEY_PREFIX, key);
     } else if constexpr (std::is_same_v<T, VersionKeyInfo>) {
         encode_bytes(VERSION_KEY_PREFIX, key);
-    } else if constexpr (std::is_same_v<T, RecycleRowsetKeyInfo>) {
-        encode_bytes(RECYCLE_KEY_PREFIX, key); 
+    } else if constexpr (std::is_same_v<T, RecycleIndexKeyInfo>
+                      || std::is_same_v<T, RecyclePartKeyInfo>
+                      || std::is_same_v<T, RecycleRowsetKeyInfo>) {
+        encode_bytes(RECYCLE_KEY_PREFIX, key);
     } else {
         std::abort(); // Impossible
     }
@@ -200,7 +205,9 @@ void meta_tablet_key(const MetaTabletKeyInfo& in, std::string* out) {
     encode_prefix(in, out);                   // 0x01 "meta" ${instance_id}
     encode_bytes(META_KEY_INFIX_TABLET, out); // "tablet"
     encode_int64(std::get<1>(in), out);       // table_id
-    encode_int64(std::get<2>(in), out);       // tablet_id
+    encode_int64(std::get<2>(in), out);       // index_id
+    encode_int64(std::get<3>(in), out);       // partition_id
+    encode_int64(std::get<4>(in), out);       // tablet_id
 }
 
 void meta_tablet_table_key(const MetaTabletTblKeyInfo& in, std::string* out) {
@@ -209,16 +216,21 @@ void meta_tablet_table_key(const MetaTabletTblKeyInfo& in, std::string* out) {
     encode_int64(std::get<1>(in), out);           // tablet_id
 }
 
-void meta_tablet_tmp_key(const MetaTabletTmpKeyInfo& in, std::string* out) {
-    encode_prefix(in, out);                       // 0x01 "meta" ${instance_id}
-    encode_bytes(META_KEY_INFIX_TABLET_TMP, out); // "tablet_tmp"
-    encode_int64(std::get<1>(in), out);           // table_id
-    encode_int64(std::get<2>(in), out);           // tablet_id
-}
-
 //==============================================================================
 // Recycle keys
 //==============================================================================
+
+void recycle_index_key(const RecycleIndexKeyInfo& in, std::string* out) {
+    encode_prefix(in, out);                     // 0x01 "recycle" ${instance_id}
+    encode_bytes(RECYCLE_KEY_INFIX_INDEX, out); // "index"
+    encode_int64(std::get<1>(in), out);         // index_id
+}
+
+void recycle_partition_key(const RecyclePartKeyInfo& in, std::string* out) {
+    encode_prefix(in, out);                    // 0x01 "recycle" ${instance_id}
+    encode_bytes(RECYCLE_KEY_INFIX_PART, out); // "partition"
+    encode_int64(std::get<1>(in), out);        // partition_id
+}
 
 void recycle_rowset_key(const RecycleRowsetKeyInfo& in, std::string* out) {
     encode_prefix(in, out);                   // 0x01 "recycle" ${instance_id}

@@ -77,17 +77,20 @@ using MetaRowsetKeyInfo    = BasicKeyInfo<7 , std::tuple<std::string,  int64_t, 
 //                                                      0:instance_id  1:txn_id  2:tablet_id
 using MetaRowsetTmpKeyInfo = BasicKeyInfo<8 , std::tuple<std::string,  int64_t,  int64_t>>;
 
-//                                                      0:instance_id  1:table_id  2:tablet_id
-using MetaTabletKeyInfo    = BasicKeyInfo<9 , std::tuple<std::string,  int64_t,    int64_t>>;
+//                                                      0:instance_id  1:table_id  2:index_id  3:part_id  4:tablet_id
+using MetaTabletKeyInfo    = BasicKeyInfo<9 , std::tuple<std::string,  int64_t,    int64_t,    int64_t,   int64_t>>;
 
 //                                                      0:instance_id  1:tablet_id
 using MetaTabletTblKeyInfo = BasicKeyInfo<10, std::tuple<std::string,  int64_t>>;
 
-//                                                      0:instance_id  1:table_id  2:tablet_id
-using MetaTabletTmpKeyInfo = BasicKeyInfo<11, std::tuple<std::string,  int64_t,    int64_t>>;
+//                                                      0:instance_id  1:index_id
+using RecycleIndexKeyInfo  = BasicKeyInfo<11, std::tuple<std::string,  int64_t>>;
+
+//                                                      0:instance_id  1:part_id
+using RecyclePartKeyInfo   = BasicKeyInfo<12, std::tuple<std::string,  int64_t>>;
 
 //                                                      0:instance_id  1:tablet_id 2:rowset_id
-using RecycleRowsetKeyInfo = BasicKeyInfo<12, std::tuple<std::string,  int64_t,    std::string>>;
+using RecycleRowsetKeyInfo = BasicKeyInfo<13, std::tuple<std::string,  int64_t,    std::string>>;
 // clang-format on
 
 void instance_key(const InstanceKeyInfo& in, std::string* out);
@@ -99,12 +102,14 @@ void txn_running_key(const TxnRunningKeyInfo& in, std::string* out);
 
 void version_key(const VersionKeyInfo& in, std::string* out);
 
-void recycle_rowset_key(const RecycleRowsetKeyInfo& in, std::string* out);
 void meta_rowset_key(const MetaRowsetKeyInfo& in, std::string* out);
 void meta_rowset_tmp_key(const MetaRowsetTmpKeyInfo& in, std::string* out);
 void meta_tablet_key(const MetaTabletKeyInfo& in, std::string* out);
 void meta_tablet_table_key(const MetaTabletTblKeyInfo& in, std::string* out);
-void meta_tablet_tmp_key(const MetaTabletTmpKeyInfo& in, std::string* out);
+
+void recycle_index_key(const RecycleIndexKeyInfo& in, std::string* out);
+void recycle_partition_key(const RecyclePartKeyInfo& in, std::string* out);
+void recycle_rowset_key(const RecycleRowsetKeyInfo& in, std::string* out);
 
 // TODO: add a family of decoding functions if needed
 

@@ -20,8 +20,6 @@
 #include <type_traits>
 // clang-format on
 
-using namespace std::chrono;
-
 namespace selectdb {
 
 static constexpr uint32_t VERSION_STAMP_LEN = 10;
@@ -629,7 +627,13 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
             std::string val;
             meta_tablet_table_key(key_info, &key);
             txn->get(key, &val); // TODO: check result, it must be 0
-            table_ids.emplace(i.tablet_id(), *reinterpret_cast<int64_t*>(val.data()));
+            TabletTablePB tablet_table;
+            if (!tablet_table.ParseFromString(val)) {
+                code = MetaServiceCode::PROTOBUF_PARSE_ERR;
+                msg = "malformed tablet table value";
+                return;
+            }
+            table_ids.emplace(i.tablet_id(), tablet_table.table_id());
         }
 
         int64_t tbl_id = table_ids[i.tablet_id()];
@@ -1155,12 +1159,14 @@ void MetaServiceImpl::create_tablet(::google::protobuf::RpcController* controlle
 
     // TODO: validate tablet meta, check existence
     int64_t table_id = tablet_meta.table_id();
+    int64_t index_id = tablet_meta.index_id();
+    int64_t partition_id = tablet_meta.partition_id();
     int64_t tablet_id = tablet_meta.tablet_id();
 
     std::unique_ptr<Transaction> txn;
     ret = txn_kv_->create_txn(&txn);
 
-    MetaTabletKeyInfo key_info {instance_id, table_id, tablet_id};
+    MetaTabletKeyInfo key_info {instance_id, table_id, index_id, partition_id, tablet_id};
     std::string key;
     std::string val;
     meta_tablet_key(key_info, &key);
@@ -1187,11 +1193,20 @@ void MetaServiceImpl::create_tablet(::google::protobuf::RpcController* controlle
         LOG(INFO) << "xxx rowset key=" << hex(rs_key);
     }
 
-    // Index tablet_id -> table_id
+    // Index tablet_id -> table_id, index_id, partition_id
     std::string key1;
-    std::string val1(reinterpret_cast<char*>(&table_id), sizeof(table_id));
+    std::string val1;
     MetaTabletTblKeyInfo key_info1 {instance_id, tablet_id};
     meta_tablet_table_key(key_info1, &key1);
+    TabletTablePB tablet_table;
+    tablet_table.set_table_id(table_id);
+    tablet_table.set_index_id(index_id);
+    tablet_table.set_partition_id(partition_id);
+    if (!tablet_table.SerializeToString(&val1)) {
+        code = MetaServiceCode::PROTOBUF_SERIALIZE_ERR;
+        msg = "failed to serialize tablet table value";
+        return;
+    }
     txn->put(key1, val1);
     LOG(INFO) << "xxx put tablet_table_key=" << hex(key);
 
@@ -1202,11 +1217,6 @@ void MetaServiceImpl::create_tablet(::google::protobuf::RpcController* controlle
         return;
     }
 }
-
-void MetaServiceImpl::drop_tablet(::google::protobuf::RpcController* controller,
-                                  const ::selectdb::DropTabletRequest* request,
-                                  ::selectdb::MetaServiceGenericResponse* response,
-                                  ::google::protobuf::Closure* done) {}
 
 void MetaServiceImpl::get_tablet(::google::protobuf::RpcController* controller,
                                  const ::selectdb::GetTabletRequest* request,
@@ -1253,8 +1263,15 @@ void MetaServiceImpl::get_tablet(::google::protobuf::RpcController* controller,
         return;
     }
 
-    int64_t table_id = *reinterpret_cast<int64_t*>(val0.data());
-    MetaTabletKeyInfo key_info1 {instance_id, table_id, tablet_id};
+    TabletTablePB tablet_table;
+    if (!tablet_table.ParseFromString(val0)) {
+        code = MetaServiceCode::PROTOBUF_PARSE_ERR;
+        msg = "malformed tablet table value";
+        return;
+    }
+
+    MetaTabletKeyInfo key_info1 {instance_id, tablet_table.table_id(), tablet_table.index_id(),
+                                 tablet_table.partition_id(), tablet_id};
     std::string key1;
     std::string val1;
     meta_tablet_key(key_info1, &key1);
@@ -1560,6 +1577,428 @@ void MetaServiceImpl::get_rowset(::google::protobuf::RpcController* controller,
         }
         key0.push_back('\x00'); // Update to next smallest key for iteration
     } while (it->more());
+}
+
+void MetaServiceImpl::prepare_index(::google::protobuf::RpcController* controller,
+                                    const ::selectdb::IndexRequest* request,
+                                    ::selectdb::MetaServiceGenericResponse* response,
+                                    ::google::protobuf::Closure* done) {
+    auto ctrl = static_cast<brpc::Controller*>(controller);
+    LOG(INFO) << "prepare_index rpc from " << ctrl->remote_side()
+              << " request: " << request->DebugString();
+    brpc::ClosureGuard closure_guard(done);
+    std::unique_ptr<int, std::function<void(int*)>> defer_status(
+            (int*)0x01, [&response, &ctrl](int*) {
+                LOG(INFO) << (response->status().code() == 0 ? "succ to " : "failed to ")
+                          << __PRETTY_FUNCTION__ << " " << ctrl->remote_side() << " "
+                          << response->status().msg();
+            });
+    int ret = index_exists(request, response);
+    if (ret < 0) {
+        return;
+    } else if (ret == 0) {
+        response->mutable_status()->set_code(MetaServiceCode::INDEX_ALREADY_EXISTED);
+        response->mutable_status()->set_msg("index already existed");
+        return;
+    }
+    put_recycle_index_kv(request, response);
+}
+
+void MetaServiceImpl::commit_index(::google::protobuf::RpcController* controller,
+                                   const ::selectdb::IndexRequest* request,
+                                   ::selectdb::MetaServiceGenericResponse* response,
+                                   ::google::protobuf::Closure* done) {
+    auto ctrl = static_cast<brpc::Controller*>(controller);
+    LOG(INFO) << "commit_index rpc from " << ctrl->remote_side()
+              << " request: " << request->DebugString();
+    brpc::ClosureGuard closure_guard(done);
+    remove_recycle_index_kv(request, response);
+    LOG(INFO) << (response->status().code() == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__
+              << " " << ctrl->remote_side() << " " << response->status().msg();
+}
+
+void MetaServiceImpl::drop_index(::google::protobuf::RpcController* controller,
+                                 const ::selectdb::IndexRequest* request,
+                                 ::selectdb::MetaServiceGenericResponse* response,
+                                 ::google::protobuf::Closure* done) {
+    auto ctrl = static_cast<brpc::Controller*>(controller);
+    LOG(INFO) << "drop_index rpc from " << ctrl->remote_side()
+              << " request: " << request->DebugString();
+    brpc::ClosureGuard closure_guard(done);
+    put_recycle_index_kv(request, response);
+    LOG(INFO) << (response->status().code() == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__
+              << " " << ctrl->remote_side() << " " << response->status().msg();
+}
+
+int MetaServiceImpl::index_exists(const ::selectdb::IndexRequest* request,
+                                  ::selectdb::MetaServiceGenericResponse* response) {
+    const auto& index_ids = request->index_ids();
+    if (index_ids.empty() || !request->has_table_id()) {
+        response->mutable_status()->set_code(MetaServiceCode::INVALID_ARGUMENT);
+        response->mutable_status()->set_msg("empty index_ids or table_id");
+        return -1;
+    }
+    MetaTabletKeyInfo info0 {request->table_id(), index_ids[0], 0, 0};
+    MetaTabletKeyInfo info1 {request->table_id(), index_ids[0], std::numeric_limits<int64_t>::max(),
+                             0};
+    std::string key0;
+    std::string key1;
+    meta_tablet_key(info0, &key0);
+    meta_tablet_key(info1, &key1);
+
+    std::unique_ptr<RangeGetIterator> it;
+    std::unique_ptr<Transaction> txn;
+    int ret = txn_kv_->create_txn(&txn);
+    if (ret != 0) {
+        response->mutable_status()->set_code(MetaServiceCode::KV_TXN_CREATE_ERR);
+        response->mutable_status()->set_msg("empty index_ids or table_id");
+        LOG(WARNING) << "failed to create txn";
+        return -1;
+    }
+    ret = txn->get(key0, key1, &it, 1);
+    if (ret != 0) {
+        response->mutable_status()->set_code(MetaServiceCode::KV_TXN_GET_ERR);
+        response->mutable_status()->set_msg("failed to get tablet when checking index existence");
+        return -1;
+    }
+    if (!it->has_next()) {
+        return 1;
+    }
+    return 0;
+}
+
+void MetaServiceImpl::put_recycle_index_kv(const ::selectdb::IndexRequest* request,
+                                           ::selectdb::MetaServiceGenericResponse* response) {
+    int ret = 0;
+    MetaServiceCode code = MetaServiceCode::OK;
+    std::string msg = "OK";
+    std::unique_ptr<int, std::function<void(int*)>> defer_status(
+            (int*)0x01, [&code, &msg, &response](int*) {
+                response->mutable_status()->set_code(code);
+                response->mutable_status()->set_msg(msg);
+            });
+
+    std::string instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
+    if (instance_id.empty()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "empty instance_id";
+        LOG(INFO) << msg << ", cloud_unique_id=" << request->cloud_unique_id();
+        return;
+    }
+    const auto& index_ids = request->index_ids();
+    if (index_ids.empty() || !request->has_table_id()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "empty index_ids or table_id";
+        LOG(INFO) << msg << ", cloud_unique_id=" << request->cloud_unique_id();
+        return;
+    }
+
+    using namespace std::chrono;
+    int64_t creation_time = duration_cast<seconds>(system_clock::now().time_since_epoch()).count();
+
+    std::vector<std::pair<std::string, std::string>> kvs;
+    kvs.reserve(index_ids.size());
+
+    for (int64_t index_id : index_ids) {
+        std::string key;
+        RecycleIndexKeyInfo key_info {instance_id, index_id};
+        recycle_index_key(key_info, &key);
+
+        RecycleIndexPB recycle_index;
+        recycle_index.set_table_id(request->table_id());
+        recycle_index.set_creation_time(creation_time);
+        std::string val = recycle_index.SerializeAsString();
+
+        kvs.emplace_back(std::move(key), std::move(val));
+    }
+
+    std::unique_ptr<Transaction> txn;
+    ret = txn_kv_->create_txn(&txn);
+    if (ret != 0) {
+        code = MetaServiceCode::KV_TXN_CREATE_ERR;
+        msg = "failed to create txn";
+        return;
+    }
+
+    for (const auto& [k, v] : kvs) {
+        txn->put(k, v);
+    }
+
+    ret = txn->commit();
+    if (ret != 0) {
+        code = MetaServiceCode::KV_TXN_COMMIT_ERR;
+        msg = "failed to save recycle index kv";
+        return;
+    }
+}
+
+void MetaServiceImpl::remove_recycle_index_kv(const ::selectdb::IndexRequest* request,
+                                              ::selectdb::MetaServiceGenericResponse* response) {
+    int ret = 0;
+    MetaServiceCode code = MetaServiceCode::OK;
+    std::string msg = "OK";
+    std::unique_ptr<int, std::function<void(int*)>> defer_status(
+            (int*)0x01, [&code, &msg, &response](int*) {
+                response->mutable_status()->set_code(code);
+                response->mutable_status()->set_msg(msg);
+            });
+
+    std::string instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
+    if (instance_id.empty()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "empty instance_id";
+        LOG(INFO) << msg << ", cloud_unique_id=" << request->cloud_unique_id();
+        return;
+    }
+    const auto& index_ids = request->index_ids();
+    if (index_ids.empty()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "empty index_ids";
+        LOG(INFO) << msg << ", cloud_unique_id=" << request->cloud_unique_id();
+        return;
+    }
+
+    std::vector<std::string> keys;
+    keys.reserve(index_ids.size());
+
+    for (int64_t index_id : index_ids) {
+        std::string key;
+        RecycleIndexKeyInfo key_info {instance_id, index_id};
+        recycle_index_key(key_info, &key);
+        keys.push_back(std::move(key));
+    }
+
+    std::unique_ptr<Transaction> txn;
+    ret = txn_kv_->create_txn(&txn);
+    if (ret != 0) {
+        code = MetaServiceCode::KV_TXN_CREATE_ERR;
+        msg = "failed to create txn";
+        return;
+    }
+
+    for (const auto& k : keys) {
+        txn->remove(k);
+    }
+
+    ret = txn->commit();
+    if (ret != 0) {
+        code = MetaServiceCode::KV_TXN_COMMIT_ERR;
+        msg = "failed to remove recycle index kv";
+        return;
+    }
+}
+
+void MetaServiceImpl::prepare_partition(::google::protobuf::RpcController* controller,
+                                        const ::selectdb::PartitionRequest* request,
+                                        ::selectdb::MetaServiceGenericResponse* response,
+                                        ::google::protobuf::Closure* done) {
+    auto ctrl = static_cast<brpc::Controller*>(controller);
+    LOG(INFO) << "prepare_partition rpc from " << ctrl->remote_side()
+              << " request: " << request->DebugString();
+    brpc::ClosureGuard closure_guard(done);
+    std::unique_ptr<int, std::function<void(int*)>> defer_status(
+            (int*)0x01, [&response, &ctrl](int*) {
+                LOG(INFO) << (response->status().code() == 0 ? "succ to " : "failed to ")
+                          << __PRETTY_FUNCTION__ << " " << ctrl->remote_side() << " "
+                          << response->status().msg();
+            });
+    int ret = partition_exists(request, response);
+    if (ret < 0) {
+        return;
+    } else if (ret == 0) {
+        response->mutable_status()->set_code(MetaServiceCode::PARTITION_ALREADY_EXISTED);
+        response->mutable_status()->set_msg("partition already existed");
+        return;
+    }
+    put_recycle_partition_kv(request, response);
+}
+
+void MetaServiceImpl::commit_partition(::google::protobuf::RpcController* controller,
+                                       const ::selectdb::PartitionRequest* request,
+                                       ::selectdb::MetaServiceGenericResponse* response,
+                                       ::google::protobuf::Closure* done) {
+    auto ctrl = static_cast<brpc::Controller*>(controller);
+    LOG(INFO) << "commit_partition rpc from " << ctrl->remote_side()
+              << " request: " << request->DebugString();
+    brpc::ClosureGuard closure_guard(done);
+    remove_recycle_partition_kv(request, response);
+    LOG(INFO) << (response->status().code() == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__
+              << " " << ctrl->remote_side() << " " << response->status().msg();
+}
+
+void MetaServiceImpl::drop_partition(::google::protobuf::RpcController* controller,
+                                     const ::selectdb::PartitionRequest* request,
+                                     ::selectdb::MetaServiceGenericResponse* response,
+                                     ::google::protobuf::Closure* done) {
+    auto ctrl = static_cast<brpc::Controller*>(controller);
+    LOG(INFO) << "drop_partition rpc from " << ctrl->remote_side()
+              << " request: " << request->DebugString();
+    brpc::ClosureGuard closure_guard(done);
+    put_recycle_partition_kv(request, response);
+    LOG(INFO) << (response->status().code() == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__
+              << " " << ctrl->remote_side() << " " << response->status().msg();
+}
+
+int MetaServiceImpl::partition_exists(const ::selectdb::PartitionRequest* request,
+                                      ::selectdb::MetaServiceGenericResponse* response) {
+    const auto& index_ids = request->index_ids();
+    const auto& partition_ids = request->partition_ids();
+    if (partition_ids.empty() || index_ids.empty() || !request->has_table_id()) {
+        response->mutable_status()->set_code(MetaServiceCode::INVALID_ARGUMENT);
+        response->mutable_status()->set_msg("empty partition_ids or index_ids or table_id");
+        return -1;
+    }
+    MetaTabletKeyInfo info0 {request->table_id(), index_ids[0], partition_ids[0], 0};
+    MetaTabletKeyInfo info1 {request->table_id(), index_ids[0], partition_ids[0],
+                             std::numeric_limits<int64_t>::max()};
+    std::string key0;
+    std::string key1;
+    meta_tablet_key(info0, &key0);
+    meta_tablet_key(info1, &key1);
+
+    std::unique_ptr<RangeGetIterator> it;
+    std::unique_ptr<Transaction> txn;
+    int ret = txn_kv_->create_txn(&txn);
+    if (ret != 0) {
+        response->mutable_status()->set_code(MetaServiceCode::KV_TXN_CREATE_ERR);
+        response->mutable_status()->set_msg("failed to create txn");
+        return -1;
+    }
+    ret = txn->get(key0, key1, &it, 1);
+    if (ret != 0) {
+        response->mutable_status()->set_code(MetaServiceCode::KV_TXN_GET_ERR);
+        response->mutable_status()->set_msg(
+                "failed to get tablet when checking partition existence");
+        return -1;
+    }
+    if (!it->has_next()) {
+        return 1;
+    }
+    return 0;
+}
+
+void MetaServiceImpl::put_recycle_partition_kv(const ::selectdb::PartitionRequest* request,
+                                               ::selectdb::MetaServiceGenericResponse* response) {
+    int ret = 0;
+    MetaServiceCode code = MetaServiceCode::OK;
+    std::string msg = "OK";
+    std::unique_ptr<int, std::function<void(int*)>> defer_status(
+            (int*)0x01, [&code, &msg, &response](int*) {
+                response->mutable_status()->set_code(code);
+                response->mutable_status()->set_msg(msg);
+            });
+
+    std::string instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
+    if (instance_id.empty()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "empty instance_id";
+        LOG(INFO) << msg << ", cloud_unique_id=" << request->cloud_unique_id();
+        return;
+    }
+    const auto& partition_ids = request->partition_ids();
+    const auto& index_ids = request->index_ids();
+    if (partition_ids.empty() || index_ids.empty() || !request->has_table_id()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "empty partition_ids or index_ids or table_id";
+        LOG(INFO) << msg << ", cloud_unique_id=" << request->cloud_unique_id();
+        return;
+    }
+
+    using namespace std::chrono;
+    int64_t creation_time = duration_cast<seconds>(system_clock::now().time_since_epoch()).count();
+
+    std::vector<std::pair<std::string, std::string>> kvs;
+    kvs.reserve(partition_ids.size());
+
+    for (int64_t partition_id : partition_ids) {
+        std::string key;
+        RecyclePartKeyInfo key_info {instance_id, partition_id};
+        recycle_partition_key(key_info, &key);
+
+        RecyclePartitionPB recycle_partition;
+        recycle_partition.set_table_id(request->table_id());
+        *recycle_partition.mutable_index_id() = index_ids;
+        recycle_partition.set_creation_time(creation_time);
+        std::string val = recycle_partition.SerializeAsString();
+
+        kvs.emplace_back(std::move(key), std::move(val));
+    }
+
+    std::unique_ptr<Transaction> txn;
+    ret = txn_kv_->create_txn(&txn);
+    if (ret != 0) {
+        code = MetaServiceCode::KV_TXN_CREATE_ERR;
+        msg = "failed to create txn";
+        return;
+    }
+
+    for (const auto& [k, v] : kvs) {
+        txn->put(k, v);
+    }
+
+    ret = txn->commit();
+    if (ret != 0) {
+        code = MetaServiceCode::KV_TXN_COMMIT_ERR;
+        msg = "failed to save recycle partition kv";
+        return;
+    }
+}
+
+void MetaServiceImpl::remove_recycle_partition_kv(
+        const ::selectdb::PartitionRequest* request,
+        ::selectdb::MetaServiceGenericResponse* response) {
+    int ret = 0;
+    MetaServiceCode code = MetaServiceCode::OK;
+    std::string msg = "OK";
+    std::unique_ptr<int, std::function<void(int*)>> defer_status(
+            (int*)0x01, [&code, &msg, &response](int*) {
+                response->mutable_status()->set_code(code);
+                response->mutable_status()->set_msg(msg);
+            });
+
+    std::string instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
+    if (instance_id.empty()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "empty instance_id";
+        LOG(INFO) << msg << ", cloud_unique_id=" << request->cloud_unique_id();
+        return;
+    }
+    const auto& partition_ids = request->partition_ids();
+    if (partition_ids.empty()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "empty partition_ids";
+        LOG(INFO) << msg << ", cloud_unique_id=" << request->cloud_unique_id();
+        return;
+    }
+
+    std::vector<std::string> keys;
+    keys.reserve(partition_ids.size());
+
+    for (int64_t partition_id : partition_ids) {
+        std::string key;
+        RecyclePartKeyInfo key_info {instance_id, partition_id};
+        recycle_partition_key(key_info, &key);
+        keys.push_back(std::move(key));
+    }
+
+    std::unique_ptr<Transaction> txn;
+    ret = txn_kv_->create_txn(&txn);
+    if (ret != 0) {
+        code = MetaServiceCode::KV_TXN_CREATE_ERR;
+        msg = "failed to create txn";
+        return;
+    }
+
+    for (const auto& k : keys) {
+        txn->remove(k);
+    }
+
+    ret = txn->commit();
+    if (ret != 0) {
+        code = MetaServiceCode::KV_TXN_COMMIT_ERR;
+        msg = "failed to remove recycle partition kv";
+        return;
+    }
 }
 
 void MetaServiceImpl::http(::google::protobuf::RpcController* controller,

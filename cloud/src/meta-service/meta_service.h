@@ -49,11 +49,6 @@ public:
                        ::selectdb::MetaServiceGenericResponse* response,
                        ::google::protobuf::Closure* done) override;
 
-    void drop_tablet(::google::protobuf::RpcController* controller,
-                     const ::selectdb::DropTabletRequest* request,
-                     ::selectdb::MetaServiceGenericResponse* response,
-                     ::google::protobuf::Closure* done) override;
-
     void get_tablet(::google::protobuf::RpcController* controller,
                     const ::selectdb::GetTabletRequest* request,
                     ::selectdb::GetTabletResponse* response,
@@ -73,6 +68,36 @@ public:
                     const ::selectdb::GetRowsetRequest* request,
                     ::selectdb::GetRowsetResponse* response,
                     ::google::protobuf::Closure* done) override;
+
+    void prepare_index(::google::protobuf::RpcController* controller,
+                       const ::selectdb::IndexRequest* request,
+                       ::selectdb::MetaServiceGenericResponse* response,
+                       ::google::protobuf::Closure* done) override;
+
+    void commit_index(::google::protobuf::RpcController* controller,
+                      const ::selectdb::IndexRequest* request,
+                      ::selectdb::MetaServiceGenericResponse* response,
+                      ::google::protobuf::Closure* done) override;
+
+    void drop_index(::google::protobuf::RpcController* controller,
+                    const ::selectdb::IndexRequest* request,
+                    ::selectdb::MetaServiceGenericResponse* response,
+                    ::google::protobuf::Closure* done) override;
+
+    void prepare_partition(::google::protobuf::RpcController* controller,
+                           const ::selectdb::PartitionRequest* request,
+                           ::selectdb::MetaServiceGenericResponse* response,
+                           ::google::protobuf::Closure* done) override;
+
+    void commit_partition(::google::protobuf::RpcController* controller,
+                          const ::selectdb::PartitionRequest* request,
+                          ::selectdb::MetaServiceGenericResponse* response,
+                          ::google::protobuf::Closure* done) override;
+
+    void drop_partition(::google::protobuf::RpcController* controller,
+                        const ::selectdb::PartitionRequest* request,
+                        ::selectdb::MetaServiceGenericResponse* response,
+                        ::google::protobuf::Closure* done) override;
 
     void http(::google::protobuf::RpcController* controller,
               const ::selectdb::MetaServiceHttpRequest* request,
@@ -98,6 +123,27 @@ public:
                      const ::selectdb::GetClusterRequest* request,
                      ::selectdb::GetClusterResponse* response,
                      ::google::protobuf::Closure* done) override;
+
+private:
+    // returns 0 for index exists, 1 for not exist, negative for error
+    int index_exists(const ::selectdb::IndexRequest* request,
+                     ::selectdb::MetaServiceGenericResponse* response);
+
+    void put_recycle_index_kv(const ::selectdb::IndexRequest* request,
+                              ::selectdb::MetaServiceGenericResponse* response);
+
+    void remove_recycle_index_kv(const ::selectdb::IndexRequest* request,
+                                 ::selectdb::MetaServiceGenericResponse* response);
+
+    // returns 0 for partition exists, 1 for not exist, negative for error
+    int partition_exists(const ::selectdb::PartitionRequest* request,
+                         ::selectdb::MetaServiceGenericResponse* response);
+
+    void put_recycle_partition_kv(const ::selectdb::PartitionRequest* request,
+                                  ::selectdb::MetaServiceGenericResponse* response);
+
+    void remove_recycle_partition_kv(const ::selectdb::PartitionRequest* request,
+                                     ::selectdb::MetaServiceGenericResponse* response);
 
 private:
     std::shared_ptr<TxnKv> txn_kv_;

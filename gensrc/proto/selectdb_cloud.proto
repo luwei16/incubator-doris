@@ -198,6 +198,23 @@ message TxnInfoPB {
     // TODO: There are more fields TBD
 }
 
+message TabletTablePB {
+    optional int64 table_id = 1;
+    optional int64 index_id = 2;
+    optional int64 partition_id = 3;
+}
+
+message RecycleIndexPB {
+    optional int64 table_id = 1;
+    optional int64 creation_time = 2; 
+}
+
+message RecyclePartitionPB {
+    optional int64 table_id = 1;
+    repeated int64 index_id = 2;
+    optional int64 creation_time = 3;
+}
+
 message RecycleRowsetPB {
     optional string obj_bucket = 1;
     optional string obj_prefix = 2;
@@ -334,6 +351,19 @@ message GetRowsetResponse {
     repeated doris.RowsetMetaPB rowset_meta = 2;
 }
 
+message IndexRequest {
+    optional string cloud_unique_id = 1; // For auth
+    repeated int64 index_ids = 2;
+    optional int64 table_id = 3;
+}
+
+message PartitionRequest {
+    optional string cloud_unique_id = 1; // For auth
+    repeated int64 partition_ids = 2;
+    optional int64 table_id = 3;
+    repeated int64 index_ids = 4;
+}
+
 message MetaServiceResponseStatus {
     optional MetaServiceCode code = 1;
     optional string msg = 2;
@@ -436,11 +466,16 @@ service MetaService {
     rpc get_version(GetVersionRequest) returns (GetVersionResponse);
 
     rpc create_tablet(CreateTabletRequest) returns (MetaServiceGenericResponse);
-    rpc drop_tablet(DropTabletRequest) returns (MetaServiceGenericResponse);
     rpc get_tablet(GetTabletRequest) returns (GetTabletResponse);
     rpc prepare_rowset(CreateRowsetRequest) returns (MetaServiceGenericResponse);
     rpc commit_rowset(CreateRowsetRequest) returns (MetaServiceGenericResponse);
     rpc get_rowset(GetRowsetRequest) returns (GetRowsetResponse);
+    rpc prepare_index(IndexRequest) returns (MetaServiceGenericResponse);
+    rpc commit_index(IndexRequest) returns (MetaServiceGenericResponse);
+    rpc drop_index(IndexRequest) returns (MetaServiceGenericResponse);
+    rpc prepare_partition(PartitionRequest) returns (MetaServiceGenericResponse);
+    rpc commit_partition(PartitionRequest) returns (MetaServiceGenericResponse);
+    rpc drop_partition(PartitionRequest) returns (MetaServiceGenericResponse);
 
     rpc http(MetaServiceHttpRequest) returns (MetaServiceHttpResponse);
 
