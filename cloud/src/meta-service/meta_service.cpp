@@ -20,6 +20,8 @@
 #include <type_traits>
 // clang-format on
 
+using namespace std::chrono;
+
 namespace selectdb {
 
 static constexpr uint32_t VERSION_STAMP_LEN = 10;
@@ -1632,15 +1634,21 @@ void MetaServiceImpl::drop_index(::google::protobuf::RpcController* controller,
 
 int MetaServiceImpl::index_exists(const ::selectdb::IndexRequest* request,
                                   ::selectdb::MetaServiceGenericResponse* response) {
+    std::string instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
+    if (instance_id.empty()) {
+        response->mutable_status()->set_code(MetaServiceCode::INVALID_ARGUMENT);
+        response->mutable_status()->set_msg("empty instance_id");
+        return -1;
+    }
     const auto& index_ids = request->index_ids();
     if (index_ids.empty() || !request->has_table_id()) {
         response->mutable_status()->set_code(MetaServiceCode::INVALID_ARGUMENT);
         response->mutable_status()->set_msg("empty index_ids or table_id");
         return -1;
     }
-    MetaTabletKeyInfo info0 {request->table_id(), index_ids[0], 0, 0};
-    MetaTabletKeyInfo info1 {request->table_id(), index_ids[0], std::numeric_limits<int64_t>::max(),
-                             0};
+    MetaTabletKeyInfo info0 {instance_id, request->table_id(), index_ids[0], 0, 0};
+    MetaTabletKeyInfo info1 {instance_id, request->table_id(), index_ids[0],
+                             std::numeric_limits<int64_t>::max(), 0};
     std::string key0;
     std::string key1;
     meta_tablet_key(info0, &key0);
@@ -1693,7 +1701,6 @@ void MetaServiceImpl::put_recycle_index_kv(const ::selectdb::IndexRequest* reque
         return;
     }
 
-    using namespace std::chrono;
     int64_t creation_time = duration_cast<seconds>(system_clock::now().time_since_epoch()).count();
 
     std::vector<std::pair<std::string, std::string>> kvs;
@@ -1841,6 +1848,12 @@ void MetaServiceImpl::drop_partition(::google::protobuf::RpcController* controll
 
 int MetaServiceImpl::partition_exists(const ::selectdb::PartitionRequest* request,
                                       ::selectdb::MetaServiceGenericResponse* response) {
+    std::string instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
+    if (instance_id.empty()) {
+        response->mutable_status()->set_code(MetaServiceCode::INVALID_ARGUMENT);
+        response->mutable_status()->set_msg("empty instance_id");
+        return -1;
+    }
     const auto& index_ids = request->index_ids();
     const auto& partition_ids = request->partition_ids();
     if (partition_ids.empty() || index_ids.empty() || !request->has_table_id()) {
@@ -1848,8 +1861,8 @@ int MetaServiceImpl::partition_exists(const ::selectdb::PartitionRequest* reques
         response->mutable_status()->set_msg("empty partition_ids or index_ids or table_id");
         return -1;
     }
-    MetaTabletKeyInfo info0 {request->table_id(), index_ids[0], partition_ids[0], 0};
-    MetaTabletKeyInfo info1 {request->table_id(), index_ids[0], partition_ids[0],
+    MetaTabletKeyInfo info0 {instance_id, request->table_id(), index_ids[0], partition_ids[0], 0};
+    MetaTabletKeyInfo info1 {instance_id, request->table_id(), index_ids[0], partition_ids[0],
                              std::numeric_limits<int64_t>::max()};
     std::string key0;
     std::string key1;
@@ -1904,7 +1917,6 @@ void MetaServiceImpl::put_recycle_partition_kv(const ::selectdb::PartitionReques
         return;
     }
 
-    using namespace std::chrono;
     int64_t creation_time = duration_cast<seconds>(system_clock::now().time_since_epoch()).count();
 
     std::vector<std::pair<std::string, std::string>> kvs;

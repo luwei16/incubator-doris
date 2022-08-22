@@ -57,7 +57,7 @@ Status CloudSchemaChangeHandler::process_alter_tablet(const TAlterTabletReqV2& r
     }
 
     {
-        size_t num_cols = base_tablet_schema.num_columns();
+        size_t num_cols = base_tablet_schema->num_columns();
         return_columns.resize(num_cols);
         for (int i = 0; i < num_cols; ++i) {
             return_columns[i] = i;

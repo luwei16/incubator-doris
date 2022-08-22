@@ -441,6 +441,9 @@ enum MetaServiceCode {
     // Resources
     INSTANCE_ALREADY_EXISTED = 19;
 
+    INDEX_ALREADY_EXISTED = 20;
+    PARTITION_ALREADY_EXISTED = 21; 
+
     UNDEFINED_ERR = 100000;
 }
 
