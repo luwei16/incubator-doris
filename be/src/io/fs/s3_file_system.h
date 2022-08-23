@@ -83,6 +83,12 @@ public:
 
     const std::string& bucket() const { return _s3_conf.bucket; }
 
+    // insert tmp file to mgr
+    static void _insert(const Path& path);
+
+    // s3_file_reader lookup tmp file
+    static FileReaderSPtr lookup(const Path& path);
+
 private:
     std::string get_key(const Path& path) const;
 

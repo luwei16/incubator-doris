@@ -327,11 +327,11 @@ private:
     void _seek_to_pos_in_page(ParsedPage* page, ordinal_t offset_in_page) const;
     Status _load_next_page(bool* eos);
     Status _read_data_page(const OrdinalPageIndexIterator& iter);
-    Status _read_data_pages(const std::vector<OrdinalPageIndexIterator>& iter, uint32_t start,
-                            uint32_t size);
+    Status _read_data_pages(uint32_t start, uint32_t size);
     bool _check_and_set_cur_page(ordinal_t ord);
     Status _prefetch_pages();
     void _find_cur_page(ordinal_t ord);
+    uint32_t _get_read_contiguous_pages_size();
 
 private:
     ColumnReader* _reader;
@@ -362,8 +362,7 @@ private:
     std::unique_ptr<StringRef[]> _dict_word_info;
 
     // use for prefetch data pages from s3
-    std::vector<std::vector<OrdinalPageIndexIterator>> _page_ranges;
-    uint32_t _cur_range = 0;
+    std::vector<OrdinalPageIndexIterator> _page_iters;
     uint32_t _cur_page_idx = 0;
     bool _enable_prefetch = false;
     std::vector<ParsedPage> _pages;

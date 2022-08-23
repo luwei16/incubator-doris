@@ -36,7 +36,7 @@ namespace doris {
 namespace io {
 
 class S3FileSystem;
-
+struct TmpFileMgr;
 class S3FileWriter final : public FileWriter {
 public:
     S3FileWriter(Path path, std::string key, std::string bucket, S3FileSystem* fs);
@@ -58,9 +58,6 @@ public:
 
     size_t bytes_appended() const override { return _tmp_file_writer->bytes_appended(); }
 
-    // s3_file_reader lookup tmp file
-    static FileReaderSPtr lookup(const Path& path);
-
 private:
     S3FileSystem* _fs;
 
@@ -70,9 +67,6 @@ private:
 
     FileWriterPtr _tmp_file_writer;
     std::shared_ptr<Aws::Transfer::TransferHandle> _handle;
-    
-    // insert tmp file to mgr
-    static void _insert(const Path& path);
 };
 
 } // namespace io

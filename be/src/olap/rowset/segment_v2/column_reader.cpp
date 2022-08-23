@@ -588,12 +588,9 @@ bool FileColumnIterator::_check_and_set_cur_page(ordinal_t ord) {
 }
 
 void FileColumnIterator::_find_cur_page(ordinal_t ord) {
-    while (ord > _page_ranges[_cur_range][_cur_page_idx].last_ordinal()) {
-        _cur_page_idx++;
-        if (_cur_page_idx == _page_ranges[_cur_range].size()) {
-            _cur_range++;
-            _cur_page_idx = 0;
-        }
+    while (ord > _page_iters[_cur_page_idx].last_ordinal()) {
+        ++_cur_page_idx;
+        DCHECK(_cur_page_idx < _page_iters.size());
     }
 }
 
@@ -625,17 +622,17 @@ Status FileColumnIterator::get_all_contiguous_pages(
         const std::vector<std::pair<uint32_t, uint32_t>>& row_ranges) {
     _enable_prefetch = true;
     for (auto pair : row_ranges) {
-        std::vector<OrdinalPageIndexIterator> page_pointers;
         OrdinalPageIndexIterator iter;
         _reader->seek_at_or_before(pair.first, &iter);
         while (iter.valid()) {
-            page_pointers.push_back(iter);
-            if (pair.second == iter.last_ordinal() + 1 || pair.second <= iter.last_ordinal()) {
+            if (_page_iters.empty() || _page_iters.back().page_index() != iter.page_index()) {
+                _page_iters.push_back(iter);
+            }
+            if (pair.second <= (iter.last_ordinal() + 1)) {
                 break;
             }
             iter.next();
         }
-        _page_ranges.push_back(std::move(page_pointers));
     }
     _cur_page = nullptr;
     return Status::OK();
@@ -866,16 +863,26 @@ Status FileColumnIterator::read_by_rowids(const rowid_t* rowids, const size_t co
     return Status::OK();
 }
 
-Status FileColumnIterator::_prefetch_pages() {
-    uint32_t size = (_page_ranges[_cur_range].size() - _cur_page_idx) > _pages.size()
-                            ? _pages.size()
-                            : _page_ranges[_cur_range].size() - _cur_page_idx;
-    RETURN_IF_ERROR(_read_data_pages(_page_ranges[_cur_range], _cur_page_idx, size));
-    _cur_page_idx += size;
-    if (_cur_page_idx == _page_ranges[_cur_range].size()) {
-        _cur_page++;
-        _cur_page_idx = 0;
+uint32_t FileColumnIterator::_get_read_contiguous_pages_size() {
+    uint32_t max_size = _pages.size();
+    uint32_t res = 1;
+    uint32_t idx = _cur_page_idx;
+    while (res < max_size) {
+        if ((idx + 1) == _page_iters.size() ||
+            (_page_iters[idx].page_index() + 1) != _page_iters[idx + 1].page_index()) {
+            break;
+        }
+        idx++;
+        res++;
     }
+    return res;
+}
+
+Status FileColumnIterator::_prefetch_pages() {
+    uint32_t size = _get_read_contiguous_pages_size();
+    DCHECK(_cur_page_idx + size <= _page_iters.size());
+    RETURN_IF_ERROR(_read_data_pages(_cur_page_idx, size));
+    _cur_page_idx += size;
     _cur_page = &_pages[_index];
     return Status::OK();
 }
@@ -883,7 +890,7 @@ Status FileColumnIterator::_prefetch_pages() {
 Status FileColumnIterator::_load_next_page(bool* eos) {
     if (_enable_prefetch) {
         if (++_index == _cur_pages_size) {
-            if (_cur_range == _page_ranges.size()) {
+            if (_cur_page_idx == _page_iters.size()) {
                 *eos = true;
                 return Status::OK();
             }
@@ -907,22 +914,21 @@ Status FileColumnIterator::_load_next_page(bool* eos) {
     return Status::OK();
 }
 
-Status FileColumnIterator::_read_data_pages(const std::vector<OrdinalPageIndexIterator>& iters,
-                                            uint32_t start, uint32_t size) {
+Status FileColumnIterator::_read_data_pages(uint32_t start, uint32_t size) {
     std::vector<PageHandle> handles(size);
     std::vector<Slice> page_bodys(size);
     std::vector<PageFooterPB> footers(size);
     std::vector<PagePointer> pps(size);
     _opts.type = DATA_PAGE;
     for (uint32_t i = 0; i < size; i++) {
-        pps[i] = iters[start + i].page();
+        pps[i] = _page_iters[start + i].page();
     }
     RETURN_IF_ERROR(
             _reader->read_pages(_opts, pps, handles, page_bodys, footers, _compress_codec.get()));
     for (uint32_t i = 0; i < size; i++) {
-        RETURN_IF_ERROR(ParsedPage::create(std::move(handles[i]), page_bodys[i],
-                                           footers[i].data_page_footer(), _reader->encoding_info(),
-                                           pps[i], iters[start + i].page_index(), &_pages[i]));
+        RETURN_IF_ERROR(ParsedPage::create(
+                std::move(handles[i]), page_bodys[i], footers[i].data_page_footer(),
+                _reader->encoding_info(), pps[i], _page_iters[start + i].page_index(), &_pages[i]));
 
         // dictionary page is read when the first data page that uses it is read,
         // this is to optimize the memory usage: when there is no query on one column, we could

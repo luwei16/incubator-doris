@@ -198,7 +198,6 @@ Status parse_conf_cache_paths(const std::string& config_path, std::vector<CacheP
 io::FileCacheSettings CachePath::init_settings() const {
     io::FileCacheSettings settings;
     settings.max_size = capacity_bytes;
-    settings.cache_on_write_operations = config::cache_on_write_operations;
     settings.max_elements =
             config::max_elements == 0 ? settings.max_elements : config::max_elements;
     settings.max_file_segment_size = config::max_file_segment_size == 0

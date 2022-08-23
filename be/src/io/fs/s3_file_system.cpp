@@ -34,6 +34,7 @@
 #include "common/status.h"
 #include "gutil/strings/stringpiece.h"
 #include "io/fs/cached_remote_file_reader.h"
+#include "io/fs/local_file_system.h"
 #include "io/fs/remote_file_system.h"
 #include "io/fs/s3_file_reader.h"
 #include "io/fs/s3_file_writer.h"
@@ -309,6 +310,51 @@ std::string S3FileSystem::get_key(const Path& path) const {
     }
     // We consider it as a relative path.
     return fmt::format("{}/{}", _s3_conf.prefix, path.native());
+}
+
+struct TmpFileMgr {
+    using file_key = std::pair<Path, size_t>;
+
+    TmpFileMgr(size_t max_cache_size) : max_cache_size(max_cache_size * GB) {
+        DCHECK(max_cache_size != 0);
+    }
+
+    static TmpFileMgr& instance() {
+        static TmpFileMgr s_tmp_file_mgr(config::max_s3_cache_file_size);
+        return s_tmp_file_mgr;
+    }
+
+    std::mutex mtx;
+    std::unordered_set<Path, PathHasher> file_set;
+    std::list<file_key> file_list;
+    size_t max_cache_size = 0;
+    size_t cur_cache_size = 0;
+};
+
+void S3FileSystem::_insert(const Path& path) {
+    std::lock_guard lock(TmpFileMgr::instance().mtx);
+    size_t file_size;
+    global_local_filesystem()->file_size(path, &file_size);
+    TmpFileMgr::instance().cur_cache_size += file_size;
+    while (TmpFileMgr::instance().cur_cache_size > TmpFileMgr::instance().max_cache_size) {
+        auto& [remove_path, size] = TmpFileMgr::instance().file_list.back();
+        TmpFileMgr::instance().file_set.erase(remove_path);
+        TmpFileMgr::instance().cur_cache_size -= size;
+        global_local_filesystem()->delete_file(remove_path);
+        TmpFileMgr::instance().file_list.pop_back();
+    }
+    TmpFileMgr::instance().file_list.push_front(std::make_pair(path, file_size));
+    TmpFileMgr::instance().file_set.insert(path);
+}
+
+FileReaderSPtr S3FileSystem::lookup(const Path& path) {
+    std::lock_guard lock(TmpFileMgr::instance().mtx);
+    FileReaderSPtr file_reader;
+    auto iter = TmpFileMgr::instance().file_set.find(path);
+    if (iter != TmpFileMgr::instance().file_set.end()) {
+        global_local_filesystem()->open_file(*iter, &file_reader);
+    }
+    return file_reader;
 }
 
 } // namespace io

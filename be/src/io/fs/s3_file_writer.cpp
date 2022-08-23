@@ -31,18 +31,6 @@
 namespace doris {
 namespace io {
 
-struct TmpFileMgr {
-    using file_key = std::pair<Path, size_t>;
-
-    std::mutex mtx;
-    std::unordered_set<Path, PathHasher> file_set;
-    std::list<file_key> file_list;
-    size_t max_cache_size = config::max_s3_cache_file_size * GB;
-    size_t cur_cache_size = 0;
-};
-
-static TmpFileMgr s_tmp_file_mgr;
-
 S3FileWriter::S3FileWriter(Path path, std::string key, std::string bucket, S3FileSystem* fs)
         : FileWriter(std::move(path)), _fs(fs), _bucket(std::move(bucket)), _key(std::move(key)) {}
 
@@ -96,7 +84,7 @@ Status S3FileWriter::close() {
     // If enable_write_as_cache == true, tmp file will be cached. And deleted when cache full or be restart
     if (config::enable_write_as_cache) {
         _tmp_file_writer->close();
-        S3FileWriter::_insert(_tmp_file_writer->path());
+        S3FileSystem::_insert(_tmp_file_writer->path());
     }
     // TODO(cyx): check data correctness
     return Status::OK();
@@ -133,32 +121,6 @@ Status S3FileWriter::finalize() {
     _handle = transfer_manager->UploadFile(_tmp_file_writer->path().native(), _bucket, _key,
                                            "text/plain", Aws::Map<Aws::String, Aws::String>());
     return Status::OK();
-}
-
-void S3FileWriter::_insert(const Path& path) {
-    std::lock_guard lock(s_tmp_file_mgr.mtx);
-    size_t file_size;
-    global_local_filesystem()->file_size(path, &file_size);
-    s_tmp_file_mgr.cur_cache_size += file_size;
-    while (s_tmp_file_mgr.cur_cache_size > s_tmp_file_mgr.max_cache_size) {
-        auto [path, size] = s_tmp_file_mgr.file_list.back();
-        s_tmp_file_mgr.file_set.erase(path);
-        s_tmp_file_mgr.cur_cache_size -= size;
-        global_local_filesystem()->delete_file(path);
-        s_tmp_file_mgr.file_list.pop_back();
-    }
-    s_tmp_file_mgr.file_list.push_front(std::make_pair(path, file_size));
-    s_tmp_file_mgr.file_set.insert(path);
-}
-
-FileReaderSPtr S3FileWriter::lookup(const Path& path) {
-    std::lock_guard lock(s_tmp_file_mgr.mtx);
-    FileReaderSPtr file_reader;
-    auto iter = s_tmp_file_mgr.file_set.find(path);
-    if (iter != s_tmp_file_mgr.file_set.end()) {
-        global_local_filesystem()->open_file(*iter, &file_reader);
-    }
-    return file_reader;
 }
 
 } // namespace io
