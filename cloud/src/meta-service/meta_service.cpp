@@ -574,14 +574,6 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
     std::string rs_tmp_key1;
     meta_rowset_tmp_key(rs_tmp_key_info0, &rs_tmp_key0);
     meta_rowset_tmp_key(rs_tmp_key_info1, &rs_tmp_key1);
-    std::unique_ptr<RangeGetIterator> it;
-    ret = txn->get(rs_tmp_key0, rs_tmp_key1, &it);
-    if (ret != 0) {
-        code = MetaServiceCode::KV_TXN_GET_ERR;
-        ss << "no rowset found for txn=" << txn_id;
-        msg = ss.str();
-        return;
-    }
     // Get rowset meta that should be commited
     //                   tmp_rowset_key -> rowset_meta
     std::vector<std::pair<std::string, doris::RowsetMetaPB>> tmp_rowsets_meta;
@@ -593,6 +585,7 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
                           << hex(rs_tmp_key0) << "," << hex(rs_tmp_key1) << ")";
             });
 
+    std::unique_ptr<RangeGetIterator> it;
     do {
         ret = txn->get(rs_tmp_key0, rs_tmp_key1, &it);
         if (ret != 0) {
@@ -635,7 +628,7 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
             MetaTabletIdxKeyInfo key_info {instance_id, i.tablet_id()};
             auto [key, val] = std::make_tuple(std::string(""), std::string(""));
             meta_tablet_idx_key(key_info, &key);
-            txn->get(key, &val);
+            ret = txn->get(key, &val);
             if (ret != 0) { // Must be 0, an existing value
                 code = MetaServiceCode::KV_TXN_GET_ERR;
                 ss << "failed to get tablet table index ids,"
@@ -698,18 +691,20 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
         // Accumulate affected rows
         StatsTabletKeyInfo stat_key_info {instance_id, table_id, index_id, partition_id,
                                           i.tablet_id()};
-        stats_tablet_key(stat_key_info, &key);
-        while (tablet_stats.count(key) == 0) {
-            txn->get(key, &val);
+        std::string stat_key, stat_val;
+        stats_tablet_key(stat_key_info, &stat_key);
+        while (tablet_stats.count(stat_key) == 0) {
+            ret = txn->get(stat_key, &stat_val);
+            LOG(INFO) << "get tablet_stats_key, key=" << hex(stat_key) << " ret=" << ret;
             if (ret != 1 && ret != 0) {
                 code = MetaServiceCode::KV_TXN_GET_ERR;
                 ss << "failed to get tablet stats, tablet_id=" << i.tablet_id()
-                   << " key=" << hex(key);
+                   << " key=" << hex(stat_key);
                 msg = ss.str();
                 LOG(INFO) << msg;
                 return;
             }
-            auto& stat = tablet_stats[key];
+            auto& stat = tablet_stats[stat_key];
             if (ret == 1) { // First time stats, initialize it
                 stat.mutable_idx()->set_table_id(table_id);
                 stat.mutable_idx()->set_index_id(index_id);
@@ -719,7 +714,7 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
                 stat.set_num_rows(0);
                 break;
             }
-            if (!tablet_stats[key].ParseFromString(val)) {
+            if (!tablet_stats[stat_key].ParseFromString(stat_val)) {
                 code = MetaServiceCode::PROTOBUF_PARSE_ERR;
                 msg = "malformed tablet table value";
                 return;
@@ -730,7 +725,7 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
             CHECK_EQ(stat.mutable_idx()->tablet_id(), i.tablet_id());
             break;
         }
-        auto& stat = tablet_stats[key];
+        auto& stat = tablet_stats[stat_key];
         stat.set_data_size(stat.data_size() + i.data_disk_size());
         stat.set_num_rows(stat.num_rows() + i.num_rows());
     } // for tmp_rowsets_meta
@@ -1279,7 +1274,7 @@ void MetaServiceImpl::create_tablet(::google::protobuf::RpcController* controlle
         return;
     }
     txn->put(key1, val1);
-    LOG(INFO) << "xxx put tablet_table_key=" << hex(key);
+    LOG(INFO) << "xxx put tablet_idx_key=" << hex(key1);
 
     ret = txn->commit();
     if (ret != 0) {
@@ -1321,8 +1316,7 @@ void MetaServiceImpl::get_tablet(::google::protobuf::RpcController* controller,
     // TODO: validate request
     int64_t tablet_id = request->tablet_id();
     MetaTabletIdxKeyInfo key_info0 {instance_id, tablet_id};
-    std::string key0;
-    std::string val0;
+    std::string key0, val0;
     meta_tablet_idx_key(key_info0, &key0);
     ret = txn->get(key0, &val0);
     LOG(INFO) << "get tablet meta, tablet_id=" << tablet_id << " key=" << hex(key0);
@@ -1343,8 +1337,7 @@ void MetaServiceImpl::get_tablet(::google::protobuf::RpcController* controller,
 
     MetaTabletKeyInfo key_info1 {instance_id, tablet_table.table_id(), tablet_table.index_id(),
                                  tablet_table.partition_id(), tablet_id};
-    std::string key1;
-    std::string val1;
+    std::string key1, val1;
     meta_tablet_key(key_info1, &key1);
     ret = txn->get(key1, &val1);
     if (ret != 0) {
@@ -2198,9 +2191,9 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
             status_code = 400;
             return;
         }
-        bool unicode = false;
-        if (uri.GetQuery("unicode") != nullptr && *uri.GetQuery("unicode") != "false") {
-            unicode = true;
+        bool unicode = true;
+        if (uri.GetQuery("unicode") != nullptr && *uri.GetQuery("unicode") == "false") {
+            unicode = false;
         }
         std::string_view key = *uri.GetQuery("key");
         response_body = prettify_key(key, unicode);

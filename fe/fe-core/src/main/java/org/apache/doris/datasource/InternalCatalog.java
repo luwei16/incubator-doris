@@ -3472,6 +3472,7 @@ public class InternalCatalog implements CatalogIf<Database> {
             for (Tablet tablet : index.getTablets()) {
                 OlapFile.TabletMetaPB.Builder builder = OlapFile.TabletMetaPB.newBuilder();
                 builder.setTableId(tableId);
+                builder.setIndexId(index.getId());
                 builder.setPartitionId(partitionId);
                 builder.setTabletId(tablet.getId());
                 builder.setSchemaHash(schemaHash);
