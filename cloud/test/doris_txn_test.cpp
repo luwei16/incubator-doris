@@ -91,6 +91,11 @@ TEST(MetaServiceTest, BeginTxnTest) {
     ASSERT_NE(txn_kv.get(), nullptr);
     int ret = txn_kv->init();
     ASSERT_EQ(ret, 0);
+    std::unique_ptr<Transaction> txn;
+    txn_kv->create_txn(&txn);
+    std::string val;
+    ret = txn->get("test", &val);
+    ASSERT_EQ(ret, 1);
 
     // Add service
     auto meta_service = std::make_unique<MetaServiceImpl>(txn_kv, nullptr);

@@ -62,7 +62,6 @@ TEST(KeysTest, KeysTest) {
         meta_rowset_key(rowset_key, &encoded_rowset_key0);
         std::cout << hex(encoded_rowset_key0) << std::endl;
 
-
         std::string dec_instance_id;
         int64_t dec_tablet_id = 0;
         int64_t dec_version = 0;
@@ -93,8 +92,10 @@ TEST(KeysTest, KeysTest) {
     // 0x01 "meta" ${instance_id} "tablet" ${table_id} ${tablet_id} -> TabletMetaPB
     {
         int64_t table_id = 10010;
+        int64_t index_id = 10011;
+        int64_t partition_id = 10012;
         int64_t tablet_id = 10086;
-        MetaTabletKeyInfo tablet_key {instance_id, table_id, tablet_id};
+        MetaTabletKeyInfo tablet_key {instance_id, table_id, index_id, partition_id, tablet_id};
         std::string encoded_rowset_key0;
         meta_tablet_key(tablet_key, &encoded_rowset_key0);
         std::cout << hex(encoded_rowset_key0) << std::endl;
@@ -102,6 +103,8 @@ TEST(KeysTest, KeysTest) {
         std::string dec_instance_id;
         int64_t dec_table_id = 0;
         int64_t dec_tablet_id = 0;
+        int64_t dec_index_id = 0;
+        int64_t dec_partition_id = 0;
 
         std::string_view key_sv(encoded_rowset_key0);
         std::string dec_meta_prefix;
@@ -111,6 +114,8 @@ TEST(KeysTest, KeysTest) {
         ASSERT_EQ(decode_bytes(&key_sv, &dec_instance_id), 0);
         ASSERT_EQ(decode_bytes(&key_sv, &dec_tablet_prefix), 0);
         ASSERT_EQ(decode_int64(&key_sv, &dec_table_id), 0) << hex(key_sv);
+        ASSERT_EQ(decode_int64(&key_sv, &dec_index_id), 0) << hex(key_sv);
+        ASSERT_EQ(decode_int64(&key_sv, &dec_partition_id), 0);
         ASSERT_EQ(decode_int64(&key_sv, &dec_tablet_id), 0);
 
         EXPECT_EQ(instance_id, dec_instance_id);
@@ -129,9 +134,9 @@ TEST(KeysTest, KeysTest) {
     // 0x01 "meta" ${instance_id} "tablet_table" ${tablet_id} -> ${table_id}
     {
         int64_t tablet_id = 10086;
-        MetaTabletTblKeyInfo tablet_tbl_key {instance_id, tablet_id};
+        MetaTabletIdxKeyInfo tablet_tbl_key {instance_id, tablet_id};
         std::string encoded_rowset_key0;
-        meta_tablet_table_key(tablet_tbl_key, &encoded_rowset_key0);
+        meta_tablet_idx_key(tablet_tbl_key, &encoded_rowset_key0);
         std::cout << hex(encoded_rowset_key0) << std::endl;
 
         std::string dec_instance_id;
@@ -151,43 +156,7 @@ TEST(KeysTest, KeysTest) {
 
         std::get<1>(tablet_tbl_key) = tablet_id + 1;
         std::string encoded_rowset_key1;
-        meta_tablet_table_key(tablet_tbl_key, &encoded_rowset_key1);
-        std::cout << hex(encoded_rowset_key1) << std::endl;
-
-        ASSERT_GT(encoded_rowset_key1, encoded_rowset_key0);
-    }
-
-    // tablet tmp meta key
-    // 0x01 "meta" ${instance_id} "tablet_tmp" ${table_id} ${tablet_id} -> TabletMetaPB
-    {
-        int64_t table_id = 10010;
-        int64_t tablet_id = 10086;
-        MetaTabletTmpKeyInfo tablet_key {instance_id, table_id, tablet_id};
-        std::string encoded_rowset_key0;
-        meta_tablet_key(tablet_key, &encoded_rowset_key0);
-        std::cout << hex(encoded_rowset_key0) << std::endl;
-
-        std::string dec_instance_id;
-        int64_t dec_table_id = 0;
-        int64_t dec_tablet_id = 0;
-
-        std::string_view key_sv(encoded_rowset_key0);
-        std::string dec_meta_prefix;
-        std::string dec_tablet_prefix;
-        key_sv.remove_prefix(1); // Remove CLOUD_KEY_SPACE01
-        ASSERT_EQ(decode_bytes(&key_sv, &dec_meta_prefix), 0);
-        ASSERT_EQ(decode_bytes(&key_sv, &dec_instance_id), 0);
-        ASSERT_EQ(decode_bytes(&key_sv, &dec_tablet_prefix), 0);
-        ASSERT_EQ(decode_int64(&key_sv, &dec_table_id), 0) << hex(key_sv);
-        ASSERT_EQ(decode_int64(&key_sv, &dec_tablet_id), 0);
-
-        EXPECT_EQ(instance_id, dec_instance_id);
-        EXPECT_EQ(table_id, dec_table_id);
-        EXPECT_EQ(tablet_id, dec_tablet_id);
-
-        std::get<2>(tablet_key) = tablet_id + 1;
-        std::string encoded_rowset_key1;
-        meta_tablet_key(tablet_key, &encoded_rowset_key1);
+        meta_tablet_idx_key(tablet_tbl_key, &encoded_rowset_key1);
         std::cout << hex(encoded_rowset_key1) << std::endl;
 
         ASSERT_GT(encoded_rowset_key1, encoded_rowset_key0);

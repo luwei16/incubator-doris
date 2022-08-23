@@ -41,6 +41,7 @@ namespace selectdb {
 [[maybe_unused]] static const char* META_KEY_PREFIX    = "meta";
 [[maybe_unused]] static const char* TRASH_KEY_PREFIX   = "trash";
 [[maybe_unused]] static const char* RECYCLE_KEY_PREFIX = "recycle";
+[[maybe_unused]] static const char* STATS_KEY_PREFIX   = "stats";
 
 [[maybe_unused]] static const char* TXN_KEY_INFIX_INDEX   = "txn_index";
 [[maybe_unused]] static const char* TXN_KEY_INFIX_INFO    = "txn_info";
@@ -57,7 +58,7 @@ namespace selectdb {
 [[maybe_unused]] static const char* RECYCLE_KEY_INFIX_INDEX = "index";
 [[maybe_unused]] static const char* RECYCLE_KEY_INFIX_PART  = "partition";
 
-[[maybe_unused]] static const char* TRASH_KEY_INFIX_TRASH   = "trash";
+[[maybe_unused]] static const char* STATS_KEY_INFIX_TABLET = "tablet";
 // clang-format on
 
 // clang-format off
@@ -75,15 +76,15 @@ constexpr static typename std::enable_if_t<0 < sizeof...(R), bool> is_one_of() {
 }
 
 template <typename T, typename U>
-constexpr static bool has_same_among() { return std::is_same_v<T, U>; }
+constexpr static bool all_types_distinct() { return std::is_same_v<T, U>; }
 /**
- * Checks if there are 2 types in the given type list
+ * Checks if there are 2 types are the same in the given type list
  */
 template <typename T, typename U, typename... R>
 constexpr static typename std::enable_if_t<0 < sizeof...(R), bool> 
-has_same_among() {
+all_types_distinct() {
     // The last part of this expr is `for` loop
-    return is_one_of<T, U>() || is_one_of<T, R...>() || has_same_among<U, R...>();
+    return is_one_of<T, U>() || is_one_of<T, R...>() || all_types_distinct<U, R...>();
 }
 
 template <typename T>
@@ -92,17 +93,18 @@ static void encode_prefix(const T& t, std::string* key) {
     static_assert(is_one_of<T,
         InstanceKeyInfo,
         TxnIndexKeyInfo, TxnInfoKeyInfo, TxnDbTblKeyInfo, TxnRunningKeyInfo,
-        MetaRowsetKeyInfo, MetaRowsetTmpKeyInfo, MetaTabletKeyInfo, MetaTabletTblKeyInfo,
+        MetaRowsetKeyInfo, MetaRowsetTmpKeyInfo, MetaTabletKeyInfo, MetaTabletIdxKeyInfo,
         VersionKeyInfo,
-        RecycleIndexKeyInfo, RecyclePartKeyInfo, RecycleRowsetKeyInfo
+        RecycleIndexKeyInfo, RecyclePartKeyInfo, RecycleRowsetKeyInfo,
+        StatsTabletKeyInfo
        >(), "Invalid Key Type");
-    // Abitrary 2 types must be distingushable
-    static_assert(!has_same_among<
+    static_assert(!all_types_distinct<
         InstanceKeyInfo,
         TxnIndexKeyInfo, TxnInfoKeyInfo, TxnDbTblKeyInfo, TxnRunningKeyInfo,
-        MetaRowsetKeyInfo, MetaRowsetTmpKeyInfo, MetaTabletKeyInfo, MetaTabletTblKeyInfo,
+        MetaRowsetKeyInfo, MetaRowsetTmpKeyInfo, MetaTabletKeyInfo, MetaTabletIdxKeyInfo,
         VersionKeyInfo,
-        RecycleIndexKeyInfo, RecyclePartKeyInfo, RecycleRowsetKeyInfo
+        RecycleIndexKeyInfo, RecyclePartKeyInfo, RecycleRowsetKeyInfo,
+        StatsTabletKeyInfo
         >(), "Type conflict, there are at least 2 types are the same in the list.");
 
     key->push_back(CLOUD_KEY_SPACE01);
@@ -117,7 +119,7 @@ static void encode_prefix(const T& t, std::string* key) {
     } else if constexpr (std::is_same_v<T, MetaRowsetKeyInfo>
                       || std::is_same_v<T, MetaRowsetTmpKeyInfo>
                       || std::is_same_v<T, MetaTabletKeyInfo>
-                      || std::is_same_v<T, MetaTabletTblKeyInfo>) {
+                      || std::is_same_v<T, MetaTabletIdxKeyInfo>) {
         encode_bytes(META_KEY_PREFIX, key);
     } else if constexpr (std::is_same_v<T, VersionKeyInfo>) {
         encode_bytes(VERSION_KEY_PREFIX, key);
@@ -125,6 +127,8 @@ static void encode_prefix(const T& t, std::string* key) {
                       || std::is_same_v<T, RecyclePartKeyInfo>
                       || std::is_same_v<T, RecycleRowsetKeyInfo>) {
         encode_bytes(RECYCLE_KEY_PREFIX, key);
+    } else if constexpr (std::is_same_v<T, StatsTabletKeyInfo>) {
+        encode_bytes(STATS_KEY_PREFIX, key);
     } else {
         std::abort(); // Impossible
     }
@@ -210,7 +214,7 @@ void meta_tablet_key(const MetaTabletKeyInfo& in, std::string* out) {
     encode_int64(std::get<4>(in), out);       // tablet_id
 }
 
-void meta_tablet_table_key(const MetaTabletTblKeyInfo& in, std::string* out) {
+void meta_tablet_idx_key(const MetaTabletIdxKeyInfo& in, std::string* out) {
     encode_prefix(in, out);                       // 0x01 "meta" ${instance_id}
     encode_bytes(META_KEY_INFIX_TABLET_TBL, out); // "tablet_table"
     encode_int64(std::get<1>(in), out);           // tablet_id
@@ -237,6 +241,15 @@ void recycle_rowset_key(const RecycleRowsetKeyInfo& in, std::string* out) {
     encode_bytes(META_KEY_INFIX_ROWSET, out); // "rowset"
     encode_int64(std::get<1>(in), out);       // tablet_id
     encode_bytes(std::get<2>(in), out);       // rowset_id
+}
+
+void stats_tablet_key(const StatsTabletKeyInfo& in, std::string* out) {
+    encode_prefix(in, out);                    // 0x01 "stats" ${instance_id}
+    encode_bytes(STATS_KEY_INFIX_TABLET, out); // "tablet"
+    encode_int64(std::get<1>(in), out);        // table_id
+    encode_int64(std::get<2>(in), out);        // index_id
+    encode_int64(std::get<3>(in), out);        // partition_id
+    encode_int64(std::get<4>(in), out);        // tablet_id
 }
 
 //==============================================================================

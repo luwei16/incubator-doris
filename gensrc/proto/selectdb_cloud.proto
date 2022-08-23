@@ -198,10 +198,12 @@ message TxnInfoPB {
     // TODO: There are more fields TBD
 }
 
-message TabletTablePB {
-    optional int64 table_id = 1;
-    optional int64 index_id = 2;
-    optional int64 partition_id = 3;
+message TabletIndexPB {
+    optional int64 db_id = 1;
+    optional int64 table_id = 2;
+    optional int64 index_id = 3;
+    optional int64 partition_id = 4;
+    optional int64 tablet_id = 5;
 }
 
 message RecycleIndexPB {
@@ -219,6 +221,15 @@ message RecycleRowsetPB {
     optional string obj_bucket = 1;
     optional string obj_prefix = 2;
     optional int64 creation_time = 3;
+}
+
+//==============================================================================
+// Stats
+//==============================================================================
+message TabletStatsPB {
+    optional TabletIndexPB idx = 1;
+    optional int64 data_size = 2;
+    optional int64 num_rows = 3;
 }
 
 //==============================================================================
@@ -411,6 +422,16 @@ message GetClusterResponse {
     optional ClusterPB cluster = 2;
 }
 
+message GetTabletStatsRequest {
+    optional string cloud_unique_id = 1;
+    repeated TabletIndexPB tablet_idx = 2;
+}
+
+message GetTabletStatsResponse {
+    optional MetaServiceResponseStatus status = 1;
+    repeated TabletStatsPB tablet_stats = 2;
+}
+
 enum MetaServiceCode {
     OK = 0;
 
@@ -479,6 +500,8 @@ service MetaService {
     rpc prepare_partition(PartitionRequest) returns (MetaServiceGenericResponse);
     rpc commit_partition(PartitionRequest) returns (MetaServiceGenericResponse);
     rpc drop_partition(PartitionRequest) returns (MetaServiceGenericResponse);
+
+    rpc get_tablet_stats(GetTabletStatsRequest) returns (GetTabletStatsResponse);
 
     rpc http(MetaServiceHttpRequest) returns (MetaServiceHttpResponse);
 
