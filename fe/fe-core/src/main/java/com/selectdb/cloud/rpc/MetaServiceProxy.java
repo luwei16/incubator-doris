@@ -153,6 +153,28 @@ public class MetaServiceProxy {
         }
     }
 
+    public SelectdbCloud.GetCurrentMaxTxnResponse
+            getCurrentMaxTxnId(TNetworkAddress address, SelectdbCloud.GetCurrentMaxTxnRequest request)
+            throws RpcException {
+        try {
+            final MetaServiceClient client = getProxy(address);
+            return client.getCurrentMaxTxnId(request);
+        } catch (Exception e) {
+            throw new RpcException(address.hostname, e.getMessage(), e);
+        }
+    }
+
+    public SelectdbCloud.CheckTxnConflictResponse
+            checkTxnConflict(TNetworkAddress address, SelectdbCloud.CheckTxnConflictRequest request)
+            throws RpcException {
+        try {
+            final MetaServiceClient client = getProxy(address);
+            return client.checkTxnConflict(request);
+        } catch (Exception e) {
+            throw new RpcException(address.hostname, e.getMessage(), e);
+        }
+    }
+
     public SelectdbCloud.GetClusterResponse
             getCluster(TNetworkAddress address, SelectdbCloud.GetClusterRequest request) throws RpcException {
         try {

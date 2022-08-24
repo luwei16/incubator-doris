@@ -47,8 +47,12 @@ import com.selectdb.cloud.proto.SelectdbCloud.AbortTxnRequest;
 import com.selectdb.cloud.proto.SelectdbCloud.AbortTxnResponse;
 import com.selectdb.cloud.proto.SelectdbCloud.BeginTxnRequest;
 import com.selectdb.cloud.proto.SelectdbCloud.BeginTxnResponse;
+import com.selectdb.cloud.proto.SelectdbCloud.CheckTxnConflictRequest;
+import com.selectdb.cloud.proto.SelectdbCloud.CheckTxnConflictResponse;
 import com.selectdb.cloud.proto.SelectdbCloud.CommitTxnRequest;
 import com.selectdb.cloud.proto.SelectdbCloud.CommitTxnResponse;
+import com.selectdb.cloud.proto.SelectdbCloud.GetCurrentMaxTxnRequest;
+import com.selectdb.cloud.proto.SelectdbCloud.GetCurrentMaxTxnResponse;
 import com.selectdb.cloud.proto.SelectdbCloud.GetTxnRequest;
 import com.selectdb.cloud.proto.SelectdbCloud.GetTxnResponse;
 import com.selectdb.cloud.proto.SelectdbCloud.LoadJobSourceTypePB;
@@ -417,7 +421,31 @@ public class CloudGlobalTransactionMgr implements GlobalTransactionMgrInterface 
     @Override
     public boolean isPreviousTransactionsFinished(long endTransactionId, long dbId, List<Long> tableIdList)
             throws AnalysisException {
-        return false;
+        LOG.info("isPreviousTransactionsFinished(), endTransactionId:{}, dbId:{}, tableIdList:{}",
+                endTransactionId, dbId, tableIdList);
+
+        TNetworkAddress metaAddress = getMetaSerivceAddress();
+        CheckTxnConflictRequest.Builder builder = CheckTxnConflictRequest.newBuilder();
+        builder.setDbId(dbId);
+        builder.setEndTxnId(endTransactionId);
+        builder.addAllTableIds(tableIdList);
+        builder.setCloudUniqueId(Config.cloud_unique_id);
+
+        final CheckTxnConflictRequest checkTxnConflictRequest = builder.build();
+        CheckTxnConflictResponse checkTxnConflictResponse = null;
+        try {
+            LOG.info("CheckTxnConflictRequest:{}", checkTxnConflictRequest);
+            checkTxnConflictResponse = MetaServiceProxy
+                    .getInstance().checkTxnConflict(metaAddress, checkTxnConflictRequest);
+            LOG.info("CheckTxnConflictResponse: {}", checkTxnConflictResponse);
+        } catch (RpcException e) {
+            throw new AnalysisException(e.getMessage());
+        }
+
+        if (checkTxnConflictResponse.getStatus().getCode() != MetaServiceCode.OK) {
+            throw new AnalysisException(checkTxnConflictResponse.getStatus().getMsg());
+        }
+        return checkTxnConflictResponse.getFinished();
     }
 
     @Override
@@ -495,7 +523,30 @@ public class CloudGlobalTransactionMgr implements GlobalTransactionMgrInterface 
 
     @Override
     public long getNextTransactionId(long dbId) {
-        return 0;
+        LOG.info("try to getNextTransactionId() dbId:{}", dbId);
+        TNetworkAddress metaAddress = getMetaSerivceAddress();
+        GetCurrentMaxTxnRequest.Builder builder = GetCurrentMaxTxnRequest.newBuilder();
+        builder.setCloudUniqueId(Config.cloud_unique_id);
+
+        final GetCurrentMaxTxnRequest getCurrentMaxTxnRequest = builder.build();
+        GetCurrentMaxTxnResponse getCurrentMaxTxnResponse = null;
+        try {
+            LOG.info("GetCurrentMaxTxnRequest:{}", getCurrentMaxTxnRequest);
+            getCurrentMaxTxnResponse = MetaServiceProxy
+                    .getInstance().getCurrentMaxTxnId(metaAddress, getCurrentMaxTxnRequest);
+            LOG.info("GetCurrentMaxTxnResponse: {}", getCurrentMaxTxnResponse);
+        } catch (RpcException e) {
+            LOG.info("getNextTransactionId() exception: {}", e.getMessage());
+            //TODO(zhanglei) to throw exception here
+            return -1;
+        }
+
+        if (getCurrentMaxTxnResponse.getStatus().getCode() != MetaServiceCode.OK) {
+            LOG.info("getNextTransactionId() exception: {}, {}", getCurrentMaxTxnResponse.getStatus().getCode(),
+                    getCurrentMaxTxnResponse.getStatus().getMsg());
+            return -1;
+        }
+        return getCurrentMaxTxnResponse.getCurrentMaxTxnId();
     }
 
     @Override

@@ -1106,6 +1106,172 @@ void MetaServiceImpl::get_txn(::google::protobuf::RpcController* controller,
     return;
 }
 
+//To get current max txn id for schema change watermark etc.
+void MetaServiceImpl::get_current_max_txn_id(::google::protobuf::RpcController* controller,
+                                             const ::selectdb::GetCurrentMaxTxnRequest* request,
+                                             ::selectdb::GetCurrentMaxTxnResponse* response,
+                                             ::google::protobuf::Closure* done) {
+    auto ctrl = static_cast<brpc::Controller*>(controller);
+    LOG(INFO) << __PRETTY_FUNCTION__ << " rpc from " << ctrl->remote_side()
+              << " request=" << request->DebugString();
+    brpc::ClosureGuard closure_guard(done);
+    int ret = 0;
+    MetaServiceCode code = MetaServiceCode::OK;
+    std::string msg = "OK";
+    std::unique_ptr<Transaction> txn;
+    [[maybe_unused]] std::stringstream ss;
+    std::unique_ptr<int, std::function<void(int*)>> defer_status(
+            (int*)0x01, [&code, &msg, &response, &ctrl](int*) {
+                response->mutable_status()->set_code(code);
+                response->mutable_status()->set_msg(msg);
+                LOG(INFO) << "finish " << __PRETTY_FUNCTION__ << " " << ctrl->remote_side() << " "
+                          << msg << " response" << response->DebugString();
+            });
+    // TODO: For auth
+    std::string cloud_unique_id;
+    if (request->has_cloud_unique_id()) {
+        cloud_unique_id = request->cloud_unique_id();
+    }
+
+    std::string instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
+    if (instance_id.empty()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "empty instance_id";
+        LOG(INFO) << msg << ", cloud_unique_id=" << request->cloud_unique_id();
+        return;
+    }
+
+    ret = txn_kv_->create_txn(&txn);
+    if (ret != 0) {
+        msg = "failed to create txn";
+        code = MetaServiceCode::KV_TXN_CREATE_ERR;
+        return;
+    }
+
+    std::string key = "schema change";
+    std::string val;
+    ret = txn->get(key, &val);
+    if (ret < 0) {
+        code = MetaServiceCode::KV_TXN_GET_ERR;
+        std::stringstream ss;
+        ss << "txn->get() failed,"
+           << " ret=" << ret;
+        msg = ss.str();
+        return;
+    }
+    int64_t read_version = txn->get_read_version();
+    int64_t current_max_txn_id = read_version << 10;
+    response->set_current_max_txn_id(current_max_txn_id);
+}
+
+void MetaServiceImpl::check_txn_conflict(::google::protobuf::RpcController* controller,
+                                         const ::selectdb::CheckTxnConflictRequest* request,
+                                         ::selectdb::CheckTxnConflictResponse* response,
+                                         ::google::protobuf::Closure* done) {
+    auto ctrl = static_cast<brpc::Controller*>(controller);
+    LOG(INFO) << __PRETTY_FUNCTION__ << " rpc from " << ctrl->remote_side()
+              << " request=" << request->DebugString();
+    brpc::ClosureGuard closure_guard(done);
+    int ret = 0;
+    MetaServiceCode code = MetaServiceCode::OK;
+    std::unique_ptr<Transaction> txn;
+    std::string msg = "OK";
+    [[maybe_unused]] std::stringstream ss;
+    std::unique_ptr<int, std::function<void(int*)>> defer_status(
+            (int*)0x01, [&code, &msg, &response, &ctrl](int*) {
+                response->mutable_status()->set_code(code);
+                response->mutable_status()->set_msg(msg);
+                LOG(INFO) << "finish " << __PRETTY_FUNCTION__ << " " << ctrl->remote_side() << " "
+                          << msg << " response" << response->DebugString();
+            });
+
+    if (!request->has_db_id() || !request->has_end_txn_id() || (request->table_ids_size() <= 0)) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "invalid db id, end txn id or table_ids.";
+        return;
+    }
+    // TODO: For auth
+    std::string cloud_unique_id;
+    if (request->has_cloud_unique_id()) {
+        cloud_unique_id = request->cloud_unique_id();
+    }
+    std::string instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
+    if (instance_id.empty()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "empty instance_id";
+        LOG(INFO) << msg << ", cloud_unique_id=" << request->cloud_unique_id();
+        return;
+    }
+
+    int64_t db_id = request->db_id();
+    std::string begin_txn_run_key;
+    std::string begin_txn_run_val;
+    std::string end_txn_run_key;
+    std::string end_txn_run_val;
+    TxnRunningKeyInfo begin_txn_run_key_info {instance_id, db_id, 0};
+    TxnRunningKeyInfo end_txn_run_key_info {instance_id, db_id, request->end_txn_id()};
+    txn_running_key(begin_txn_run_key_info, &begin_txn_run_key);
+    txn_running_key(end_txn_run_key_info, &end_txn_run_key);
+    LOG(INFO) << "xxx begin_txn_run_key:" << begin_txn_run_key
+              << " end_txn_run_key:" << end_txn_run_key;
+
+    ret = txn_kv_->create_txn(&txn);
+    if (ret != 0) {
+        msg = "failed to create txn";
+        code = MetaServiceCode::KV_TXN_CREATE_ERR;
+        return;
+    }
+
+    //TODO: use set to replace
+    std::vector<int64_t> src_table_ids(request->table_ids().begin(), request->table_ids().end());
+    std::sort(src_table_ids.begin(), src_table_ids.end());
+    std::unique_ptr<RangeGetIterator> it;
+    do {
+        ret = txn->get(begin_txn_run_key, end_txn_run_key, &it);
+        if (ret != 0) {
+            code = MetaServiceCode::KV_TXN_GET_ERR;
+            ss << "Failed to get txn running info." << ret;
+            msg = ss.str();
+            LOG(WARNING) << msg;
+            return;
+        }
+
+        while (it->has_next()) {
+            auto [k, v] = it->next();
+            LOG(INFO) << "xxx range_get txn_run_key=" << hex(k);
+            TxnRunningInfoPB running_val_pb;
+            if (!running_val_pb.ParseFromArray(v.data(), v.size())) {
+                code = MetaServiceCode::PROTOBUF_PARSE_ERR;
+                ss << "malformed txn running info";
+                msg = ss.str();
+                ss << " key=" << hex(k);
+                LOG(WARNING) << ss.str();
+                return;
+            }
+            LOG(INFO) << "xxx range_get txn_run_key=" << hex(k)
+                      << " running_val_pb=" << running_val_pb.DebugString();
+            std::vector<int64_t> running_table_ids(running_val_pb.table_ids().begin(),
+                                                   running_val_pb.table_ids().end());
+            std::sort(running_table_ids.begin(), running_table_ids.end());
+            std::vector<int64_t> result(std::min(running_table_ids.size(), src_table_ids.size()));
+            std::vector<int64_t>::iterator iter = std::set_intersection(
+                    src_table_ids.begin(), src_table_ids.end(), running_table_ids.begin(),
+                    running_table_ids.end(), result.begin());
+            result.resize(iter - result.begin());
+            if (result.size() > 0) {
+                response->set_finished(false);
+                return;
+            }
+
+            if (!it->has_next()) {
+                begin_txn_run_key = k;
+            }
+        }
+        begin_txn_run_key.push_back('\x00'); // Update to next smallest key for iteration
+    } while (it->more());
+    response->set_finished(true);
+}
+
 void MetaServiceImpl::get_version(::google::protobuf::RpcController* controller,
                                   const ::selectdb::GetVersionRequest* request,
                                   ::selectdb::GetVersionResponse* response,

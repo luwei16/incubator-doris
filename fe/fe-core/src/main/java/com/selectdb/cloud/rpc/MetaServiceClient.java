@@ -138,6 +138,16 @@ public class MetaServiceClient {
         return blockingStub.getTxn(request);
     }
 
+    public SelectdbCloud.GetCurrentMaxTxnResponse
+            getCurrentMaxTxnId(SelectdbCloud.GetCurrentMaxTxnRequest request) {
+        return blockingStub.getCurrentMaxTxnId(request);
+    }
+
+    public SelectdbCloud.CheckTxnConflictResponse
+            checkTxnConflict(SelectdbCloud.CheckTxnConflictRequest request) {
+        return blockingStub.checkTxnConflict(request);
+    }
+
     public SelectdbCloud.GetClusterResponse getCluster(SelectdbCloud.GetClusterRequest request) {
         if (!request.hasCloudUniqueId()) {
             SelectdbCloud.GetClusterRequest.Builder builder =

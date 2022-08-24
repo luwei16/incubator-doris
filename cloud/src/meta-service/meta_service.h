@@ -39,6 +39,16 @@ public:
                  ::google::protobuf::Closure* done) override;
     // clang-format on
 
+    void get_current_max_txn_id(::google::protobuf::RpcController* controller,
+                                const ::selectdb::GetCurrentMaxTxnRequest* request,
+                                ::selectdb::GetCurrentMaxTxnResponse* response,
+                                ::google::protobuf::Closure* done) override;
+
+    void check_txn_conflict(::google::protobuf::RpcController* controller,
+                            const ::selectdb::CheckTxnConflictRequest* request,
+                            ::selectdb::CheckTxnConflictResponse* response,
+                            ::google::protobuf::Closure* done) override;
+
     void get_version(::google::protobuf::RpcController* controller,
                      const ::selectdb::GetVersionRequest* request,
                      ::selectdb::GetVersionResponse* response,
