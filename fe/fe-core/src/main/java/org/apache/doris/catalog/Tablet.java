@@ -155,11 +155,6 @@ public class Tablet extends MetaObject implements Writable {
     }
 
     public void addReplica(Replica replica, boolean isRestore) {
-        if (!Config.cloud_unique_id.isEmpty()) {
-            replicas.add(replica);
-            // TODO(luwei): process isRestore
-            return;
-        }
         if (deleteRedundantReplica(replica.getBackendId(), replica.getVersion())) {
             replicas.add(replica);
             if (!isRestore) {

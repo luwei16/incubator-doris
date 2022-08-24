@@ -18,8 +18,14 @@
 package com.selectdb.cloud.catalog;
 
 import org.apache.doris.catalog.Env;
+import org.apache.doris.catalog.Database;
+import org.apache.doris.catalog.MaterializedIndex;
+import org.apache.doris.catalog.MaterializedIndex.IndexExtState;
+import org.apache.doris.catalog.OlapTable;
 import org.apache.doris.catalog.Partition;
 import org.apache.doris.catalog.Replica;
+import org.apache.doris.catalog.TabletInvertedIndex;
+import org.apache.doris.catalog.TabletMeta;
 import org.apache.doris.qe.ConnectContext;
 import org.apache.doris.system.Backend;
 import org.apache.logging.log4j.LogManager;
@@ -38,12 +44,67 @@ public class CloudReplica extends Replica {
     // In the future, a replica may be mapped to multiple BEs in a cluster,
     // so this value is be list
     private Map<String, List<Long>> clusterToBackends = new HashMap<String, List<Long>>();
+    private long idx = -1;
 
     public CloudReplica() {
     }
 
     public CloudReplica(long replicaId, List<Long> backendIds, ReplicaState state, long version, int schemaHash) {
         super(replicaId, -1, state, version, schemaHash);
+    }
+
+    private boolean isColocated() {
+        TabletInvertedIndex index = Env.getCurrentInvertedIndex();
+        if (index == null || index.getTabletIdByReplica(getId()) == null) {
+            return false;
+        }
+        long tableId = index.getTabletMeta(index.getTabletIdByReplica(getId())).getTableId();
+        return Env.getCurrentColocateIndex().isColocateTable(tableId);
+    }
+
+    private long getIdx() {
+        long tabletId = Env.getCurrentInvertedIndex().getTabletIdByReplica(getId());
+        TabletMeta meta = Env.getCurrentInvertedIndex().getTabletMeta(tabletId);
+        long tableId = meta.getTableId();
+        long dbId =  meta.getDbId();
+
+        Database db = Env.getCurrentInternalCatalog().getDbNullable(dbId);
+        OlapTable olapTable = (OlapTable) db.getTableNullable(tableId);
+
+        olapTable.readLock();
+        try {
+            for (Partition partition : olapTable.getPartitions()) {
+                for (MaterializedIndex index : partition.getMaterializedIndices(IndexExtState.VISIBLE)) {
+                    int idx = 0;
+                    for (Long id : index.getTabletIdsInOrder()) {
+                        if (tabletId == id) {
+                            return idx;
+                        }
+                        idx++;
+                    }
+                }
+            }
+        } finally {
+            olapTable.readUnlock();
+        }
+
+        return -1;
+    }
+
+    private long getColocatedBeId(String cluster) {
+        if (idx == -1) {
+            idx = getIdx();
+        }
+
+        List<Backend> availableBes = Env.getCurrentSystemInfo().getBackendsByClusterName(cluster);
+
+        // Tablets with the same idx will be hashed to the same BE, which
+        // meets the requirements of colocated table.
+        long index = idx % availableBes.size();
+        long pickedBeId = availableBes.get((int) index).getId();
+
+        LOG.info("lw test idx {} {} {}", idx, getId(), pickedBeId);
+        return pickedBeId;
     }
 
     @Override
@@ -71,6 +132,10 @@ public class CloudReplica extends Replica {
             return -1;
         }
 
+        if (isColocated()) {
+            return getColocatedBeId(cluster);
+        }
+
         if (clusterToBackends.containsKey(cluster)) {
             long backendId = clusterToBackends.get(cluster).get(0);
             Backend be = Env.getCurrentSystemInfo().getBackend(backendId);
@@ -82,17 +147,17 @@ public class CloudReplica extends Replica {
 
         // TODO(luwei) list shoule be sorted
         List<Backend> availableBes = Env.getCurrentSystemInfo().getBackendsByClusterName(cluster);
-        LOG.debug("backends={} ", availableBes);
+        LOG.debug("availableBes={} ", availableBes);
         long index = getId() % availableBes.size();
+        long pickedBeId = availableBes.get((int) index).getId();
+        LOG.info("picked backendId={} ", pickedBeId);
 
         // save to clusterToBackends map
         List<Long> bes = new ArrayList<Long>();
-        bes.add(availableBes.get((int) index).getId());
-        LOG.info("backendId={} ", availableBes.get((int) index).getId());
+        bes.add(pickedBeId);
         clusterToBackends.put(cluster, bes);
 
-        LOG.info("backendId={} ", availableBes.get((int) index).getId());
-        return availableBes.get((int) index).getId();
+        return pickedBeId;
     }
 
     @Override
