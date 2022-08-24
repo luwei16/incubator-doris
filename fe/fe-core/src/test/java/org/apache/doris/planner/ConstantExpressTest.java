@@ -18,6 +18,7 @@
 package org.apache.doris.planner;
 
 import org.apache.doris.qe.ConnectContext;
+import org.apache.doris.utframe.MockedMetaServerFactory;
 import org.apache.doris.utframe.UtFrameUtils;
 
 import org.junit.Assert;
@@ -35,7 +36,8 @@ public class ConstantExpressTest {
 
     @BeforeClass
     public static void beforeClass() throws Exception {
-        UtFrameUtils.startFEServer(runningDir);
+        int port = UtFrameUtils.createMetaServer(MockedMetaServerFactory.METASERVER_DEFAULT_IP);
+        UtFrameUtils.startFEServer(runningDir, port);
         connectContext = UtFrameUtils.createDefaultCtx();
     }
 

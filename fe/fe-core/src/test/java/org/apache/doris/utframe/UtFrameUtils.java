@@ -45,6 +45,7 @@ import org.apache.doris.utframe.MockedBackendFactory.DefaultPBackendServiceImpl;
 import org.apache.doris.utframe.MockedFrontend.EnvVarNotSetException;
 import org.apache.doris.utframe.MockedFrontend.FeStartException;
 import org.apache.doris.utframe.MockedFrontend.NotInitException;
+import org.apache.doris.utframe.MockedMetaServerFactory.DefaultPMetaServiceImpl;
 
 import com.google.common.base.Preconditions;
 import com.google.common.base.Strings;
@@ -147,7 +148,7 @@ public class UtFrameUtils {
         return "fe" + "/mocked/" + testSuiteName + "/" + UUID.randomUUID().toString() + "/";
     }
 
-    public static int startFEServer(String runningDir) throws EnvVarNotSetException, IOException,
+    public static int startFEServer(String runningDir, int metaPort) throws EnvVarNotSetException, IOException,
             FeStartException, NotInitException, DdlException, InterruptedException {
         // get DORIS_HOME
         String dorisHome = System.getenv("DORIS_HOME");
@@ -176,6 +177,7 @@ public class UtFrameUtils {
         feConfMap.put("query_port", String.valueOf(feQueryPort));
         feConfMap.put("edit_log_port", String.valueOf(feEditLogPort));
         feConfMap.put("tablet_create_timeout_second", "10");
+        feConfMap.put("meta_service_endpoint", MockedMetaServerFactory.METASERVER_DEFAULT_IP + ":" + metaPort);
         frontend.init(dorisHome + "/" + runningDir, feConfMap);
         frontend.start(new String[0]);
         return feRpcPort;
@@ -188,8 +190,9 @@ public class UtFrameUtils {
 
     public static void createDorisCluster(String runningDir, int backendNum) throws EnvVarNotSetException, IOException,
             FeStartException, NotInitException, DdlException, InterruptedException {
-        int feRpcPort = startFEServer(runningDir);
         List<Backend> bes = Lists.newArrayList();
+        int port = createMetaServer(MockedMetaServerFactory.METASERVER_DEFAULT_IP);
+        int feRpcPort = startFEServer(runningDir, port);
         for (int i = 0; i < backendNum; i++) {
             bes.add(createBackend("127.0.0.1", feRpcPort));
         }
@@ -217,18 +220,29 @@ public class UtFrameUtils {
     // Create multi backends with different host for unit test.
     // the host of BE will be "127.0.0.1", "127.0.0.2"
     public static void createDorisClusterWithMultiTag(String runningDir, int backendNum)
-            throws EnvVarNotSetException, IOException, FeStartException, NotInitException, DdlException,
-            InterruptedException {
+            throws EnvVarNotSetException, IOException, FeStartException,
+            NotInitException, DdlException, InterruptedException {
+        int port = createMetaServer(MockedMetaServerFactory.METASERVER_DEFAULT_IP);
         // set runningUnitTest to true, so that for ut,
         // the agent task will be sent to "127.0.0.1" to make cluster running well.
         FeConstants.runningUnitTest = true;
-        int feRpcPort = startFEServer(runningDir);
+        int feRpcPort = startFEServer(runningDir, port);
         for (int i = 0; i < backendNum; i++) {
             String host = "127.0.0." + (i + 1);
             createBackend(host, feRpcPort);
         }
         // sleep to wait first heartbeat
         Thread.sleep(6000);
+    }
+
+    public static int createMetaServer(String metaHost) throws IOException {
+        int metaBrpcPort = findValidPort();
+
+        // start metaServer
+        MockedMetaServer metaServer = MockedMetaServerFactory.createMetaServer(metaHost,
+                metaBrpcPort, new DefaultPMetaServiceImpl());
+        metaServer.start();
+        return metaServer.getBrpcPort();
     }
 
     public static Backend createBackend(String beHost, int feRpcPort) throws IOException, InterruptedException {
