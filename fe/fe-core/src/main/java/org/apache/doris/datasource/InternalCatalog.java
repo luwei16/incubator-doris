@@ -1352,6 +1352,9 @@ public class InternalCatalog implements CatalogIf<Database> {
                     olapTable.getEnableUniqueKeyMergeOnWrite(), olapTable.getStoragePolicy(), idGeneratorBuffer,
                     olapTable.disableAutoCompaction());
             } else {
+                List<Long> partitionIds = new ArrayList<Long>();
+                partitionIds.add(partitionId);
+                prepareCloudPartition(olapTable, partitionIds);
                 partition = createCloudPartitionWithIndices(db.getClusterName(), db.getId(), olapTable.getId(),
                         olapTable.getBaseIndexId(), partitionId, partitionName, indexIdToMeta, distributionInfo,
                         dataProperty.getStorageMedium(), singlePartitionDesc.getReplicaAlloc(),
@@ -1360,6 +1363,7 @@ public class InternalCatalog implements CatalogIf<Database> {
                         singlePartitionDesc.getTabletType(), olapTable.getCompressionType(),
                         olapTable.getDataSortInfo(), olapTable.getEnableUniqueKeyMergeOnWrite(),
                         olapTable.getStoragePolicy());
+                commitCloudPartition(olapTable, partitionIds);
             }
 
             // check again
@@ -2004,6 +2008,7 @@ public class InternalCatalog implements CatalogIf<Database> {
                         olapTable.getDataSortInfo(), olapTable.getEnableUniqueKeyMergeOnWrite(), storagePolicy,
                         idGeneratorBuffer, olapTable.disableAutoCompaction());
                 } else {
+                    prepareCloudMaterializedIndex(olapTable);
                     partition = createCloudPartitionWithIndices(db.getClusterName(), db.getId(),
                         olapTable.getId(), olapTable.getBaseIndexId(), partitionId, partitionName,
                         olapTable.getIndexIdToMeta(), partitionDistributionInfo,
@@ -2011,6 +2016,7 @@ public class InternalCatalog implements CatalogIf<Database> {
                         partitionInfo.getReplicaAllocation(partitionId), versionInfo, bfColumns, bfFpp, tabletIdSet,
                         olapTable.getCopiedIndexes(), isInMemory, storageFormat, tabletType, compressionType,
                         olapTable.getDataSortInfo(), olapTable.getEnableUniqueKeyMergeOnWrite(), storagePolicy);
+                    commitCloudMaterializedIndex(olapTable);
                 }
                 olapTable.addPartition(partition);
             } else if (partitionInfo.getType() == PartitionType.RANGE
@@ -2052,6 +2058,10 @@ public class InternalCatalog implements CatalogIf<Database> {
                                     + totalReplicaNum + " of replica exceeds quota[" + db.getReplicaQuota() + "]");
                 }
 
+                if (!Config.cloud_unique_id.isEmpty()) {
+                    prepareCloudMaterializedIndex(olapTable);
+                }
+
                 // this is a 2-level partitioned tables
                 for (Map.Entry<String, Long> entry : partitionNameToId.entrySet()) {
                     DataProperty dataProperty = partitionInfo.getDataProperty(entry.getValue());
@@ -2086,6 +2096,10 @@ public class InternalCatalog implements CatalogIf<Database> {
                             olapTable.getDataSortInfo(), olapTable.getEnableUniqueKeyMergeOnWrite(), storagePolicy,
                             idGeneratorBuffer, olapTable.disableAutoCompaction());
                     olapTable.addPartition(partition);
+                }
+
+                if (!Config.cloud_unique_id.isEmpty()) {
+                    commitCloudMaterializedIndex(olapTable);
                 }
             } else {
                 throw new DdlException("Unsupported partition method: " + partitionInfo.getType().name());
@@ -2444,10 +2458,25 @@ public class InternalCatalog implements CatalogIf<Database> {
         long bufferSize = IdGeneratorUtil.getBufferSizeForTruncateTable(copiedTbl, origPartitions.values());
         IdGeneratorBuffer idGeneratorBuffer = Env.getCurrentEnv().getIdGeneratorBuffer(bufferSize);
         try {
+
+            Map<Long, Long> oldToNewPartitionId = new HashMap<Long, Long>();
+            List<Long> newPartitionIds = new ArrayList<Long>(); 
+            for (Map.Entry<String, Long> entry : origPartitions.entrySet()) {
+                long oldPartitionId = entry.getValue();
+                long newPartitionId = idGeneratorBuffer.getNextId();
+                oldToNewPartitionId.put(oldPartitionId, newPartitionId);
+                newPartitionIds.add(newPartitionId);
+            }
+
+            if (!Config.cloud_unique_id.isEmpty()) {
+                //prepare partition
+                prepareCloudPartition(copiedTbl, newPartitionIds);
+            }
+
             for (Map.Entry<String, Long> entry : origPartitions.entrySet()) {
                 if (!Config.cloud_unique_id.isEmpty()) { // TODO(gaivn): extract as function
                     long oldPartitionId = entry.getValue();
-                    long newPartitionId = Env.getCurrentEnv().getNextId();
+                    long newPartitionId = oldToNewPartitionId.get(oldPartitionId);
                     Partition newPartition = createCloudPartitionWithIndices(db.getClusterName(),
                             db.getId(), copiedTbl.getId(), copiedTbl.getBaseIndexId(), newPartitionId,
                             entry.getKey(), copiedTbl.getIndexIdToMeta(),
@@ -2468,7 +2497,7 @@ public class InternalCatalog implements CatalogIf<Database> {
                 // By using a new id, load job will be aborted(just like partition is dropped),
                 // which is the right behavior.
                 long oldPartitionId = entry.getValue();
-                long newPartitionId = idGeneratorBuffer.getNextId();
+                long newPartitionId = oldToNewPartitionId.get(oldPartitionId);
                 Partition newPartition = createPartitionWithIndices(db.getClusterName(), db.getId(), copiedTbl.getId(),
                         copiedTbl.getBaseIndexId(), newPartitionId, entry.getKey(), copiedTbl.getIndexIdToMeta(),
                         partitionsDistributionInfo.get(oldPartitionId),
@@ -2480,6 +2509,11 @@ public class InternalCatalog implements CatalogIf<Database> {
                         copiedTbl.getDataSortInfo(), copiedTbl.getEnableUniqueKeyMergeOnWrite(),
                         olapTable.getStoragePolicy(), idGeneratorBuffer, olapTable.disableAutoCompaction());
                 newPartitions.add(newPartition);
+            }
+
+            if (!Config.cloud_unique_id.isEmpty()) {
+                //commit partition
+                commitCloudPartition(copiedTbl, newPartitionIds);
             }
         } catch (DdlException e) {
             // create partition failed, remove all newly created tablets
@@ -3614,6 +3648,115 @@ public class InternalCatalog implements CatalogIf<Database> {
             return;
         } else {
             ErrorReport.reportDdlException(ErrorCode.ERR_UNKNOWN_STORAGE_ENGINE, engineName);
+        }
+    }
+
+    public void prepareCloudMaterializedIndex(OlapTable olapTable) throws DdlException {
+        //prepare for index
+        SelectdbCloud.IndexRequest.Builder indexRequestBuilder = SelectdbCloud.IndexRequest.newBuilder();
+        indexRequestBuilder.setCloudUniqueId(Config.cloud_unique_id);
+        for (Long indexId : olapTable.getIndexIdToMeta().keySet()) {
+            indexRequestBuilder.addIndexIds(indexId);
+        }
+        indexRequestBuilder.setTableId(olapTable.getId());
+        SelectdbCloud.IndexRequest indexRequest = indexRequestBuilder.build();
+        LOG.info("prepareIndex request: {} ", indexRequest);
+        String metaEndPoint = Config.meta_service_endpoint;
+        String[] splitMetaEndPoint = metaEndPoint.split(":");
+        TNetworkAddress metaAddress =
+                new TNetworkAddress(splitMetaEndPoint[0], Integer.parseInt(splitMetaEndPoint[1]));
+
+        SelectdbCloud.MetaServiceGenericResponse response = null;
+        try {
+            response = MetaServiceProxy.getInstance().prepareIndex(metaAddress, indexRequest);
+        } catch (RpcException e) {
+            throw new DdlException(e.getMessage());
+        }
+        LOG.info("prepareIndex response: {} ", response);
+
+        if (response.getStatus().getCode() != SelectdbCloud.MetaServiceCode.OK) {
+            throw new DdlException(response.getStatus().getMsg());
+        }
+
+    }
+
+    public void commitCloudMaterializedIndex(OlapTable olapTable) throws DdlException {
+        //commit for index
+        SelectdbCloud.IndexRequest.Builder indexRequestBuilder = SelectdbCloud.IndexRequest.newBuilder();
+        indexRequestBuilder.setCloudUniqueId(Config.cloud_unique_id);
+        for (Long indexId : olapTable.getIndexIdToMeta().keySet()) {
+            indexRequestBuilder.addIndexIds(indexId);
+        }
+        indexRequestBuilder.setTableId(olapTable.getId());
+        SelectdbCloud.IndexRequest indexRequest = indexRequestBuilder.build();
+        LOG.info("commitIndex request: {} ", indexRequest);
+        String metaEndPoint = Config.meta_service_endpoint;
+        String[] splitMetaEndPoint = metaEndPoint.split(":");
+        TNetworkAddress metaAddress =
+                new TNetworkAddress(splitMetaEndPoint[0], Integer.parseInt(splitMetaEndPoint[1]));
+
+        SelectdbCloud.MetaServiceGenericResponse response = null;
+        try {
+            response = MetaServiceProxy.getInstance().commitIndex(metaAddress, indexRequest);
+        } catch (RpcException e) {
+            throw new DdlException(e.getMessage());
+        }
+        LOG.info("commitIndex response: {} ", response);
+
+        if (response.getStatus().getCode() != SelectdbCloud.MetaServiceCode.OK) {
+            throw new DdlException(response.getStatus().getMsg());
+        }
+    }
+
+    public void prepareCloudPartition(OlapTable olapTable, List<Long> partitionIds) throws DdlException {
+        //prepare for partition
+        SelectdbCloud.PartitionRequest.Builder partitionRequestBuilder = SelectdbCloud.PartitionRequest.newBuilder();
+        partitionRequestBuilder.setCloudUniqueId(Config.cloud_unique_id);
+        partitionRequestBuilder.addAllPartitionIds(partitionIds);
+        partitionRequestBuilder.setTableId(olapTable.getId());
+        SelectdbCloud.PartitionRequest partitionRequest = partitionRequestBuilder.build();
+        LOG.info("preparePartition request: {} ", partitionRequest);
+        String metaEndPoint = Config.meta_service_endpoint;
+        String[] splitMetaEndPoint = metaEndPoint.split(":");
+        TNetworkAddress metaAddress =
+                new TNetworkAddress(splitMetaEndPoint[0], Integer.parseInt(splitMetaEndPoint[1]));
+
+        SelectdbCloud.MetaServiceGenericResponse response = null;
+        try {
+            response = MetaServiceProxy.getInstance().preparePartition(metaAddress, partitionRequest);
+        } catch (RpcException e) {
+            throw new DdlException(e.getMessage());
+        }
+        LOG.info("preparePartition response: {} ", response);
+
+        if (response.getStatus().getCode() != SelectdbCloud.MetaServiceCode.OK) {
+            throw new DdlException(response.getStatus().getMsg());
+        }
+    }
+
+    public void commitCloudPartition(OlapTable olapTable, List<Long> partitionIds) throws DdlException {
+        //commit for partition
+        SelectdbCloud.PartitionRequest.Builder partitionRequestBuilder = SelectdbCloud.PartitionRequest.newBuilder();
+        partitionRequestBuilder.setCloudUniqueId(Config.cloud_unique_id);
+        partitionRequestBuilder.addAllPartitionIds(partitionIds);
+        partitionRequestBuilder.setTableId(olapTable.getId());
+        SelectdbCloud.PartitionRequest partitionRequest = partitionRequestBuilder.build();
+        LOG.info("commitPartition request: {} ", partitionRequest);
+        String metaEndPoint = Config.meta_service_endpoint;
+        String[] splitMetaEndPoint = metaEndPoint.split(":");
+        TNetworkAddress metaAddress =
+                new TNetworkAddress(splitMetaEndPoint[0], Integer.parseInt(splitMetaEndPoint[1]));
+
+        SelectdbCloud.MetaServiceGenericResponse response = null;
+        try {
+            response = MetaServiceProxy.getInstance().commitPartition(metaAddress, partitionRequest);
+        } catch (RpcException e) {
+            throw new DdlException(e.getMessage());
+        }
+        LOG.info("commitPartition response: {} ", response);
+
+        if (response.getStatus().getCode() != SelectdbCloud.MetaServiceCode.OK) {
+            throw new DdlException(response.getStatus().getMsg());
         }
     }
 }

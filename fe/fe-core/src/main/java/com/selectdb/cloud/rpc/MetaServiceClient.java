@@ -157,4 +157,34 @@ public class MetaServiceClient {
         }
         return blockingStub.getCluster(request);
     }
+
+    public SelectdbCloud.MetaServiceGenericResponse
+            prepareIndex(SelectdbCloud.IndexRequest request) {
+        return blockingStub.prepareIndex(request);
+    }
+
+    public SelectdbCloud.MetaServiceGenericResponse
+            commitIndex(SelectdbCloud.IndexRequest request) {
+        return blockingStub.commitIndex(request);
+    }
+
+    public SelectdbCloud.MetaServiceGenericResponse
+            dropIndex(SelectdbCloud.IndexRequest request) {
+        return blockingStub.dropIndex(request);
+    }
+
+    public SelectdbCloud.MetaServiceGenericResponse
+            preparePartition(SelectdbCloud.PartitionRequest request) {
+        return blockingStub.preparePartition(request);
+    }
+
+    public SelectdbCloud.MetaServiceGenericResponse
+            commitPartition(SelectdbCloud.PartitionRequest request) {
+        return blockingStub.commitPartition(request);
+    }
+
+    public SelectdbCloud.MetaServiceGenericResponse
+            dropPartition(SelectdbCloud.PartitionRequest request) {
+        return blockingStub.dropPartition(request);
+    }
 }

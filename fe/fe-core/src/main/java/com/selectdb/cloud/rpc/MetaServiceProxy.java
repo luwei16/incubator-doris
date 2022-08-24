@@ -184,4 +184,65 @@ public class MetaServiceProxy {
             throw new RpcException(address.hostname, e.getMessage(), e);
         }
     }
+
+    public SelectdbCloud.MetaServiceGenericResponse
+            prepareIndex(TNetworkAddress address, SelectdbCloud.IndexRequest request) throws RpcException {
+        try {
+            final MetaServiceClient client = getProxy(address);
+            return client.prepareIndex(request);
+        } catch (Exception e) {
+            throw new RpcException(address.hostname, e.getMessage(), e);
+        }
+    }
+
+    public SelectdbCloud.MetaServiceGenericResponse
+            commitIndex(TNetworkAddress address, SelectdbCloud.IndexRequest request) throws RpcException {
+        try {
+            final MetaServiceClient client = getProxy(address);
+            return client.commitIndex(request);
+        } catch (Exception e) {
+            throw new RpcException(address.hostname, e.getMessage(), e);
+        }
+    }
+
+    public SelectdbCloud.MetaServiceGenericResponse
+            dropIndex(TNetworkAddress address, SelectdbCloud.IndexRequest request) throws RpcException {
+        try {
+            final MetaServiceClient client = getProxy(address);
+            return client.dropIndex(request);
+        } catch (Exception e) {
+            throw new RpcException(address.hostname, e.getMessage(), e);
+        }
+    }
+
+
+    public SelectdbCloud.MetaServiceGenericResponse
+            preparePartition(TNetworkAddress address, SelectdbCloud.PartitionRequest request) throws RpcException {
+        try {
+            final MetaServiceClient client = getProxy(address);
+            return client.preparePartition(request);
+        } catch (Exception e) {
+            throw new RpcException(address.hostname, e.getMessage(), e);
+        }
+    }
+
+    public SelectdbCloud.MetaServiceGenericResponse
+            commitPartition(TNetworkAddress address, SelectdbCloud.PartitionRequest request) throws RpcException {
+        try {
+            final MetaServiceClient client = getProxy(address);
+            return client.commitPartition(request);
+        } catch (Exception e) {
+            throw new RpcException(address.hostname, e.getMessage(), e);
+        }
+    }
+
+    public SelectdbCloud.MetaServiceGenericResponse
+            dropPartition(TNetworkAddress address, SelectdbCloud.PartitionRequest request) throws RpcException {
+        try {
+            final MetaServiceClient client = getProxy(address);
+            return client.dropPartition(request);
+        } catch (Exception e) {
+            throw new RpcException(address.hostname, e.getMessage(), e);
+        }
+    }
 }
