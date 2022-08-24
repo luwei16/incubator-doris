@@ -46,6 +46,7 @@ Usage: $0 <options>
      --benchmark        build benchmark-tool
      --clean            clean and build ut
      --run              build and run all ut
+     --coverage         coverage after run ut
      --run --filter=xx  build and run specified ut
      -j                 build parallel
      -h                 print this help message
@@ -61,11 +62,12 @@ Usage: $0 <options>
     $0 --run --filter=FooTest.*:BarTest.*-FooTest.Bar:BarTest.Foo   runs everything in test suite FooTest except FooTest.Bar and everything in test suite BarTest except BarTest.Foo
     $0 --clean                                                      clean and build tests
     $0 --clean --run                                                clean, build and run all tests
+    $0 --clean --run --coverage                                     clean, build, run all tests and coverage
   "
     exit 1
 }
 
-if ! OPTS="$(getopt -n "$0" -o vhj:f: -l benchmark,run,clean,filter: -- "$@")"; then
+if ! OPTS="$(getopt -n "$0" -o vhj:f: -l coverage,benchmark,run,clean,filter: -- "$@")"; then
     usage
 fi
 
@@ -79,7 +81,8 @@ fi
 
 CLEAN=0
 RUN=0
-BUILD_BENCHMARK_TOOL='OFF'
+BUILD_BENCHMARK_TOOL=OFF
+DENABLE_CLANG_COVERAGE=OFF
 FILTER=""
 if [[ "$#" != 1 ]]; then
     while true; do
@@ -94,6 +97,10 @@ if [[ "$#" != 1 ]]; then
             ;;
         --benchmark)
             BUILD_BENCHMARK_TOOL='ON'
+            shift
+            ;;
+        --coverage)
+            DENABLE_CLANG_COVERAGE=ON
             shift
             ;;
         -f | --filter)
@@ -125,6 +132,10 @@ echo "Get params:
     CLOUD_MODE          -- ${CLOUD_MODE}
 "
 echo "Build Backend UT"
+
+if [[ "_${DENABLE_CLANG_COVERAGE}" == "_ON" ]]; then
+    sed -i "s/    DORIS_TOOLCHAIN=gcc/    DORIS_TOOLCHAIN=clang/g" env.sh
+fi
 
 . "${DORIS_HOME}/env.sh"
 
@@ -167,12 +178,19 @@ cd "${CMAKE_BUILD_DIR}"
     -DSTRICT_MEMORY_USE=OFF \
     -DEXTRA_CXX_FLAGS="${EXTRA_CXX_FLAGS}" \
     ${CMAKE_USE_CCACHE:+${CMAKE_USE_CCACHE}} \
+    -DENABLE_CLANG_COVERAGE=${DENABLE_CLANG_COVERAGE} \
     "${DORIS_HOME}/be"
 "${BUILD_SYSTEM}" -j "${PARALLEL}"
 
 if [[ "${RUN}" -ne 1 ]]; then
     echo "Finished"
     exit 0
+fi
+
+#recover dufault build tool to gcc
+cd ${DORIS_HOME}
+if [[ "_${DENABLE_CLANG_COVERAGE}" == "_ON" ]]; then
+    sed -i "s/    DORIS_TOOLCHAIN=clang/    DORIS_TOOLCHAIN=gcc/g" env.sh
 fi
 
 echo "******************************"
@@ -267,9 +285,14 @@ if [ "${CLOUD_MODE}" == "ON" ]; then
 else
     test=${DORIS_TEST_BINARY_DIR}/doris_be_test
 fi
+profraw=${DORIS_TEST_BINARY_DIR}/doris_be_test.profraw
 file_name="${test##*/}"
 if [[ -f "${test}" ]]; then
-    "${test}" --gtest_output="xml:${GTEST_OUTPUT_DIR}/${file_name}.xml" --gtest_print_time=true "${FILTER}"
+    if [[ "_${DENABLE_CLANG_COVERAGE}" == "_ON" ]];then
+        LLVM_PROFILE_FILE="${profraw}" "${test}" --gtest_output="xml:${GTEST_OUTPUT_DIR}/${file_name}.xml"  --gtest_print_time=true "${FILTER}"
+    else
+        "${test}" --gtest_output="xml:${GTEST_OUTPUT_DIR}/${file_name}.xml"  --gtest_print_time=true "${FILTER}"
+    fi
     echo "=== Finished. Gtest output: ${GTEST_OUTPUT_DIR}"
 else
     echo "unit test file: ${test} does not exist."
