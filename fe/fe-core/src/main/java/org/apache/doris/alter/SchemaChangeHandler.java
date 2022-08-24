@@ -92,6 +92,7 @@ import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
+import com.selectdb.cloud.catalog.CloudReplica;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -1498,8 +1499,11 @@ public class SchemaChangeHandler extends AlterHandler {
                         Preconditions.checkState(originReplica.getState() == ReplicaState.NORMAL,
                                 originReplica.getState());
                         // replica's init state is ALTER, so that tablet report process will ignore its report
-                        Replica shadowReplica = new Replica(shadowReplicaId, backendId, ReplicaState.ALTER,
-                                Partition.PARTITION_INIT_VERSION, newSchemaHash);
+                        Replica shadowReplica = Config.cloud_unique_id.isEmpty()
+                                ? new Replica(shadowReplicaId, backendId, ReplicaState.ALTER,
+                                        Partition.PARTITION_INIT_VERSION, newSchemaHash)
+                                : new CloudReplica(shadowReplicaId, null, ReplicaState.ALTER,
+                                        Partition.PARTITION_INIT_VERSION, newSchemaHash);
                         shadowTablet.addReplica(shadowReplica);
                         healthyReplicaNum++;
                     }

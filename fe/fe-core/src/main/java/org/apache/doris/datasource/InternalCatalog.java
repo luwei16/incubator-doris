@@ -2008,7 +2008,7 @@ public class InternalCatalog implements CatalogIf<Database> {
                         olapTable.getDataSortInfo(), olapTable.getEnableUniqueKeyMergeOnWrite(), storagePolicy,
                         idGeneratorBuffer, olapTable.disableAutoCompaction());
                 } else {
-                    prepareCloudMaterializedIndex(olapTable);
+                    prepareCloudMaterializedIndex(olapTable, olapTable.getIndexIdList());
                     partition = createCloudPartitionWithIndices(db.getClusterName(), db.getId(),
                         olapTable.getId(), olapTable.getBaseIndexId(), partitionId, partitionName,
                         olapTable.getIndexIdToMeta(), partitionDistributionInfo,
@@ -2016,7 +2016,7 @@ public class InternalCatalog implements CatalogIf<Database> {
                         partitionInfo.getReplicaAllocation(partitionId), versionInfo, bfColumns, bfFpp, tabletIdSet,
                         olapTable.getCopiedIndexes(), isInMemory, storageFormat, tabletType, compressionType,
                         olapTable.getDataSortInfo(), olapTable.getEnableUniqueKeyMergeOnWrite(), storagePolicy);
-                    commitCloudMaterializedIndex(olapTable);
+                    commitCloudMaterializedIndex(olapTable, olapTable.getIndexIdList());
                 }
                 olapTable.addPartition(partition);
             } else if (partitionInfo.getType() == PartitionType.RANGE
@@ -2059,7 +2059,7 @@ public class InternalCatalog implements CatalogIf<Database> {
                 }
 
                 if (!Config.cloud_unique_id.isEmpty()) {
-                    prepareCloudMaterializedIndex(olapTable);
+                    prepareCloudMaterializedIndex(olapTable, olapTable.getIndexIdList());
                 }
 
                 // this is a 2-level partitioned tables
@@ -2099,7 +2099,7 @@ public class InternalCatalog implements CatalogIf<Database> {
                 }
 
                 if (!Config.cloud_unique_id.isEmpty()) {
-                    commitCloudMaterializedIndex(olapTable);
+                    commitCloudMaterializedIndex(olapTable, olapTable.getIndexIdList());
                 }
             } else {
                 throw new DdlException("Unsupported partition method: " + partitionInfo.getType().name());
@@ -3448,6 +3448,134 @@ public class InternalCatalog implements CatalogIf<Database> {
         return rowsetBuilder;
     }
 
+    public void createCloudTabletsMeta(long tableId, long indexId, long partitionId, Tablet tablet,
+                TTabletType tabletType, int schemaHash, KeysType keysType, short shortKeyColumnCount,
+                Set<String> bfColumns, double bfFpp, List<Column> schemaColumns, DataSortInfo dataSortInfo,
+                TCompressionType compressionType, String storagePolicy) throws DdlException {
+        OlapFile.TabletMetaPB.Builder builder = OlapFile.TabletMetaPB.newBuilder();
+        builder.setTableId(tableId);
+        builder.setIndexId(indexId);
+        builder.setPartitionId(partitionId);
+        builder.setTabletId(tablet.getId());
+        builder.setSchemaHash(schemaHash);
+        builder.setCreationTime(System.currentTimeMillis() / 1000);
+        builder.setCumulativeLayerPoint(-1);
+        builder.setTabletState(OlapFile.TabletStatePB.PB_RUNNING);
+
+        UUID uuid = UUID.randomUUID();
+        Types.PUniqueId tabletUid = Types.PUniqueId.newBuilder()
+                .setHi(uuid.getMostSignificantBits())
+                .setLo(uuid.getLeastSignificantBits())
+                .build();
+        builder.setTabletUid(tabletUid);
+
+        builder.setPreferredRowsetType(OlapFile.RowsetTypePB.BETA_ROWSET);
+        builder.setTabletType(tabletType == TTabletType.TABLET_TYPE_DISK
+                ? OlapFile.TabletTypePB.TABLET_TYPE_DISK : OlapFile.TabletTypePB.TABLET_TYPE_MEMORY);
+
+        builder.setReplicaId(tablet.getReplicas().get(0).getId());
+        builder.setStoragePolicy(storagePolicy);
+        builder.setEnableUniqueKeyMergeOnWrite(false);
+
+        OlapFile.TabletSchemaPB.Builder schemaBuilder = OlapFile.TabletSchemaPB.newBuilder();
+        if (keysType == KeysType.DUP_KEYS) {
+            schemaBuilder.setKeysType(OlapFile.KeysType.DUP_KEYS);
+        } else if (keysType == KeysType.UNIQUE_KEYS) {
+            schemaBuilder.setKeysType(OlapFile.KeysType.UNIQUE_KEYS);
+        } else if (keysType == KeysType.AGG_KEYS) {
+            schemaBuilder.setKeysType(OlapFile.KeysType.AGG_KEYS);
+        } else {
+            throw new DdlException("invalid key types");
+        }
+        schemaBuilder.setNumShortKeyColumns(shortKeyColumnCount);
+        schemaBuilder.setNumRowsPerRowBlock(1024);
+        schemaBuilder.setCompressKind(OlapCommon.CompressKind.COMPRESS_LZ4);
+        schemaBuilder.setBfFpp(bfFpp);
+
+        int deleteSign = -1;
+        int sequenceCol = -1;
+        for (int i = 0; i < schemaColumns.size(); i++) {
+            Column column = schemaColumns.get(i);
+            if (column.isDeleteSignColumn()) {
+                deleteSign = i;
+            }
+            if (column.isSequenceColumn()) {
+                sequenceCol = i;
+            }
+        }
+        schemaBuilder.setDeleteSignIdx(deleteSign);
+        schemaBuilder.setSequenceColIdx(sequenceCol);
+
+        if (dataSortInfo.getSortType() == TSortType.LEXICAL) {
+            schemaBuilder.setSortType(OlapFile.SortType.LEXICAL);
+        } else if (dataSortInfo.getSortType() == TSortType.ZORDER) {
+            schemaBuilder.setSortType(OlapFile.SortType.ZORDER);
+        } else {
+            throw new DdlException("invalid sort types");
+        }
+
+        switch (compressionType) {
+            case NO_COMPRESSION:
+                schemaBuilder.setCompressionType(SegmentV2.CompressionTypePB.NO_COMPRESSION);
+                break;
+            case SNAPPY:
+                schemaBuilder.setCompressionType(SegmentV2.CompressionTypePB.SNAPPY);
+                break;
+            case LZ4:
+                schemaBuilder.setCompressionType(SegmentV2.CompressionTypePB.LZ4);
+                break;
+            case LZ4F:
+                schemaBuilder.setCompressionType(SegmentV2.CompressionTypePB.LZ4F);
+                break;
+            case ZLIB:
+                schemaBuilder.setCompressionType(SegmentV2.CompressionTypePB.ZLIB);
+                break;
+            case ZSTD:
+                schemaBuilder.setCompressionType(SegmentV2.CompressionTypePB.ZSTD);
+                break;
+            default:
+                schemaBuilder.setCompressionType(SegmentV2.CompressionTypePB.LZ4F);
+                break;
+        }
+
+        schemaBuilder.setSortColNum(dataSortInfo.getColNum());
+        for (int i = 0; i < schemaColumns.size(); i++) {
+            Column column = schemaColumns.get(i);
+            schemaBuilder.addColumn(column.toPb(bfColumns));
+        }
+        OlapFile.TabletSchemaPB schema = schemaBuilder.build();
+        builder.setSchema(schema);
+        // rowset
+        OlapFile.RowsetMetaPB.Builder rowsetBuilder = createInitialRowset(tablet, partitionId,
+                schemaHash, schema);
+        builder.addRsMetas(rowsetBuilder);
+
+        OlapFile.TabletMetaPB tabletMetaPb = builder.build();
+        SelectdbCloud.CreateTabletRequest.Builder requestBuilder
+                = SelectdbCloud.CreateTabletRequest.newBuilder();
+        requestBuilder.setTabletMeta(tabletMetaPb)
+                        .setCloudUniqueId(Config.cloud_unique_id);
+        SelectdbCloud.CreateTabletRequest createTableReq = requestBuilder.build();
+        LOG.info("createTableReq: {} ", createTableReq);
+
+        String metaEndPoint = Config.meta_service_endpoint;
+        String[] splitMetaEndPoint = metaEndPoint.split(":");
+        TNetworkAddress metaAddress =
+                new TNetworkAddress(splitMetaEndPoint[0], Integer.parseInt(splitMetaEndPoint[1]));
+
+        SelectdbCloud.MetaServiceGenericResponse response;
+        try {
+            response = MetaServiceProxy.getInstance().createTablet(metaAddress, createTableReq);
+        } catch (RpcException e) {
+            throw new RuntimeException(e);
+        }
+        LOG.info("response: {} ", response);
+
+        if (response.getStatus().getCode() != SelectdbCloud.MetaServiceCode.OK) {
+            throw new DdlException(response.getStatus().getMsg());
+        }
+    }
+
     private Partition createCloudPartitionWithIndices(String clusterName, long dbId, long tableId, long baseIndexId,
             long partitionId, String partitionName, Map<Long, MaterializedIndexMeta> indexIdToMeta,
             DistributionInfo distributionInfo, TStorageMedium storageMedium, ReplicaAllocation replicaAlloc,
@@ -3504,128 +3632,9 @@ public class InternalCatalog implements CatalogIf<Database> {
             KeysType keysType = indexMeta.getKeysType();
 
             for (Tablet tablet : index.getTablets()) {
-                OlapFile.TabletMetaPB.Builder builder = OlapFile.TabletMetaPB.newBuilder();
-                builder.setTableId(tableId);
-                builder.setIndexId(index.getId());
-                builder.setPartitionId(partitionId);
-                builder.setTabletId(tablet.getId());
-                builder.setSchemaHash(schemaHash);
-                builder.setCreationTime(System.currentTimeMillis() / 1000);
-                builder.setCumulativeLayerPoint(-1);
-                builder.setTabletState(OlapFile.TabletStatePB.PB_RUNNING);
-
-                UUID uuid = UUID.randomUUID();
-                Types.PUniqueId tabletUid = Types.PUniqueId.newBuilder()
-                        .setHi(uuid.getMostSignificantBits())
-                        .setLo(uuid.getLeastSignificantBits())
-                        .build();
-                builder.setTabletUid(tabletUid);
-
-                builder.setPreferredRowsetType(OlapFile.RowsetTypePB.BETA_ROWSET);
-                builder.setTabletType(tabletType == TTabletType.TABLET_TYPE_DISK
-                        ? OlapFile.TabletTypePB.TABLET_TYPE_DISK : OlapFile.TabletTypePB.TABLET_TYPE_MEMORY);
-
-                builder.setReplicaId(tablet.getReplicas().get(0).getId());
-                builder.setStoragePolicy(storagePolicy);
-                builder.setEnableUniqueKeyMergeOnWrite(false);
-
-                OlapFile.TabletSchemaPB.Builder schemaBuilder = OlapFile.TabletSchemaPB.newBuilder();
-                if (keysType == KeysType.DUP_KEYS) {
-                    schemaBuilder.setKeysType(OlapFile.KeysType.DUP_KEYS);
-                } else if (keysType == KeysType.UNIQUE_KEYS) {
-                    schemaBuilder.setKeysType(OlapFile.KeysType.UNIQUE_KEYS);
-                } else if (keysType == KeysType.AGG_KEYS) {
-                    schemaBuilder.setKeysType(OlapFile.KeysType.AGG_KEYS);
-                } else {
-                    throw new DdlException("invalid key types");
-                }
-                schemaBuilder.setNumShortKeyColumns(shortKeyColumnCount);
-                schemaBuilder.setNumRowsPerRowBlock(1024);
-                schemaBuilder.setCompressKind(OlapCommon.CompressKind.COMPRESS_LZ4);
-                schemaBuilder.setBfFpp(bfFpp);
-
-                int deleteSign = -1;
-                int sequenceCol = -1;
-                for (int i = 0; i < columns.size(); i++) {
-                    Column column = columns.get(i);
-                    if (column.isDeleteSignColumn()) {
-                        deleteSign = i;
-                    }
-                    if (column.isSequenceColumn()) {
-                        sequenceCol = i;
-                    }
-                }
-                schemaBuilder.setDeleteSignIdx(deleteSign);
-                schemaBuilder.setSequenceColIdx(sequenceCol);
-
-                if (dataSortInfo.getSortType() == TSortType.LEXICAL) {
-                    schemaBuilder.setSortType(OlapFile.SortType.LEXICAL);
-                } else if (dataSortInfo.getSortType() == TSortType.ZORDER) {
-                    schemaBuilder.setSortType(OlapFile.SortType.ZORDER);
-                } else {
-                    throw new DdlException("invalid sort types");
-                }
-
-                switch (compressionType) {
-                    case NO_COMPRESSION:
-                        schemaBuilder.setCompressionType(SegmentV2.CompressionTypePB.NO_COMPRESSION);
-                        break;
-                    case SNAPPY:
-                        schemaBuilder.setCompressionType(SegmentV2.CompressionTypePB.SNAPPY);
-                        break;
-                    case LZ4:
-                        schemaBuilder.setCompressionType(SegmentV2.CompressionTypePB.LZ4);
-                        break;
-                    case LZ4F:
-                        schemaBuilder.setCompressionType(SegmentV2.CompressionTypePB.LZ4F);
-                        break;
-                    case ZLIB:
-                        schemaBuilder.setCompressionType(SegmentV2.CompressionTypePB.ZLIB);
-                        break;
-                    case ZSTD:
-                        schemaBuilder.setCompressionType(SegmentV2.CompressionTypePB.ZSTD);
-                        break;
-                    default:
-                        schemaBuilder.setCompressionType(SegmentV2.CompressionTypePB.LZ4F);
-                        break;
-                }
-
-                schemaBuilder.setSortColNum(dataSortInfo.getColNum());
-                for (int i = 0; i < columns.size(); i++) {
-                    Column column = columns.get(i);
-                    schemaBuilder.addColumn(column.toPb(bfColumns));
-                }
-                OlapFile.TabletSchemaPB schema = schemaBuilder.build();
-                builder.setSchema(schema);
-                // rowset
-                OlapFile.RowsetMetaPB.Builder rowsetBuilder = createInitialRowset(tablet, partitionId,
-                        schemaHash, schema);
-                builder.addRsMetas(rowsetBuilder);
-
-                OlapFile.TabletMetaPB tabletMetaPb = builder.build();
-                SelectdbCloud.CreateTabletRequest.Builder requestBuilder
-                        = SelectdbCloud.CreateTabletRequest.newBuilder();
-                requestBuilder.setTabletMeta(tabletMetaPb)
-                              .setCloudUniqueId(Config.cloud_unique_id);
-                SelectdbCloud.CreateTabletRequest createTableReq = requestBuilder.build();
-                LOG.info("lw test debug req: {} ", createTableReq.toString());
-
-                String metaEndPoint = Config.meta_service_endpoint;
-                String[] splitMetaEndPoint = metaEndPoint.split(":");
-                TNetworkAddress metaAddress =
-                        new TNetworkAddress(splitMetaEndPoint[0], Integer.parseInt(splitMetaEndPoint[1]));
-
-                SelectdbCloud.MetaServiceGenericResponse response;
-                try {
-                    response = MetaServiceProxy.getInstance().createTablet(metaAddress, createTableReq);
-                } catch (RpcException e) {
-                    throw new RuntimeException(e);
-                }
-                LOG.info("lw test get rpc resp: {} ", response.getStatus().getMsg());
-
-                if (response.getStatus().getCode() != SelectdbCloud.MetaServiceCode.OK) {
-                    throw new DdlException(response.getStatus().getMsg());
-                }
+                createCloudTabletsMeta(tableId, indexId, partitionId, tablet, tabletType, schemaHash,
+                        keysType, shortKeyColumnCount, bfColumns, bfFpp, columns, dataSortInfo,
+                        compressionType, storagePolicy);
             }
 
             if (index.getId() != baseIndexId) {
@@ -3651,13 +3660,11 @@ public class InternalCatalog implements CatalogIf<Database> {
         }
     }
 
-    public void prepareCloudMaterializedIndex(OlapTable olapTable) throws DdlException {
+    public void prepareCloudMaterializedIndex(OlapTable olapTable, List<Long> indexIds) throws DdlException {
         //prepare for index
         SelectdbCloud.IndexRequest.Builder indexRequestBuilder = SelectdbCloud.IndexRequest.newBuilder();
         indexRequestBuilder.setCloudUniqueId(Config.cloud_unique_id);
-        for (Long indexId : olapTable.getIndexIdToMeta().keySet()) {
-            indexRequestBuilder.addIndexIds(indexId);
-        }
+        indexRequestBuilder.addAllIndexIds(indexIds);
         indexRequestBuilder.setTableId(olapTable.getId());
         SelectdbCloud.IndexRequest indexRequest = indexRequestBuilder.build();
         LOG.info("prepareIndex request: {} ", indexRequest);
@@ -3670,23 +3677,23 @@ public class InternalCatalog implements CatalogIf<Database> {
         try {
             response = MetaServiceProxy.getInstance().prepareIndex(metaAddress, indexRequest);
         } catch (RpcException e) {
+            LOG.warn("prepareIndex response: {} ", response);
             throw new DdlException(e.getMessage());
         }
-        LOG.info("prepareIndex response: {} ", response);
 
+        LOG.info("prepareIndex response: {} ", response);
         if (response.getStatus().getCode() != SelectdbCloud.MetaServiceCode.OK) {
+            LOG.warn("prepareIndex response: {} ", response);
             throw new DdlException(response.getStatus().getMsg());
         }
 
     }
 
-    public void commitCloudMaterializedIndex(OlapTable olapTable) throws DdlException {
+    public void commitCloudMaterializedIndex(OlapTable olapTable, List<Long> indexIds) throws DdlException {
         //commit for index
         SelectdbCloud.IndexRequest.Builder indexRequestBuilder = SelectdbCloud.IndexRequest.newBuilder();
         indexRequestBuilder.setCloudUniqueId(Config.cloud_unique_id);
-        for (Long indexId : olapTable.getIndexIdToMeta().keySet()) {
-            indexRequestBuilder.addIndexIds(indexId);
-        }
+        indexRequestBuilder.addAllIndexIds(indexIds);
         indexRequestBuilder.setTableId(olapTable.getId());
         SelectdbCloud.IndexRequest indexRequest = indexRequestBuilder.build();
         LOG.info("commitIndex request: {} ", indexRequest);
@@ -3699,11 +3706,40 @@ public class InternalCatalog implements CatalogIf<Database> {
         try {
             response = MetaServiceProxy.getInstance().commitIndex(metaAddress, indexRequest);
         } catch (RpcException e) {
+            LOG.warn("commitIndex response: {} ", response);
             throw new DdlException(e.getMessage());
         }
-        LOG.info("commitIndex response: {} ", response);
 
         if (response.getStatus().getCode() != SelectdbCloud.MetaServiceCode.OK) {
+             LOG.warn("commitIndex response: {} ", response);
+            throw new DdlException(response.getStatus().getMsg());
+        }
+    }
+
+
+    public void dropCloudMaterializedIndex(OlapTable olapTable, List<Long> indexIds) throws DdlException {
+        //drop for index
+        SelectdbCloud.IndexRequest.Builder indexRequestBuilder = SelectdbCloud.IndexRequest.newBuilder();
+        indexRequestBuilder.setCloudUniqueId(Config.cloud_unique_id);
+        indexRequestBuilder.addAllIndexIds(indexIds);
+        indexRequestBuilder.setTableId(olapTable.getId());
+        SelectdbCloud.IndexRequest indexRequest = indexRequestBuilder.build();
+        LOG.info("dropIndex request: {} ", indexRequest);
+        String metaEndPoint = Config.meta_service_endpoint;
+        String[] splitMetaEndPoint = metaEndPoint.split(":");
+        TNetworkAddress metaAddress =
+                new TNetworkAddress(splitMetaEndPoint[0], Integer.parseInt(splitMetaEndPoint[1]));
+
+        SelectdbCloud.MetaServiceGenericResponse response = null;
+        try {
+            response = MetaServiceProxy.getInstance().dropIndex(metaAddress, indexRequest);
+        } catch (RpcException e) {
+            LOG.warn("dropIndex response: {} ", response);
+            throw new DdlException(e.getMessage());
+        }
+
+        if (response.getStatus().getCode() != SelectdbCloud.MetaServiceCode.OK) {
+            LOG.warn("dropIndex response: {} ", response);
             throw new DdlException(response.getStatus().getMsg());
         }
     }
@@ -3725,11 +3761,13 @@ public class InternalCatalog implements CatalogIf<Database> {
         try {
             response = MetaServiceProxy.getInstance().preparePartition(metaAddress, partitionRequest);
         } catch (RpcException e) {
+            LOG.warn("preparePartition response: {} ", response);
             throw new DdlException(e.getMessage());
         }
         LOG.info("preparePartition response: {} ", response);
 
         if (response.getStatus().getCode() != SelectdbCloud.MetaServiceCode.OK) {
+            LOG.warn("preparePartition response: {} ", response);
             throw new DdlException(response.getStatus().getMsg());
         }
     }
@@ -3751,11 +3789,13 @@ public class InternalCatalog implements CatalogIf<Database> {
         try {
             response = MetaServiceProxy.getInstance().commitPartition(metaAddress, partitionRequest);
         } catch (RpcException e) {
+            LOG.warn("commitPartition response: {} ", response);
             throw new DdlException(e.getMessage());
         }
         LOG.info("commitPartition response: {} ", response);
 
         if (response.getStatus().getCode() != SelectdbCloud.MetaServiceCode.OK) {
+            LOG.warn("commitPartition response: {} ", response);
             throw new DdlException(response.getStatus().getMsg());
         }
     }

@@ -17,6 +17,7 @@
 
 package org.apache.doris.alter;
 
+import org.apache.doris.analysis.DataSortInfo;
 import org.apache.doris.analysis.DescriptorTable;
 import org.apache.doris.analysis.Expr;
 import org.apache.doris.analysis.SlotDescriptor;
@@ -47,15 +48,21 @@ import org.apache.doris.common.SchemaVersionAndHash;
 import org.apache.doris.common.io.Text;
 import org.apache.doris.common.util.TimeUtils;
 import org.apache.doris.persist.gson.GsonUtils;
+import org.apache.doris.proto.OlapCommon;
+import org.apache.doris.proto.OlapFile;
+import org.apache.doris.proto.Types;
 import org.apache.doris.task.AgentBatchTask;
 import org.apache.doris.task.AgentTask;
 import org.apache.doris.task.AgentTaskExecutor;
 import org.apache.doris.task.AgentTaskQueue;
 import org.apache.doris.task.AlterReplicaTask;
 import org.apache.doris.task.CreateReplicaTask;
+import org.apache.doris.thrift.TNetworkAddress;
+import org.apache.doris.thrift.TSortType;
 import org.apache.doris.thrift.TStorageFormat;
 import org.apache.doris.thrift.TStorageMedium;
 import org.apache.doris.thrift.TStorageType;
+import org.apache.doris.thrift.TTabletType;
 import org.apache.doris.thrift.TTaskType;
 
 import com.google.common.base.Joiner;
@@ -66,15 +73,20 @@ import com.google.common.collect.Maps;
 import com.google.common.collect.Table;
 import com.google.common.collect.Table.Cell;
 import com.google.gson.annotations.SerializedName;
+import com.selectdb.cloud.proto.SelectdbCloud;
+import com.selectdb.cloud.rpc.MetaServiceProxy;
+import doris.segment_v2.SegmentV2;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import java.io.DataOutput;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 /*
@@ -189,17 +201,7 @@ public class SchemaChangeJobV2 extends AlterJobV2 {
         indexShortKeyMap.clear();
     }
 
-    /**
-     * runPendingJob():
-     * 1. Create all replicas of all shadow indexes and wait them finished.
-     * 2. After creating done, add the shadow indexes to catalog, user can not see this
-     *    shadow index, but internal load process will generate data for these indexes.
-     * 3. Get a new transaction id, then set job's state to WAITING_TXN
-     */
-    @Override
-    protected void runPendingJob() throws AlterCancelException {
-        Preconditions.checkState(jobState == JobState.PENDING, jobState);
-        LOG.info("begin to send create replica tasks. job: {}", jobId);
+    private void createShadowIndexReplica() throws AlterCancelException {
         Database db = Env.getCurrentInternalCatalog()
                 .getDbOrException(dbId, s -> new AlterCancelException("Database " + s + " does not exist"));
 
@@ -323,6 +325,96 @@ public class SchemaChangeJobV2 extends AlterJobV2 {
             addShadowIndexToCatalog(tbl);
         } finally {
             tbl.writeUnlock();
+        }
+    }
+
+    private void createCloudShadowIndexReplica() throws AlterCancelException {
+        Database db = Env.getCurrentInternalCatalog()
+                .getDbOrException(dbId, s -> new AlterCancelException("Database " + s + " does not exist"));
+
+        if (!checkTableStable(db)) {
+            return;
+        }
+        // 1. create replicas
+
+        OlapTable tbl;
+        try {
+            tbl = (OlapTable) db.getTableOrMetaException(tableId, TableType.OLAP);
+        } catch (MetaNotFoundException e) {
+            throw new AlterCancelException(e.getMessage());
+        }
+
+        tbl.readLock();
+        try {
+            Preconditions.checkState(tbl.getState() == OlapTableState.SCHEMA_CHANGE);
+
+            List<Long> shadowIdxList = new ArrayList<Long>();
+            for (Long shadowIdx : indexIdMap.keySet()) {
+                shadowIdxList.add(shadowIdx);
+            }
+            try {
+                Env.getCurrentInternalCatalog().prepareCloudMaterializedIndex(tbl, shadowIdxList);
+
+                for (long partitionId : partitionIndexMap.rowKeySet()) {
+                    Partition partition = tbl.getPartition(partitionId);
+                    if (partition == null) {
+                        continue;
+                    }
+                    Map<Long, MaterializedIndex> shadowIndexMap = partitionIndexMap.row(partitionId);
+                    for (Map.Entry<Long, MaterializedIndex> entry : shadowIndexMap.entrySet()) {
+                        long shadowIdxId = entry.getKey();
+                        MaterializedIndex shadowIdx = entry.getValue();
+
+                        short shadowShortKeyColumnCount = indexShortKeyMap.get(shadowIdxId);
+                        List<Column> shadowSchema = indexSchemaMap.get(shadowIdxId);
+                        int shadowSchemaHash = indexSchemaVersionAndHashMap.get(shadowIdxId).schemaHash;
+                        long originIndexId = indexIdMap.get(shadowIdxId);
+                        KeysType originKeysType = tbl.getKeysTypeByIndexId(originIndexId);
+
+                        for (Tablet shadowTablet : shadowIdx.getTablets()) {
+                            Env.getCurrentInternalCatalog().createCloudTabletsMeta(tableId, shadowIdxId, partitionId,
+                                    shadowTablet, tbl.getPartitionInfo().getTabletType(partitionId), shadowSchemaHash,
+                                    originKeysType, shadowShortKeyColumnCount, bfColumns, bfFpp, shadowSchema,
+                                    tbl.getDataSortInfo(), tbl.getCompressionType(), tbl.getStoragePolicy());
+                        } // end for rollupTablets
+                    }
+                }
+            } catch (Exception e) {
+                LOG.warn("createCloudShadowIndexReplica Exception:{}", e);
+                throw new AlterCancelException(e.getMessage());
+            }
+
+        } finally {
+            tbl.readUnlock();
+        }
+
+        // create all replicas success.
+        // add all shadow indexes to catalog
+        tbl.writeLockOrAlterCancelException();
+        try {
+            Preconditions.checkState(tbl.getState() == OlapTableState.SCHEMA_CHANGE);
+            addShadowIndexToCatalog(tbl);
+        } finally {
+            tbl.writeUnlock();
+        }
+    }
+
+    /**
+     * runPendingJob():
+     * 1. Create all replicas of all shadow indexes and wait them finished.
+     * 2. After creating done, add the shadow indexes to catalog, user can not see this
+     *    shadow index, but internal load process will generate data for these indexes.
+     * 3. Get a new transaction id, then set job's state to WAITING_TXN
+     */
+    @Override
+    protected void runPendingJob() throws AlterCancelException {
+        Preconditions.checkState(jobState == JobState.PENDING, jobState);
+        LOG.info("begin to send create replica tasks. job: {}", jobId);
+
+        if (Config.cloud_unique_id.isEmpty()) {
+            createShadowIndexReplica();
+        } else {
+            createCloudShadowIndexReplica();
         }
 
         this.watershedTxnId = Env.getCurrentGlobalTransactionMgr()
@@ -562,19 +654,45 @@ public class SchemaChangeJobV2 extends AlterJobV2 {
                     } // end for tablets
                 }
             } // end for partitions
-
             // all partitions are good
             onFinished(tbl);
+
+            if (!Config.cloud_unique_id.isEmpty()) {
+                List<Long> shadowIdxList = new ArrayList<Long>();
+                for (Long shadowIdx : indexIdMap.keySet()) {
+                    shadowIdxList.add(shadowIdx);
+                }
+                try {
+                    Env.getCurrentInternalCatalog().commitCloudMaterializedIndex(tbl, shadowIdxList);
+                } catch (Exception e) {
+                    LOG.warn("commitCloudMaterializedIndex Exception:{}", e);
+                    throw new AlterCancelException(e.getMessage());
+                }
+            }
         } finally {
             tbl.writeUnlock();
         }
-
         pruneMeta();
         this.jobState = JobState.FINISHED;
         this.finishedTimeMs = System.currentTimeMillis();
 
         Env.getCurrentEnv().getEditLog().logAlterJob(this);
         LOG.info("schema change job finished: {}", jobId);
+
+        List<Long> originIdxList = null;
+        try {
+            if (!Config.cloud_unique_id.isEmpty()) {
+                originIdxList = new ArrayList<Long>();
+                for (Long originIdx : indexIdMap.values()) {
+                    originIdxList.add(originIdx);
+                }
+                Env.getCurrentInternalCatalog().dropCloudMaterializedIndex(tbl, originIdxList);
+            }
+        } catch (Exception e) {
+            //Do not throw exception. we think schema change successfully here.
+            LOG.warn("dropCloudMaterializedIndex exception : {}, tableId:{}, originIdxList:{}",
+                    e, tbl.getId(), originIdxList);
+        }
     }
 
     private void onFinished(OlapTable tbl) {
@@ -796,6 +914,16 @@ public class SchemaChangeJobV2 extends AlterJobV2 {
                 tbl.writeLock();
                 try {
                     onFinished(tbl);
+                    if (!Config.cloud_unique_id.isEmpty()) {
+                        List<Long> originIdxList = new ArrayList<Long>();
+                        for (Long originIdx : indexIdMap.values()) {
+                            originIdxList.add(originIdx);
+                        }
+                        Env.getCurrentInternalCatalog().dropCloudMaterializedIndex(tbl, originIdxList);
+                    }
+                } catch (Exception e) {
+                    LOG.error("replayRunningJob Exception:{}", e);
+                    System.exit(-1);
                 } finally {
                     tbl.writeUnlock();
                 }
