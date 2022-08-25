@@ -2448,6 +2448,24 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
         return;
     }
 
+    if (unresolved_path == "rename_cluster") {
+        AlterClusterRequest req;
+        auto st = google::protobuf::util::JsonStringToMessage(request_body, &req);
+        if (!st.ok()) {
+            msg = "failed to parse AlterClusterRequest, error: " + st.message().ToString();
+            response_body = msg;
+            LOG(WARNING) << msg;
+            return;
+        }
+        req.set_op(AlterClusterRequest::RENAME_CLUSTER);
+        MetaServiceGenericResponse res;
+        alter_cluster(cntl, &req, &res, nullptr);
+        ret = res.status().code();
+        msg = res.status().msg();
+        response_body = msg;
+        return;
+    }
+
     // TODO:
     // * unresolved_path == "encode_key"
     // * unresolved_path == "set_token"
@@ -2588,6 +2606,7 @@ void MetaServiceImpl::alter_cluster(google::protobuf::RpcController* controller,
     case AlterClusterRequest::DROP_NODE: {
     } break;
     case AlterClusterRequest::RENAME_CLUSTER: {
+        msg = resource_mgr_->rename_cluster(instance_id, cluster);
     } break;
     default: {
         code = MetaServiceCode::INVALID_ARGUMENT;

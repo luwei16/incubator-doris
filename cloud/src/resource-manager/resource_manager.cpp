@@ -286,15 +286,113 @@ std::string ResourceManager::drop_cluster(const std::string& instance_id,
     return err;
 }
 
-void ResourceManager::add_cluster_to_index(const std::string& instance_id, const ClusterPB& c) {
+std::string ResourceManager::rename_cluster(const std::string& instance_id,
+                                            const ClusterInfo& cluster) {
+    std::stringstream ss;
+    std::string err;
+
+    std::string cluster_id = cluster.cluster.has_cluster_id() ? cluster.cluster.cluster_id() : "";
+    std::string cluster_name =
+            cluster.cluster.has_cluster_name() ? cluster.cluster.cluster_name() : "";
+    if (cluster_id.empty() || cluster_name.empty()) {
+        ss << "missing cluster_id or cluster_name, cluster_id=" << cluster_id
+           << " cluster_name=" << cluster_name;
+        err = ss.str();
+        LOG(INFO) << err;
+        return err;
+    }
+
+    // just rename clusters name, find by cluster id
+
+    std::unique_ptr<Transaction> txn0;
+    int ret = txn_kv_->create_txn(&txn0);
+    if (ret != 0) {
+        err = "failed to create txn";
+        LOG(WARNING) << err << " ret=" << ret;
+        return err;
+    }
+
+    std::shared_ptr<Transaction> txn(txn0.release());
+    InstanceInfoPB instance;
+    auto [c0, m0] = get_instance(txn, instance_id, &instance);
+    if (c0 != 0) {
+        err = m0;
+        return err;
+    }
+
+    bool found = false;
+    ClusterPB original;
+    ClusterPB now;
+    // just rename clusters name, find cluster by cluster id
+    for (auto& i : instance.clusters()) {
+        if (i.cluster_id() != cluster.cluster.cluster_id()) {
+            continue;
+        }
+        if (i.cluster_name() == cluster.cluster.cluster_name()) {
+            ss << "failed to rename cluster, name eq original name, original cluster is "
+               << proto_to_json(i);
+            err = ss.str();
+            return err;
+        }
+        original.CopyFrom(i);
+        LOG(INFO) << "found a cluster to rename,"
+                  << " instance_id=" << instance_id << " cluster_id=" << i.cluster_id()
+                  << " original cluster_name=" << i.cluster_name() << " rename to "
+                  << cluster.cluster.cluster_name();
+        auto& cluster_to_rename = const_cast<std::decay_t<decltype(i)>&>(i);
+        cluster_to_rename.set_cluster_name(cluster.cluster.cluster_name());
+        now.CopyFrom(i);
+        found = true;
+    }
+
+    if (!found) {
+        ss << "failed to find cluster to rename,"
+           << " instance_id=" << instance_id << " cluster_id=" << cluster.cluster.cluster_id()
+           << " cluster_name=" << cluster.cluster.cluster_name();
+        err = ss.str();
+        return err;
+    }
+
+    InstanceKeyInfo key_info {instance_id};
+    std::string key;
+    std::string val;
+    instance_key(key_info, &key);
+
+    val = instance.SerializeAsString();
+    if (val.empty()) {
+        err = "failed to serialize";
+        return err;
+    }
+
+    txn->put(key, val);
+    LOG(INFO) << "put instnace_key=" << hex(key);
+    ret = txn->commit();
+    if (ret != 0) {
+        err = "failed to commit kv txn";
+        LOG(WARNING) << err << " ret=" << ret;
+        return err;
+    }
+
+    update_cluster_to_index(instance_id, original, now);
+
+    return err;
+}
+
+void ResourceManager::update_cluster_to_index(const std::string& instance_id,
+                                              const ClusterPB& original, const ClusterPB& now) {
+    std::lock_guard l(mtx_);
+    remove_cluster_from_index_no_lock(instance_id, original);
+    add_cluster_to_index_no_lock(instance_id, now);
+}
+
+void ResourceManager::add_cluster_to_index_no_lock(const std::string& instance_id,
+                                                   const ClusterPB& c) {
     auto type = c.has_type() ? c.type() : -1;
     Role role = (type == ClusterPB::SQL
                          ? Role::SQL_SERVER
                          : (type == ClusterPB::COMPUTE ? Role::COMPUTE_NODE : Role::UNDEFINED));
     LOG(INFO) << "add cluster to index, instance_id=" << instance_id << " cluster_type=" << type
               << " cluster_name=" << c.cluster_name() << " cluster_id=" << c.cluster_id();
-
-    std::lock_guard l(mtx_);
 
     for (auto& i : c.nodes()) {
         bool existed = node_info_.count(i.cloud_unique_id());
@@ -310,12 +408,16 @@ void ResourceManager::add_cluster_to_index(const std::string& instance_id, const
     }
 }
 
-void ResourceManager::remove_cluster_from_index(const std::string& instance_id,
-                                                const ClusterPB& c) {
+void ResourceManager::add_cluster_to_index(const std::string& instance_id, const ClusterPB& c) {
+    std::lock_guard l(mtx_);
+    add_cluster_to_index_no_lock(instance_id, c);
+}
+
+void ResourceManager::remove_cluster_from_index_no_lock(const std::string& instance_id,
+                                                        const ClusterPB& c) {
     std::string cluster_name = c.cluster_name();
     std::string cluster_id = c.cluster_id();
     int cnt = 0;
-    std::lock_guard l(mtx_);
     for (auto it = node_info_.begin(); it != node_info_.end();) {
         auto& [_, n] = *it;
         if (n.cluster_id != cluster_id || n.cluster_name != cluster_name) {
@@ -330,6 +432,12 @@ void ResourceManager::remove_cluster_from_index(const std::string& instance_id,
     }
     LOG(INFO) << cnt << " nodes removed from index, cluster_id=" << cluster_id
               << " cluster_name=" << cluster_name;
+}
+
+void ResourceManager::remove_cluster_from_index(const std::string& instance_id,
+                                                const ClusterPB& c) {
+    std::lock_guard l(mtx_);
+    remove_cluster_from_index_no_lock(instance_id, c);
 }
 
 std::pair<int, std::string> ResourceManager::get_instance(std::shared_ptr<Transaction> txn,

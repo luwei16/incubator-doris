@@ -59,12 +59,14 @@ import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
 public class SystemInfoService {
@@ -79,6 +81,8 @@ public class SystemInfoService {
     private volatile ImmutableMap<Long, Backend> idToBackendRef = ImmutableMap.of();
     private volatile ImmutableMap<Long, AtomicLong> idToReportVersionRef = ImmutableMap.of();
     // TODO(gavin): use {clusterId -> List<BackendId>} instead to reduce risk of inconsistency
+    // use exclusive lock to make sure only one thread can change clusterIdToBackend and clusterNameToId
+    private ReentrantLock lock = new ReentrantLock();
     // clusterId -> List<Backend>
     private Map<String, List<Backend>> clusterIdToBackend = new ConcurrentHashMap<>();
     // clusterName -> clusterId
@@ -121,21 +125,28 @@ public class SystemInfoService {
         return clusterIdToBackend.get(clusterId);
     }
 
+    public void updateClusterNameToId(final String newName,
+                                      final String originalName, final String clusterId) {
+        lock.lock();
+        clusterNameToId.remove(originalName);
+        clusterNameToId.put(newName, clusterId);
+        lock.unlock();
+    }
+
     public List<String> getCloudClusterNames() {
-        return clusterNameToId.keySet().stream().collect(Collectors.toList());
+        return new ArrayList<>(clusterNameToId.keySet());
     }
 
     // use cluster $clusterName
-    public synchronized void addCloudCluster(final String clusterName) throws UserException {
-        // TODO(gavin): process data race with `CloudClusterCheck`
-
+    public void addCloudCluster(final String clusterName) throws UserException {
+        lock.lock();
         // First time this method is called, build cloud cluster map
         if (clusterNameToId.isEmpty() || clusterIdToBackend.isEmpty()) {
             List<Backend> toAdd = Maps.newHashMap(idToBackendRef)
-                                   .entrySet().stream().map(i -> i.getValue())
-                                   .filter(i -> i.getTagMap().containsKey(Tag.CLOUD_CLUSTER_ID))
-                                   .filter(i -> i.getTagMap().containsKey(Tag.CLOUD_CLUSTER_NAME))
-                                   .collect(Collectors.toList());
+                    .entrySet().stream().map(i -> i.getValue())
+                    .filter(i -> i.getTagMap().containsKey(Tag.CLOUD_CLUSTER_ID))
+                    .filter(i -> i.getTagMap().containsKey(Tag.CLOUD_CLUSTER_NAME))
+                    .collect(Collectors.toList());
             // The larger bakendId the later it was added, the order matters
             toAdd.sort((x, y) -> (int) (x.getId() - y.getId()));
             updateCloudClusterMap(toAdd, new ArrayList<>());
@@ -148,6 +159,8 @@ public class SystemInfoService {
             LOG.info("cloud cluster already added, clusterName={}, clusterId={}", clusterName, clusterId);
             return;
         }
+        lock.unlock();
+
 
         LOG.info("begin to get cloud cluster from remote, clusterName={}", clusterName);
 
@@ -187,7 +200,9 @@ public class SystemInfoService {
         updateCloudBackends(backends, new ArrayList<>());
     }
 
-    public synchronized void updateCloudClusterMap(List<Backend> toAdd, List<Backend> toDel) {
+    public void updateCloudClusterMap(List<Backend> toAdd, List<Backend> toDel) {
+        lock.lock();
+        Set<String> clusterNameSet = new HashSet<>();
         for (Backend b : toAdd) {
             String clusterName = b.getCloudClusterName();
             String clusterId = b.getCloudClusterId();
@@ -195,25 +210,30 @@ public class SystemInfoService {
                 LOG.warn("cloud cluster name or id empty: id={}, name={}", clusterId, clusterName);
                 continue;
             }
-            clusterNameToId.put(clusterName, clusterId); // The last wins
+            clusterNameSet.add(clusterName);
+            if (clusterNameSet.size() != 1) {
+                LOG.warn("toAdd be list have multi clusterName, please check, Set: {}", clusterNameSet);
+            }
+
+            clusterNameToId.put(clusterName, clusterId);
             List<Backend> be = clusterIdToBackend.get(clusterId);
             if (be == null) {
                 be = new ArrayList<>();
                 clusterIdToBackend.put(clusterId, be);
             }
             Set<String> existed = be.stream().map(i -> i.getHost() + ":" + i.getHeartbeatPort())
-                                             .collect(Collectors.toSet());
+                    .collect(Collectors.toSet());
             // Deduplicate
             // TODO(gavin): consider vpc
             boolean alreadyExisted = existed.contains(b.getHost() + ":" + b.getHeartbeatPort());
             if (alreadyExisted) {
-                LOG.info("BE already existed, clusterName={} clusterId={} backend={}",
-                         clusterName, clusterId, be.size(), b);
+                LOG.info("BE already existed, clusterName={} clusterId={} backendNum={} backend={}",
+                        clusterName, clusterId, be.size(), b);
                 continue;
             }
             be.add(b);
             LOG.info("update (add) cloud cluster map, clusterName={} clusterId={} backendNum={} current backend={}",
-                     clusterName, clusterId, be.size(), b);
+                    clusterName, clusterId, be.size(), b);
         }
 
         for (Backend b : toDel) {
@@ -226,15 +246,17 @@ public class SystemInfoService {
             }
             List<Backend> be = clusterIdToBackend.get(clusterId);
             if (be == null) {
-                LOG.warn("try to remove a non-existing cluster, clusterId={} clusterName={}", clusterId, clusterName);
+                LOG.warn("try to remove a non-existing cluster, clusterId={} clusterName={}",
+                        clusterId, clusterName);
                 continue;
             }
             Set<Long> d = toDel.stream().map(i -> i.getId()).collect(Collectors.toSet());
             be = be.stream().filter(i -> !d.contains(i.getId())).collect(Collectors.toList());
             clusterIdToBackend.replace(clusterId, be);
             LOG.info("update (del) cloud cluster map, clusterName={} clusterId={} backendNum={} current backend={}",
-                     clusterName, clusterId, be.size(), b);
+                    clusterName, clusterId, be.size(), b);
         }
+        lock.unlock();
     }
 
     public Map<String, List<Backend>> getCloudClusterIdToBackend() {

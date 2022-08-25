@@ -68,7 +68,6 @@ public class CloudClusterChecker extends MasterDaemon {
 
     @Override
     protected void runAfterCatalogReady() {
-        // TODO(gavin): resolve data race with `SystemInfoService.addCloudCluster()`
         Map<String, List<Backend>> clusterIdToBackend = Env.getCurrentSystemInfo().getCloudClusterIdToBackend();
         for (String clusterId : clusterIdToBackend.keySet()) {
             SelectdbCloud.GetClusterResponse response =
@@ -82,6 +81,18 @@ public class CloudClusterChecker extends MasterDaemon {
             }
             LOG.info("get cloud cluster, clusterId={} nodes={}", clusterId, response.getCluster().getNodesList());
             List<Backend> currentBes = clusterIdToBackend.get(clusterId);
+            String currentClusterName = currentBes.stream().map(Backend::getCloudClusterName).findFirst().orElse("");
+            String newClusterName = response.getCluster().getClusterName();
+            if (!newClusterName.equals(currentClusterName)) {
+                // rename cluster's name
+                LOG.info("cluster_name corresponding to cluster_id has been changed," +
+                        " cluster_id : {} , current_cluster_name : {}, new_cluster_name :{}",
+                    clusterId, currentClusterName, newClusterName);
+                // change all be's cluster_name
+                currentBes.forEach(b -> b.setCloudClusterName(newClusterName));
+                // update clusterNameToId
+                Env.getCurrentSystemInfo().updateClusterNameToId(newClusterName, currentClusterName, clusterId);
+            }
             List<Backend> toAdd = new ArrayList<>();
             List<Backend> toDel = new ArrayList<>();
             List<SelectdbCloud.NodeInfoPB> expectedBes = response.getCluster().getNodesList();

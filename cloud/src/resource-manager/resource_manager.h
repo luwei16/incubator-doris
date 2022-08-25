@@ -75,6 +75,14 @@ public:
     std::string drop_cluster(const std::string& instance_id, const ClusterInfo& cluster);
 
     /**
+    * Rename a cluster, just rename clusters name, find by cluster id
+    *
+    * @param clsuter cluster to rename, only cluster name and clsuter id are concered
+    * @return empty string for success, otherwise failure reason returned
+    */
+    std::string rename_cluster(const std::string& instance_id, const ClusterInfo& cluster);
+
+    /**
      * Get instance from underlying storage with given transaction.
      *
      * @param txn if txn is not given, get with a new txn inside this function
@@ -89,6 +97,14 @@ private:
     void add_cluster_to_index(const std::string& instance_id, const ClusterPB& cluster);
 
     void remove_cluster_from_index(const std::string& instance_id, const ClusterPB& cluster);
+
+    void update_cluster_to_index(const std::string& instance_id, const ClusterPB& original,
+                                 const ClusterPB& now);
+
+    void remove_cluster_from_index_no_lock(const std::string& instance_id,
+                                           const ClusterPB& cluster);
+
+    void add_cluster_to_index_no_lock(const std::string& instance_id, const ClusterPB& cluster);
 
 private:
     std::shared_mutex mtx_;
