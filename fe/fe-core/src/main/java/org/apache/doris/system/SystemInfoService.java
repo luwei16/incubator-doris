@@ -1425,8 +1425,7 @@ public class SystemInfoService {
                 Env.getCurrentSystemInfo().metaServiceHostPort.second);
         SelectdbCloud.GetClusterRequest.Builder builder =
                 SelectdbCloud.GetClusterRequest.newBuilder();
-        // TODO(dx): instanceId
-        builder.setCloudUniqueId(Config.cloud_unique_id).setInstanceId("instance_id_deadbeef")
+        builder.setCloudUniqueId(Config.cloud_unique_id)
                .setClusterName(clusterName).setClusterId(clusterId);
         final SelectdbCloud.GetClusterRequest pRequest = builder.build();
         SelectdbCloud.GetClusterResponse response;

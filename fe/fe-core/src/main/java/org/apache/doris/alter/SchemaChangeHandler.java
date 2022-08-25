@@ -1503,7 +1503,9 @@ public class SchemaChangeHandler extends AlterHandler {
                                 ? new Replica(shadowReplicaId, backendId, ReplicaState.ALTER,
                                         Partition.PARTITION_INIT_VERSION, newSchemaHash)
                                 : new CloudReplica(shadowReplicaId, null, ReplicaState.ALTER,
-                                        Partition.PARTITION_INIT_VERSION, newSchemaHash);
+                                        Partition.PARTITION_INIT_VERSION, newSchemaHash,
+                                        dbId, tableId, partitionId, shadowIndexId,
+                                        ((CloudReplica) originReplica).getIdx());
                         shadowTablet.addReplica(shadowReplica);
                         healthyReplicaNum++;
                     }

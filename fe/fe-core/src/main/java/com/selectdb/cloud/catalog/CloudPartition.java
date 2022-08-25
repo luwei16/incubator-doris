@@ -67,9 +67,9 @@ public class CloudPartition extends Partition {
             // get version from metaService success, set visible version
             super.setVisibleVersion(version);
         } else {
-            // failed
-            LOG.warn("failed to get version from metaService, so use old version");
             version = super.getVisibleVersion();
+            LOG.warn("failed to get version from metaService, use previous version, parition={} version={}",
+                    getName(), version);
         }
         return version;
     }

@@ -206,6 +206,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 /**
  * The Internal catalog will manage all self-managed meta object in a Doris cluster.
@@ -1354,7 +1355,8 @@ public class InternalCatalog implements CatalogIf<Database> {
             } else {
                 List<Long> partitionIds = new ArrayList<Long>();
                 partitionIds.add(partitionId);
-                prepareCloudPartition(olapTable, partitionIds);
+                List<Long> indexIds = indexIdToMeta.keySet().stream().collect(Collectors.toList());
+                prepareCloudPartition(olapTable.getId(), partitionIds, indexIds);
                 partition = createCloudPartitionWithIndices(db.getClusterName(), db.getId(), olapTable.getId(),
                         olapTable.getBaseIndexId(), partitionId, partitionName, indexIdToMeta, distributionInfo,
                         dataProperty.getStorageMedium(), singlePartitionDesc.getReplicaAlloc(),
@@ -1363,7 +1365,7 @@ public class InternalCatalog implements CatalogIf<Database> {
                         singlePartitionDesc.getTabletType(), olapTable.getCompressionType(),
                         olapTable.getDataSortInfo(), olapTable.getEnableUniqueKeyMergeOnWrite(),
                         olapTable.getStoragePolicy());
-                commitCloudPartition(olapTable, partitionIds);
+                commitCloudPartition(olapTable.getId(), partitionIds);
             }
 
             // check again
@@ -2458,9 +2460,8 @@ public class InternalCatalog implements CatalogIf<Database> {
         long bufferSize = IdGeneratorUtil.getBufferSizeForTruncateTable(copiedTbl, origPartitions.values());
         IdGeneratorBuffer idGeneratorBuffer = Env.getCurrentEnv().getIdGeneratorBuffer(bufferSize);
         try {
-
             Map<Long, Long> oldToNewPartitionId = new HashMap<Long, Long>();
-            List<Long> newPartitionIds = new ArrayList<Long>(); 
+            List<Long> newPartitionIds = new ArrayList<Long>();
             for (Map.Entry<String, Long> entry : origPartitions.entrySet()) {
                 long oldPartitionId = entry.getValue();
                 long newPartitionId = idGeneratorBuffer.getNextId();
@@ -2469,8 +2470,8 @@ public class InternalCatalog implements CatalogIf<Database> {
             }
 
             if (!Config.cloud_unique_id.isEmpty()) {
-                //prepare partition
-                prepareCloudPartition(copiedTbl, newPartitionIds);
+                List<Long> indexIds = copiedTbl.getIndexIdToMeta().keySet().stream().collect(Collectors.toList());
+                prepareCloudPartition(copiedTbl.getId(), newPartitionIds, indexIds);
             }
 
             for (Map.Entry<String, Long> entry : origPartitions.entrySet()) {
@@ -2512,8 +2513,7 @@ public class InternalCatalog implements CatalogIf<Database> {
             }
 
             if (!Config.cloud_unique_id.isEmpty()) {
-                //commit partition
-                commitCloudPartition(copiedTbl, newPartitionIds);
+                commitCloudPartition(copiedTbl.getId(), newPartitionIds);
             }
         } catch (DdlException e) {
             // create partition failed, remove all newly created tablets
@@ -3664,7 +3664,7 @@ public class InternalCatalog implements CatalogIf<Database> {
         }
 
         if (response.getStatus().getCode() != SelectdbCloud.MetaServiceCode.OK) {
-             LOG.warn("commitIndex response: {} ", response);
+            LOG.warn("commitIndex response: {} ", response);
             throw new DdlException(response.getStatus().getMsg());
         }
     }
@@ -3697,12 +3697,13 @@ public class InternalCatalog implements CatalogIf<Database> {
         }
     }
 
-    public void prepareCloudPartition(OlapTable olapTable, List<Long> partitionIds) throws DdlException {
-        //prepare for partition
+    public void prepareCloudPartition(long tableId, List<Long> partitionIds, List<Long> indexIds)
+            throws DdlException {
         SelectdbCloud.PartitionRequest.Builder partitionRequestBuilder = SelectdbCloud.PartitionRequest.newBuilder();
         partitionRequestBuilder.setCloudUniqueId(Config.cloud_unique_id);
+        partitionRequestBuilder.setTableId(tableId);
         partitionRequestBuilder.addAllPartitionIds(partitionIds);
-        partitionRequestBuilder.setTableId(olapTable.getId());
+        partitionRequestBuilder.addAllIndexIds(indexIds);
         SelectdbCloud.PartitionRequest partitionRequest = partitionRequestBuilder.build();
         LOG.info("preparePartition request: {} ", partitionRequest);
         String metaEndPoint = Config.meta_service_endpoint;
@@ -3725,12 +3726,11 @@ public class InternalCatalog implements CatalogIf<Database> {
         }
     }
 
-    public void commitCloudPartition(OlapTable olapTable, List<Long> partitionIds) throws DdlException {
-        //commit for partition
+    public void commitCloudPartition(long tableId, List<Long> partitionIds) throws DdlException {
         SelectdbCloud.PartitionRequest.Builder partitionRequestBuilder = SelectdbCloud.PartitionRequest.newBuilder();
         partitionRequestBuilder.setCloudUniqueId(Config.cloud_unique_id);
         partitionRequestBuilder.addAllPartitionIds(partitionIds);
-        partitionRequestBuilder.setTableId(olapTable.getId());
+        partitionRequestBuilder.setTableId(tableId);
         SelectdbCloud.PartitionRequest partitionRequest = partitionRequestBuilder.build();
         LOG.info("commitPartition request: {} ", partitionRequest);
         String metaEndPoint = Config.meta_service_endpoint;

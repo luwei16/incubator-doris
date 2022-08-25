@@ -119,10 +119,10 @@ public class CloudReplica extends Replica {
 
         // TODO(luwei) list shoule be sorted
         List<Backend> availableBes = Env.getCurrentSystemInfo().getBackendsByClusterName(cluster);
-        LOG.debug("availableBes={} ", availableBes);
+        LOG.debug("availableBes={}", availableBes);
         long index = getId() % availableBes.size();
         long pickedBeId = availableBes.get((int) index).getId();
-        LOG.info("picked backendId={} ", pickedBeId);
+        LOG.debug("picked backendId={}", pickedBeId);
 
         // save to clusterToBackends map
         List<Long> bes = new ArrayList<Long>();
@@ -172,5 +172,25 @@ public class CloudReplica extends Replica {
         replica.readFields(in);
         // TODO(luwei): perisist and fillup clusterToBackends to take full advantage of data cache
         return replica;
+    }
+
+    public long getDbId() {
+        return dbId;
+    }
+
+    public long getTableId() {
+        return tableId;
+    }
+
+    public long getPartitionId() {
+        return partitionId;
+    }
+
+    public long getIndexId() {
+        return indexId;
+    }
+
+    public long getIdx() {
+        return idx;
     }
 }
