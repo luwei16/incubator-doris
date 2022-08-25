@@ -2245,13 +2245,18 @@ void MetaServiceImpl::get_tablet_stats(::google::protobuf::RpcController* contro
                                        const ::selectdb::GetTabletStatsRequest* request,
                                        ::selectdb::GetTabletStatsResponse* response,
                                        ::google::protobuf::Closure* done) {
+    auto ctrl = static_cast<brpc::Controller*>(controller);
+    LOG(INFO) << "rpc from " << ctrl->remote_side() << " rpc=MetaServiceImpl::get_tablet_stats";
+    brpc::ClosureGuard closure_guard(done);
     int ret = 0;
     MetaServiceCode code = MetaServiceCode::OK;
     std::string msg = "OK";
     std::unique_ptr<int, std::function<void(int*)>> defer_status(
-            (int*)0x01, [&code, &msg, &response](int*) {
+            (int*)0x01, [&ret, &code, &msg, &response, &ctrl](int*) {
                 response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
+                LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
+                          << ctrl->remote_side() << " " << msg;
             });
 
     std::string instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
@@ -2259,15 +2264,6 @@ void MetaServiceImpl::get_tablet_stats(::google::protobuf::RpcController* contro
         code = MetaServiceCode::INVALID_ARGUMENT;
         msg = "empty instance_id";
         LOG(INFO) << msg << ", cloud_unique_id=" << request->cloud_unique_id();
-        return;
-    }
-
-    std::unique_ptr<Transaction> txn;
-    ret = txn_kv_->create_txn(&txn);
-    if (ret != 0) {
-        code = MetaServiceCode::KV_TXN_CREATE_ERR;
-        msg = "failed to create txn";
-        LOG(WARNING) << msg << " ret=" << ret;
         return;
     }
 
@@ -2282,12 +2278,21 @@ void MetaServiceImpl::get_tablet_stats(::google::protobuf::RpcController* contro
                                           i.tablet_id()};
         std::string key, val;
         stats_tablet_key(stat_key_info, &key);
+        // TODO(gavin): make the txn live longer
+        std::unique_ptr<Transaction> txn;
+        ret = txn_kv_->create_txn(&txn);
+        if (ret != 0) {
+            code = MetaServiceCode::KV_TXN_CREATE_ERR;
+            ss << " failed_create_txn_tablet=" << i.tablet_id();
+            LOG(WARNING) << "failed to create txn" << " ret=" << ret << " key=" << hex(key);
+            continue;
+        }
         ret = txn->get(key, &val);
         if (ret != 0) { // Try the best to return as much info as it can
             code = MetaServiceCode::KV_TXN_GET_ERR;
-            ss << (ret == 1 ? "not_found" : "failed") << "_tablet_id=" << i.tablet_id();
-            LOG(WARNING) << "failed to get tablet stats, " << msg << " ret=" << ret
-                         << " key=" << hex(key);
+            ss << (ret == 1 ? " not_found" : " failed") << "_tablet_id=" << i.tablet_id();
+            LOG(WARNING) << "failed to get tablet stats, tablet_id=" << i.tablet_id()
+                << " ret=" << ret << " key=" << hex(key);
             continue;
         }
         if (!response->add_tablet_stats()->ParseFromString(val)) {

@@ -16,4 +16,4 @@ bin=`pwd`/lib/meta_service
 patchelf --set-rpath ${lib_path} ${bin}
 patchelf --set-interpreter ${lib_path}/ld-linux-x86-64.so.2 ${bin}
 ldd ${bin}
-${bin}
+nohup ${bin} > log/meta_service.out 2>&1 &

@@ -444,6 +444,7 @@ install(DIRECTORY DESTINATION ${OUTPUT_DIR}/lib)
 
 install(FILES
     ${BASE_DIR}/script/start_meta_service.sh
+    ${BASE_DIR}/script/stop_meta_service.sh
     PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE
     GROUP_READ GROUP_WRITE GROUP_EXECUTE
     WORLD_READ WORLD_EXECUTE
