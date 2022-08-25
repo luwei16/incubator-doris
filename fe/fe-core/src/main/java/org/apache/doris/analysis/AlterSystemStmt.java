@@ -18,6 +18,7 @@
 package org.apache.doris.analysis;
 
 import org.apache.doris.catalog.Env;
+import org.apache.doris.common.Config;
 import org.apache.doris.common.ErrorCode;
 import org.apache.doris.common.ErrorReport;
 import org.apache.doris.common.UserException;
@@ -56,6 +57,10 @@ public class AlterSystemStmt extends DdlStmt {
                 || (alterClause instanceof ModifyBrokerClause)
                 || (alterClause instanceof AlterLoadErrorUrlClause)
                 || (alterClause instanceof ModifyBackendClause));
+
+        if (!Config.cloud_unique_id.isEmpty()) {
+            throw new UserException("Unsupported operation.");
+        }
 
         alterClause.analyze(analyzer);
     }

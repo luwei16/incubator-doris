@@ -21,6 +21,7 @@ import org.apache.doris.catalog.Column;
 import org.apache.doris.catalog.Env;
 import org.apache.doris.catalog.ScalarType;
 import org.apache.doris.common.AnalysisException;
+import org.apache.doris.common.Config;
 import org.apache.doris.common.ErrorCode;
 import org.apache.doris.common.ErrorReport;
 import org.apache.doris.common.proc.BackendsProcDir;
@@ -35,9 +36,13 @@ public class ShowBackendsStmt extends ShowStmt {
 
     @Override
     public void analyze(Analyzer analyzer) throws AnalysisException {
+        // ATTN: root has admin and operator Privileges
+        if (!Config.cloud_unique_id.isEmpty()
+                && !Env.getCurrentEnv().getAuth().checkGlobalPriv(ConnectContext.get(), PrivPredicate.OPERATOR)) {
+            ErrorReport.reportAnalysisException(ErrorCode.ERR_SPECIFIC_ACCESS_DENIED_ERROR, "OPERATOR");
+        }
         if (!Env.getCurrentEnv().getAuth().checkGlobalPriv(ConnectContext.get(), PrivPredicate.ADMIN)
-                && !Env.getCurrentEnv().getAuth().checkGlobalPriv(ConnectContext.get(),
-                                                                          PrivPredicate.OPERATOR)) {
+                && !Env.getCurrentEnv().getAuth().checkGlobalPriv(ConnectContext.get(), PrivPredicate.OPERATOR)) {
             ErrorReport.reportAnalysisException(ErrorCode.ERR_SPECIFIC_ACCESS_DENIED_ERROR, "ADMIN/OPERATOR");
         }
     }

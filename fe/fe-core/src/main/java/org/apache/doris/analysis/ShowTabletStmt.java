@@ -23,6 +23,7 @@ import org.apache.doris.catalog.Replica;
 import org.apache.doris.catalog.ScalarType;
 import org.apache.doris.cluster.ClusterNamespace;
 import org.apache.doris.common.AnalysisException;
+import org.apache.doris.common.Config;
 import org.apache.doris.common.ErrorCode;
 import org.apache.doris.common.ErrorReport;
 import org.apache.doris.common.UserException;
@@ -150,6 +151,11 @@ public class ShowTabletStmt extends ShowStmt {
     @Override
     public void analyze(Analyzer analyzer) throws UserException {
         // check access first
+        // ATTN: root has admin and operator Privileges
+        if (!Config.cloud_unique_id.isEmpty()
+                && !Env.getCurrentEnv().getAuth().checkGlobalPriv(ConnectContext.get(), PrivPredicate.OPERATOR)) {
+            ErrorReport.reportAnalysisException(ErrorCode.ERR_SPECIFIC_ACCESS_DENIED_ERROR, "OPERATOR");
+        }
         if (!Env.getCurrentEnv().getAuth().checkGlobalPriv(ConnectContext.get(), PrivPredicate.ADMIN)) {
             ErrorReport.reportAnalysisException(ErrorCode.ERR_SPECIFIC_ACCESS_DENIED_ERROR, "SHOW TABLET");
         }
