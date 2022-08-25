@@ -198,14 +198,6 @@ message TxnInfoPB {
     // TODO: There are more fields TBD
 }
 
-message TabletIndexPB {
-    optional int64 db_id = 1;
-    optional int64 table_id = 2;
-    optional int64 index_id = 3;
-    optional int64 partition_id = 4;
-    optional int64 tablet_id = 5;
-}
-
 message RecycleIndexPB {
     optional int64 table_id = 1;
     optional int64 creation_time = 2; 
@@ -221,6 +213,14 @@ message RecycleRowsetPB {
     optional string obj_bucket = 1;
     optional string obj_prefix = 2;
     optional int64 creation_time = 3;
+}
+
+message TabletIndexPB {
+    optional int64 db_id = 1;
+    optional int64 table_id = 2;
+    optional int64 index_id = 3;
+    optional int64 partition_id = 4;
+    optional int64 tablet_id = 5;
 }
 
 //==============================================================================
@@ -524,14 +524,14 @@ service MetaService {
     rpc commit_partition(PartitionRequest) returns (MetaServiceGenericResponse);
     rpc drop_partition(PartitionRequest) returns (MetaServiceGenericResponse);
 
-    rpc get_tablet_stats(GetTabletStatsRequest) returns (GetTabletStatsResponse);
-
     rpc http(MetaServiceHttpRequest) returns (MetaServiceHttpResponse);
 
     rpc get_obj_store_info(GetObjStoreInfoRequest) returns (GetObjStoreInfoResponse);
     rpc create_instance(CreateInstanceRequest) returns (MetaServiceGenericResponse);
     rpc alter_cluster(AlterClusterRequest) returns (MetaServiceGenericResponse);
     rpc get_cluster(GetClusterRequest) returns (GetClusterResponse);
+
+    rpc get_tablet_stats(GetTabletStatsRequest) returns (GetTabletStatsResponse);
 };
 
 // vim: et ts=4 sw=4:

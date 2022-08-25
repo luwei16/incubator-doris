@@ -32,6 +32,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import java.io.DataInput;
+import java.io.DataOutput;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -44,58 +45,30 @@ public class CloudReplica extends Replica {
     // In the future, a replica may be mapped to multiple BEs in a cluster,
     // so this value is be list
     private Map<String, List<Long>> clusterToBackends = new HashMap<String, List<Long>>();
+    private long dbId = -1;
+    private long tableId = -1;
+    private long partitionId = -1;
+    private long indexId = -1;
     private long idx = -1;
 
     public CloudReplica() {
     }
 
-    public CloudReplica(long replicaId, List<Long> backendIds, ReplicaState state, long version, int schemaHash) {
+    public CloudReplica(long replicaId, List<Long> backendIds, ReplicaState state, long version, int schemaHash,
+            long dbId, long tableId, long partitionId, long indexId, long idx) {
         super(replicaId, -1, state, version, schemaHash);
+        this.dbId = dbId;
+        this.tableId = tableId;
+        this.partitionId = partitionId;
+        this.indexId = indexId;
+        this.idx = idx;
     }
 
     private boolean isColocated() {
-        TabletInvertedIndex index = Env.getCurrentInvertedIndex();
-        if (index == null || index.getTabletIdByReplica(getId()) == null) {
-            return false;
-        }
-        long tableId = index.getTabletMeta(index.getTabletIdByReplica(getId())).getTableId();
-        return Env.getCurrentColocateIndex().isColocateTable(tableId);
-    }
-
-    private long getIdx() {
-        long tabletId = Env.getCurrentInvertedIndex().getTabletIdByReplica(getId());
-        TabletMeta meta = Env.getCurrentInvertedIndex().getTabletMeta(tabletId);
-        long tableId = meta.getTableId();
-        long dbId =  meta.getDbId();
-
-        Database db = Env.getCurrentInternalCatalog().getDbNullable(dbId);
-        OlapTable olapTable = (OlapTable) db.getTableNullable(tableId);
-
-        olapTable.readLock();
-        try {
-            for (Partition partition : olapTable.getPartitions()) {
-                for (MaterializedIndex index : partition.getMaterializedIndices(IndexExtState.VISIBLE)) {
-                    int idx = 0;
-                    for (Long id : index.getTabletIdsInOrder()) {
-                        if (tabletId == id) {
-                            return idx;
-                        }
-                        idx++;
-                    }
-                }
-            }
-        } finally {
-            olapTable.readUnlock();
-        }
-
-        return -1;
+        return idx != -1;
     }
 
     private long getColocatedBeId(String cluster) {
-        if (idx == -1) {
-            idx = getIdx();
-        }
-
         List<Backend> availableBes = Env.getCurrentSystemInfo().getBackendsByClusterName(cluster);
 
         // Tablets with the same idx will be hashed to the same BE, which
@@ -103,7 +76,6 @@ public class CloudReplica extends Replica {
         long index = idx % availableBes.size();
         long pickedBeId = availableBes.get((int) index).getId();
 
-        LOG.info("lw test idx {} {} {}", idx, getId(), pickedBeId);
         return pickedBeId;
     }
 
@@ -173,6 +145,26 @@ public class CloudReplica extends Replica {
         }
 
         return true;
+    }
+
+    @Override
+    public void readFields(DataInput in) throws IOException {
+        super.readFields(in);
+        dbId = in.readLong();
+        tableId = in.readLong();
+        partitionId = in.readLong();
+        indexId = in.readLong();
+        idx = in.readLong();
+    }
+
+    @Override
+    public void write(DataOutput out) throws IOException {
+        super.write(out);
+        out.writeLong(dbId);
+        out.writeLong(tableId);
+        out.writeLong(partitionId);
+        out.writeLong(indexId);
+        out.writeLong(idx);
     }
 
     public static CloudReplica read(DataInput in) throws IOException {

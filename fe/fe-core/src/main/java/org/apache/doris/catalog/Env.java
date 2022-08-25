@@ -391,6 +391,7 @@ public class Env {
     private DeployManager deployManager;
 
     private TabletStatMgr tabletStatMgr;
+    private CloudTabletStatMgr cloudTabletStatMgr;
     // statistics
     private StatisticsManager statisticsManager;
     private StatisticsJobManager statisticsJobManager;
@@ -576,6 +577,7 @@ public class Env {
         }
 
         this.tabletStatMgr = new TabletStatMgr();
+        this.cloudTabletStatMgr = new CloudTabletStatMgr();
         // statistics
         this.statisticsManager = new StatisticsManager();
         this.statisticsJobManager = new StatisticsJobManager();
@@ -1418,7 +1420,11 @@ public class Env {
 
     // start threads that should running on all FE
     private void startNonMasterDaemonThreads() {
-        tabletStatMgr.start();
+        if (Config.cloud_unique_id.isEmpty()) {
+            tabletStatMgr.start();
+        } else {
+            cloudTabletStatMgr.start();
+        }
         // load and export job label cleaner thread
         labelCleaner.start();
         // es repository

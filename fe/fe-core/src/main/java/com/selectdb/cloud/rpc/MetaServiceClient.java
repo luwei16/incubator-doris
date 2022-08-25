@@ -187,4 +187,14 @@ public class MetaServiceClient {
             dropPartition(SelectdbCloud.PartitionRequest request) {
         return blockingStub.dropPartition(request);
     }
+
+    public SelectdbCloud.GetTabletStatsResponse getTabletStats(SelectdbCloud.GetTabletStatsRequest request) {
+        if (!request.hasCloudUniqueId()) {
+            SelectdbCloud.GetTabletStatsRequest.Builder builder =
+                    SelectdbCloud.GetTabletStatsRequest.newBuilder();
+            builder.mergeFrom(request);
+            return blockingStub.getTabletStats(builder.setCloudUniqueId(Config.cloud_unique_id).build());
+        }
+        return blockingStub.getTabletStats(request);
+    }
 }

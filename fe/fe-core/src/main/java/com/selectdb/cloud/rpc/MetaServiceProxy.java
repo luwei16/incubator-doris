@@ -245,4 +245,14 @@ public class MetaServiceProxy {
             throw new RpcException(address.hostname, e.getMessage(), e);
         }
     }
+
+    public SelectdbCloud.GetTabletStatsResponse
+            getTabletStats(TNetworkAddress address, SelectdbCloud.GetTabletStatsRequest request) throws RpcException {
+        try {
+            final MetaServiceClient client = getProxy(address);
+            return client.getTabletStats(request);
+        } catch (Exception e) {
+            throw new RpcException(address.hostname, e.getMessage(), e);
+        }
+    }
 }

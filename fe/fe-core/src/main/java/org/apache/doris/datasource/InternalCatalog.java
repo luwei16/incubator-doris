@@ -3356,66 +3356,19 @@ public class InternalCatalog implements CatalogIf<Database> {
             DistributionInfo distributionInfo, long version, ReplicaAllocation replicaAlloc, TabletMeta tabletMeta,
             Set<Long> tabletIdSet) throws DdlException {
         ColocateTableIndex colocateIndex = Env.getCurrentColocateIndex();
-        Map<Tag, List<List<Long>>> backendsPerBucketSeq = null;
-        GroupId groupId = null;
-        if (colocateIndex.isColocateTable(tabletMeta.getTableId())) {
-            if (distributionInfo.getType() == DistributionInfoType.RANDOM) {
-                throw new DdlException("Random distribution for colocate table is unsupported");
-            }
-            // if this is a colocate table, try to get backend seqs from colocation index.
-            groupId = colocateIndex.getGroup(tabletMeta.getTableId());
-            backendsPerBucketSeq = colocateIndex.getBackendsPerBucketSeq(groupId);
-        }
-
-        // chooseBackendsArbitrary is true, means this may be the first table of colocation group,
-        // or this is just a normal table, and we can choose backends arbitrary.
-        // otherwise, backends should be chosen from backendsPerBucketSeq;
-        boolean chooseBackendsArbitrary = backendsPerBucketSeq == null || backendsPerBucketSeq.isEmpty();
-        if (chooseBackendsArbitrary) {
-            backendsPerBucketSeq = Maps.newHashMap();
-        }
         for (int i = 0; i < distributionInfo.getBucketNum(); ++i) {
-            // create a new tablet with random chosen backends
             Tablet tablet = new Tablet(Env.getCurrentEnv().getNextId());
 
             // add tablet to inverted index first
             index.addTablet(tablet, tabletMeta);
             tabletIdSet.add(tablet.getId());
 
-            // get BackendIds
-            Map<Tag, List<Long>> chosenBackendIds = null;
-            if (!chooseBackendsArbitrary) {
-                // get backends from existing backend sequence
-                chosenBackendIds = Maps.newHashMap();
-                for (Map.Entry<Tag, List<List<Long>>> entry : backendsPerBucketSeq.entrySet()) {
-                    chosenBackendIds.put(entry.getKey(), entry.getValue().get(i));
-                }
-            }
-            // create replica
-            short totalReplicaNum = (short) 0;
-            if (chosenBackendIds != null) {
-                for (List<Long> backendIds : chosenBackendIds.values()) {
-                    long replicaId = Env.getCurrentEnv().getNextId();
-                    Replica replica = new CloudReplica(replicaId, backendIds, replicaState, version,
-                            tabletMeta.getOldSchemaHash());
-                    tablet.addReplica(replica);
-                    totalReplicaNum++;
-                }
-            } else {
-                long replicaId = Env.getCurrentEnv().getNextId();
-                Replica replica = new CloudReplica(replicaId, null, replicaState, version,
-                        tabletMeta.getOldSchemaHash());
-                tablet.addReplica(replica);
-                totalReplicaNum++;
-            }
-            Preconditions.checkState(totalReplicaNum == replicaAlloc.getTotalReplicaNum(),
-                    totalReplicaNum + " vs. " + replicaAlloc.getTotalReplicaNum());
-        }
-
-        if (groupId != null && chooseBackendsArbitrary) {
-            colocateIndex.addBackendsPerBucketSeq(groupId, backendsPerBucketSeq);
-            ColocatePersistInfo info = ColocatePersistInfo.createForBackendsPerBucketSeq(groupId, backendsPerBucketSeq);
-            Env.getCurrentEnv().getEditLog().logColocateBackendsPerBucketSeq(info);
+            long idx = colocateIndex.isColocateTable(tabletMeta.getTableId()) ? i : -1;
+            long replicaId = Env.getCurrentEnv().getNextId();
+            Replica replica = new CloudReplica(replicaId, null, replicaState, version,
+                    tabletMeta.getOldSchemaHash(), tabletMeta.getDbId(), tabletMeta.getTableId(),
+                    tabletMeta.getPartitionId(), tabletMeta.getIndexId(), idx);
+            tablet.addReplica(replica);
         }
     }
 
