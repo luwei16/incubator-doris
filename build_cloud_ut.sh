@@ -83,7 +83,7 @@ if [ $# != 1 ] ; then
         case "$1" in
             --clean) CLEAN=1 ; shift ;;
             --run) RUN=1 ; shift ;;
-            -f | --filter) FILTER="--gtest_filter=$2"; shift 2;;
+            -f | --filter) FILTER=$2; shift 2;;
             -j) PARALLEL=$2; shift 2 ;;
             --) shift ;  break ;;
             *) usage ; exit 0 ;;
@@ -137,6 +137,8 @@ ${CMAKE_CMD} -G "${GENERATOR}" \
     ${CMAKE_USE_CCACHE} ${DORIS_HOME}/cloud/
 ${BUILD_SYSTEM} -j ${PARALLEL}
 ${BUILD_SYSTEM} install
+
+mkdir -p ${CMAKE_BUILD_DIR}/test/log
 
 if [ ${RUN} -ne 1 ]; then
     echo "Finished"

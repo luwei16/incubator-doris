@@ -16,4 +16,5 @@ bin=`pwd`/lib/meta_service
 patchelf --set-rpath ${lib_path} ${bin}
 patchelf --set-interpreter ${lib_path}/ld-linux-x86-64.so.2 ${bin}
 ldd ${bin}
-nohup ${bin} > log/meta_service.out 2>&1 &
+# `$0 --recycler` to launch recycler process
+nohup ${bin} $1 > log/meta_service.out 2>&1 &

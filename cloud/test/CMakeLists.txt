@@ -26,6 +26,10 @@ add_executable(txn_kv_test
    txn_kv_test.cpp
 )
 
+add_executable(recycler_test
+   recycler_test.cpp
+)
+
 message("Meta-service test dependencies: ${TEST_LINK_LIBS}")
 target_link_libraries(sync_point_test
     ${TEST_LINK_LIBS}
@@ -52,9 +56,15 @@ target_link_libraries(txn_kv_test
     ${FDB_LINKER_FLAGS}
 )
 
+target_link_libraries(recycler_test
+    ${TEST_LINK_LIBS} 
+    ${FDB_LINKER_FLAGS}
+)
+
 install(FILES
     ${BASE_DIR}/script/run_all_tests.sh
     ${BASE_DIR}/conf/fdb.cluster
+    ${BASE_DIR}/conf/meta_service.conf
     PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE
     GROUP_READ GROUP_WRITE GROUP_EXECUTE
     WORLD_READ WORLD_EXECUTE

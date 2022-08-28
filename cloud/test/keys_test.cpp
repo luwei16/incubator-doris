@@ -89,7 +89,7 @@ TEST(KeysTest, KeysTest) {
     }
 
     // tablet meta key
-    // 0x01 "meta" ${instance_id} "tablet" ${table_id} ${tablet_id} -> TabletMetaPB
+    // 0x01 "meta" ${instance_id} "tablet" ${table_id} ${index_id} ${partition_id} ${tablet_id} -> TabletMetaPB
     {
         int64_t table_id = 10010;
         int64_t index_id = 10011;

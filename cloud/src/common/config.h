@@ -36,4 +36,17 @@ CONF_Bool(log_immediate_flush, "false");
 CONF_Strings(log_verbose_modules, ""); // Comma seprated list: a.*,b.*
 CONF_Int32(log_verbose_level, "5");
 
+// recycler config
+CONF_mInt64(recycl_interval_seconds, "3600");
+CONF_mInt64(index_retention_seconds, "172800");    // 48h
+CONF_mInt64(partition_retention_seconds, "86400"); // 24h
+CONF_mInt64(rowset_retention_seconds, "10800");    // 3h
+CONF_String(test_s3_ak, "ak");
+CONF_String(test_s3_sk, "sk");
+CONF_String(test_s3_endpoint, "endpoint");
+CONF_String(test_s3_region, "region");
+CONF_String(test_s3_bucket, "bucket");
+// CONF_Int64(a, "1073741824");
+// CONF_Bool(b, "true");
+
 } // namespace selectdb::config

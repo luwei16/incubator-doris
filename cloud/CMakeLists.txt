@@ -168,6 +168,81 @@ set_target_properties(rocksdb PROPERTIES IMPORTED_LOCATION ${THIRDPARTY_DIR}/lib
 add_library(libz STATIC IMPORTED)
 set_target_properties(libz PROPERTIES IMPORTED_LOCATION ${THIRDPARTY_DIR}/lib/libz.a)
 
+add_library(curl STATIC IMPORTED)
+set_target_properties(curl PROPERTIES IMPORTED_LOCATION ${THIRDPARTY_DIR}/lib/libcurl.a)
+
+add_library(zstd STATIC IMPORTED)
+set_target_properties(zstd PROPERTIES IMPORTED_LOCATION ${THIRDPARTY_DIR}/lib64/libzstd.a)
+
+add_library(aws-sdk-core STATIC IMPORTED)
+set_target_properties(aws-sdk-core PROPERTIES IMPORTED_LOCATION ${THIRDPARTY_DIR}/lib64/libaws-cpp-sdk-core.a)
+
+add_library(aws-sdk-s3 STATIC IMPORTED)
+set_target_properties(aws-sdk-s3 PROPERTIES IMPORTED_LOCATION ${THIRDPARTY_DIR}/lib64/libaws-cpp-sdk-s3.a)
+
+add_library(aws-sdk-transfer STATIC IMPORTED)
+set_target_properties(aws-sdk-transfer PROPERTIES IMPORTED_LOCATION ${THIRDPARTY_DIR}/lib64/libaws-cpp-sdk-transfer.a)
+
+add_library(aws-sdk-s3-crt STATIC IMPORTED)
+set_target_properties(aws-sdk-s3-crt PROPERTIES IMPORTED_LOCATION ${THIRDPARTY_DIR}/lib64/libaws-cpp-sdk-s3-crt.a)
+
+add_library(aws-crt-cpp STATIC IMPORTED)
+set_target_properties(aws-crt-cpp PROPERTIES IMPORTED_LOCATION ${THIRDPARTY_DIR}/lib64/libaws-crt-cpp.a)
+
+add_library(aws-c-cal STATIC IMPORTED)
+set_target_properties(aws-c-cal PROPERTIES IMPORTED_LOCATION ${THIRDPARTY_DIR}/lib64/libaws-c-cal.a)
+
+add_library(aws-c-auth STATIC IMPORTED)
+set_target_properties(aws-c-auth PROPERTIES IMPORTED_LOCATION ${THIRDPARTY_DIR}/lib64/libaws-c-auth.a)
+
+add_library(aws-c-compression STATIC IMPORTED)
+set_target_properties(aws-c-compression PROPERTIES IMPORTED_LOCATION ${THIRDPARTY_DIR}/lib64/libaws-c-compression.a)
+
+add_library(aws-c-common STATIC IMPORTED)
+set_target_properties(aws-c-common PROPERTIES IMPORTED_LOCATION ${THIRDPARTY_DIR}/lib64/libaws-c-common.a)
+
+add_library(aws-c-event-stream STATIC IMPORTED)
+set_target_properties(aws-c-event-stream PROPERTIES IMPORTED_LOCATION ${THIRDPARTY_DIR}/lib64/libaws-c-event-stream.a)
+
+add_library(aws-c-io STATIC IMPORTED)
+set_target_properties(aws-c-io PROPERTIES IMPORTED_LOCATION ${THIRDPARTY_DIR}/lib64/libaws-c-io.a)
+
+add_library(aws-c-http STATIC IMPORTED)
+set_target_properties(aws-c-http PROPERTIES IMPORTED_LOCATION ${THIRDPARTY_DIR}/lib64/libaws-c-http.a)
+
+add_library(aws-c-mqtt STATIC IMPORTED)
+set_target_properties(aws-c-mqtt PROPERTIES IMPORTED_LOCATION ${THIRDPARTY_DIR}/lib64/libaws-c-mqtt.a)
+
+add_library(aws-checksums STATIC IMPORTED)
+set_target_properties(aws-checksums PROPERTIES IMPORTED_LOCATION ${THIRDPARTY_DIR}/lib64/libaws-checksums.a)
+
+add_library(aws-c-s3 STATIC IMPORTED)
+set_target_properties(aws-c-s3 PROPERTIES IMPORTED_LOCATION ${THIRDPARTY_DIR}/lib64/libaws-c-s3.a)
+
+add_library(aws-s2n STATIC IMPORTED)
+set_target_properties(aws-s2n PROPERTIES IMPORTED_LOCATION ${THIRDPARTY_DIR}/lib64/libs2n.a)
+
+set(AWS_LIBS
+    aws-sdk-s3
+    aws-sdk-core
+    aws-sdk-transfer
+    aws-checksums
+    aws-c-io
+    aws-c-event-stream
+    aws-c-common
+    aws-c-cal
+    aws-s2n
+    aws-c-s3
+    aws-c-auth
+    aws-crt-cpp
+    aws-c-compression
+    aws-c-http
+    aws-c-mqtt
+    aws-sdk-s3-crt)
+
+add_library(fmt STATIC IMPORTED)
+set_target_properties(fmt PROPERTIES IMPORTED_LOCATION ${THIRDPARTY_DIR}/lib/libfmt.a)
+
 find_program(THRIFT_COMPILER thrift ${CMAKE_SOURCE_DIR}/bin)
 
 # Check if functions are supported in this platform. All flags will generated
@@ -335,6 +410,10 @@ set(COMMON_THIRDPARTY
     openssl
     crypto
     rocksdb
+    zstd
+    curl
+    ${AWS_LIBS}
+    fmt
 )
 
 set(DORIS_DEPENDENCIES
@@ -355,6 +434,7 @@ set(DORIS_LINK_LIBS ${DORIS_LINK_LIBS}
     SelectdbGen
     Common
     MetaService
+    Recycler
     -static-libstdc++
     -static-libgcc
     -lstdc++fs
@@ -430,6 +510,7 @@ endif ()
 add_subdirectory(${SRC_DIR}/common)
 add_subdirectory(${SRC_DIR}/gen-cpp)
 add_subdirectory(${SRC_DIR}/meta-service)
+add_subdirectory(${SRC_DIR}/recycler)
 add_subdirectory(${SRC_DIR}/resource-manager)
 
 if (${MAKE_TEST} STREQUAL "ON")

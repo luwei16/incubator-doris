@@ -11,52 +11,28 @@
 
 namespace selectdb {
 
-// clang-format off
-// Possible key encoding schemas:
-//
-// 0x01 "instance" ${instance_id} -> InstanceInfoPB
-// 
-// 0x01 "txn" ${instance_id} "txn_index" ${db_id} ${label} -> TxnIndexPB ${version_timestamp}
-// 0x01 "txn" ${instance_id} "txn_info" ${db_id} ${version_timestamp} -> TxnInfoPB
-// 0x01 "txn" ${instance_id} "txn_db_tbl" ${version_timestamp} -> ${db_id} ${tbl_id}
-// 0x01 "txn" ${instance_id} "txn_running" ${db_id} ${version_timestamp} -> ${table_id_list}
-//
-// 0x01 "version" ${instance_id} "version_id" ${db_id} ${tbl_id} ${partition_id} -> ${version}
-// 
-// 0x01 "meta" ${instance_id} "rowset" ${tablet_id} ${version} -> RowsetMetaPB
-// 0x01 "meta" ${instance_id} "rowset_tmp" ${txn_id} ${tablet_id} -> RowsetMetaPB
-// 0x01 "meta" ${instance_id} "tablet" ${table_id} ${tablet_id} -> TabletMetaPB
-// 0x01 "meta" ${instance_id} "tablet_table" ${tablet_id} -> ${table_id}
-// 0x01 "meta" ${instance_id} "tablet_tmp" ${table_id} ${tablet_id} -> TabletMetaPB
-// 
-// 0x01 "trash" ${instacne_id} "table" -> TableTrashPB
-// 0x01 "recycle" ${instance_id} "rowset" ${tablet_id} ${rowset_id} -> RecycleRowsetPB 
-// 
-// 0x01 "node_status" ${instance_id} "compute" ${backend_id} -> ComputeNodeStatusPB
-
 [[maybe_unused]] static const char* INSTANCE_KEY_PREFIX = "instance";
 
-[[maybe_unused]] static const char* TXN_KEY_PREFIX     = "txn";
+[[maybe_unused]] static const char* TXN_KEY_PREFIX = "txn";
 [[maybe_unused]] static const char* VERSION_KEY_PREFIX = "version";
-[[maybe_unused]] static const char* META_KEY_PREFIX    = "meta";
-[[maybe_unused]] static const char* TRASH_KEY_PREFIX   = "trash";
+[[maybe_unused]] static const char* META_KEY_PREFIX = "meta";
 [[maybe_unused]] static const char* RECYCLE_KEY_PREFIX = "recycle";
-[[maybe_unused]] static const char* STATS_KEY_PREFIX   = "stats";
+[[maybe_unused]] static const char* STATS_KEY_PREFIX = "stats";
 
-[[maybe_unused]] static const char* TXN_KEY_INFIX_INDEX   = "txn_index";
-[[maybe_unused]] static const char* TXN_KEY_INFIX_INFO    = "txn_info";
-[[maybe_unused]] static const char* TXN_KEY_INFIX_DB_TBL  = "txn_db_tbl";
+[[maybe_unused]] static const char* TXN_KEY_INFIX_INDEX = "txn_index";
+[[maybe_unused]] static const char* TXN_KEY_INFIX_INFO = "txn_info";
+[[maybe_unused]] static const char* TXN_KEY_INFIX_DB_TBL = "txn_db_tbl";
 [[maybe_unused]] static const char* TXN_KEY_INFIX_RUNNING = "txn_running";
 
 [[maybe_unused]] static const char* VERSION_KEY_INFIX = "version_id";
 
-[[maybe_unused]] static const char* META_KEY_INFIX_ROWSET     = "rowset";
+[[maybe_unused]] static const char* META_KEY_INFIX_ROWSET = "rowset";
 [[maybe_unused]] static const char* META_KEY_INFIX_ROWSET_TMP = "rowset_tmp";
-[[maybe_unused]] static const char* META_KEY_INFIX_TABLET     = "tablet";
+[[maybe_unused]] static const char* META_KEY_INFIX_TABLET = "tablet";
 [[maybe_unused]] static const char* META_KEY_INFIX_TABLET_TBL = "tablet_table";
 
 [[maybe_unused]] static const char* RECYCLE_KEY_INFIX_INDEX = "index";
-[[maybe_unused]] static const char* RECYCLE_KEY_INFIX_PART  = "partition";
+[[maybe_unused]] static const char* RECYCLE_KEY_INFIX_PART = "partition";
 
 [[maybe_unused]] static const char* STATS_KEY_INFIX_TABLET = "tablet";
 // clang-format on

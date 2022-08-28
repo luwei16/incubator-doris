@@ -1,11 +1,40 @@
 
 #pragma once
 
+#include <fmt/format.h>
 #include <glog/logging.h>
 
 namespace selectdb {
 
 bool init_glog(const char* basename);
+
+/// Wrap a glog stream and tag on the log. usage:
+///   LOG_INFO("here is an info for a {} query", query_type).tag("query_id", queryId);
+#define LOG_INFO(...) TaggableLogger(LOG(INFO), ##__VA_ARGS__)
+#define LOG_WARNING(...) TaggableLogger(LOG(WARNING), ##__VA_ARGS__)
+#define LOG_ERROR(...) TaggableLogger(LOG(ERROR), ##__VA_ARGS__)
+#define LOG_FATAL(...) TaggableLogger(LOG(FATAL), ##__VA_ARGS__)
+
+class TaggableLogger {
+public:
+    template <typename... Args>
+    TaggableLogger(std::ostream& stream, std::string_view fmt, Args&&... args) : stream_(stream) {
+        if constexpr (sizeof...(args) == 0) {
+            stream_ << fmt;
+        } else {
+            stream_ << fmt::format(fmt, std::forward<Args>(args)...);
+        }
+    };
+
+    template <typename V>
+    TaggableLogger& tag(std::string_view key, const V& value) {
+        stream_ << '|' << key << '=' << value;
+        return *this;
+    }
+
+private:
+    std::ostream& stream_;
+};
 
 } // namespace selectdb
 

@@ -4,6 +4,7 @@
 
 #include "common/config.h"
 #include "common/logging.h"
+#include "recycler/recycler.h"
 
 #include <iostream>
 #include <filesystem>
@@ -12,6 +13,11 @@
 
 int main(int argc, char** argv) {
     std::string process_name = "meta_service";
+    if (argc > 1) {
+        if (strcmp(argv[1], "--recycler") == 0) {
+            process_name = "recycler";
+        }
+    }
     std::cerr << "process current path: " << std::filesystem::current_path() << std::endl;
     std::string pid_path = "./bin/" + process_name + ".pid";
     std::fstream pidfile(pid_path, std::ios::out);
@@ -30,6 +36,15 @@ int main(int argc, char** argv) {
     if (!selectdb::init_glog(process_name.data())) {
         std::cerr << "failed to init glog" << std::endl;
         return -1;
+    }
+
+    if (process_name == "recycler") {
+        selectdb::Recycler recycler;
+        int ret = recycler.start();
+        if (ret != 0) {
+            std::cerr << "failed to start recycler" << std::endl;
+        }
+        return 0;
     }
 
     selectdb::MetaServer meta_server;
