@@ -1317,7 +1317,6 @@ void MetaServiceImpl::get_version(::google::protobuf::RpcController* controller,
         return;
     }
 
-    // TODO(dx): fix it, use instance_id later.
     VersionKeyInfo ver_key_info {instance_id, db_id, table_id, partition_id};
     std::string ver_key;
     version_key(ver_key_info, &ver_key);
@@ -1339,7 +1338,6 @@ void MetaServiceImpl::get_version(::google::protobuf::RpcController* controller,
         return;
     } else if (ret == 1) {
         msg = "not found";
-        // TODO(dx): find error code enum in proto, or add
         code = MetaServiceCode::VERSION_NOT_FOUND;
         return;
     }
@@ -2284,7 +2282,8 @@ void MetaServiceImpl::get_tablet_stats(::google::protobuf::RpcController* contro
         if (ret != 0) {
             code = MetaServiceCode::KV_TXN_CREATE_ERR;
             ss << " failed_create_txn_tablet=" << i.tablet_id();
-            LOG(WARNING) << "failed to create txn" << " ret=" << ret << " key=" << hex(key);
+            LOG(WARNING) << "failed to create txn"
+                         << " ret=" << ret << " key=" << hex(key);
             continue;
         }
         ret = txn->get(key, &val);
@@ -2292,7 +2291,7 @@ void MetaServiceImpl::get_tablet_stats(::google::protobuf::RpcController* contro
             code = MetaServiceCode::KV_TXN_GET_ERR;
             ss << (ret == 1 ? " not_found" : " failed") << "_tablet_id=" << i.tablet_id();
             LOG(WARNING) << "failed to get tablet stats, tablet_id=" << i.tablet_id()
-                << " ret=" << ret << " key=" << hex(key);
+                         << " ret=" << ret << " key=" << hex(key);
             continue;
         }
         if (!response->add_tablet_stats()->ParseFromString(val)) {
@@ -2457,7 +2456,27 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
             LOG(WARNING) << msg;
             return;
         }
+
         req.set_op(AlterClusterRequest::RENAME_CLUSTER);
+        MetaServiceGenericResponse res;
+        alter_cluster(cntl, &req, &res, nullptr);
+        ret = res.status().code();
+        msg = res.status().msg();
+        response_body = msg;
+        return;
+    }
+
+    if (unresolved_path == "update_cluster_mysql_user_name") {
+        AlterClusterRequest req;
+        auto st = google::protobuf::util::JsonStringToMessage(request_body, &req);
+        if (!st.ok()) {
+            msg = "failed to parse AlterClusterRequest, error: " + st.message().ToString();
+            response_body = msg;
+            LOG(WARNING) << msg;
+            return;
+        }
+
+        req.set_op(AlterClusterRequest::UPDATE_CLUSTER_MYSQL_USER_NAME);
         MetaServiceGenericResponse res;
         alter_cluster(cntl, &req, &res, nullptr);
         ret = res.status().code();
@@ -2601,12 +2620,47 @@ void MetaServiceImpl::alter_cluster(google::protobuf::RpcController* controller,
     case AlterClusterRequest::DROP_CLUSTER: {
         msg = resource_mgr_->drop_cluster(instance_id, cluster);
     } break;
+    case AlterClusterRequest::UPDATE_CLUSTER_MYSQL_USER_NAME: {
+        msg = resource_mgr_->update_cluster(
+                instance_id, cluster,
+                [&](::selectdb::ClusterPB& c) {
+                    std::string msg = "";
+                    if (0 == cluster.cluster.mysql_user_name_size()) {
+                        msg = "no mysql user name to change";
+                        LOG(WARNING) << "update cluster's mysql user name, " << msg;
+                        return msg;
+                    }
+                    auto& mysql_user_names = cluster.cluster.mysql_user_name();
+                    c.mutable_mysql_user_name()->CopyFrom(mysql_user_names);
+                    return msg;
+                },
+                [&](const ::selectdb::ClusterPB& i) {
+                    return i.cluster_id() == cluster.cluster.cluster_id() &&
+                           i.cluster_name() == cluster.cluster.cluster_name();
+                });
+    } break;
     case AlterClusterRequest::ADD_NODE: {
     } break;
     case AlterClusterRequest::DROP_NODE: {
     } break;
     case AlterClusterRequest::RENAME_CLUSTER: {
-        msg = resource_mgr_->rename_cluster(instance_id, cluster);
+        msg = resource_mgr_->update_cluster(
+                instance_id, cluster,
+                [&](::selectdb::ClusterPB& c) {
+                    std::string msg = "";
+                    if (c.cluster_name() == cluster.cluster.cluster_name()) {
+                        ss << "failed to rename cluster, name eq original name, original cluster "
+                              "is "
+                           << proto_to_json(c);
+                        msg = ss.str();
+                        return msg;
+                    }
+                    c.set_cluster_name(cluster.cluster.cluster_name());
+                    return msg;
+                },
+                [&](const ::selectdb::ClusterPB& i) {
+                    return i.cluster_id() == cluster.cluster.cluster_id();
+                });
     } break;
     default: {
         code = MetaServiceCode::INVALID_ARGUMENT;
@@ -2618,8 +2672,7 @@ void MetaServiceImpl::alter_cluster(google::protobuf::RpcController* controller,
     if (!msg.empty()) {
         code = MetaServiceCode::UNDEFINED_ERR;
     }
-
-} // add cluster
+} // alter cluster
 
 void MetaServiceImpl::get_cluster(google::protobuf::RpcController* controller,
                                   const ::selectdb::GetClusterRequest* request,
@@ -2628,21 +2681,21 @@ void MetaServiceImpl::get_cluster(google::protobuf::RpcController* controller,
     auto ctrl = static_cast<brpc::Controller*>(controller);
     LOG(INFO) << "rpc from " << ctrl->remote_side() << " request=" << request->DebugString();
     brpc::ClosureGuard closure_guard(done);
-    int ret = 0;
     MetaServiceCode code = MetaServiceCode::OK;
     std::string msg = "OK";
     [[maybe_unused]] std::stringstream ss;
     std::unique_ptr<int, std::function<void(int*)>> defer_status(
-            (int*)0x01, [&ret, &code, &msg, &response, &ctrl](int*) {
+            (int*)0x01, [&code, &msg, &response, &ctrl](int*) {
                 response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
-                LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
-                          << ctrl->remote_side() << " " << msg;
+                LOG(INFO) << (code == MetaServiceCode::OK ? "succ to " : "failed to ")
+                          << __PRETTY_FUNCTION__ << " " << ctrl->remote_side() << " " << msg;
             });
 
     std::string cloud_unique_id = request->has_cloud_unique_id() ? request->cloud_unique_id() : "";
     std::string cluster_id = request->has_cluster_id() ? request->cluster_id() : "";
     std::string cluster_name = request->has_cluster_name() ? request->cluster_name() : "";
+    std::string mysql_user_name = request->has_mysql_user_name() ? request->mysql_user_name() : "";
 
     if (cloud_unique_id.empty()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
@@ -2666,9 +2719,18 @@ void MetaServiceImpl::get_cluster(google::protobuf::RpcController* controller,
         }
     }
 
-    if (cluster_id.empty() && cluster_name.empty()) {
+    // ATTN: if the case that multiple conditions are satisfied, just use by this order:
+    // cluster_id -> cluster_name -> mysql_user_name
+    if (!cluster_id.empty()) {
+        cluster_name = "";
+        mysql_user_name = "";
+    } else if (!cluster_name.empty()) {
+        mysql_user_name = "";
+    }
+
+    if (cluster_id.empty() && cluster_name.empty() && mysql_user_name.empty()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
-        msg = "cluster_name or cluster_id must be given";
+        msg = "cluster_name or cluster_id or mysql_user_name must be given";
         return;
     }
 
@@ -2685,7 +2747,7 @@ void MetaServiceImpl::get_cluster(google::protobuf::RpcController* controller,
     instance_key(key_info, &key);
 
     std::unique_ptr<Transaction> txn;
-    ret = txn_kv_->create_txn(&txn);
+    int ret = txn_kv_->create_txn(&txn);
     if (ret != 0) {
         code = MetaServiceCode::KV_TXN_CREATE_ERR;
         msg = "failed to create txn";
@@ -2709,12 +2771,22 @@ void MetaServiceImpl::get_cluster(google::protobuf::RpcController* controller,
         return;
     }
 
+    auto get_cluster_mysql_user = [](const ::selectdb::ClusterPB& c,
+                                     std::set<std::string>* mysql_users) {
+        for (int i = 0; i < c.mysql_user_name_size(); i++) {
+            mysql_users->emplace(c.mysql_user_name(i));
+        }
+    };
+
     for (int i = 0; i < instance.clusters_size(); ++i) {
         auto& c = instance.clusters(i);
+        std::set<std::string> mysql_users;
+        get_cluster_mysql_user(c, &mysql_users);
         // The last wins if add_cluster() does not ensure uniqueness of
         // cluster_id and cluster_name respectively
         if ((c.has_cluster_name() && c.cluster_name() == cluster_name) ||
-            (c.has_cluster_id() && c.cluster_id() == cluster_id)) {
+            (c.has_cluster_id() && c.cluster_id() == cluster_id) ||
+            mysql_users.count(mysql_user_name)) {
             response->mutable_cluster()->CopyFrom(c);
             msg = proto_to_json(response->cluster());
             LOG(INFO) << "found a cluster, instance_id=" << instance.instance_id()
@@ -2726,7 +2798,7 @@ void MetaServiceImpl::get_cluster(google::protobuf::RpcController* controller,
         ss << "fail to get cluster with " << request->DebugString();
         msg = ss.str();
         std::replace(msg.begin(), msg.end(), '\n', ' ');
-        ret = MetaServiceCode::CLUSTER_NOT_FOUND;
+        code = MetaServiceCode::CLUSTER_NOT_FOUND;
         return;
     }
 

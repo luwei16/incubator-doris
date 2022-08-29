@@ -138,8 +138,16 @@ public class SystemInfoService {
     }
 
     // use cluster $clusterName
-    public void addCloudCluster(final String clusterName) throws UserException {
+    // return clusterName for userName
+    public String addCloudCluster(final String clusterName, final String userName) throws UserException {
         lock.lock();
+        if ((Strings.isNullOrEmpty(clusterName) && Strings.isNullOrEmpty(userName))
+                || (!Strings.isNullOrEmpty(clusterName) && !Strings.isNullOrEmpty(userName))) {
+            // clusterName or userName just only need one.
+            lock.unlock();
+            LOG.warn("addCloudCluster args err clusterName {}, userName {}", clusterName, userName);
+            return "";
+        }
         // First time this method is called, build cloud cluster map
         if (clusterNameToId.isEmpty() || clusterIdToBackend.isEmpty()) {
             List<Backend> toAdd = Maps.newHashMap(idToBackendRef)
@@ -152,37 +160,36 @@ public class SystemInfoService {
             updateCloudClusterMap(toAdd, new ArrayList<>());
         }
 
-        LOG.info("try to add a cloud cluster, clusterName={}", clusterName);
-        String clusterId = clusterNameToId.get(clusterName);
-        clusterId = clusterId == null ? "" : clusterId;
-        if (clusterIdToBackend.containsKey(clusterId)) { // Cluster already added
-            LOG.info("cloud cluster already added, clusterName={}, clusterId={}", clusterName, clusterId);
-            return;
+        String clusterId;
+        if (Strings.isNullOrEmpty(userName)) {
+            // use clusterName
+            LOG.info("try to add a cloud cluster, clusterName={}", clusterName);
+            clusterId = clusterNameToId.get(clusterName);
+            clusterId = clusterId == null ? "" : clusterId;
+            if (clusterIdToBackend.containsKey(clusterId)) { // Cluster already added
+                lock.unlock();
+                LOG.info("cloud cluster already added, clusterName={}, clusterId={}", clusterName, clusterId);
+                return "";
+            }
         }
         lock.unlock();
-
-
-        LOG.info("begin to get cloud cluster from remote, clusterName={}", clusterName);
+        LOG.info("begin to get cloud cluster from remote, clusterName={}, userName={}", clusterName, userName);
 
         // Get cloud cluster info from resource manager
-        SelectdbCloud.GetClusterResponse response = getCloudCluster(clusterName, "");
+        SelectdbCloud.GetClusterResponse response = getCloudCluster(clusterName, "", userName);
         if (!response.hasStatus() || !response.getStatus().hasCode()
                 || response.getStatus().getCode() != SelectdbCloud.MetaServiceCode.OK) {
-            LOG.warn("get cluster info from meta failed, clusterName={} clusterId={}, incomplete response: {}",
-                     clusterName, clusterId, response);
-            throw new UserException("no cluster " + clusterName + " found");
+            LOG.warn("get cluster info from meta failed, clusterName={}, incomplete response: {}",
+                    clusterName, response);
+            throw new UserException("no cluster clusterName: " + clusterName + " or userName: " + userName + " found");
         }
 
         clusterId = response.getCluster().getClusterId();
         String clusterNameMeta = response.getCluster().getClusterName();
-        if (!clusterNameMeta.equals(clusterName)) { // Unlikely
-            LOG.warn("remote return clusterName={} not equal to input clusterName={}", clusterNameMeta, clusterName);
-            return;
-        }
 
         // Prepare backends
         Map<String, String> newTagMap = Tag.DEFAULT_BACKEND_TAG.toMap();
-        newTagMap.put(Tag.CLOUD_CLUSTER_NAME, clusterName);
+        newTagMap.put(Tag.CLOUD_CLUSTER_NAME, clusterNameMeta);
         newTagMap.put(Tag.CLOUD_CLUSTER_ID, clusterId);
         List<Backend> backends = new ArrayList<>();
         for (SelectdbCloud.NodeInfoPB node : response.getCluster().getNodesList()) {
@@ -190,7 +197,7 @@ public class SystemInfoService {
             b.setTagMap(newTagMap);
             backends.add(b);
             LOG.info("new backend to add, clusterName={} clusterId={} backend={}",
-                                             clusterName, clusterId, b.toString());
+                        clusterNameMeta, clusterId, b.toString());
         }
 
         // FIXME(gavin): is it safe to send hearbeat to an unadded Backend?
@@ -198,6 +205,7 @@ public class SystemInfoService {
         // backends = Catalog.getCurrentHeartbeatMgr().checkBeStatus(backends);
 
         updateCloudBackends(backends, new ArrayList<>());
+        return clusterNameMeta;
     }
 
     public void updateCloudClusterMap(List<Backend> toAdd, List<Backend> toDel) {
@@ -1419,14 +1427,14 @@ public class SystemInfoService {
      * @param clusterId cluster id
      * @return
      */
-    public SelectdbCloud.GetClusterResponse getCloudCluster(String clusterName, String clusterId) {
+    public SelectdbCloud.GetClusterResponse getCloudCluster(String clusterName, String clusterId, String userName) {
         TNetworkAddress metaAddress =
                 new TNetworkAddress(Env.getCurrentSystemInfo().metaServiceHostPort.first,
                 Env.getCurrentSystemInfo().metaServiceHostPort.second);
         SelectdbCloud.GetClusterRequest.Builder builder =
                 SelectdbCloud.GetClusterRequest.newBuilder();
         builder.setCloudUniqueId(Config.cloud_unique_id)
-               .setClusterName(clusterName).setClusterId(clusterId);
+               .setClusterName(clusterName).setClusterId(clusterId).setMysqlUserName(userName);
         final SelectdbCloud.GetClusterRequest pRequest = builder.build();
         SelectdbCloud.GetClusterResponse response;
         try {

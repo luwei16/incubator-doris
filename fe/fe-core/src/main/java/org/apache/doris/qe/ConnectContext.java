@@ -128,7 +128,7 @@ public class ConnectContext {
     protected QueryDetail queryDetail;
 
     // cloud cluster name
-    protected String cloudCluster;
+    protected volatile String cloudCluster;
 
     // If set to true, the nondeterministic function will not be rewrote to constant.
     private boolean notEvalNondeterministicFunction = false;

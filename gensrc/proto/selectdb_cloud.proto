@@ -32,6 +32,7 @@ message ClusterPB {
     optional Type type = 3;
     optional string desc = 4;
     repeated NodeInfoPB nodes = 5;
+    repeated string mysql_user_name = 6;
 }
 
 message NodeInfoPB {
@@ -425,6 +426,7 @@ message AlterClusterRequest {
         ADD_NODE       = 3;
         DROP_NODE      = 4;
         RENAME_CLUSTER = 5;
+        UPDATE_CLUSTER_MYSQL_USER_NAME = 6; // just for update cluster's mysql_user_name
     }
     optional string instance_id = 1;
     optional ClusterPB cluster = 2;
@@ -436,6 +438,7 @@ message GetClusterRequest {
     optional string cloud_unique_id = 2;
     optional string cluster_id = 3;
     optional string cluster_name = 4;
+    optional string mysql_user_name = 5;
 }
 
 message GetClusterResponse {

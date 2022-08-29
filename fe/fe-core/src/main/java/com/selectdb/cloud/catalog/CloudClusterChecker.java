@@ -71,7 +71,7 @@ public class CloudClusterChecker extends MasterDaemon {
         Map<String, List<Backend>> clusterIdToBackend = Env.getCurrentSystemInfo().getCloudClusterIdToBackend();
         for (String clusterId : clusterIdToBackend.keySet()) {
             SelectdbCloud.GetClusterResponse response =
-                    Env.getCurrentSystemInfo().getCloudCluster("", clusterId);
+                    Env.getCurrentSystemInfo().getCloudCluster("", clusterId, "");
             if (!response.hasStatus() || !response.getStatus().hasCode()
                     || response.getStatus().getCode() != SelectdbCloud.MetaServiceCode.OK) {
                 LOG.warn("failed to get cloud cluster due to incomplete response, "

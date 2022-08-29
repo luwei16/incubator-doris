@@ -286,8 +286,10 @@ std::string ResourceManager::drop_cluster(const std::string& instance_id,
     return err;
 }
 
-std::string ResourceManager::rename_cluster(const std::string& instance_id,
-                                            const ClusterInfo& cluster) {
+std::string ResourceManager::update_cluster(
+        const std::string& instance_id, const ClusterInfo& cluster,
+        std::function<std::string(::selectdb::ClusterPB&)> action,
+        std::function<bool(const ::selectdb::ClusterPB&)> filter) {
     std::stringstream ss;
     std::string err;
 
@@ -301,8 +303,6 @@ std::string ResourceManager::rename_cluster(const std::string& instance_id,
         LOG(INFO) << err;
         return err;
     }
-
-    // just rename clusters name, find by cluster id
 
     std::unique_ptr<Transaction> txn0;
     int ret = txn_kv_->create_txn(&txn0);
@@ -321,37 +321,39 @@ std::string ResourceManager::rename_cluster(const std::string& instance_id,
     }
 
     bool found = false;
-    ClusterPB original;
-    ClusterPB now;
-    // just rename clusters name, find cluster by cluster id
+    int idx = -1;
+    // Check id and name, they need to be unique
+    // One cluster id per name, name is alias of cluster id
     for (auto& i : instance.clusters()) {
-        if (i.cluster_id() != cluster.cluster.cluster_id()) {
-            continue;
+        ++idx;
+        if (filter(i)) {
+            LOG(INFO) << "found a cluster to update,"
+                      << " instance_id=" << instance_id << " cluster_id=" << i.cluster_id()
+                      << " cluster_name=" << i.cluster_name() << " cluster=" << proto_to_json(i);
+            found = true;
+            break;
         }
-        if (i.cluster_name() == cluster.cluster.cluster_name()) {
-            ss << "failed to rename cluster, name eq original name, original cluster is "
-               << proto_to_json(i);
-            err = ss.str();
-            return err;
-        }
-        original.CopyFrom(i);
-        LOG(INFO) << "found a cluster to rename,"
-                  << " instance_id=" << instance_id << " cluster_id=" << i.cluster_id()
-                  << " original cluster_name=" << i.cluster_name() << " rename to "
-                  << cluster.cluster.cluster_name();
-        auto& cluster_to_rename = const_cast<std::decay_t<decltype(i)>&>(i);
-        cluster_to_rename.set_cluster_name(cluster.cluster.cluster_name());
-        now.CopyFrom(i);
-        found = true;
     }
 
     if (!found) {
-        ss << "failed to find cluster to rename,"
+        ss << "failed to find cluster to update,"
            << " instance_id=" << instance_id << " cluster_id=" << cluster.cluster.cluster_id()
            << " cluster_name=" << cluster.cluster.cluster_name();
         err = ss.str();
         return err;
     }
+
+    auto& clusters = const_cast<std::decay_t<decltype(instance.clusters())>&>(instance.clusters());
+
+    // do update
+    ClusterPB original = clusters[idx];
+    err = action(clusters[idx]);
+    if (!err.empty()) {
+        return err;
+    }
+    ClusterPB now = clusters[idx];
+    LOG(INFO) << "before update cluster original: " << proto_to_json(original)
+              << " after update now: " << proto_to_json(now);
 
     InstanceKeyInfo key_info {instance_id};
     std::string key;
@@ -372,6 +374,9 @@ std::string ResourceManager::rename_cluster(const std::string& instance_id,
         LOG(WARNING) << err << " ret=" << ret;
         return err;
     }
+
+    LOG(INFO) << "update cluster instance_id=" << instance_id
+              << " instance json=" << proto_to_json(instance);
 
     update_cluster_to_index(instance_id, original, now);
 

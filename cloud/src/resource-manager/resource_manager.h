@@ -75,12 +75,16 @@ public:
     std::string drop_cluster(const std::string& instance_id, const ClusterInfo& cluster);
 
     /**
-    * Rename a cluster, just rename clusters name, find by cluster id
-    *
-    * @param clsuter cluster to rename, only cluster name and clsuter id are concered
-    * @return empty string for success, otherwise failure reason returned
-    */
-    std::string rename_cluster(const std::string& instance_id, const ClusterInfo& cluster);
+     * Update a cluster
+     *
+     * @param clsuter cluster to update, only cluster name and clsuter id are concered
+     * @param action update operation code snippet
+     * @filter filter condition
+     * @return empty string for success, otherwise failure reason returned
+     */
+    std::string update_cluster(const std::string& instance_id, const ClusterInfo& cluster,
+                               std::function<std::string(::selectdb::ClusterPB&)> action,
+                               std::function<bool(const ::selectdb::ClusterPB&)> filter);
 
     /**
      * Get instance from underlying storage with given transaction.

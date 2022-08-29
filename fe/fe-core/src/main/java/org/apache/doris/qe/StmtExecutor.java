@@ -1542,7 +1542,7 @@ public class StmtExecutor implements ProfileWriter {
         String cluster = useCloudClusterStmt.getCluster();
         context.setCloudCluster(cluster);
         try {
-            Env.getCurrentSystemInfo().addCloudCluster(cluster);
+            Env.getCurrentSystemInfo().addCloudCluster(cluster, "");
         } catch (UserException e) {
             context.getState().setError(e.getMysqlErrorCode(), e.getMessage());
             return;
