@@ -477,18 +477,20 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
     MetaServiceCode code = MetaServiceCode::OK;
     std::string msg = "OK";
     [[maybe_unused]] std::stringstream ss;
+    int64_t txn_id = request->has_txn_id() ? request->txn_id() : -1;
     std::unique_ptr<int, std::function<void(int*)>> defer_status(
-            (int*)0x01, [&code, &msg, &response, &ctrl](int*) {
+            (int*)0x01, [&code, &msg, &response, &ctrl, &txn_id](int*) {
                 response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
                 LOG(INFO) << "finish " << __PRETTY_FUNCTION__ << " " << ctrl->remote_side() << " "
-                          << msg;
+                          << " txn_id=" << txn_id << " " << msg;
             });
     std::string instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
     if (instance_id.empty()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
         msg = "empty instance_id";
-        LOG(INFO) << msg << ", cloud_unique_id=" << request->cloud_unique_id();
+        LOG(INFO) << msg << ", cloud_unique_id=" << request->cloud_unique_id()
+            << " txn_id=" << txn_id;
         return;
     }
 
@@ -500,7 +502,6 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
         return;
     }
 
-    int64_t txn_id = request->has_txn_id() ? request->txn_id() : -1;
     if (txn_id < 0) {
         code = MetaServiceCode::INVALID_ARGUMENT;
         msg = "no txn id";
@@ -564,7 +565,7 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
         msg = ss.str();
         return;
     }
-    LOG(INFO) << "xxx txn_info=" << txn_info.DebugString();
+    LOG(INFO) << "xxx txn_id=" << txn_id << " txn_info=" << txn_info.DebugString();
 
     // Get temporary rowsets involved in the txn
     // This is a range scan
@@ -580,8 +581,9 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
 
     int num_rowsets = 0;
     std::unique_ptr<int, std::function<void(int*)>> defer_log_range(
-            (int*)0x01, [rs_tmp_key0, rs_tmp_key1, &num_rowsets](int*) {
-                LOG(INFO) << "get tmp rowset meta, num_rowsets=" << num_rowsets << " range=["
+            (int*)0x01, [rs_tmp_key0, rs_tmp_key1, &num_rowsets, &txn_id](int*) {
+                LOG(INFO) << "get tmp rowset meta, txn_id=" << txn_id
+                          << " num_rowsets=" << num_rowsets << " range=["
                           << hex(rs_tmp_key0) << "," << hex(rs_tmp_key1) << ")";
             });
 
@@ -592,13 +594,13 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
             code = MetaServiceCode::KV_TXN_GET_ERR;
             ss << "internal error, failed to get tmp rowset while committing, ret=" << ret;
             msg = ss.str();
-            LOG(WARNING) << msg;
+            LOG(WARNING) << "txn_id=" << txn_id << " " << msg;
             return;
         }
 
         while (it->has_next()) {
             auto [k, v] = it->next();
-            LOG(INFO) << "xxx range_get rowset_tmp_key=" << hex(k);
+            LOG(INFO) << "xxx range_get rowset_tmp_key=" << hex(k) << " txn_id=" << txn_id;
             tmp_rowsets_meta.emplace_back();
             if (!tmp_rowsets_meta.back().second.ParseFromArray(v.data(), v.size())) {
                 code = MetaServiceCode::PROTOBUF_PARSE_ERR;
@@ -635,7 +637,7 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
                    << (ret == 1 ? " not found" : " internal error")
                    << " tablet_id=" << i.tablet_id() << " key=" << hex(key);
                 msg = ss.str();
-                LOG(INFO) << msg << " ret=" << ret;
+                LOG(INFO) << msg << " ret=" << ret << " txn_id=" << txn_id;
                 return;
             }
             if (!table_ids[i.tablet_id()].ParseFromString(val)) {
@@ -662,7 +664,7 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
                 ss << "failed to get version, table_id=" << table_id
                    << "partition_id=" << partition_id << " key=" << hex(ver_key);
                 msg = ss.str();
-                LOG(INFO) << msg;
+                LOG(INFO) << msg << " txn_id=" << txn_id;
                 return;
             }
             // Maybe first version
@@ -695,13 +697,14 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
         stats_tablet_key(stat_key_info, &stat_key);
         while (tablet_stats.count(stat_key) == 0) {
             ret = txn->get(stat_key, &stat_val);
-            LOG(INFO) << "get tablet_stats_key, key=" << hex(stat_key) << " ret=" << ret;
+            LOG(INFO) << "get tablet_stats_key, key=" << hex(stat_key) << " ret=" << ret
+                << " txn_id=" << txn_id;
             if (ret != 1 && ret != 0) {
                 code = MetaServiceCode::KV_TXN_GET_ERR;
                 ss << "failed to get tablet stats, tablet_id=" << i.tablet_id()
                    << " key=" << hex(stat_key);
                 msg = ss.str();
-                LOG(INFO) << msg;
+                LOG(INFO) << msg << " txn_id=" << txn_id;
                 return;
             }
             auto& stat = tablet_stats[stat_key];
@@ -733,16 +736,16 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
     // Save rowset meta
     for (auto& i : rowsets) {
         txn->put(i.first, i.second);
-        LOG(INFO) << "xxx put rowset_key=" << hex(i.first);
+        LOG(INFO) << "xxx put rowset_key=" << hex(i.first) << " txn_id=" << txn_id;
     }
 
     // Save versions
     for (auto& i : new_versions) {
         txn->put(i.first, i.second);
-        LOG(INFO) << "xxx put version_key=" << hex(i.first);
+        LOG(INFO) << "xxx put version_key=" << hex(i.first) << " txn_id=" << txn_id;
     }
 
-    LOG(INFO) << "original txn_info=" << txn_info.DebugString();
+    LOG(INFO) << "txn_id=" << txn_id << " original txn_info=" << txn_info.DebugString();
 
     // Update txn_info
     txn_info.set_status(TxnStatusPB::TXN_STATUS_VISIBLE);
@@ -754,7 +757,7 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
     if (request->has_commit_attachment()) {
         txn_info.mutable_commit_attachment()->CopyFrom(request->commit_attachment());
     }
-    LOG(INFO) << "new txn_info=" << txn_info.DebugString();
+    LOG(INFO) << "txn_id=" << txn_id << " new txn_info=" << txn_info.DebugString();
     txn_inf_val.clear();
     if (!txn_info.SerializeToString(&txn_inf_val)) {
         code = MetaServiceCode::PROTOBUF_SERIALIZE_ERR;
@@ -762,7 +765,7 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
         return;
     }
     txn->put(txn_inf_key, txn_inf_val);
-    LOG(INFO) << "xxx put txn_inf_key=" << hex(txn_inf_key);
+    LOG(INFO) << "xxx put txn_inf_key=" << hex(txn_inf_key) << " txn_id=" << txn_id;
 
     // Update stats of affected tablet
     for (auto& [k, v] : tablet_stats) {
@@ -773,13 +776,13 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
             return;
         }
         txn->put(k, val);
-        LOG(INFO) << "xxx put tablet_stat_key key=" << hex(k);
+        LOG(INFO) << "xxx put tablet_stat_key key=" << hex(k) << " txn_id=" << txn_id;
     }
 
     // Remove tmp rowset meta
     for (auto& [k, _] : tmp_rowsets_meta) {
         txn->remove(k);
-        LOG(INFO) << "xxx remove tmp_rowset_key=" << hex(k);
+        LOG(INFO) << "xxx remove tmp_rowset_key=" << hex(k) << " txn_id=" << txn_id;
     }
 
     // Finally we are done...
@@ -1610,7 +1613,7 @@ void MetaServiceImpl::prepare_rowset(::google::protobuf::RpcController* controll
               << hex(prepare_key);
     ret = txn->commit();
     if (ret != 0) {
-        ret = MetaServiceCode::KV_TXN_COMMIT_ERR;
+        code = MetaServiceCode::KV_TXN_COMMIT_ERR;
         msg = "failed to save recycle rowset";
         return;
     }

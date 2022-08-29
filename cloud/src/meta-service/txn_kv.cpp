@@ -265,12 +265,12 @@ int Transaction::commit() {
     std::unique_ptr<int, decltype(release_fut)> defer((int*)0x01, std::move(release_fut));
     auto err = fdb_future_block_until_ready(fut);
     if (err) {
-        LOG(WARNING) << " " << fdb_get_error(err);
+        LOG(WARNING) << "fdb commit error, " << fdb_get_error(err);
         return -1;
     }
     err = fdb_future_get_error(fut);
     if (err) {
-        LOG(WARNING) << " " << fdb_get_error(err);
+        LOG(WARNING) << "fdb commit error, " << fdb_get_error(err);
         return -2;
     }
     return 0;
