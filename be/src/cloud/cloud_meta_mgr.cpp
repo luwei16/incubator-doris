@@ -7,7 +7,6 @@
 #include "common/config.h"
 #include "gen_cpp/selectdb_cloud.pb.h"
 #include "service/internal_service.h"
-#include "util/defer_op.h"
 
 namespace doris::cloud {
 
@@ -87,11 +86,8 @@ Status CloudMetaMgr::write_tablet_meta(const TabletMetaSharedPtr& tablet_meta) {
     brpc::Controller cntl;
     selectdb::CreateTabletRequest req;
     selectdb::MetaServiceGenericResponse resp;
-    Defer defer([&] { req.release_tablet_meta(); });
     req.set_cloud_unique_id(config::cloud_unique_id);
-    TabletMetaPB tablet_meta_pb;
-    tablet_meta->to_meta_pb(&tablet_meta_pb);
-    req.set_allocated_tablet_meta(&tablet_meta_pb);
+    tablet_meta->to_meta_pb(req.mutable_tablet_meta());
     _stub->create_tablet(&cntl, &req, &resp, nullptr);
     if (cntl.Failed()) {
         return Status::IOError("failed to write tablet meta: {}", cntl.ErrorText());
@@ -109,7 +105,7 @@ Status CloudMetaMgr::prepare_rowset(const RowsetMetaSharedPtr& rs_meta, bool is_
     selectdb::CreateRowsetRequest req;
     selectdb::MetaServiceGenericResponse resp;
     req.set_cloud_unique_id(config::cloud_unique_id);
-    *req.mutable_rowset_meta() = rs_meta->get_rowset_pb();
+    rs_meta->to_rowset_pb(req.mutable_rowset_meta());
     req.set_temporary(is_tmp);
     _stub->prepare_rowset(&cntl, &req, &resp, nullptr);
     if (cntl.Failed()) {
@@ -130,7 +126,7 @@ Status CloudMetaMgr::commit_rowset(const RowsetMetaSharedPtr& rs_meta, bool is_t
     selectdb::CreateRowsetRequest req;
     selectdb::MetaServiceGenericResponse resp;
     req.set_cloud_unique_id(config::cloud_unique_id);
-    *req.mutable_rowset_meta() = rs_meta->get_rowset_pb();
+    rs_meta->to_rowset_pb(req.mutable_rowset_meta());
     req.set_temporary(is_tmp);
     _stub->commit_rowset(&cntl, &req, &resp, nullptr);
     if (cntl.Failed()) {

@@ -45,7 +45,8 @@ Status PushHandler::cloud_process_streaming_ingestion(const TabletSharedPtr& tab
     }
     // check delete condition if push for delete
     DeletePredicatePB del_pred;
-    auto tablet_schema = tablet->tablet_schema();
+    auto tablet_schema = std::make_shared<TabletSchema>();
+    tablet_schema->copy_from(*tablet->tablet_schema());
     if (!request.columns_desc.empty() && request.columns_desc[0].col_unique_id >= 0) {
         tablet_schema->clear_columns();
         for (const auto& column_desc : request.columns_desc) {

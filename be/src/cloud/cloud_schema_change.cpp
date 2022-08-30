@@ -48,7 +48,8 @@ Status CloudSchemaChangeHandler::process_alter_tablet(const TAlterTabletReqV2& r
     // delete handlers for new tablet
     DeleteHandler delete_handler;
     std::vector<ColumnId> return_columns;
-    auto base_tablet_schema = base_tablet->tablet_schema();
+    auto base_tablet_schema = std::make_shared<TabletSchema>();
+    base_tablet_schema->copy_from(*base_tablet->tablet_schema());
     if (!request.columns.empty() && request.columns[0].col_unique_id >= 0) {
         base_tablet_schema->clear_columns();
         for (const auto& column : request.columns) {
@@ -87,8 +88,7 @@ Status CloudSchemaChangeHandler::process_alter_tablet(const TAlterTabletReqV2& r
         reader_params.reader_type = READER_ALTER_TABLE;
         reader_params.rs_readers = rs_readers;
         reader_params.tablet_schema = base_tablet_schema;
-        const auto& schema = base_tablet_schema;
-        reader_params.return_columns.resize(schema->num_columns());
+        reader_params.return_columns.resize(base_tablet_schema->num_columns());
         std::iota(reader_params.return_columns.begin(), reader_params.return_columns.end(), 0);
         reader_params.origin_return_columns = &reader_params.return_columns;
         reader_params.version = {0, request.alter_version};
