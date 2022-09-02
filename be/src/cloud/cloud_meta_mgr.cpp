@@ -35,6 +35,7 @@ Status CloudMetaMgr::open() {
 Status CloudMetaMgr::get_tablet_meta(int64_t tablet_id, TabletMetaSharedPtr* tablet_meta) {
     VLOG_DEBUG << "send GetTabletRequest, tablet_id: " << tablet_id;
     brpc::Controller cntl;
+    cntl.set_timeout_ms(config::meta_service_brpc_timeout_ms);
     selectdb::GetTabletRequest req;
     selectdb::GetTabletResponse resp;
     req.set_cloud_unique_id(config::cloud_unique_id);
@@ -57,6 +58,7 @@ Status CloudMetaMgr::get_rowset_meta(int64_t tablet_id, Version version_range,
     VLOG_DEBUG << "send GetRowsetRequest, tablet_id: " << tablet_id
                << ", version: " << version_range;
     brpc::Controller cntl;
+    cntl.set_timeout_ms(config::meta_service_brpc_timeout_ms);
     selectdb::GetRowsetRequest req;
     selectdb::GetRowsetResponse resp;
     req.set_cloud_unique_id(config::cloud_unique_id);
@@ -84,6 +86,7 @@ Status CloudMetaMgr::get_rowset_meta(int64_t tablet_id, Version version_range,
 
 Status CloudMetaMgr::write_tablet_meta(const TabletMetaSharedPtr& tablet_meta) {
     brpc::Controller cntl;
+    cntl.set_timeout_ms(config::meta_service_brpc_timeout_ms);
     selectdb::CreateTabletRequest req;
     selectdb::MetaServiceGenericResponse resp;
     req.set_cloud_unique_id(config::cloud_unique_id);
@@ -102,6 +105,7 @@ Status CloudMetaMgr::prepare_rowset(const RowsetMetaSharedPtr& rs_meta, bool is_
     VLOG_DEBUG << "prepare rowset, tablet_id: " << rs_meta->tablet_id()
                << ", rowset_id: " << rs_meta->rowset_id() << ", is_tmp: " << is_tmp;
     brpc::Controller cntl;
+    cntl.set_timeout_ms(config::meta_service_brpc_timeout_ms);
     selectdb::CreateRowsetRequest req;
     selectdb::MetaServiceGenericResponse resp;
     req.set_cloud_unique_id(config::cloud_unique_id);
@@ -123,6 +127,7 @@ Status CloudMetaMgr::commit_rowset(const RowsetMetaSharedPtr& rs_meta, bool is_t
     VLOG_DEBUG << "commit rowset, tablet_id: " << rs_meta->tablet_id()
                << ", rowset_id: " << rs_meta->rowset_id() << ", is_tmp: " << is_tmp;
     brpc::Controller cntl;
+    cntl.set_timeout_ms(config::meta_service_brpc_timeout_ms);
     selectdb::CreateRowsetRequest req;
     selectdb::MetaServiceGenericResponse resp;
     req.set_cloud_unique_id(config::cloud_unique_id);
@@ -144,6 +149,7 @@ Status CloudMetaMgr::commit_txn(StreamLoadContext* ctx, bool is_2pc) {
     VLOG_DEBUG << "commit txn, db_id: " << ctx->db_id << ", txn_id: " << ctx->txn_id
                << ", label: " << ctx->label << ", is_2pc: " << is_2pc;
     brpc::Controller cntl;
+    cntl.set_timeout_ms(config::meta_service_brpc_timeout_ms);
     selectdb::CommitTxnRequest req;
     selectdb::CommitTxnResponse resp;
     req.set_cloud_unique_id(config::cloud_unique_id);
@@ -164,6 +170,7 @@ Status CloudMetaMgr::abort_txn(StreamLoadContext* ctx) {
     VLOG_DEBUG << "abort txn, db_id: " << ctx->db_id << ", txn_id: " << ctx->txn_id
                << ", label: " << ctx->label;
     brpc::Controller cntl;
+    cntl.set_timeout_ms(config::meta_service_brpc_timeout_ms);
     selectdb::AbortTxnRequest req;
     selectdb::AbortTxnResponse resp;
     req.set_cloud_unique_id(config::cloud_unique_id);
@@ -187,6 +194,7 @@ Status CloudMetaMgr::precommit_txn(StreamLoadContext* ctx) {
     VLOG_DEBUG << "precommit txn, db_id: " << ctx->db_id << ", txn_id: " << ctx->txn_id
                << ", label: " << ctx->label;
     brpc::Controller cntl;
+    cntl.set_timeout_ms(config::meta_service_brpc_timeout_ms);
     selectdb::PrecommitTxnRequest req;
     selectdb::PrecommitTxnResponse resp;
     req.set_cloud_unique_id(config::cloud_unique_id);
