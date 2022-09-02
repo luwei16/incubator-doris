@@ -18,6 +18,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <memory> // for unique_ptr
 #include <string>
 #include <vector>
@@ -27,9 +28,11 @@
 #include "gutil/macros.h"
 #include "io/fs/file_system.h"
 #include "olap/iterators.h"
+#include "olap/olap_common.h"
 #include "olap/primary_key_index.h"
 #include "olap/rowset/segment_v2/page_handle.h"
 #include "olap/short_key_index.h"
+#include "olap/tablet_meta.h"
 #include "olap/tablet_schema.h"
 #include "util/faststring.h"
 #include "util/once.h"
@@ -63,7 +66,7 @@ class Segment : public std::enable_shared_from_this<Segment> {
 public:
     static Status open(io::FileSystem* fs, const std::string& path, const std::string& cache_path,
                        uint32_t segment_id, TabletSchemaSPtr tablet_schema,
-                       std::shared_ptr<Segment>* output);
+                       std::shared_ptr<Segment>* output, std::function<void(OlapReaderStatistics*)> = nullptr);
 
     ~Segment();
 

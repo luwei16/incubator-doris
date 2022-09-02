@@ -22,9 +22,6 @@
 #include "io/fs/file_reader.h"
 #include "io/fs/file_writer.h"
 
-#include "io/cache/file_cache.h"
-#include "io/cache/file_cache_fwd.h"
-
 #include <unordered_set>
 #include <list>
 

@@ -2,9 +2,9 @@
 
 #include <vector>
 
-#include "io/cache/cloud_file_cache.h"
-#include "io/cache/file_cache_fwd.h"
-#include "io/cache/file_cache_settings.h"
+#include "io/cloud/cloud_file_cache.h"
+#include "io/cloud/cloud_file_cache_fwd.h"
+#include "io/cloud/cloud_file_cache_settings.h"
 namespace doris {
 namespace io {
 
@@ -18,14 +18,14 @@ public:
     void create_file_cache(const std::string& cache_base_path,
                            const FileCacheSettings& file_cache_settings);
 
-    FileCacheSPtr getByPath(const IFileCache::Key& key);
+    FileCachePtr getByPath(const IFileCache::Key& key);
 
     FileCacheFactory() = default;
     FileCacheFactory& operator=(const FileCacheFactory&) = delete;
     FileCacheFactory(const FileCacheFactory&) = delete;
 
 private:
-    std::vector<FileCacheSPtr> _caches;
+    std::vector<std::unique_ptr<IFileCache>> _caches;
 };
 
 } // namespace io

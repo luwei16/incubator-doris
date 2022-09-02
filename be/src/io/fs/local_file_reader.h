@@ -20,8 +20,8 @@
 #include <atomic>
 
 #include "io/fs/file_reader.h"
-#include "io/fs/path.h"
 #include "io/fs/local_file_system.h"
+#include "io/fs/path.h"
 
 namespace doris {
 namespace io {
@@ -34,9 +34,10 @@ public:
 
     Status close() override;
 
-    Status read_at(size_t offset, Slice result, size_t* bytes_read) override;
+    Status read_at(size_t offset, Slice result, size_t* bytes_read,
+                   IOState* state = nullptr) override;
 
-    Status read_at_impl(size_t offset, Slice result, size_t* bytes_read);
+    Status read_at_impl(size_t offset, Slice result, size_t* bytes_read, IOState* state);
 
     const Path& path() const override { return _path; }
 

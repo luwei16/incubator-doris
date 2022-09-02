@@ -189,6 +189,18 @@ void VOlapScanNode::_init_counter(RuntimeState* state) {
     // time of node to wait for batch/block queue
     _olap_wait_batch_queue_timer = ADD_TIMER(_runtime_profile, "BatchQueueWaitTime");
 
+    _num_io_total = ADD_COUNTER(_scanner_profile, "NumIOTotal", TUnit::UNIT);
+    _num_io_hit_cache = ADD_COUNTER(_scanner_profile, "NumIOHitCache", TUnit::UNIT);
+    _num_io_bytes_read_total = ADD_COUNTER(_scanner_profile, "NumIOBytesReadTotal", TUnit::UNIT);
+    _num_io_bytes_read_from_file_cache =
+            ADD_COUNTER(_scanner_profile, "NumIOBytesReadFromFileCache", TUnit::UNIT);
+    _num_io_bytes_read_from_write_cache =
+            ADD_COUNTER(_scanner_profile, "NumIOBytesReadFromWriteCache", TUnit::UNIT);
+    _num_io_written_in_file_cache =
+            ADD_COUNTER(_scanner_profile, "NumIOWrittenInFileCache", TUnit::UNIT);
+    _num_io_bytes_written_in_file_cache =
+            ADD_COUNTER(_scanner_profile, "NumIOBytesWrittenInFileCache", TUnit::UNIT);
+
     // for the purpose of debugging or profiling
     for (int i = 0; i < GENERAL_DEBUG_COUNT; ++i) {
         char name[64];
@@ -986,7 +998,7 @@ Status VOlapScanNode::close(RuntimeState* state) {
         _transfer_thread->join();
     }
 
-    for (const auto &tid: _btids) {
+    for (const auto& tid : _btids) {
         bthread_join(tid, nullptr);
     }
 
@@ -1130,8 +1142,8 @@ Block* VOlapScanNode::_alloc_block(bool& get_free_block) {
     return block;
 }
 
-[[maybe_unused]] static void *run_scanner_bthread(void* arg) {
-    auto f = reinterpret_cast<std::function<void()>*> (arg);
+[[maybe_unused]] static void* run_scanner_bthread(void* arg) {
+    auto f = reinterpret_cast<std::function<void()>*>(arg);
     (*f)();
     delete f;
     return nullptr;
@@ -1246,9 +1258,10 @@ int VOlapScanNode::_start_scanner_thread_task(RuntimeState* state, int block_per
         COUNTER_UPDATE(_scanner_sched_counter, 1);
 
         VOlapScanner* scanner = *iter;
-        AsyncIOCtx ctx{.nice=_nice};
-        auto f = new std::function<void()> ([this, scanner, ctx, parent_span = cur_span] {
-            AsyncIOCtx *set_ctx = static_cast<AsyncIOCtx*>(bthread_getspecific(AsyncIO::btls_io_ctx_key));
+        AsyncIOCtx ctx {.nice = _nice};
+        auto f = new std::function<void()>([this, scanner, ctx, parent_span = cur_span] {
+            AsyncIOCtx* set_ctx =
+                    static_cast<AsyncIOCtx*>(bthread_getspecific(AsyncIO::btls_io_ctx_key));
             if (set_ctx == nullptr) {
                 set_ctx = new AsyncIOCtx(ctx);
                 CHECK_EQ(0, bthread_setspecific(AsyncIO::btls_io_ctx_key, set_ctx));

@@ -17,17 +17,27 @@
 
 #pragma once
 
+#include <gen_cpp/Types_types.h>
+
 #include <memory>
 
 #include "common/status.h"
 #include "gutil/macros.h"
 #include "io/fs/path.h"
 #include "util/slice.h"
-
+#include "olap/olap_common.h"
 namespace doris {
 namespace io {
 
 class FileSystem;
+
+struct IOState {
+    IOState(const TUniqueId& query_id, OlapReaderStatistics* stats, bool is_presistent)
+            : query_id(query_id), stats(stats), is_persistent(is_presistent) {}
+    TUniqueId query_id;
+    OlapReaderStatistics* stats = nullptr;
+    bool is_persistent = false;
+};
 class FileReader {
 public:
     FileReader() = default;
@@ -37,7 +47,8 @@ public:
 
     virtual Status close() = 0;
 
-    virtual Status read_at(size_t offset, Slice result, size_t* bytes_read) = 0;
+    virtual Status read_at(size_t offset, Slice result, size_t* bytes_read,
+                           IOState* state = nullptr) = 0;
 
     virtual const Path& path() const = 0;
 

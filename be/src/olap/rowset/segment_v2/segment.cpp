@@ -17,14 +17,14 @@
 
 #include "olap/rowset/segment_v2/segment.h"
 
-#include <gen_cpp/olap_file.pb.h>
-
+#include <functional>
 #include <memory>
 #include <utility>
 
 #include "common/config.h"
 #include "common/logging.h" // LOG
 #include "io/cache/file_cache_manager.h"
+#include "io/fs/file_reader.h"
 #include "olap/rowset/segment_v2/column_reader.h" // ColumnReader
 #include "olap/rowset/segment_v2/empty_segment_iterator.h"
 #include "olap/rowset/segment_v2/page_io.h"
@@ -37,12 +37,11 @@
 
 namespace doris {
 namespace segment_v2 {
-
 using io::FileCacheManager;
 
 Status Segment::open(io::FileSystem* fs, const std::string& path, const std::string& cache_path,
                      uint32_t segment_id, TabletSchemaSPtr tablet_schema,
-                     std::shared_ptr<Segment>* output) {
+                     std::shared_ptr<Segment>* output, std::function<void(OlapReaderStatistics*)> count) {
     std::shared_ptr<Segment> segment(new Segment(segment_id, tablet_schema));
     io::FileReaderSPtr file_reader;
     RETURN_IF_ERROR(fs->open_file(path, &file_reader));
@@ -183,6 +182,7 @@ Status Segment::load_index() {
             OlapReaderStatistics tmp_stats;
             opts.stats = &tmp_stats;
             opts.type = INDEX_PAGE;
+            opts.is_persistent = true;
             Slice body;
             PageFooterPB footer;
             RETURN_IF_ERROR(
@@ -213,6 +213,7 @@ Status Segment::_create_column_readers() {
 
         ColumnReaderOptions opts;
         opts.kept_in_memory = _tablet_schema->is_in_memory();
+        opts.is_persistent = _tablet_schema->is_persistent();
         std::unique_ptr<ColumnReader> reader;
         RETURN_IF_ERROR(ColumnReader::create(opts, _footer.columns(iter->second),
                                              _footer.num_rows(), _file_reader, &reader));

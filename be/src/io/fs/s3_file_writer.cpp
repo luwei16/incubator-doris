@@ -26,7 +26,6 @@
 #include "common/status.h"
 #include "io/fs/local_file_system.h"
 #include "io/fs/s3_file_system.h"
-#include "runtime/tmp_file_mgr.h"
 
 namespace doris {
 namespace io {
@@ -79,7 +78,7 @@ Status S3FileWriter::close() {
     // If enable_write_as_cache == true, tmp file will be cached. And deleted when cache full or be restart
     if (config::enable_write_as_cache) {
         _tmp_file_writer->close();
-        S3FileSystem::_insert(_tmp_file_writer->path());
+        S3FileSystem::insert(_tmp_file_writer->path(), _tmp_file_writer->bytes_appended());
     }
     // TODO(cyx): check data correctness
     return Status::OK();

@@ -729,7 +729,8 @@ public class OlapTable extends Table {
                             new ListPartitionItem(Lists.newArrayList(new PartitionKey())),
                             partitionInfo.getDataProperty(partition.getId()),
                             partitionInfo.getReplicaAllocation(partition.getId()),
-                            partitionInfo.getIsInMemory(partition.getId()));
+                            partitionInfo.getIsInMemory(partition.getId()),
+                            partitionInfo.getIsPersistent(partition.getId()));
 
                 } else if (partitionInfo.getType() == PartitionType.LIST) {
                     // construct a dummy range
@@ -748,7 +749,8 @@ public class OlapTable extends Table {
                             partitionInfo.getItem(partition.getId()),
                             partitionInfo.getDataProperty(partition.getId()),
                             partitionInfo.getReplicaAllocation(partition.getId()),
-                            partitionInfo.getIsInMemory(partition.getId()));
+                            partitionInfo.getIsInMemory(partition.getId()),
+                            partitionInfo.getIsPersistent(partition.getId()));
                 }
             } else if (!reserveTablets) {
                 Env.getCurrentEnv().onErasePartition(partition);
@@ -1255,7 +1257,9 @@ public class OlapTable extends Table {
             for (long partitionId : tempRangeInfo.getIdToItem(false).keySet()) {
                 this.partitionInfo.addPartition(partitionId, true,
                         tempRangeInfo.getItem(partitionId), tempRangeInfo.getDataProperty(partitionId),
-                        tempRangeInfo.getReplicaAllocation(partitionId), tempRangeInfo.getIsInMemory(partitionId));
+                        tempRangeInfo.getReplicaAllocation(partitionId),
+                        tempRangeInfo.getIsInMemory(partitionId),
+                        tempRangeInfo.getIsPersistent(partitionId));
             }
         }
         tempPartitions.unsetPartitionInfo();
@@ -1347,16 +1351,17 @@ public class OlapTable extends Table {
         DataProperty dataProperty = partitionInfo.getDataProperty(oldPartition.getId());
         ReplicaAllocation replicaAlloc = partitionInfo.getReplicaAllocation(oldPartition.getId());
         boolean isInMemory = partitionInfo.getIsInMemory(oldPartition.getId());
+        boolean isPersistent = partitionInfo.getIsPersistent(oldPartition.getId());
 
         if (partitionInfo.getType() == PartitionType.RANGE
                 || partitionInfo.getType() == PartitionType.LIST) {
             PartitionItem item = partitionInfo.getItem(oldPartition.getId());
             partitionInfo.dropPartition(oldPartition.getId());
             partitionInfo.addPartition(newPartition.getId(), false, item, dataProperty,
-                    replicaAlloc, isInMemory);
+                    replicaAlloc, isInMemory, isPersistent);
         } else {
             partitionInfo.dropPartition(oldPartition.getId());
-            partitionInfo.addPartition(newPartition.getId(), dataProperty, replicaAlloc, isInMemory);
+            partitionInfo.addPartition(newPartition.getId(), dataProperty, replicaAlloc, isInMemory, isPersistent);
         }
 
         return oldPartition;
@@ -1571,6 +1576,22 @@ public class OlapTable extends Table {
         }
         // property is set false by default
         return false;
+    }
+
+    public Boolean isPersistent() {
+        if (tableProperty != null) {
+            return tableProperty.isPersistent();
+        }
+        return false;
+    }
+
+    public void setIsPersistent(boolean isPersistent) {
+        if (tableProperty == null) {
+            tableProperty = new TableProperty(new HashMap<>());
+        }
+        tableProperty.modifyTableProperties(PropertyAnalyzer.PROPERTIES_PERSISTENT,
+                Boolean.valueOf(isPersistent).toString());
+        tableProperty.buildPersistent();
     }
 
     public void setEnableLightSchemaChange(boolean enableLightSchemaChange) {

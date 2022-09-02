@@ -58,6 +58,7 @@ public class TableProperty implements Writable {
     private DynamicPartitionProperty dynamicPartitionProperty = new DynamicPartitionProperty(Maps.newHashMap());
     private ReplicaAllocation replicaAlloc = ReplicaAllocation.DEFAULT_ALLOCATION;
     private boolean isInMemory = false;
+    private boolean isPersistent = true;
 
     private String storagePolicy = "";
 
@@ -107,6 +108,9 @@ public class TableProperty implements Writable {
                 buildInMemory();
                 buildStoragePolicy();
                 break;
+            case OperationType.OP_MODIFY_PERSISTENT:
+                buildPersistent();
+                break;
             default:
                 break;
         }
@@ -145,6 +149,11 @@ public class TableProperty implements Writable {
 
     public TableProperty buildInMemory() {
         isInMemory = Boolean.parseBoolean(properties.getOrDefault(PropertyAnalyzer.PROPERTIES_INMEMORY, "false"));
+        return this;
+    }
+
+    public TableProperty buildPersistent() {
+        isPersistent = Boolean.parseBoolean(properties.getOrDefault(PropertyAnalyzer.PROPERTIES_PERSISTENT, "false"));
         return this;
     }
 
@@ -253,6 +262,10 @@ public class TableProperty implements Writable {
         return isInMemory;
     }
 
+    public boolean isPersistent() {
+        return isPersistent;
+    }
+
     public TStorageFormat getStorageFormat() {
         // Force convert all V1 table to V2 table
         if (TStorageFormat.V1 == storageFormat) {
@@ -313,7 +326,8 @@ public class TableProperty implements Writable {
                 .buildRemoteStoragePolicy()
                 .buildCompressionType()
                 .buildStoragePolicy()
-                .buildEnableLightSchemaChange();
+                .buildEnableLightSchemaChange()
+                .buildPersistent();
         if (Env.getCurrentEnvJournalVersion() < FeMetaVersion.VERSION_105) {
             // get replica num from property map and create replica allocation
             String repNum = tableProperty.properties.remove(PropertyAnalyzer.PROPERTIES_REPLICATION_NUM);

@@ -17,6 +17,8 @@
 
 #include "olap/options.h"
 
+#include <rapidjson/document.h>
+
 #include <algorithm>
 
 #include "common/config.h"
@@ -38,6 +40,10 @@ static std::string MEDIUM_UC = "MEDIUM";
 static std::string SSD_UC = "SSD";
 static std::string HDD_UC = "HDD";
 static std::string REMOTE_CACHE_UC = "REMOTE_CACHE";
+
+static std::string CACHE_PATH = "path";
+static std::string CACHE_NORMAL_SIZE = "normal";
+static std::string CACHE_PERSISTENT_SIZE = "persistent";
 
 // TODO: should be a general util method
 static std::string to_upper(const std::string& str) {
@@ -154,41 +160,32 @@ Status parse_conf_store_paths(const string& config_path, std::vector<StorePath>*
     return Status::OK();
 }
 
-//   format:   /home/disk1/file_cache,50
-Status parse_root_path(const std::string& root_path, CachePath* path) {
-    std::vector<string> tmp_vec = strings::Split(root_path, ",", strings::SkipWhitespace());
-    // parse root path name
-    StripWhiteSpace(&tmp_vec[0]);
-    tmp_vec[0].erase(tmp_vec[0].find_last_not_of("/") + 1);
-    if (tmp_vec[0].empty() || tmp_vec[0][0] != '/') {
-        LOG(WARNING) << "invalid cache path. path=" << tmp_vec[0];
-        return Status::OLAPInternalError(OLAP_ERR_INPUT_PARAMETER_ERROR);
-    }
-
-    path->path = tmp_vec[0];
-    if (tmp_vec.size() == 2) {
-        size_t size = atoi(tmp_vec[1].c_str());
-        if (size == 0) {
-            LOG(WARNING) << "cache path format error" << tmp_vec[1];
-            return Status::OLAPInternalError(OLAP_ERR_INPUT_PARAMETER_ERROR);
-        }
-        path->capacity_bytes = size * GB;
-    }
-    return Status::OK();
-}
-
+/** format:   
+ *  [
+ *    {"path": "storage1", "normal":50,"persistent":20},
+ *    {"path": "storage2", "normal":50,"persistent":20},
+ *    {"path": "storage3", "normal":50,"persistent":20},
+ *  ]
+ */
 Status parse_conf_cache_paths(const std::string& config_path, std::vector<CachePath>& paths) {
-    std::vector<string> path_vec = strings::Split(config_path, ";", strings::SkipWhitespace());
-    for (auto& item : path_vec) {
-        CachePath path;
-        auto res = parse_root_path(item, &path);
-        if (res.ok()) {
-            paths.push_back(path);
-        } else {
-            LOG(WARNING) << "failed to parse store path " << item << ", res=" << res;
-        }
+    using namespace rapidjson;
+    Document document;
+    document.Parse(config_path.c_str());
+    DCHECK(document.IsArray()) << config_path << " " << document.GetType();
+    for (auto& config : document.GetArray()) {
+        auto map = config.GetObject();
+        DCHECK(map.HasMember(CACHE_PATH.c_str()));
+        std::string path = map.FindMember(CACHE_PATH.c_str())->value.GetString();
+        int64_t normal_size = map.HasMember(CACHE_NORMAL_SIZE.c_str())
+                                      ? map.FindMember(CACHE_NORMAL_SIZE.c_str())->value.GetInt64()
+                                      : 0;
+        int64_t persistent_size =
+                map.HasMember(CACHE_PERSISTENT_SIZE.c_str())
+                        ? map.FindMember(CACHE_PERSISTENT_SIZE.c_str())->value.GetInt64()
+                        : 0;
+        paths.emplace_back(std::move(path), normal_size * GB, persistent_size * GB);
     }
-    if (paths.empty() || path_vec.size() != paths.size()) {
+    if (paths.empty()) {
         LOG(WARNING) << "fail to parse storage_root_path config. value=[" << config_path << "]";
         return Status::OLAPInternalError(OLAP_ERR_INPUT_PARAMETER_ERROR);
     }
@@ -197,9 +194,11 @@ Status parse_conf_cache_paths(const std::string& config_path, std::vector<CacheP
 
 io::FileCacheSettings CachePath::init_settings() const {
     io::FileCacheSettings settings;
-    settings.max_size = capacity_bytes;
+    settings.max_size = normal_bytes;
+    settings.persistent_max_size = persistent_bytes;
     settings.max_elements =
             config::max_elements == 0 ? settings.max_elements : config::max_elements;
+    settings.persistent_max_elements = settings.max_elements;
     settings.max_file_segment_size = config::max_file_segment_size == 0
                                              ? settings.max_file_segment_size
                                              : config::max_file_segment_size * KB;

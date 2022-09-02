@@ -25,9 +25,12 @@
 
 #include "common/status.h"
 #include "gutil/strings/substitute.h"
+#include "io/cloud/cloud_file_cache_profile.h"
 #include "io/fs/s3_file_system.h"
+#include "olap/olap_common.h"
 #include "olap/olap_define.h"
 #include "olap/rowset/beta_rowset_reader.h"
+#include "olap/storage_engine.h"
 #include "olap/tablet_schema.h"
 #include "olap/utils.h"
 #include "util/doris_metrics.h"
@@ -86,11 +89,20 @@ Status BetaRowset::load_segments(std::vector<segment_v2::SegmentSharedPtr>* segm
     if (!fs || _schema == nullptr) {
         return Status::OLAPInternalError(OLAP_ERR_INIT_FAILED);
     }
+    TabletMetaSharedPtr tablet_meta = StorageEngine::instance()
+                                              ->tablet_manager()
+                                              ->get_tablet(_rowset_meta->tablet_id())
+                                              ->tablet_meta();
+    auto count = [=](OlapReaderStatistics* stats) {
+        int64_t table_id = tablet_meta->table_id();
+        int64_t partition_id = tablet_meta->partition_id();
+        io::FileCacheProfile::instance().update(table_id, partition_id, stats);
+    };
     for (int seg_id = 0; seg_id < num_segments(); ++seg_id) {
         auto seg_path = segment_file_path(seg_id);
         auto cache_path = segment_cache_path(seg_id);
         std::shared_ptr<segment_v2::Segment> segment;
-        auto s = segment_v2::Segment::open(fs, seg_path, cache_path, seg_id, _schema, &segment);
+        auto s = segment_v2::Segment::open(fs, seg_path, cache_path, seg_id, _schema, &segment, count);
         if (!s.ok()) {
             LOG(WARNING) << "failed to open segment. " << seg_path << " under rowset "
                          << unique_id() << " : " << s.to_string();

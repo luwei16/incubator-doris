@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include <gen_cpp/Types_types.h>
 #include <vector>
 
 #include "common/logging.h"
@@ -54,6 +55,7 @@ struct PageReadOptions {
     const BlockCompressionCodec* codec = nullptr;
     // used to collect IO metrics
     OlapReaderStatistics* stats = nullptr;
+    TUniqueId query_id;
     // whether to verify page checksum
     bool verify_checksum = true;
     // whether to use page cache in read path
@@ -61,6 +63,7 @@ struct PageReadOptions {
     // if true, use DURABLE CachePriority in page cache
     // currently used for in memory olap table
     bool kept_in_memory = false;
+    bool is_persistent = false;
     // for page cache allocation
     // page types are divided into DATA_PAGE & INDEX_PAGE
     // INDEX_PAGE including index_page, dict_page and short_key_page

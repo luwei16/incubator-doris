@@ -1,10 +1,9 @@
-#include "io/cache/file_segment.h"
-
 #include <filesystem>
 #include <sstream>
 #include <string>
 #include <thread>
 
+#include "io/cloud/cloud_file_segment.h"
 #include "io/fs/file_writer.h"
 #include "io/fs/local_file_system.h"
 #include "vec/common/hex.h"
@@ -13,11 +12,12 @@ namespace doris {
 namespace io {
 
 FileSegment::FileSegment(size_t offset_, size_t size_, const Key& key_, IFileCache* cache_,
-                         State download_state_)
+                         State download_state_, bool is_persistent)
         : _segment_range(offset_, offset_ + size_ - 1),
           _download_state(download_state_),
           _file_key(key_),
-          _cache(cache_) {
+          _cache(cache_),
+          _is_persistent(is_persistent) {
     /// On creation, file segment state can be EMPTY, DOWNLOADED, DOWNLOADING.
     switch (_download_state) {
     /// EMPTY is used when file segment is not in cache and
@@ -28,7 +28,7 @@ FileSegment::FileSegment(size_t offset_, size_t size_, const Key& key_, IFileCac
     /// DOWNLOADED is used either on initial cache metadata load into memory on server startup
     /// or on reduceSizeToDownloaded() -- when file segment object is updated.
     case (State::DOWNLOADED): {
-        _reserved_size = _downloaded_size = size_;
+        _downloaded_size = size_;
         break;
     }
     /// DOWNLOADING is used only for write-through caching (e.g. getOrSetDownloader() is not
@@ -124,10 +124,6 @@ bool FileSegment::is_downloader_impl(std::lock_guard<std::mutex>& /* segment_loc
 void FileSegment::append(Slice data) {
     DCHECK(data.size != 0) << "Writing zero size is not allowed";
 
-    DCHECK(available_size() >= data.size)
-            << "Not enough space is reserved. Available: " << available_size()
-            << ", expected: " << data.size;
-
     if (!_cache_writer) {
         auto download_path = get_path_in_local_cache();
         global_local_filesystem()->create_file(download_path, &_cache_writer);
@@ -141,7 +137,7 @@ void FileSegment::append(Slice data) {
 }
 
 std::string FileSegment::get_path_in_local_cache() const {
-    return _cache->get_path_in_local_cache(key(), offset());
+    return _cache->get_path_in_local_cache(key(), offset(), _is_persistent);
 }
 
 void FileSegment::read_at(Slice buffer, size_t offset) {
@@ -159,13 +155,9 @@ void FileSegment::read_at(Slice buffer, size_t offset) {
 size_t FileSegment::finalize_write() {
     std::lock_guard segment_lock(_mutex);
 
-    size_t size = _cache_writer->bytes_appended();
-
-    _downloaded_size += size;
-
     set_downloaded(segment_lock);
-
-    return size;
+    _cv.notify_all();
+    return _downloaded_size;
 }
 
 FileSegment::State FileSegment::wait() {
@@ -176,34 +168,13 @@ FileSegment::State FileSegment::wait() {
     }
 
     if (_download_state == State::DOWNLOADING) {
-        assert(!_downloader_id.empty());
-        assert(_downloader_id != get_caller_id());
+        DCHECK(!_downloader_id.empty());
+        DCHECK(_downloader_id != get_caller_id());
 
-        _cv.wait_for(segment_lock, std::chrono::seconds(60));
+        _cv.wait_for(segment_lock, std::chrono::seconds(1));
     }
 
     return _download_state;
-}
-
-bool FileSegment::reserve(size_t size) {
-    /**
-     * It is possible to have downloaded_size < reserved_size when reserve is called
-     * in case previous downloader did not fully download current file_segment
-     * and the caller is going to continue;
-     */
-    size_t free_space = _reserved_size - _downloaded_size;
-    size_t size_to_reserve = size - free_space;
-
-    std::lock_guard cache_lock(_cache->_mutex);
-
-    bool reserved = _cache->try_reserve(key(), offset(), size_to_reserve, cache_lock);
-
-    if (reserved) {
-        std::lock_guard segment_lock(_mutex);
-        _reserved_size += size;
-    }
-
-    return reserved;
 }
 
 void FileSegment::set_downloaded(std::lock_guard<std::mutex>& /* segment_lock */) {
@@ -211,15 +182,15 @@ void FileSegment::set_downloaded(std::lock_guard<std::mutex>& /* segment_lock */
         return;
     }
 
-    _download_state = State::DOWNLOADED;
-    _is_downloaded = true;
-    _downloader_id.clear();
-
     if (_cache_writer) {
         _cache_writer->finalize();
         _cache_writer->close();
         _cache_writer.reset();
     }
+
+    _download_state = State::DOWNLOADED;
+    _is_downloaded = true;
+    _downloader_id.clear();
 }
 
 void FileSegment::complete(State state) {
@@ -272,7 +243,6 @@ std::string FileSegment::get_info_for_log_impl(std::lock_guard<std::mutex>& segm
     info << "File segment: " << range().to_string() << ", ";
     info << "state: " << state_to_string(_download_state) << ", ";
     info << "downloaded size: " << get_downloaded_size(segment_lock) << ", ";
-    info << "reserved size: " << _reserved_size << ", ";
     info << "downloader id: " << _downloader_id << ", ";
     info << "caller id: " << get_caller_id();
 

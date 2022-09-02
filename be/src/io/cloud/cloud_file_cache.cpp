@@ -1,9 +1,9 @@
-#include "io/cache/cloud_file_cache.h"
+#include "io/cloud/cloud_file_cache.h"
 
 #include <filesystem>
 
-#include "io/cache/file_cache_fwd.h"
-#include "io/cache/file_cache_settings.h"
+#include "io/cloud/cloud_file_cache_fwd.h"
+#include "io/cloud/cloud_file_cache_settings.h"
 #include "vec/common/hex.h"
 #include "vec/common/sip_hash.h"
 
@@ -16,6 +16,8 @@ IFileCache::IFileCache(const std::string& cache_base_path, const FileCacheSettin
         : _cache_base_path(cache_base_path),
           _max_size(cache_settings.max_size),
           _max_element_size(cache_settings.max_elements),
+          _persistent_max_size(cache_settings.persistent_max_size),
+          _persistent_max_element_size(cache_settings.persistent_max_elements),
           _max_file_segment_size(cache_settings.max_file_segment_size) {}
 
 std::string IFileCache::Key::to_string() const {
@@ -28,9 +30,12 @@ IFileCache::Key IFileCache::hash(const std::string& path) {
     return Key(key);
 }
 
-std::string IFileCache::get_path_in_local_cache(const Key& key, size_t offset) const {
+std::string IFileCache::get_path_in_local_cache(const Key& key, size_t offset,
+                                                bool is_persistent) const {
     auto key_str = key.to_string();
-    return fs::path(_cache_base_path) / key_str.substr(0, 3) / key_str / std::to_string(offset);
+    std::string suffix = is_persistent ? "_persistent" : "";
+    return fs::path(_cache_base_path) / key_str.substr(0, 3) / key_str /
+           (std::to_string(offset) + suffix);
 }
 
 std::string IFileCache::get_path_in_local_cache(const Key& key) const {

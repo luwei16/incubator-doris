@@ -340,7 +340,7 @@ public class SparkLoadJobTest {
         long fileSize = 6L;
         filePathToSize.put(filePath, fileSize);
         PartitionInfo partitionInfo = new RangePartitionInfo();
-        partitionInfo.addPartition(partitionId, null, new ReplicaAllocation((short) 1), false);
+        partitionInfo.addPartition(partitionId, null, new ReplicaAllocation((short) 1), false, false);
 
         new Expectations() {
             {

@@ -44,6 +44,7 @@ public class SinglePartitionDesc {
     private DataProperty partitionDataProperty;
     private ReplicaAllocation replicaAlloc;
     private boolean isInMemory = false;
+    private boolean isPersistent = false;
     private TTabletType tabletType = TTabletType.TABLET_TYPE_DISK;
     private Long versionInfo;
     private String storagePolicy;
@@ -85,6 +86,10 @@ public class SinglePartitionDesc {
 
     public boolean isInMemory() {
         return isInMemory;
+    }
+
+    public boolean isPersistent() {
+        return isPersistent;
     }
 
     public TTabletType getTabletType() {
@@ -141,6 +146,9 @@ public class SinglePartitionDesc {
 
         // analyze in memory
         isInMemory = PropertyAnalyzer.analyzeBooleanProp(properties, PropertyAnalyzer.PROPERTIES_INMEMORY, false);
+
+        // analyze persistent
+        isPersistent = PropertyAnalyzer.analyzeBooleanProp(properties, PropertyAnalyzer.PROPERTIES_PERSISTENT, false);
 
         tabletType = PropertyAnalyzer.analyzeTabletType(properties);
 

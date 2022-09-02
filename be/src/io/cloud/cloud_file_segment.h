@@ -5,7 +5,7 @@
 #include <memory>
 #include <mutex>
 
-#include "io/cache/cloud_file_cache.h"
+#include "io/cloud/cloud_file_cache.h"
 #include "io/fs/file_reader.h"
 #include "io/fs/file_writer.h"
 
@@ -43,7 +43,7 @@ public:
     };
 
     FileSegment(size_t offset_, size_t size_, const Key& key_, IFileCache* cache_,
-                State download_state_);
+                State download_state_, bool is_persistent);
 
     ~FileSegment();
 
@@ -76,9 +76,6 @@ public:
     size_t offset() const { return range().left; }
 
     State wait();
-
-    // set reserved_size 
-    bool reserve(size_t size);
 
     // append data to cache file
     void append(Slice data);
@@ -116,8 +113,6 @@ public:
     FileSegment(const FileSegment&) = delete;
 
 private:
-    size_t available_size() const { return _reserved_size - _downloaded_size; }
-
     size_t get_downloaded_size(std::lock_guard<std::mutex>& segment_lock) const;
     std::string get_info_for_log_impl(std::lock_guard<std::mutex>& segment_lock) const;
     bool has_finalized_state() const;
@@ -148,7 +143,6 @@ private:
     LocalReaderPtr _cache_reader;
 
     size_t _downloaded_size = 0;
-    size_t _reserved_size = 0;
 
     /// global locking order rule:
     /// 1. cache lock
@@ -169,6 +163,7 @@ private:
     IFileCache* _cache;
 
     std::atomic<bool> _is_downloaded {false};
+    bool _is_persistent = false;
 };
 
 struct FileSegmentsHolder {

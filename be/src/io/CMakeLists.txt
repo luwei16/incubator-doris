@@ -44,11 +44,11 @@ set(IO_FILES
     cache/sub_file_cache.cpp
     cache/whole_file_cache.cpp
     fs/s3_file_writer.cpp
-    cache/file_segment.cpp
-    cache/lru_file_cache.cpp
-    cache/cloud_file_cache.cpp
-    cache/file_cache_factory.cpp
-    fs/cached_remote_file_reader.cpp
+    cloud/cloud_file_segment.cpp
+    cloud/cloud_lru_file_cache.cpp
+    cloud/cloud_file_cache.cpp
+    cloud/cloud_file_cache_factory.cpp
+    cloud/cached_remote_file_reader.cpp
 )
 
 add_library(IO STATIC

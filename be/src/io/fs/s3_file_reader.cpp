@@ -23,8 +23,8 @@
 #include "common/config.h"
 #include "io/fs/s3_common.h"
 #include "io/fs/s3_file_writer.h"
-#include "util/doris_metrics.h"
 #include "util/async_io.h"
+#include "util/doris_metrics.h"
 
 namespace doris {
 namespace io {
@@ -55,22 +55,25 @@ Status S3FileReader::close() {
     return Status::OK();
 }
 
-Status S3FileReader::read_at(size_t offset, Slice result, size_t* bytes_read) {
+Status S3FileReader::read_at(size_t offset, Slice result, size_t* bytes_read, IOState* state) {
     if (bthread_self() == 0) {
-        return read_at_impl(offset, result, bytes_read);
+        return read_at_impl(offset, result, bytes_read, state);
     }
     Status s;
-    auto task = [&] {s = read_at_impl(offset, result, bytes_read);};
+    auto task = [&] { s = read_at_impl(offset, result, bytes_read, state); };
     AsyncIO::run_task(task, io::FileSystemType::S3);
     return s;
 }
 
-Status S3FileReader::read_at_impl(size_t offset, Slice result, size_t* bytes_read) {
+Status S3FileReader::read_at_impl(size_t offset, Slice result, size_t* bytes_read, IOState* state) {
     DCHECK(!closed());
     if (config::enable_write_as_cache) {
         FileReaderSPtr _cache_file_reader = S3FileSystem::lookup(_local_path);
         if (_cache_file_reader) {
-            return _cache_file_reader->read_at(offset, result, bytes_read);
+            if (state) {
+                state->stats->file_cache_stats.num_io_bytes_read_from_write_cache += result.size;
+            }
+            return _cache_file_reader->read_at(offset, result, bytes_read, state);
         }
     }
     if (offset > _file_size) {

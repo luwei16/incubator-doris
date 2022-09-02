@@ -33,12 +33,12 @@
 #include "common/config.h"
 #include "common/status.h"
 #include "gutil/strings/stringpiece.h"
-#include "io/fs/cached_remote_file_reader.h"
+#include "io/cloud/cached_remote_file_reader.h"
 #include "io/fs/local_file_system.h"
 #include "io/fs/remote_file_system.h"
 #include "io/fs/s3_file_reader.h"
 #include "io/fs/s3_file_writer.h"
-
+#include "olap/olap_common.h"
 #include "util/async_io.h"
 namespace doris {
 namespace io {
@@ -148,15 +148,17 @@ Status S3FileSystem::create_file(const Path& path, FileWriterPtr* writer) {
 
 Status S3FileSystem::open_file(const Path& path, FileReaderSPtr* reader) {
     if (bthread_self() == 0) {
-        return open_file_impl(path, reader);
+        return open_file_impl(path, nullptr, reader);
     }
     Status s;
-    auto task = [&] {s = open_file_impl(path, reader);};
+    auto task = [&] { s = open_file_impl(path, nullptr, reader); };
     AsyncIO::run_task(task, io::FileSystemType::S3);
     return s;
 }
 
-Status S3FileSystem::open_file_impl(const Path &path, FileReaderSPtr *reader) {
+Status S3FileSystem::open_file_impl(const Path& path,
+                                    std::function<void(OlapReaderStatistics*)> count,
+                                    FileReaderSPtr* reader) {
     size_t fsize = 0;
     RETURN_IF_ERROR(file_size(path, &fsize));
     auto key = get_key(path);
@@ -164,9 +166,20 @@ Status S3FileSystem::open_file_impl(const Path &path, FileReaderSPtr *reader) {
     *reader = std::make_shared<S3FileReader>(std::move(fs_path), fsize, std::move(key),
                                              _s3_conf.bucket, this);
     if (config::enable_file_cache) {
-        *reader = std::make_shared<CachedRemoteFileReader>(std::move(*reader));
+        *reader = std::make_shared<CachedRemoteFileReader>(std::move(*reader), std::move(count));
     }
     return Status::OK();
+}
+
+Status S3FileSystem::open_file(const Path& path, std::function<void(OlapReaderStatistics*)> count,
+                               FileReaderSPtr* reader) {
+    if (bthread_self() == 0) {
+        return open_file_impl(path, count, reader);
+    }
+    Status s;
+    auto task = [&] { s = open_file_impl(path, count, reader); };
+    AsyncIO::run_task(task, io::FileSystemType::S3);
+    return s;
 }
 
 Status S3FileSystem::delete_file(const Path& path) {
@@ -275,12 +288,12 @@ Status S3FileSystem::file_size(const Path& path, size_t* file_size) const {
         return file_size_impl(path, file_size);
     }
     Status s;
-    auto task = [&] {s = file_size_impl(path, file_size);};
+    auto task = [&] { s = file_size_impl(path, file_size); };
     AsyncIO::run_task(task, io::FileSystemType::S3);
     return s;
 }
 
-Status S3FileSystem::file_size_impl(const Path &path, size_t *file_size) const {
+Status S3FileSystem::file_size_impl(const Path& path, size_t* file_size) const {
     auto client = get_client();
     CHECK_S3_CLIENT(client);
 
@@ -331,20 +344,25 @@ struct TmpFileMgr {
     size_t cur_cache_size = 0;
 };
 
-void S3FileSystem::_insert(const Path& path) {
-    std::lock_guard lock(TmpFileMgr::instance().mtx);
-    size_t file_size;
-    global_local_filesystem()->file_size(path, &file_size);
-    TmpFileMgr::instance().cur_cache_size += file_size;
-    while (TmpFileMgr::instance().cur_cache_size > TmpFileMgr::instance().max_cache_size) {
-        auto& [remove_path, size] = TmpFileMgr::instance().file_list.back();
-        TmpFileMgr::instance().file_set.erase(remove_path);
-        TmpFileMgr::instance().cur_cache_size -= size;
-        global_local_filesystem()->delete_file(remove_path);
-        TmpFileMgr::instance().file_list.pop_back();
+void S3FileSystem::insert(const Path& path, size_t file_size) {
+    std::vector<std::string> remove_paths;
+    {
+        std::lock_guard lock(TmpFileMgr::instance().mtx);
+        TmpFileMgr::instance().cur_cache_size += file_size;
+        while (TmpFileMgr::instance().cur_cache_size > TmpFileMgr::instance().max_cache_size) {
+            auto& [remove_path, size] = TmpFileMgr::instance().file_list.back();
+            TmpFileMgr::instance().file_set.erase(remove_path);
+            TmpFileMgr::instance().cur_cache_size -= size;
+            remove_paths.push_back(remove_path);
+            TmpFileMgr::instance().file_list.pop_back();
+        }
+        TmpFileMgr::instance().file_list.push_front(std::make_pair(path, file_size));
+        TmpFileMgr::instance().file_set.insert(path);
     }
-    TmpFileMgr::instance().file_list.push_front(std::make_pair(path, file_size));
-    TmpFileMgr::instance().file_set.insert(path);
+    // Mayby need some buffer when set write cache size
+    for (auto& remove_path : remove_paths) {
+        global_local_filesystem()->delete_file(remove_path);
+    }
 }
 
 FileReaderSPtr S3FileSystem::lookup(const Path& path) {

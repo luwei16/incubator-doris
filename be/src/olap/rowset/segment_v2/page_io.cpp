@@ -17,11 +17,14 @@
 
 #include "olap/rowset/segment_v2/page_io.h"
 
+#include <gen_cpp/Types_types.h>
+
 #include <cstring>
 #include <string>
 
 #include "common/logging.h"
 #include "gutil/strings/substitute.h"
+#include "io/fs/file_reader.h"
 #include "io/fs/file_writer.h"
 #include "olap/page_cache.h"
 #include "util/block_compression.h"
@@ -130,7 +133,8 @@ Status PageIO::read_and_decompress_pages(const PageReadOptions& opts,
     {
         SCOPED_RAW_TIMER(&opts.stats->io_ns);
         size_t bytes_read = 0;
-        RETURN_IF_ERROR(opts.file_reader->read_at(start_offset, pages_slice, &bytes_read));
+        io::IOState state(opts.query_id, opts.stats, opts.is_persistent);
+        RETURN_IF_ERROR(opts.file_reader->read_at(start_offset, pages_slice, &bytes_read, &state));
         DCHECK_EQ(bytes_read, pages_size);
         opts.stats->compressed_bytes_read += pages_size;
     }
@@ -245,8 +249,9 @@ Status PageIO::read_and_decompress_page(const PageReadOptions& opts, PageHandle*
     {
         SCOPED_RAW_TIMER(&opts.stats->io_ns);
         size_t bytes_read = 0;
-        RETURN_IF_ERROR(
-                opts.file_reader->read_at(opts.page_pointer.offset, page_slice, &bytes_read));
+        io::IOState state(opts.query_id, opts.stats, opts.is_persistent);
+        RETURN_IF_ERROR(opts.file_reader->read_at(opts.page_pointer.offset, page_slice, &bytes_read,
+                                                  &state));
         DCHECK_EQ(bytes_read, page_size);
         opts.stats->compressed_bytes_read += page_size;
     }

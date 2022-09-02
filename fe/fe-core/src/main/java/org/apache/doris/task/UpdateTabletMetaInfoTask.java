@@ -45,11 +45,14 @@ public class UpdateTabletMetaInfoTask extends AgentTask {
 
     private Set<Pair<Long, Integer>> tableIdWithSchemaHash;
     private boolean isInMemory;
+    private boolean isPersistent;
     private TTabletMetaType metaType;
     private String storagePolicy;
 
     // <tablet id, tablet schema hash, tablet in memory>
     private List<Triple<Long, Integer, Boolean>> tabletToInMemory;
+    // <tablet id, tablet schema hash, tablet persistent>
+    private List<Triple<Long, Integer, Boolean>> tabletToPersistent;
 
     public UpdateTabletMetaInfoTask(long backendId, Set<Pair<Long, Integer>> tableIdWithSchemaHash,
                                     TTabletMetaType metaType) {
@@ -70,11 +73,30 @@ public class UpdateTabletMetaInfoTask extends AgentTask {
     }
 
     public UpdateTabletMetaInfoTask(long backendId,
-                                    List<Triple<Long, Integer, Boolean>> tabletToInMemory) {
+                                    Set<Pair<Long, Integer>> tableIdWithSchemaHash,
+                                    boolean isPersistent,
+                                    MarkedCountDownLatch<Long, Set<Pair<Long, Integer>>> latch) {
+        this(backendId, tableIdWithSchemaHash, TTabletMetaType.PERSISTENT);
+        this.isPersistent = isPersistent;
+        this.latch = latch;
+    }
+
+    public UpdateTabletMetaInfoTask(long backendId,
+                                    List<Triple<Long, Integer, Boolean>> tabletMap,
+                                    TTabletMetaType metaType) {
         super(null, backendId, TTaskType.UPDATE_TABLET_META_INFO,
-                -1L, -1L, -1L, -1L, -1L, tabletToInMemory.hashCode());
-        this.metaType = TTabletMetaType.INMEMORY;
-        this.tabletToInMemory = tabletToInMemory;
+                -1L, -1L, -1L, -1L, -1L, tabletMap.hashCode());
+        this.metaType = metaType;
+        switch (metaType) {
+            case INMEMORY: {
+                this.tabletToInMemory = tabletMap;
+                break;
+            }
+            case PERSISTENT: {
+                this.tabletToPersistent = tabletMap;
+                break;
+            }
+        }
     }
 
     public void countDownLatch(long backendId, Set<Pair<Long, Integer>> tablets) {
@@ -149,6 +171,29 @@ public class UpdateTabletMetaInfoTask extends AgentTask {
                     }
                 }
                 break;
+            }
+            case PERSISTENT: {
+                if (latch != null) {
+                    // for schema change
+                    for (Pair<Long, Integer> pair : tableIdWithSchemaHash) {
+                        TTabletMetaInfo metaInfo = new TTabletMetaInfo();
+                        metaInfo.setTabletId(pair.first);
+                        metaInfo.setSchemaHash(pair.second);
+                        metaInfo.setIsPersistent(isPersistent);
+                        metaInfo.setMetaType(metaType);
+                        metaInfos.add(metaInfo);
+                    }
+                } else {
+                    // for ReportHandler
+                    for (Triple<Long, Integer, Boolean> triple : tabletToPersistent) {
+                        TTabletMetaInfo metaInfo = new TTabletMetaInfo();
+                        metaInfo.setTabletId(triple.getLeft());
+                        metaInfo.setSchemaHash(triple.getMiddle());
+                        metaInfo.setIsPersistent(triple.getRight());
+                        metaInfo.setMetaType(metaType);
+                        metaInfos.add(metaInfo);
+                    }
+                }
             }
             default:
                 break;

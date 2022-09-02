@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include <gen_cpp/Types_types.h>
 #include <memory>
 
 #include "common/status.h"
@@ -89,6 +90,7 @@ public:
 
     // REQUIRED (null is not allowed)
     OlapReaderStatistics* stats = nullptr;
+    TUniqueId query_id;
     bool use_page_cache = false;
     int block_row_max = 4096;
 

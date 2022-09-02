@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "io/fs/cached_remote_file_reader.h"
+#include "io/cloud/cached_remote_file_reader.h"
 
 #include <aws/s3/S3Client.h>
 #include <aws/s3/model/GetObjectRequest.h>
@@ -23,20 +23,20 @@
 #include <memory>
 #include <utility>
 
-#include "io/cache/cloud_file_cache.h"
-#include "io/cache/file_cache_factory.h"
-#include "io/cache/file_cache_fwd.h"
+#include "io/cloud/cloud_file_cache.h"
+#include "io/cloud/cloud_file_cache_factory.h"
+#include "io/cloud/cloud_file_cache_fwd.h"
 #include "io/fs/s3_common.h"
+#include "util/async_io.h"
 #include "util/doris_metrics.h"
 #include "vec/common/sip_hash.h"
-
-#include "util/async_io.h"
 
 namespace doris {
 namespace io {
 
-CachedRemoteFileReader::CachedRemoteFileReader(FileReaderSPtr remote_file_reader)
-        : _remote_file_reader(std::move(remote_file_reader)) {
+CachedRemoteFileReader::CachedRemoteFileReader(
+        FileReaderSPtr remote_file_reader, std::function<void(OlapReaderStatistics* stats)> count)
+        : _remote_file_reader(std::move(remote_file_reader)), _count(count) {
     _cache_key = IFileCache::hash(path().filename().native());
     _cache = FileCacheFactory::instance().getByPath(_cache_key);
 }
@@ -62,17 +62,19 @@ std::pair<size_t, size_t> CachedRemoteFileReader::_align_size(size_t offset,
     return std::make_pair(align_left, align_size);
 }
 
-Status CachedRemoteFileReader::read_at(size_t offset, Slice result, size_t* bytes_read) {
+Status CachedRemoteFileReader::read_at(size_t offset, Slice result, size_t* bytes_read,
+                                       IOState* state) {
     if (bthread_self() == 0) {
-        return read_at_impl(offset, result, bytes_read);
+        return read_at_impl(offset, result, bytes_read, state);
     }
     Status s;
-    auto task = [&] {s = read_at_impl(offset, result, bytes_read);};
+    auto task = [&] { s = read_at_impl(offset, result, bytes_read, state); };
     AsyncIO::run_task(task, io::FileSystemType::S3);
     return s;
 }
 
-Status CachedRemoteFileReader::read_at_impl(size_t offset, Slice result, size_t* bytes_read) {
+Status CachedRemoteFileReader::read_at_impl(size_t offset, Slice result, size_t* bytes_read,
+                                            IOState* state) {
     DCHECK(!closed());
     if (offset > size()) {
         return Status::IOError(
@@ -85,9 +87,14 @@ Status CachedRemoteFileReader::read_at_impl(size_t offset, Slice result, size_t*
         *bytes_read = 0;
         return Status::OK();
     }
+    ReadStatistics stats;
+    stats.bytes_read = bytes_req;
     auto [align_left, align_size] = _align_size(offset, bytes_req);
     DCHECK((align_left % REMOTE_FS_OBJECTS_CACHE_DEFAULT_MAX_FILE_SEGMENT_SIZE) == 0);
-    FileSegmentsHolder holder = _cache->get_or_set(_cache_key, align_left, align_size);
+    // if state == nullptr, the method is called for read footer/index
+    bool is_persistent = state != nullptr ? state->is_persistent : true;
+    FileSegmentsHolder holder =
+            _cache->get_or_set(_cache_key, align_left, align_size, is_persistent);
     std::vector<FileSegmentSPtr> empty_segments;
     for (auto& segment : holder.file_segments) {
         if (segment->state() == FileSegment::State::EMPTY) {
@@ -108,16 +115,17 @@ Status CachedRemoteFileReader::read_at_impl(size_t offset, Slice result, size_t*
         size_t size = empty_end - empty_start + 1;
         std::unique_ptr<char[]> buffer(new char[size]);
         RETURN_IF_ERROR(
-                _remote_file_reader->read_at(empty_start, Slice(buffer.get(), size), &size));
+                _remote_file_reader->read_at(empty_start, Slice(buffer.get(), size), &size, state));
         for (auto& segment : empty_segments) {
             if (segment->state() == FileSegment::State::SKIP_CACHE) {
                 continue;
             }
             char* cur_ptr = buffer.get() + segment->range().left - empty_start;
             size_t segment_size = segment->range().size();
-            segment->reserve(segment_size);
             segment->append(Slice(cur_ptr, segment_size));
             segment->finalize_write();
+            stats.write_in_file_cache++;
+            stats.bytes_write_in_file_cache += segment_size;
         }
         // copy from memory directly
         size_t copy_left_offset = offset < empty_start ? empty_start : offset;
@@ -127,6 +135,8 @@ Status CachedRemoteFileReader::read_at_impl(size_t offset, Slice result, size_t*
         size_t copy_right_offset = right_offset < empty_end ? right_offset : empty_end;
         size_t copy_size = copy_right_offset - copy_left_offset + 1;
         memcpy(dst, src, copy_size);
+    } else {
+        stats.hit_cache = true;
     }
 
     size_t current_offset = offset;
@@ -146,12 +156,34 @@ Status CachedRemoteFileReader::read_at_impl(size_t offset, Slice result, size_t*
         }
         size_t file_offset = current_offset - left;
         segment->read_at(Slice(result.data + (current_offset - offset), read_size), file_offset);
+        stats.bytes_read_from_file_cache = read_size;
         *bytes_read += read_size;
         current_offset = right + 1;
     }
     DCHECK(*bytes_read == bytes_req);
+    _update_state(stats, state);
     DorisMetrics::instance()->s3_bytes_read_total->increment(*bytes_read);
+    if (state != nullptr && _count != nullptr) {
+        _count(state->stats);
+    }
     return Status::OK();
+}
+
+void CachedRemoteFileReader::_update_state(const ReadStatistics& read_stats, IOState* state) const {
+    if (state == nullptr) {
+        return;
+    }
+    auto stats = state->stats;
+    stats->file_cache_stats.num_io_total++;
+    stats->file_cache_stats.num_io_bytes_read_total += read_stats.bytes_read;
+    stats->file_cache_stats.num_io_bytes_written_in_file_cache +=
+            read_stats.bytes_write_in_file_cache;
+    if (read_stats.hit_cache) {
+        stats->file_cache_stats.num_io_hit_cache++;
+    }
+    stats->file_cache_stats.num_io_bytes_read_from_file_cache +=
+            read_stats.bytes_read_from_file_cache;
+    stats->file_cache_stats.num_io_written_in_file_cache += read_stats.write_in_file_cache;
 }
 
 } // namespace io

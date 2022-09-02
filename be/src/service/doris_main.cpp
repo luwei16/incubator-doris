@@ -47,8 +47,9 @@
 #include "common/status.h"
 #include "common/utils.h"
 #include "env/env.h"
-#include "io/cache/file_cache_factory.h"
-#include "io/cache/file_cache_settings.h"
+#include "io/cloud/cloud_file_cache_factory.h"
+#include "io/cloud/cloud_file_cache_settings.h"
+#include "io/fs/local_file_system.h"
 #include "olap/options.h"
 #include "olap/storage_engine.h"
 #include "runtime/exec_env.h"
@@ -67,7 +68,6 @@
 #include "util/thrift_rpc_helper.h"
 #include "util/thrift_server.h"
 #include "util/uid_util.h"
-#include "io/fs/local_file_system.h"
 
 static void help(const char*);
 
@@ -369,9 +369,9 @@ int main(int argc, char** argv) {
                        << doris::config::file_cache_path;
             exit(-1);
         }
-        for (auto cache_it = cache_paths.begin(); cache_it != cache_paths.end(); ++cache_it) {
-            doris::io::FileCacheFactory::instance().create_file_cache(cache_it->path,
-                                                                      cache_it->init_settings());
+        for (auto& cache_path : cache_paths) {
+            doris::io::FileCacheFactory::instance().create_file_cache(cache_path.path,
+                                                                      cache_path.init_settings());
         }
     }
 

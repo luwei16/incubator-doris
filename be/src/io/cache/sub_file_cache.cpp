@@ -36,7 +36,7 @@ SubFileCache::SubFileCache(const Path& cache_dir, int64_t alive_time_sec,
 
 SubFileCache::~SubFileCache() {}
 
-Status SubFileCache::read_at(size_t offset, Slice result, size_t* bytes_read) {
+Status SubFileCache::read_at(size_t offset, Slice result, size_t* bytes_read, IOState* state) {
     std::vector<size_t> need_cache_offsets;
     RETURN_IF_ERROR(_get_need_cache_offsets(offset, result.size, &need_cache_offsets));
     bool need_download = false;

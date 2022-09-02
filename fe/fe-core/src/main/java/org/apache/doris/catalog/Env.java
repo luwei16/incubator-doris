@@ -2909,6 +2909,8 @@ public class Env {
             // in memory
             sb.append(",\n\"").append(PropertyAnalyzer.PROPERTIES_INMEMORY).append("\" = \"");
             sb.append(olapTable.isInMemory()).append("\"");
+            sb.append(",\n\"").append(PropertyAnalyzer.PROPERTIES_PERSISTENT).append("\" = \"");
+            sb.append(olapTable.isPersistent()).append("\"");
 
             // storage type
             sb.append(",\n\"").append(PropertyAnalyzer.PROPERTIES_STORAGE_FORMAT).append("\" = \"");
@@ -3360,7 +3362,8 @@ public class Env {
                             ModifyPartitionInfo info = new ModifyPartitionInfo(db.getId(), olapTable.getId(),
                                     partition.getId(), hddProperty, ReplicaAllocation.NOT_SET,
                                     partitionInfo.getIsInMemory(partition.getId()),
-                                    partitionInfo.getStoragePolicy(partitionId), Maps.newHashMap());
+                                    partitionInfo.getStoragePolicy(partitionId), Maps.newHashMap(),
+                                    partitionInfo.getIsPersistent(partition.getId()));
 
                             editLog.logModifyPartition(info);
                         }
@@ -4081,6 +4084,7 @@ public class Env {
         Env.getCurrentSystemInfo().checkReplicaAllocation(db.getClusterName(), replicaAlloc);
         Preconditions.checkState(!replicaAlloc.isNotSet());
         boolean isInMemory = partitionInfo.getIsInMemory(partition.getId());
+        boolean isPersistent = partitionInfo.getIsPersistent(partition.getId());
         DataProperty newDataProperty = partitionInfo.getDataProperty(partition.getId());
         partitionInfo.setReplicaAllocation(partition.getId(), replicaAlloc);
 
@@ -4092,7 +4096,7 @@ public class Env {
         // log
         ModifyPartitionInfo info = new ModifyPartitionInfo(db.getId(), table.getId(), partition.getId(),
                 newDataProperty, replicaAlloc, isInMemory, partitionInfo.getStoragePolicy(partition.getId()),
-                tblProperties);
+                tblProperties, isPersistent);
         editLog.logModifyPartition(info);
         LOG.debug("modify partition[{}-{}-{}] replica allocation to {}", db.getId(), table.getId(), partition.getName(),
                 replicaAlloc.toCreateStmt());
@@ -4141,6 +4145,27 @@ public class Env {
         editLog.logModifyInMemory(info);
     }
 
+    // The caller need to hold the table write lock
+    public void modifyTablePersistentMeta(Database db, OlapTable table, Map<String, String> properties) {
+        Preconditions.checkArgument(table.isWriteLockHeldByCurrentThread());
+        TableProperty tableProperty = table.getTableProperty();
+        if (tableProperty == null) {
+            tableProperty = new TableProperty(properties);
+        } else {
+            tableProperty.modifyTableProperties(properties);
+        }
+        tableProperty.buildPersistent();
+
+        // need to update partition info meta
+        for (Partition partition : table.getPartitions()) {
+            table.getPartitionInfo().setIsPersistent(partition.getId(), tableProperty.isPersistent());
+        }
+
+        ModifyTablePropertyOperationLog info = new ModifyTablePropertyOperationLog(db.getId(), table.getId(),
+                properties);
+        editLog.logModifyPersistent(info);
+    }
+
     public void replayModifyTableProperty(short opCode, ModifyTablePropertyOperationLog info)
             throws MetaNotFoundException {
         long dbId = info.getDbId();
@@ -4167,6 +4192,10 @@ public class Env {
                     // storage policy re-use modify in memory
                     Optional.ofNullable(tableProperty.getStoragePolicy()).filter(p -> !p.isEmpty())
                             .ifPresent(p -> olapTable.getPartitionInfo().setStoragePolicy(partition.getId(), p));
+                }
+            } else if (opCode == OperationType.OP_MODIFY_PERSISTENT) {
+                for (Partition partition : olapTable.getPartitions()) {
+                    olapTable.getPartitionInfo().setIsPersistent(partition.getId(), tableProperty.isPersistent());
                 }
             }
         } finally {

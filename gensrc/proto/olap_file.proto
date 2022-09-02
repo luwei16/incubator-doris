@@ -224,6 +224,7 @@ message TabletSchemaPB {
     optional segment_v2.CompressionTypePB compression_type = 13 [default=LZ4F];
     optional int32 schema_version = 14;
     optional bool disable_auto_compaction = 15 [default=false];
+    optional bool is_persistent = 16;
 }
 
 enum TabletStatePB {

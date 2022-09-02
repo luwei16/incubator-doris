@@ -88,6 +88,8 @@ public class PartitionInMemoryInfoCollector extends MasterDaemon {
         }
         ImmutableSet<Long> partitionIdInMemorySet = builder.build();
         tabletInvertedIndex.setPartitionIdInMemorySet(partitionIdInMemorySet);
+        ImmutableSet<Long> partitionIdPersistentSet = builder.build();
+        tabletInvertedIndex.setPartitionIdInMemorySet(partitionIdPersistentSet);
     }
 
 

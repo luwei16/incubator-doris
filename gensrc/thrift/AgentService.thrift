@@ -39,6 +39,7 @@ struct TTabletSchema {
     11: optional Types.TSortType sort_type
     12: optional i32 sort_col_num
     13: optional bool disable_auto_compaction
+    14: optional bool is_persistent
 }
 
 // this enum stands for different storage format in src_backends
@@ -325,7 +326,8 @@ struct TRecoverTabletReq {
 
 enum TTabletMetaType {
     PARTITIONID,
-    INMEMORY
+    INMEMORY,
+    PERSISTENT
 }
 
 struct TTabletMetaInfo {
@@ -335,6 +337,7 @@ struct TTabletMetaInfo {
     4: optional TTabletMetaType meta_type
     5: optional bool is_in_memory
     6: optional string storage_policy;
+    7: optional bool is_persistent
 }
 
 struct TUpdateTabletMetaInfoReq {

@@ -18,10 +18,10 @@
 #pragma once
 
 #include "gutil/macros.h"
-#include "io/cache/cloud_file_cache.h"
-#include "io/cache/file_cache_fwd.h"
-#include "io/cache/file_segment.h"
-#include "io/file_reader.h"
+#include "io/cloud/cloud_file_cache.h"
+#include "io/cloud/cloud_file_cache_fwd.h"
+#include "io/cloud/cloud_file_cache_profile.h"
+#include "io/cloud/cloud_file_segment.h"
 #include "io/fs/file_reader.h"
 #include "io/fs/path.h"
 #include "io/fs/s3_file_system.h"
@@ -31,15 +31,17 @@ namespace io {
 
 class CachedRemoteFileReader final : public FileReader {
 public:
-    CachedRemoteFileReader(FileReaderSPtr remote_file_reader);
+    CachedRemoteFileReader(FileReaderSPtr remote_file_reader,
+                           std::function<void(OlapReaderStatistics* stats)>);
 
     ~CachedRemoteFileReader() override;
 
     Status close() override;
 
-    Status read_at(size_t offset, Slice result, size_t* bytes_read) override;
+    Status read_at(size_t offset, Slice result, size_t* bytes_read,
+                   IOState* state = nullptr) override;
 
-    Status read_at_impl(size_t offset, Slice result, size_t* bytes_read);
+    Status read_at_impl(size_t offset, Slice result, size_t* bytes_read, IOState* state);
 
     const Path& path() const override { return _remote_file_reader->path(); }
 
@@ -54,7 +56,18 @@ private:
 
     FileReaderSPtr _remote_file_reader;
     IFileCache::Key _cache_key;
-    FileCacheSPtr _cache;
+    FileCachePtr _cache;
+
+private:
+    struct ReadStatistics {
+        bool hit_cache = false;
+        size_t bytes_read = 0;
+        size_t bytes_read_from_file_cache = 0;
+        size_t bytes_write_in_file_cache = 0;
+        size_t write_in_file_cache = 0;
+    };
+    void _update_state(const ReadStatistics& stats, IOState* state) const;
+    std::function<void(OlapReaderStatistics* stats)> _count;
 };
 
 } // namespace io

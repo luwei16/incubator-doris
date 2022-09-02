@@ -931,6 +931,10 @@ void TaskWorkerPool::_update_tablet_meta_worker_thread_callback() {
                         tablet->tablet_meta()->set_storage_policy(tablet_meta_info.storage_policy);
                     }
                     break;
+                case TTabletMetaType::PERSISTENT:
+                    tablet->tablet_meta()->mutable_tablet_schema()->set_is_persistent(
+                            tablet_meta_info.is_persistent);
+                    break;
                 }
             }
             tablet->save_meta();

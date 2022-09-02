@@ -46,6 +46,7 @@ public class PartitionPersistInfo implements Writable {
     private DataProperty dataProperty;
     private ReplicaAllocation replicaAlloc;
     private boolean isInMemory = false;
+    private boolean isPersistent = false;
     private boolean isTempPartition = false;
 
     public PartitionPersistInfo() {
@@ -53,7 +54,7 @@ public class PartitionPersistInfo implements Writable {
 
     public PartitionPersistInfo(long dbId, long tableId, Partition partition, Range<PartitionKey> range,
             PartitionItem listPartitionItem, DataProperty dataProperty, ReplicaAllocation replicaAlloc,
-            boolean isInMemory, boolean isTempPartition) {
+            boolean isInMemory, boolean isTempPartition, boolean isPersistent) {
         this.dbId = dbId;
         this.tableId = tableId;
         this.partition = partition;
@@ -65,6 +66,7 @@ public class PartitionPersistInfo implements Writable {
         this.replicaAlloc = replicaAlloc;
         this.isInMemory = isInMemory;
         this.isTempPartition = isTempPartition;
+        this.isPersistent = isPersistent;
     }
 
     public Long getDbId() {
@@ -103,6 +105,10 @@ public class PartitionPersistInfo implements Writable {
         return isTempPartition;
     }
 
+    public boolean isPersistent() {
+        return isPersistent;
+    }
+
     public void write(DataOutput out) throws IOException {
         out.writeLong(dbId);
         out.writeLong(tableId);
@@ -114,6 +120,7 @@ public class PartitionPersistInfo implements Writable {
         replicaAlloc.write(out);
         out.writeBoolean(isInMemory);
         out.writeBoolean(isTempPartition);
+        out.writeBoolean(isPersistent);
     }
 
     public void readFields(DataInput in) throws IOException {
@@ -136,6 +143,7 @@ public class PartitionPersistInfo implements Writable {
 
         isInMemory = in.readBoolean();
         isTempPartition = in.readBoolean();
+        isPersistent = in.readBoolean();
     }
 
     public boolean equals(Object obj) {

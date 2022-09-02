@@ -69,6 +69,8 @@ public class CreateReplicaTask extends AgentTask {
 
     private boolean isInMemory;
 
+    private boolean isPersistent;
+
     private TTabletType tabletType;
 
     // used for synchronous process
@@ -105,7 +107,7 @@ public class CreateReplicaTask extends AgentTask {
                              DataSortInfo dataSortInfo,
                              TCompressionType compressionType,
                              boolean enableUniqueKeyMergeOnWrite,
-                             String storagePolicy, boolean disableAutoCompaction) {
+                             String storagePolicy, boolean disableAutoCompaction, boolean isPersistent) {
         super(null, backendId, TTaskType.CREATE, dbId, tableId, partitionId, indexId, tabletId);
 
         this.replicaId = replicaId;
@@ -133,6 +135,7 @@ public class CreateReplicaTask extends AgentTask {
         this.enableUniqueKeyMergeOnWrite = (keysType == KeysType.UNIQUE_KEYS && enableUniqueKeyMergeOnWrite);
         this.storagePolicy = storagePolicy;
         this.disableAutoCompaction = disableAutoCompaction;
+        this.isPersistent = isPersistent;
     }
 
     public void setIsRecoverTask(boolean isRecoverTask) {
@@ -231,6 +234,7 @@ public class CreateReplicaTask extends AgentTask {
             tSchema.setBloomFilterFpp(bfFpp);
         }
         tSchema.setIsInMemory(isInMemory);
+        tSchema.setIsPersistent(isPersistent);
         tSchema.setDisableAutoCompaction(disableAutoCompaction);
         createTabletReq.setTabletSchema(tSchema);
 

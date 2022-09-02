@@ -37,12 +37,12 @@
 #include "runtime/runtime_state.h"
 #include "runtime/string_value.h"
 #include "runtime/tuple_row.h"
+#include "util/async_io.h"
 #include "util/lock.h"
 #include "util/priority_thread_pool.hpp"
 #include "util/runtime_profile.h"
 #include "util/thread.h"
 #include "util/to_string.h"
-#include "util/async_io.h"
 
 namespace doris {
 
@@ -170,6 +170,18 @@ void OlapScanNode::_init_counter(RuntimeState* state) {
 
     // time of node to wait for batch/block queue
     _olap_wait_batch_queue_timer = ADD_TIMER(_runtime_profile, "BatchQueueWaitTime");
+
+    _num_io_total = ADD_COUNTER(_scanner_profile, "NumIOTotal", TUnit::UNIT);
+    _num_io_hit_cache = ADD_COUNTER(_scanner_profile, "NumIOHitCache", TUnit::UNIT);
+    _num_io_bytes_read_total = ADD_COUNTER(_scanner_profile, "NumIOBytesReadTotal", TUnit::UNIT);
+    _num_io_bytes_read_from_file_cache =
+            ADD_COUNTER(_scanner_profile, "NumIOBytesReadFromFileCache", TUnit::UNIT);
+    _num_io_bytes_read_from_write_cache =
+            ADD_COUNTER(_scanner_profile, "NumIOBytesReadFromWriteCache", TUnit::UNIT);
+    _num_io_written_in_file_cache =
+            ADD_COUNTER(_scanner_profile, "NumIOWrittenInFileCache", TUnit::UNIT);
+    _num_io_bytes_written_in_file_cache =
+            ADD_COUNTER(_scanner_profile, "NumIOBytesWrittenInFileCache", TUnit::UNIT);
 
     // for the purpose of debugging or profiling
     for (int i = 0; i < GENERAL_DEBUG_COUNT; ++i) {
@@ -405,7 +417,7 @@ Status OlapScanNode::close(RuntimeState* state) {
         _transfer_thread->join();
     }
 
-    for (const auto &tid: _btids) {
+    for (const auto& tid : _btids) {
         bthread_join(tid, nullptr);
     }
 
@@ -1483,8 +1495,8 @@ Status OlapScanNode::normalize_bloom_filter_predicate(SlotDescriptor* slot) {
     return Status::OK();
 }
 
-[[maybe_unused]] static void *run_scanner_bthread(void* arg) {
-    auto f = reinterpret_cast<std::function<void()>*> (arg);
+[[maybe_unused]] static void* run_scanner_bthread(void* arg) {
+    auto f = reinterpret_cast<std::function<void()>*>(arg);
     (*f)();
     delete f;
     return nullptr;
@@ -1606,8 +1618,8 @@ void OlapScanNode::transfer_thread(RuntimeState* state) {
                 bool ret = false;
                 COUNTER_UPDATE(_scanner_sched_counter, 1);
                 ret = type == TabletStorageType::STORAGE_TYPE_LOCAL
-                      ? state->exec_env()->scan_thread_pool()->offer(task)
-                      : state->exec_env()->remote_scan_thread_pool()->offer(task);
+                              ? state->exec_env()->scan_thread_pool()->offer(task)
+                              : state->exec_env()->remote_scan_thread_pool()->offer(task);
 
                 if (ret) {
                     olap_scanners.erase(iter++);
@@ -1623,9 +1635,10 @@ void OlapScanNode::transfer_thread(RuntimeState* state) {
             COUNTER_UPDATE(_scanner_sched_counter, 1);
 
             OlapScanner* scanner = *iter;
-            AsyncIOCtx ctx{.nice=_nice};
-            auto f = new std::function<void()> ([this, scanner, ctx] {
-                AsyncIOCtx *set_ctx = static_cast<AsyncIOCtx*>(bthread_getspecific(AsyncIO::btls_io_ctx_key));
+            AsyncIOCtx ctx {.nice = _nice};
+            auto f = new std::function<void()>([this, scanner, ctx] {
+                AsyncIOCtx* set_ctx =
+                        static_cast<AsyncIOCtx*>(bthread_getspecific(AsyncIO::btls_io_ctx_key));
                 if (set_ctx == nullptr) {
                     set_ctx = new AsyncIOCtx(ctx);
                     CHECK_EQ(0, bthread_setspecific(AsyncIO::btls_io_ctx_key, set_ctx));

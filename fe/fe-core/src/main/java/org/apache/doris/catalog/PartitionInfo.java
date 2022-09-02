@@ -64,6 +64,8 @@ public class PartitionInfo implements Writable {
 
     protected Map<Long, Boolean> idToInMemory;
 
+    protected Map<Long, Boolean> idToPersistent;
+
     // partition id -> tablet type
     // Note: currently it's only used for testing, it may change/add more meta field later,
     // so we defer adding meta serialization until memory engine feature is more complete.
@@ -75,15 +77,12 @@ public class PartitionInfo implements Writable {
         this.idToInMemory = new HashMap<>();
         this.idToTabletType = new HashMap<>();
         this.idToStoragePolicy = new HashMap<>();
+        this.idToPersistent = new HashMap<>();
     }
 
     public PartitionInfo(PartitionType type) {
+        this();
         this.type = type;
-        this.idToDataProperty = new HashMap<>();
-        this.idToReplicaAllocation = new HashMap<>();
-        this.idToInMemory = new HashMap<>();
-        this.idToTabletType = new HashMap<>();
-        this.idToStoragePolicy = new HashMap<>();
     }
 
     public PartitionInfo(PartitionType type, List<Column> partitionColumns) {
@@ -137,6 +136,7 @@ public class PartitionInfo implements Writable {
         idToDataProperty.put(partitionId, desc.getPartitionDataProperty());
         idToReplicaAllocation.put(partitionId, desc.getReplicaAlloc());
         idToInMemory.put(partitionId, desc.isInMemory());
+        idToPersistent.put(partitionId, desc.isPersistent());
         idToStoragePolicy.put(partitionId, desc.getStoragePolicy());
 
         return partitionItem;
@@ -148,11 +148,12 @@ public class PartitionInfo implements Writable {
 
     public void unprotectHandleNewSinglePartitionDesc(long partitionId, boolean isTemp, PartitionItem partitionItem,
                                                       DataProperty dataProperty, ReplicaAllocation replicaAlloc,
-                                                      boolean isInMemory) {
+                                                      boolean isInMemory, boolean isPersistent) {
         setItemInternal(partitionId, isTemp, partitionItem);
         idToDataProperty.put(partitionId, dataProperty);
         idToReplicaAllocation.put(partitionId, replicaAlloc);
         idToInMemory.put(partitionId, isInMemory);
+        idToPersistent.put(partitionId, isPersistent);
         idToStoragePolicy.put(partitionId, "");
     }
 
@@ -243,6 +244,14 @@ public class PartitionInfo implements Writable {
         idToInMemory.put(partitionId, isInMemory);
     }
 
+    public boolean getIsPersistent(long partitionId) {
+        return idToPersistent.get(partitionId);
+    }
+
+    public void setIsPersistent(long partitionId, boolean isPersistent) {
+        idToPersistent.put(partitionId, isPersistent);
+    }
+
     public TTabletType getTabletType(long partitionId) {
         if (!idToTabletType.containsKey(partitionId)) {
             return TTabletType.TABLET_TYPE_DISK;
@@ -260,20 +269,22 @@ public class PartitionInfo implements Writable {
         idToInMemory.remove(partitionId);
         idToItem.remove(partitionId);
         idToTempItem.remove(partitionId);
+        idToPersistent.remove(partitionId);
     }
 
     public void addPartition(long partitionId, boolean isTemp, PartitionItem item, DataProperty dataProperty,
-                             ReplicaAllocation replicaAlloc, boolean isInMemory) {
-        addPartition(partitionId, dataProperty, replicaAlloc, isInMemory);
+                             ReplicaAllocation replicaAlloc, boolean isInMemory, boolean isPersistent) {
+        addPartition(partitionId, dataProperty, replicaAlloc, isInMemory, isPersistent);
         setItemInternal(partitionId, isTemp, item);
     }
 
     public void addPartition(long partitionId, DataProperty dataProperty,
                              ReplicaAllocation replicaAlloc,
-                             boolean isInMemory) {
+                             boolean isInMemory, boolean isPersistent) {
         idToDataProperty.put(partitionId, dataProperty);
         idToReplicaAllocation.put(partitionId, replicaAlloc);
         idToInMemory.put(partitionId, isInMemory);
+        idToPersistent.put(partitionId, isPersistent);
     }
 
     public static PartitionInfo read(DataInput in) throws IOException {
@@ -306,6 +317,7 @@ public class PartitionInfo implements Writable {
             idToItem.put(newPartitionId, idToItem.remove(oldPartitionId));
         }
         idToInMemory.put(newPartitionId, idToInMemory.remove(oldPartitionId));
+        idToPersistent.put(newPartitionId, idToPersistent.remove(oldPartitionId));
     }
 
     @Override
@@ -326,6 +338,7 @@ public class PartitionInfo implements Writable {
 
             idToReplicaAllocation.get(entry.getKey()).write(out);
             out.writeBoolean(idToInMemory.get(entry.getKey()));
+            out.writeBoolean(idToPersistent.get(entry.getKey()));
         }
     }
 
@@ -352,6 +365,7 @@ public class PartitionInfo implements Writable {
             }
 
             idToInMemory.put(partitionId, in.readBoolean());
+            idToPersistent.put(partitionId, in.readBoolean());
         }
     }
 
@@ -371,6 +385,7 @@ public class PartitionInfo implements Writable {
             buff.append("data_property: ").append(entry.getValue().toString()).append("; ");
             buff.append("replica number: ").append(idToReplicaAllocation.get(entry.getKey())).append("; ");
             buff.append("in memory: ").append(idToInMemory.get(entry.getKey()));
+            buff.append("persistent: ").append(idToPersistent.get(entry.getKey()));
         }
 
         return buff.toString();

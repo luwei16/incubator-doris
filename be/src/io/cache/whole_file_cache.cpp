@@ -35,7 +35,7 @@ WholeFileCache::WholeFileCache(const Path& cache_dir, int64_t alive_time_sec,
 
 WholeFileCache::~WholeFileCache() {}
 
-Status WholeFileCache::read_at(size_t offset, Slice result, size_t* bytes_read) {
+Status WholeFileCache::read_at(size_t offset, Slice result, size_t* bytes_read, IOState* state) {
     if (_cache_file_reader == nullptr) {
         RETURN_IF_ERROR(_generate_cache_reader(offset, result.size));
     }

@@ -95,6 +95,7 @@ public class ModifyPartitionClause extends AlterTableClause {
     // 2. storage_medium && storage_cooldown_time
     // 3. in_memory
     // 4. tablet type
+    // 5. persistent
     private void checkProperties(Map<String, String> properties) throws AnalysisException {
         // 1. replica allocation
         PropertyAnalyzer.analyzeReplicaAllocation(properties, "");
@@ -104,6 +105,9 @@ public class ModifyPartitionClause extends AlterTableClause {
 
         // 3. tablet type
         PropertyAnalyzer.analyzeTabletType(properties);
+
+        // 4. persistent
+        PropertyAnalyzer.analyzeBooleanProp(properties, PropertyAnalyzer.PROPERTIES_PERSISTENT, false);
     }
 
     @Override

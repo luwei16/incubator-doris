@@ -24,7 +24,7 @@
 #include "io/fs/file_reader.h"
 #include "io/fs/file_writer.h"
 #include "io/fs/path.h"
-
+#include "olap/olap_common.h"
 namespace doris {
 namespace io {
 
@@ -51,6 +51,10 @@ public:
     virtual Status create_file(const Path& path, FileWriterPtr* writer) = 0;
 
     virtual Status open_file(const Path& path, FileReaderSPtr* reader) = 0;
+
+    virtual Status open_file(const Path& path, std::function<void(OlapReaderStatistics*)>, FileReaderSPtr* reader) {
+        return open_file(path, reader);
+    }
 
     virtual Status delete_file(const Path& path) = 0;
 

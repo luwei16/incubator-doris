@@ -42,7 +42,11 @@ public:
 
     Status open_file(const Path& path, FileReaderSPtr* reader) override;
 
-    Status open_file_impl(const Path& path, FileReaderSPtr* reader);
+    Status open_file_impl(const Path& path, std::function<void(OlapReaderStatistics*)>,
+                          FileReaderSPtr* reader);
+
+    Status open_file(const Path& path, std::function<void(OlapReaderStatistics*)>,
+                     FileReaderSPtr* reader) override;
 
     Status delete_file(const Path& path) override;
 
@@ -84,7 +88,7 @@ public:
     const std::string& bucket() const { return _s3_conf.bucket; }
 
     // insert tmp file to mgr
-    static void _insert(const Path& path);
+    static void insert(const Path& path, size_t file_size);
 
     // s3_file_reader lookup tmp file
     static FileReaderSPtr lookup(const Path& path);

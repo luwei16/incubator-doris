@@ -207,7 +207,8 @@ public class Alter {
                         }
                     }
                     Map<String, String> properties = clause.getProperties();
-                    if (properties.containsKey(PropertyAnalyzer.PROPERTIES_INMEMORY)) {
+                    if (properties.containsKey(PropertyAnalyzer.PROPERTIES_INMEMORY) ||
+                        properties.containsKey(PropertyAnalyzer.PROPERTIES_PERSISTENT)) {
                         needProcessOutsideTableLock = true;
                     } else {
                         List<String> partitionNames = clause.getPartitionNames();
@@ -444,6 +445,7 @@ public class Alter {
                 List<String> partitionNames = clause.getPartitionNames();
                 // currently, only in memory and storage policy property could reach here
                 Preconditions.checkState(properties.containsKey(PropertyAnalyzer.PROPERTIES_INMEMORY)
+                        || properties.containsKey(PropertyAnalyzer.PROPERTIES_PERSISTENT)
                         || properties.containsKey(PropertyAnalyzer.PROPERTIES_STORAGE_POLICY));
                 ((SchemaChangeHandler) schemaChangeHandler).updatePartitionsInMemoryMeta(
                         db, tableName, partitionNames, properties);
@@ -458,6 +460,7 @@ public class Alter {
                 Map<String, String> properties = alterClause.getProperties();
                 // currently, only in memory and storage policy property could reach here
                 Preconditions.checkState(properties.containsKey(PropertyAnalyzer.PROPERTIES_INMEMORY)
+                        || properties.containsKey(PropertyAnalyzer.PROPERTIES_PERSISTENT)
                         || properties.containsKey(PropertyAnalyzer.PROPERTIES_STORAGE_POLICY));
                 ((SchemaChangeHandler) schemaChangeHandler).updateTableInMemoryMeta(db, tableName, properties);
             } else {
@@ -699,6 +702,11 @@ public class Alter {
             hasInMemory = true;
         }
 
+        boolean hasPersistent = false;
+        if (properties.containsKey(PropertyAnalyzer.PROPERTIES_PERSISTENT)) {
+            hasPersistent = true;
+        }
+
         // get value from properties here
         // 1. replica allocation
         ReplicaAllocation replicaAlloc = PropertyAnalyzer.analyzeReplicaAllocation(properties, "");
@@ -709,6 +717,9 @@ public class Alter {
         // 3. tablet type
         TTabletType tTabletType =
                 PropertyAnalyzer.analyzeTabletType(properties);
+        // 4. persistent
+        boolean newPersistent = PropertyAnalyzer.analyzeBooleanProp(properties,
+                PropertyAnalyzer.PROPERTIES_PERSISTENT, false);
 
         // modify meta here
         PartitionInfo partitionInfo = olapTable.getPartitionInfo();
@@ -754,9 +765,14 @@ public class Alter {
             if (tTabletType != partitionInfo.getTabletType(partition.getId())) {
                 partitionInfo.setTabletType(partition.getId(), tTabletType);
             }
+            // 5. persistent
+            boolean oldPersistent = partitionInfo.getIsPersistent(partition.getId());
+            if (hasPersistent && (newPersistent != oldPersistent)) {
+                partitionInfo.setIsPersistent(partition.getId(), newPersistent);
+            }
             ModifyPartitionInfo info = new ModifyPartitionInfo(db.getId(), olapTable.getId(), partition.getId(),
                     newDataProperty, replicaAlloc, hasInMemory ? newInMemory : oldInMemory, currentStoragePolicy,
-                    Maps.newHashMap());
+                    Maps.newHashMap(), hasPersistent ? newPersistent : oldPersistent);
             modifyPartitionInfos.add(info);
         }
 
@@ -780,6 +796,7 @@ public class Alter {
             Optional.ofNullable(info.getStoragePolicy()).filter(p -> !p.isEmpty())
                     .ifPresent(p -> partitionInfo.setStoragePolicy(info.getPartitionId(), p));
             partitionInfo.setIsInMemory(info.getPartitionId(), info.isInMemory());
+            partitionInfo.setIsPersistent(info.getPartitionId(), info.isPersistent());
 
             Map<String, String> tblProperties = info.getTblProperties();
             if (tblProperties != null && !tblProperties.isEmpty()) {

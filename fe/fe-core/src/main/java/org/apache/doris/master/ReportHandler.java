@@ -70,6 +70,7 @@ import org.apache.doris.thrift.TStorageMedium;
 import org.apache.doris.thrift.TStorageType;
 import org.apache.doris.thrift.TTablet;
 import org.apache.doris.thrift.TTabletInfo;
+import org.apache.doris.thrift.TTabletMetaType;
 import org.apache.doris.thrift.TTaskType;
 
 import com.google.common.collect.LinkedListMultimap;
@@ -269,6 +270,8 @@ public class ReportHandler extends Daemon {
 
         List<Triple<Long, Integer, Boolean>> tabletToInMemory = Lists.newArrayList();
 
+        List<Triple<Long, Integer, Boolean>> tabletToPersistent = Lists.newArrayList();
+
         // 1. do the diff. find out (intersection) / (be - meta) / (meta - be)
         Env.getCurrentInvertedIndex().tabletReport(backendId, backendTablets, storageMediumMap,
                 tabletSyncMap,
@@ -278,7 +281,8 @@ public class ReportHandler extends Daemon {
                 transactionsToPublish,
                 transactionsToClear,
                 tabletRecoveryMap,
-                tabletToInMemory);
+                tabletToInMemory,
+                tabletToPersistent);
 
         // 2. sync
         if (!tabletSyncMap.isEmpty()) {
@@ -319,6 +323,11 @@ public class ReportHandler extends Daemon {
         // 9. send set tablet in memory to be
         if (!tabletToInMemory.isEmpty()) {
             handleSetTabletInMemory(backendId, tabletToInMemory);
+        }
+
+        // 10. send set tablet persistent to be
+        if (!tabletToPersistent.isEmpty()) {
+            handleSetTabletPersistent(backendId, tabletToPersistent);
         }
 
         final SystemInfoService currentSystemInfo = Env.getCurrentSystemInfo();
@@ -608,7 +617,8 @@ public class ReportHandler extends Daemon {
                                             null,
                                             olapTable.getCompressionType(),
                                             olapTable.getEnableUniqueKeyMergeOnWrite(), olapTable.getStoragePolicy(),
-                                            olapTable.disableAutoCompaction());
+                                            olapTable.disableAutoCompaction(),
+                                            olapTable.isPersistent());
 
                                     createReplicaTask.setIsRecoverTask(true);
                                     createReplicaBatchTask.addTask(createReplicaTask);
@@ -867,7 +877,14 @@ public class ReportHandler extends Daemon {
 
     private static void handleSetTabletInMemory(long backendId, List<Triple<Long, Integer, Boolean>> tabletToInMemory) {
         AgentBatchTask batchTask = new AgentBatchTask();
-        UpdateTabletMetaInfoTask task = new UpdateTabletMetaInfoTask(backendId, tabletToInMemory);
+        UpdateTabletMetaInfoTask task = new UpdateTabletMetaInfoTask(backendId, tabletToInMemory, TTabletMetaType.INMEMORY);
+        batchTask.addTask(task);
+        AgentTaskExecutor.submit(batchTask);
+    }
+
+    private static void handleSetTabletPersistent(long backendId, List<Triple<Long, Integer, Boolean>> tabletToPersistent) {
+        AgentBatchTask batchTask = new AgentBatchTask();
+        UpdateTabletMetaInfoTask task = new UpdateTabletMetaInfoTask(backendId, tabletToPersistent, TTabletMetaType.PERSISTENT);
         batchTask.addTask(task);
         AgentTaskExecutor.submit(batchTask);
     }

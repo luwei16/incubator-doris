@@ -62,12 +62,15 @@ struct ColumnReaderOptions {
     bool verify_checksum = true;
     // for in memory olap table, use DURABLE CachePriority in page cache
     bool kept_in_memory = false;
+    // for persistent file cache
+    bool is_persistent = false;
 };
 
 struct ColumnIteratorOptions {
     io::FileReader* file_reader = nullptr;
     // reader statistics
     OlapReaderStatistics* stats = nullptr;
+    TUniqueId query_id;
     bool use_page_cache = false;
     // for page cache allocation
     // page types are divided into DATA_PAGE & INDEX_PAGE

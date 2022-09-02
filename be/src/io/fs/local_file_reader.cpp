@@ -19,9 +19,9 @@
 
 #include <atomic>
 
+#include "util/async_io.h"
 #include "util/doris_metrics.h"
 #include "util/errno.h"
-#include "util/async_io.h"
 
 namespace doris {
 namespace io {
@@ -44,7 +44,7 @@ Status LocalFileReader::close() {
         if (bthread_self() == 0) {
             res = ::close(_fd);
         } else {
-            AsyncIO::run_task([&]{ res = ::close(_fd); }, io::FileSystemType::LOCAL);
+            AsyncIO::run_task([&] { res = ::close(_fd); }, io::FileSystemType::LOCAL);
         }
 
         if (res == -1) {
@@ -55,17 +55,18 @@ Status LocalFileReader::close() {
     return Status::OK();
 }
 
-Status LocalFileReader::read_at(size_t offset, Slice result, size_t* bytes_read) {
+Status LocalFileReader::read_at(size_t offset, Slice result, size_t* bytes_read, IOState* state) {
     if (bthread_self() == 0) {
-        return read_at_impl(offset, result, bytes_read);
+        return read_at_impl(offset, result, bytes_read, state);
     }
     Status s;
-    auto task = [&] {s = read_at_impl(offset, result, bytes_read);};
+    auto task = [&] { s = read_at_impl(offset, result, bytes_read, state); };
     AsyncIO::run_task(task, io::FileSystemType::LOCAL);
     return s;
 }
 
-Status LocalFileReader::read_at_impl(size_t offset, Slice result, size_t *bytes_read) {
+Status LocalFileReader::read_at_impl(size_t offset, Slice result, size_t* bytes_read,
+                                     IOState* state) {
     DCHECK(!closed());
     if (offset > _file_size) {
         return Status::IOError("offset exceeds file size(offset: {}, file size: {}, path: {})",

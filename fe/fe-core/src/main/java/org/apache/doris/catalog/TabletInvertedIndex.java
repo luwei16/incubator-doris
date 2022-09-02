@@ -93,6 +93,7 @@ public class TabletInvertedIndex {
     private Table<Long, Long, Replica> backingReplicaMetaTable = HashBasedTable.create();
 
     private volatile ImmutableSet<Long> partitionIdInMemorySet = ImmutableSet.of();
+    private volatile ImmutableSet<Long> partitionIdPersistentSet = ImmutableSet.of();
 
     private ForkJoinPool taskPool = new ForkJoinPool(Runtime.getRuntime().availableProcessors());
 
@@ -124,7 +125,8 @@ public class TabletInvertedIndex {
                              Map<Long, ListMultimap<Long, TPartitionVersionInfo>> transactionsToPublish,
                              ListMultimap<Long, Long> transactionsToClear,
                              ListMultimap<Long, Long> tabletRecoveryMap,
-                             List<Triple<Long, Integer, Boolean>> tabletToInMemory) {
+                             List<Triple<Long, Integer, Boolean>> tabletToInMemory,
+                             List<Triple<Long, Integer, Boolean>> tabletToPersistent) {
         long stamp = readLock();
         long start = System.currentTimeMillis();
         try {
@@ -148,6 +150,13 @@ public class TabletInvertedIndex {
                                 synchronized (tabletToInMemory) {
                                     tabletToInMemory.add(new ImmutableTriple<>(tabletId,
                                             backendTabletInfo.getSchemaHash(), !backendTabletInfo.isIsInMemory()));
+                                }
+                            }
+                            if (partitionIdPersistentSet.contains(
+                                    backendTabletInfo.getPartitionId()) != backendTabletInfo.isIsPersistent()) {
+                                synchronized (tabletToPersistent) {
+                                    tabletToPersistent.add(new ImmutableTriple<>(tabletId,
+                                            backendTabletInfo.getSchemaHash(), !backendTabletInfo.isIsPersistent()));
                                 }
                             }
                             // 1. (intersection)
@@ -558,6 +567,10 @@ public class TabletInvertedIndex {
 
     public void setPartitionIdInMemorySet(ImmutableSet<Long> partitionIdInMemorySet) {
         this.partitionIdInMemorySet = partitionIdInMemorySet;
+    }
+
+    public void setPartitionIdPersistentSet(ImmutableSet<Long> partitionIdPersistentSet) {
+        this.partitionIdPersistentSet = partitionIdPersistentSet;
     }
 
     public Map<Long, Long> getReplicaToTabletMap() {

@@ -257,7 +257,7 @@ public class SchemaChangeJobV2 extends AlterJobV2 {
                                     null,
                                     tbl.getCompressionType(),
                                     tbl.getEnableUniqueKeyMergeOnWrite(), tbl.getStoragePolicy(),
-                                    tbl.disableAutoCompaction());
+                                    tbl.disableAutoCompaction(), tbl.isPersistent());
 
                             createReplicaTask.setBaseTablet(partitionIndexTabletMap.get(partitionId, shadowIdxId)
                                     .get(shadowTabletId), originSchemaHash);
@@ -364,7 +364,8 @@ public class SchemaChangeJobV2 extends AlterJobV2 {
                             Env.getCurrentInternalCatalog().createCloudTabletsMeta(tableId, shadowIdxId, partitionId,
                                     shadowTablet, tbl.getPartitionInfo().getTabletType(partitionId), shadowSchemaHash,
                                     originKeysType, shadowShortKeyColumnCount, bfColumns, bfFpp, shadowSchema,
-                                    tbl.getDataSortInfo(), tbl.getCompressionType(), tbl.getStoragePolicy());
+                                    tbl.getDataSortInfo(), tbl.getCompressionType(), tbl.getStoragePolicy(),
+                                    tbl.isInMemory(), tbl.isPersistent());
                         } // end for rollupTablets
                     }
                 }
