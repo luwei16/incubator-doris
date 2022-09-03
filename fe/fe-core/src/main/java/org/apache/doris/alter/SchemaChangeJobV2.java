@@ -321,9 +321,6 @@ public class SchemaChangeJobV2 extends AlterJobV2 {
         Database db = Env.getCurrentInternalCatalog()
                 .getDbOrException(dbId, s -> new AlterCancelException("Database " + s + " does not exist"));
 
-        if (!checkTableStable(db)) {
-            return;
-        }
         // 1. create replicas
 
         OlapTable tbl;
@@ -361,9 +358,9 @@ public class SchemaChangeJobV2 extends AlterJobV2 {
                         KeysType originKeysType = tbl.getKeysTypeByIndexId(originIndexId);
 
                         for (Tablet shadowTablet : shadowIdx.getTablets()) {
-                            Env.getCurrentInternalCatalog().createCloudTabletsMeta(tableId, shadowIdxId, partitionId,
+                            Env.getCurrentInternalCatalog().createCloudTabletMeta(tableId, shadowIdxId, partitionId,
                                     shadowTablet, tbl.getPartitionInfo().getTabletType(partitionId), shadowSchemaHash,
-                                    originKeysType, shadowShortKeyColumnCount, bfColumns, bfFpp, shadowSchema,
+                                    originKeysType, shadowShortKeyColumnCount, bfColumns, bfFpp, indexes, shadowSchema,
                                     tbl.getDataSortInfo(), tbl.getCompressionType(), tbl.getStoragePolicy(),
                                     tbl.isInMemory(), tbl.isPersistent());
                         } // end for rollupTablets

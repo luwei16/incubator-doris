@@ -183,6 +183,9 @@ public abstract class AlterJobV2 implements Writable {
             }
         } catch (AlterCancelException e) {
             cancelImpl(e.getMessage());
+        } catch (Exception e) {
+            e.printStackTrace();
+            LOG.warn("state {} exception {}", jobState, e.getMessage());
         }
     }
 

@@ -3415,11 +3415,11 @@ public class InternalCatalog implements CatalogIf<Database> {
         return rowsetBuilder;
     }
 
-    public void createCloudTabletsMeta(long tableId, long indexId, long partitionId, Tablet tablet,
+    public void createCloudTabletMeta(long tableId, long indexId, long partitionId, Tablet tablet,
                 TTabletType tabletType, int schemaHash, KeysType keysType, short shortKeyColumnCount,
-                Set<String> bfColumns, double bfFpp, List<Column> schemaColumns, DataSortInfo dataSortInfo,
-                TCompressionType compressionType, String storagePolicy, boolean isInMemory,
-                boolean isPersistent) throws DdlException {
+                Set<String> bfColumns, double bfFpp, List<Index> indexes, List<Column> schemaColumns,
+                DataSortInfo dataSortInfo, TCompressionType compressionType, String storagePolicy,
+                boolean isInMemory, boolean isPersistent) throws DdlException {
         OlapFile.TabletMetaPB.Builder builder = OlapFile.TabletMetaPB.newBuilder();
         builder.setTableId(tableId);
         builder.setIndexId(indexId);
@@ -3511,7 +3511,7 @@ public class InternalCatalog implements CatalogIf<Database> {
         schemaBuilder.setSortColNum(dataSortInfo.getColNum());
         for (int i = 0; i < schemaColumns.size(); i++) {
             Column column = schemaColumns.get(i);
-            schemaBuilder.addColumn(column.toPb(bfColumns));
+            schemaBuilder.addColumn(column.toPb(bfColumns, indexes));
         }
         OlapFile.TabletSchemaPB schema = schemaBuilder.build();
         builder.setSchema(schema);
@@ -3603,8 +3603,8 @@ public class InternalCatalog implements CatalogIf<Database> {
             KeysType keysType = indexMeta.getKeysType();
 
             for (Tablet tablet : index.getTablets()) {
-                createCloudTabletsMeta(tableId, indexId, partitionId, tablet, tabletType, schemaHash,
-                        keysType, shortKeyColumnCount, bfColumns, bfFpp, columns, dataSortInfo,
+                createCloudTabletMeta(tableId, indexId, partitionId, tablet, tabletType, schemaHash,
+                        keysType, shortKeyColumnCount, bfColumns, bfFpp, indexes, columns, dataSortInfo,
                         compressionType, storagePolicy, isInMemory, isPersistent);
             }
 

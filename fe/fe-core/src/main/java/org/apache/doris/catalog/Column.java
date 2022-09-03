@@ -444,9 +444,14 @@ public class Column implements Writable {
         }
     }
 
-    public OlapFile.ColumnPB toPb(Set<String> bfColumns) {
+    public OlapFile.ColumnPB toPb(Set<String> bfColumns, List<Index> indexes) {
         OlapFile.ColumnPB.Builder builder = OlapFile.ColumnPB.newBuilder();
-        builder.setName(this.name);
+
+        // when doing schema change, some modified column has a prefix in name.
+        // this prefix is only used in FE, not visible to BE, so we should remove this prefix.
+        builder.setName(name.startsWith(SchemaChangeHandler.SHADOW_NAME_PRFIX) ?
+            name.substring(SchemaChangeHandler.SHADOW_NAME_PRFIX.length()) : name);
+
         builder.setUniqueId(uniqueId);
         builder.setType(this.getDataType().toString());
         builder.setIsKey(this.isKey);
@@ -475,6 +480,15 @@ public class Column implements Writable {
             builder.setIsBfColumn(false);
         }
         builder.setVisible(visible);
+
+        if (indexes != null) {
+            for (Index index : indexes) {
+                if (index.getIndexType() == IndexDef.IndexType.BITMAP) {
+                        builder.setHasBitmapIndex(true);
+                        break;
+                }
+            }
+        }
         OlapFile.ColumnPB col = builder.build();
         return col;
     }

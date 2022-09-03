@@ -175,18 +175,7 @@ public class RollupJobV2 extends AlterJobV2 implements GsonPostProcessable {
         this.storageFormat = storageFormat;
     }
 
-    /**
-     * runPendingJob():
-     * 1. Create all rollup replicas and wait them finished.
-     * 2. After creating done, add this shadow rollup index to catalog, user can not see this
-     *    rollup, but internal load process will generate data for this rollup index.
-     * 3. Get a new transaction id, then set job's state to WAITING_TXN
-     */
-    @Override
-    protected void runPendingJob() throws AlterCancelException {
-        Preconditions.checkState(jobState == JobState.PENDING, jobState);
-
-        LOG.info("begin to send create rollup replica tasks. job: {}", jobId);
+    private void createRollupReplica() throws AlterCancelException {
         Database db = Env.getCurrentInternalCatalog()
                 .getDbOrException(dbId, s -> new AlterCancelException("Database " + s + " does not exist"));
         if (!checkTableStable(db)) {
@@ -299,6 +288,85 @@ public class RollupJobV2 extends AlterJobV2 implements GsonPostProcessable {
             addRollupIndexToCatalog(tbl);
         } finally {
             tbl.writeUnlock();
+        }
+    }
+
+    private void createCloudRollupReplica() throws AlterCancelException {
+        Database db = Env.getCurrentInternalCatalog()
+                .getDbOrException(dbId, s -> new AlterCancelException("Database " + s + " does not exist"));
+
+        // 1. create rollup replicas
+        OlapTable tbl;
+        try {
+            tbl = (OlapTable) db.getTableOrMetaException(tableId, Table.TableType.OLAP);
+        } catch (MetaNotFoundException e) {
+            throw new AlterCancelException(e.getMessage());
+        }
+
+        tbl.readLock();
+        try {
+            Preconditions.checkState(tbl.getState() == OlapTableState.ROLLUP);
+            try {
+                List<Long> rollupIndexList = new ArrayList<Long>();
+                rollupIndexList.add(rollupIndexId);
+                Env.getCurrentInternalCatalog().prepareCloudMaterializedIndex(tbl, rollupIndexList);
+
+                for (Map.Entry<Long, MaterializedIndex> entry : this.partitionIdToRollupIndex.entrySet()) {
+                    long partitionId = entry.getKey();
+                    Partition partition = tbl.getPartition(partitionId);
+                    if (partition == null) {
+                        continue;
+                    }
+                    TTabletType tabletType = tbl.getPartitionInfo().getTabletType(partitionId);
+                    MaterializedIndex rollupIndex = entry.getValue();
+
+                    Map<Long, Long> tabletIdMap = this.partitionIdToBaseRollupTabletIdMap.get(partitionId);
+                    for (Tablet rollupTablet : rollupIndex.getTablets()) {
+                        long rollupTabletId = rollupTablet.getId();
+                        Env.getCurrentInternalCatalog().createCloudTabletMeta(tableId, rollupIndexId, partitionId,
+                                rollupTablet, tabletType, rollupSchemaHash,
+                                rollupKeysType, rollupShortKeyColumnCount, tbl.getCopiedBfColumns(), 
+                                tbl.getBfFpp(), tbl.getCopiedIndexes(), rollupSchema,
+                                tbl.getDataSortInfo(), tbl.getCompressionType(), tbl.getStoragePolicy(),
+                                tbl.isInMemory(), tbl.isPersistent());
+                    } // end for rollupTablets
+                }
+            } catch (Exception e) {
+                LOG.warn("createCloudShadowIndexReplica Exception:{}", e);
+                throw new AlterCancelException(e.getMessage());
+            }
+        } finally {
+            tbl.readUnlock();
+        }
+
+        // create all rollup replicas success.
+        // add rollup index to catalog
+        tbl.writeLockOrAlterCancelException();
+        try {
+            Preconditions.checkState(tbl.getState() == OlapTableState.ROLLUP);
+            addRollupIndexToCatalog(tbl);
+        } finally {
+            tbl.writeUnlock();
+        }
+    }
+
+    /**
+     * runPendingJob():
+     * 1. Create all rollup replicas and wait them finished.
+     * 2. After creating done, add this shadow rollup index to catalog, user can not see this
+     *    rollup, but internal load process will generate data for this rollup index.
+     * 3. Get a new transaction id, then set job's state to WAITING_TXN
+     */
+    @Override
+    protected void runPendingJob() throws AlterCancelException {
+        Preconditions.checkState(jobState == JobState.PENDING, jobState);
+
+        LOG.info("begin to send create rollup replica tasks. job: {}", jobId);
+
+        if (Config.cloud_unique_id.isEmpty()) {
+            createRollupReplica();
+        } else {
+            createCloudRollupReplica();
         }
 
         this.watershedTxnId = Env.getCurrentGlobalTransactionMgr()
@@ -512,6 +580,16 @@ public class RollupJobV2 extends AlterJobV2 implements GsonPostProcessable {
             } // end for partitions
 
             onFinished(tbl);
+            if (!Config.cloud_unique_id.isEmpty()) {
+                List<Long> rollupIndexList = new ArrayList<Long>();
+                rollupIndexList.add(rollupIndexId);
+                try {
+                    Env.getCurrentInternalCatalog().commitCloudMaterializedIndex(tbl, rollupIndexList);
+                } catch (Exception e) {
+                    LOG.warn("commitCloudMaterializedIndex Exception:{}", e);
+                    throw new AlterCancelException(e.getMessage());
+                }
+            }
         } finally {
             tbl.writeUnlock();
         }
