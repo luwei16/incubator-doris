@@ -207,8 +207,8 @@ public class Alter {
                         }
                     }
                     Map<String, String> properties = clause.getProperties();
-                    if (properties.containsKey(PropertyAnalyzer.PROPERTIES_INMEMORY) ||
-                        properties.containsKey(PropertyAnalyzer.PROPERTIES_PERSISTENT)) {
+                    if (properties.containsKey(PropertyAnalyzer.PROPERTIES_INMEMORY)
+                            || properties.containsKey(PropertyAnalyzer.PROPERTIES_PERSISTENT)) {
                         needProcessOutsideTableLock = true;
                     } else {
                         List<String> partitionNames = clause.getPartitionNames();

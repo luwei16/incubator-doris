@@ -877,14 +877,17 @@ public class ReportHandler extends Daemon {
 
     private static void handleSetTabletInMemory(long backendId, List<Triple<Long, Integer, Boolean>> tabletToInMemory) {
         AgentBatchTask batchTask = new AgentBatchTask();
-        UpdateTabletMetaInfoTask task = new UpdateTabletMetaInfoTask(backendId, tabletToInMemory, TTabletMetaType.INMEMORY);
+        UpdateTabletMetaInfoTask task = new UpdateTabletMetaInfoTask(backendId, tabletToInMemory,
+                                                                     TTabletMetaType.INMEMORY);
         batchTask.addTask(task);
         AgentTaskExecutor.submit(batchTask);
     }
 
-    private static void handleSetTabletPersistent(long backendId, List<Triple<Long, Integer, Boolean>> tabletToPersistent) {
+    private static void handleSetTabletPersistent(long backendId,
+            List<Triple<Long, Integer, Boolean>> tabletToPersistent) {
         AgentBatchTask batchTask = new AgentBatchTask();
-        UpdateTabletMetaInfoTask task = new UpdateTabletMetaInfoTask(backendId, tabletToPersistent, TTabletMetaType.PERSISTENT);
+        UpdateTabletMetaInfoTask task = new UpdateTabletMetaInfoTask(backendId, tabletToPersistent,
+                                                                     TTabletMetaType.PERSISTENT);
         batchTask.addTask(task);
         AgentTaskExecutor.submit(batchTask);
     }

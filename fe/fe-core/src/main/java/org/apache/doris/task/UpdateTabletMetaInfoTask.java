@@ -96,6 +96,9 @@ public class UpdateTabletMetaInfoTask extends AgentTask {
                 this.tabletToPersistent = tabletMap;
                 break;
             }
+            default: {
+                break;
+            }
         }
     }
 
@@ -194,6 +197,7 @@ public class UpdateTabletMetaInfoTask extends AgentTask {
                         metaInfos.add(metaInfo);
                     }
                 }
+                break;
             }
             default:
                 break;

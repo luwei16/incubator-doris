@@ -94,8 +94,8 @@ public class ModifyTablePropertiesClause extends AlterTableClause {
             ReplicaAllocation replicaAlloc = PropertyAnalyzer.analyzeReplicaAllocation(properties, "default");
             properties.put("default." + PropertyAnalyzer.PROPERTIES_REPLICATION_ALLOCATION,
                     replicaAlloc.toCreateStmt());
-        } else if (properties.containsKey(PropertyAnalyzer.PROPERTIES_INMEMORY) ||
-                    properties.containsKey(PropertyAnalyzer.PROPERTIES_PERSISTENT)) {
+        } else if (properties.containsKey(PropertyAnalyzer.PROPERTIES_INMEMORY)
+                || properties.containsKey(PropertyAnalyzer.PROPERTIES_PERSISTENT)) {
             this.needTableStable = false;
             this.opType = AlterOpType.MODIFY_TABLE_PROPERTY_SYNC;
         } else if (properties.containsKey(PropertyAnalyzer.PROPERTIES_REMOTE_STORAGE_POLICY)) {
