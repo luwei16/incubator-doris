@@ -35,6 +35,7 @@
 #include <shared_mutex>
 #include <string>
 
+#include "cloud/utils.h"
 #include "common/config.h"
 #include "common/logging.h"
 #include "common/status.h"
@@ -525,14 +526,36 @@ Versions Tablet::cloud_calc_missed_versions(int64_t spec_version) {
     return missed_versions;
 }
 
-Status Tablet::cloud_capture_rs_readers(const Version& spec_version,
+Status Tablet::cloud_capture_rs_readers(Version version_range,
                                         std::vector<RowsetReaderSharedPtr>* rs_readers) {
-    rs_readers->clear();
     Versions version_path;
     std::shared_lock rlock(_meta_lock);
     RETURN_IF_ERROR(
-            _timestamped_version_tracker.capture_consistent_versions(spec_version, &version_path));
+            _timestamped_version_tracker.capture_consistent_versions(version_range, &version_path));
     return capture_rs_readers(version_path, rs_readers);
+}
+
+Status Tablet::cloud_sync_rowsets(int64_t spec_version) {
+    // serially execute sync to reduce unnecessary network overhead
+    static std::mutex s_sync_rowsets_lock;
+    std::lock_guard lock(s_sync_rowsets_lock);
+
+    int64_t max_version = 0;
+    {
+        std::shared_lock rlock(_meta_lock);
+        max_version = max_version_unlocked().second;
+    }
+    if (spec_version > 0 && max_version >= spec_version) {
+        return Status::OK();
+    }
+    std::vector<RowsetMetaSharedPtr> rs_metas;
+    RETURN_IF_ERROR(
+            cloud::meta_mgr()->get_rowset_meta(tablet_id(), {max_version + 1, -1}, &rs_metas));
+    for (const auto& rs_meta : rs_metas) {
+        // acquire tablet exclusive header_lock in add_rowset_by_meta
+        add_rowset_by_meta(rs_meta);
+    }
+    return Status::OK();
 }
 
 void Tablet::_delete_stale_rowset_by_version(const Version& version) {
@@ -800,7 +823,7 @@ Status Tablet::capture_rs_readers(const Version& spec_version,
 
 Status Tablet::capture_rs_readers(const std::vector<Version>& version_path,
                                   std::vector<RowsetReaderSharedPtr>* rs_readers) const {
-    DCHECK(rs_readers != nullptr && rs_readers->empty());
+    DCHECK(rs_readers != nullptr);
     for (auto version : version_path) {
         auto it = _rs_version_map.find(version);
         if (it == _rs_version_map.end()) {

@@ -89,23 +89,9 @@ Status VOlapScanner::prepare(
         }
         VLOG_DEBUG << "VOlapScanner version: " << _version;
 #ifdef CLOUD_MODE
-        if (!_tablet->cloud_capture_rs_readers({0, _version}, &_tablet_reader_params.rs_readers)) {
-            auto max_version = -1;
-            {
-                std::shared_lock rlock(_tablet->get_header_lock());
-                max_version = _tablet->max_version().second;
-            }
-            CHECK(max_version > 0);
-            std::vector<RowsetMetaSharedPtr> rs_metas;
-            RETURN_IF_ERROR(cloud::meta_mgr()->get_rowset_meta(
-                    _tablet->tablet_id(), {max_version + 1, _version}, &rs_metas));
-            for (const auto& rs_meta : rs_metas) {
-                // acquire tablet exclusive header_lock in add_rowset_by_meta
-                _tablet->add_rowset_by_meta(rs_meta);
-            }
-            RETURN_IF_ERROR(_tablet->cloud_capture_rs_readers({0, _version},
-                                                              &_tablet_reader_params.rs_readers));
-        }
+        RETURN_IF_ERROR(_tablet->cloud_sync_rowsets(_version));
+        RETURN_IF_ERROR(_tablet->cloud_capture_rs_readers({0, _version},
+                                                          &_tablet_reader_params.rs_readers));
 #else
         {
             std::shared_lock rdlock(_tablet->get_header_lock());

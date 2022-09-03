@@ -376,7 +376,7 @@ Status TabletsChannel::add_batch(const TabletWriterAddRequest& request,
         if (!st.ok()) {
             auto err_msg = strings::Substitute(
                     "tablet writer write failed, tablet_id=$0, txn_id=$1, err=$2",
-                    tablet_to_rowidxs_it.first, _txn_id, st.code());
+                    tablet_to_rowidxs_it.first, _txn_id, st.to_string());
             LOG(WARNING) << err_msg;
             PTabletError* error = tablet_errors->Add();
             error->set_tablet_id(tablet_to_rowidxs_it.first);

@@ -91,6 +91,9 @@ FieldType TabletColumn::get_field_type_by_string(const std::string& type_str) {
         type = OLAP_FIELD_TYPE_MAP;
     } else if (0 == upper_type_str.compare("OBJECT")) {
         type = OLAP_FIELD_TYPE_OBJECT;
+    } else if (0 == upper_type_str.compare("BITMAP")) {
+        // CLOUD_MODE FE may send request to BE with BITMAP type column, which corresponds to OBJECT type in BE.
+        type = OLAP_FIELD_TYPE_OBJECT;
     } else if (0 == upper_type_str.compare("ARRAY")) {
         type = OLAP_FIELD_TYPE_ARRAY;
     } else if (0 == upper_type_str.compare("QUANTILE_STATE")) {

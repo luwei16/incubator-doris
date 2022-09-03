@@ -148,8 +148,13 @@ public:
     Versions cloud_calc_missed_versions(int64_t spec_version);
 
     // CLOUD_MODE
-    Status cloud_capture_rs_readers(const Version& spec_version,
+    Status cloud_capture_rs_readers(Version version_range,
                                     std::vector<RowsetReaderSharedPtr>* rs_readers);
+
+    // CLOUD_MODE
+    // Synchronize the rowsets from meta service.
+    // If `spec_version` > 0 and local max_version of the tablet >= `spec_version`, do nothing.
+    Status cloud_sync_rowsets(int64_t spec_version = -1);
 
     /// Delete stale rowset by timing. This delete policy uses now() minutes
     /// config::tablet_rowset_expired_stale_sweep_time_sec to compute the deadline of expired rowset

@@ -10,6 +10,15 @@ namespace doris::cloud {
 
 static constexpr int ALTER_TABLE_BATCH_SIZE = 4096;
 
+static std::unique_ptr<SchemaChange> get_sc_procedure(const RowBlockChanger& rb_changer,
+                                                      bool sc_sorting, bool sc_directly) {
+    if (sc_sorting) {
+        return std::make_unique<VSchemaChangeWithSorting>(
+                rb_changer, config::memory_limitation_per_thread_for_schema_change_bytes);
+    }
+    return std::make_unique<VSchemaChangeDirectly>(rb_changer);
+}
+
 Status CloudSchemaChangeHandler::process_alter_tablet(const TAlterTabletReqV2& request) {
     LOG(INFO) << "Begin to alter tablet. base_tablet_id=" << request.base_tablet_id
               << ", new_tablet_id=" << request.new_tablet_id
@@ -64,7 +73,6 @@ Status CloudSchemaChangeHandler::process_alter_tablet(const TAlterTabletReqV2& r
         reader_context.tablet_schema = base_tablet_schema;
         reader_context.need_ordered_result = true;
         reader_context.delete_handler = &delete_handler;
-        reader_context.return_columns = &return_columns;
         // for schema change, seek_columns is the same to return_columns
         reader_context.return_columns = &return_columns;
         reader_context.sequence_id_idx = reader_context.tablet_schema->sequence_col_idx();
@@ -72,8 +80,12 @@ Status CloudSchemaChangeHandler::process_alter_tablet(const TAlterTabletReqV2& r
         reader_context.batch_size = ALTER_TABLE_BATCH_SIZE;
         reader_context.is_vec = config::enable_vectorized_alter_table;
 
+        RETURN_IF_ERROR(base_tablet->cloud_sync_rowsets(request.alter_version));
+        for (auto& v : missed_versions) {
+            RETURN_IF_ERROR(base_tablet->cloud_capture_rs_readers(v, &rs_readers));
+        }
+
         std::shared_lock base_tablet_rlock(base_tablet->get_header_lock());
-        RETURN_IF_ERROR(base_tablet->capture_rs_readers(missed_versions, &rs_readers));
 
         vectorized::BlockReader reader;
         TabletReader::ReaderParams reader_params;
@@ -147,7 +159,7 @@ Status CloudSchemaChangeHandler::_convert_historical_rowsets(const SchemaChangeP
             sc_params.materialized_params_map, *sc_params.desc_tbl, sc_params.base_tablet_schema));
 
     // 2. Generate historical data converter
-    auto sc_procedure = SchemaChangeHandler::get_sc_procedure(rb_changer, sc_sorting, sc_directly);
+    auto sc_procedure = get_sc_procedure(rb_changer, sc_sorting, sc_directly);
 
     // 3. Convert historical data
     for (auto& rs_reader : sc_params.ref_rowset_readers) {
