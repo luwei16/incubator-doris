@@ -3,6 +3,7 @@
 #include "cloud/utils.h"
 #include "common/status.h"
 #include "olap/olap_define.h"
+#include "olap/tablet.h"
 #include "vec/olap/block_reader.h"
 
 namespace doris::cloud {
@@ -14,12 +15,8 @@ Status CloudSchemaChangeHandler::process_alter_tablet(const TAlterTabletReqV2& r
               << ", new_tablet_id=" << request.new_tablet_id
               << ", alter_version=" << request.alter_version;
 
-    auto base_tablet =
-            StorageEngine::instance()->tablet_manager()->get_tablet(request.base_tablet_id);
-    if (base_tablet == nullptr) {
-        LOG(WARNING) << "Fail to find base tablet. base_tablet=" << request.base_tablet_id;
-        return Status::OLAPInternalError(OLAP_ERR_TABLE_NOT_FOUND);
-    }
+    TabletSharedPtr base_tablet;
+    RETURN_IF_ERROR(cloud::tablet_mgr()->get_tablet(request.base_tablet_id, &base_tablet));
     std::unique_lock<std::mutex> schema_change_lock(base_tablet->get_schema_change_lock(),
                                                     std::try_to_lock);
     if (!schema_change_lock.owns_lock()) {
@@ -29,12 +26,8 @@ Status CloudSchemaChangeHandler::process_alter_tablet(const TAlterTabletReqV2& r
     }
 
     // new tablet has to exist
-    TabletSharedPtr new_tablet =
-            StorageEngine::instance()->tablet_manager()->get_tablet(request.new_tablet_id);
-    if (new_tablet == nullptr) {
-        LOG(WARNING) << "Fail to find new tablet. new_tablet=" << request.new_tablet_id;
-        return Status::OLAPInternalError(OLAP_ERR_TABLE_NOT_FOUND);
-    }
+    TabletSharedPtr new_tablet;
+    RETURN_IF_ERROR(cloud::tablet_mgr()->get_tablet(request.new_tablet_id, &new_tablet));
 
     auto missed_versions = new_tablet->cloud_calc_missed_versions(request.alter_version);
     if (missed_versions.empty()) {

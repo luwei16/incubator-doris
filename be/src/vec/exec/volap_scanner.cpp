@@ -59,18 +59,22 @@ Status VOlapScanner::prepare(
 
     // Get olap table
     TTabletId tablet_id = scan_range.tablet_id;
-    SchemaHash schema_hash = strtoul(scan_range.schema_hash.c_str(), nullptr, 10);
     _version = strtoul(scan_range.version.c_str(), nullptr, 10);
     {
+#ifdef CLOUD_MODE
+        RETURN_IF_ERROR(cloud::tablet_mgr()->get_tablet(tablet_id, &_tablet));
+#else
         std::string err;
         _tablet = StorageEngine::instance()->tablet_manager()->get_tablet(tablet_id, true, &err);
         if (_tablet.get() == nullptr) {
+            SchemaHash schema_hash = strtoul(scan_range.schema_hash.c_str(), nullptr, 10);
             std::stringstream ss;
             ss << "failed to get tablet. tablet_id=" << tablet_id
                << ", with schema_hash=" << schema_hash << ", reason=" << err;
             LOG(WARNING) << ss.str();
             return Status::InternalError(ss.str());
         }
+#endif
         _tablet_schema->copy_from(*_tablet->tablet_schema());
         if (!_parent->_olap_scan_node.columns_desc.empty() &&
             _parent->_olap_scan_node.columns_desc[0].col_unique_id >= 0) {

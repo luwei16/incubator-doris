@@ -127,8 +127,8 @@ StorageEngine::StorageEngine(const EngineOptions& options)
                   std::make_shared<MemTrackerLimiter>(-1, "StorageEngine::Consistency")),
           _mem_tracker(std::make_shared<MemTrackerLimiter>(-1, "StorageEngine::Self")),
           _stop_background_threads_latch(1),
-          _tablet_manager(new TabletManager(config::tablet_map_shard_size)),
 #ifndef CLOUD_MODE
+          _tablet_manager(new TabletManager(config::tablet_map_shard_size)),
           _txn_manager(new TxnManager(config::txn_map_shard_size, config::txn_shard_size)),
 #endif
           _rowset_id_generator(new UniqueRowsetIdGenerator(options.backend_uid)),

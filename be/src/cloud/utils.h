@@ -1,5 +1,6 @@
 #pragma once
 
+#include "cloud/cloud_tablet_mgr.h"
 #include "cloud/meta_mgr.h"
 
 namespace doris {
@@ -14,6 +15,9 @@ DataDir* cloud_data_dir();
 
 // Get global MetaMgr.
 MetaMgr* meta_mgr();
+
+// Get global CloudTabletMgr
+CloudTabletMgr* tablet_mgr();
 
 } // namespace cloud
 } // namespace doris

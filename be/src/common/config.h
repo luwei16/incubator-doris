@@ -879,7 +879,10 @@ CONF_Bool(enable_write_as_cache, "false"); // use for test
 CONF_String(cloud_unique_id, "");
 CONF_String(meta_service_endpoint, "");
 CONF_Bool(meta_service_use_load_balancer, "true");
+CONF_mInt32(meta_service_rpc_timeout_ms, "10000");
 CONF_String(tmp_file_dir, "${DORIS_HOME}/storage/tmp");
+CONF_Int64(tablet_cache_capacity, "10000");
+CONF_Int64(tablet_cache_shards, "16");
 
 } // namespace config
 

@@ -98,6 +98,9 @@ void DeltaWriter::_garbage_collection() {
 }
 
 Status DeltaWriter::init() {
+#ifdef CLOUD_MODE
+    RETURN_IF_ERROR(cloud::tablet_mgr()->get_tablet(_req.tablet_id, &_tablet));
+#else
     TabletManager* tablet_mgr = _storage_engine->tablet_manager();
     _tablet = tablet_mgr->get_tablet(_req.tablet_id);
     if (_tablet == nullptr) {
@@ -105,6 +108,7 @@ Status DeltaWriter::init() {
                      << ", schema_hash=" << _req.schema_hash;
         return Status::OLAPInternalError(OLAP_ERR_TABLE_NOT_FOUND);
     }
+#endif
 
     // get rowset ids snapshot
     if (_tablet->enable_unique_key_merge_on_write()) {

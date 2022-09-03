@@ -28,6 +28,7 @@
 #include <string>
 
 #include "boost/lexical_cast.hpp"
+#include "cloud/utils.h"
 #include "gen_cpp/AgentService_types.h"
 #include "http/http_client.h"
 #include "olap/olap_common.h"
@@ -104,6 +105,9 @@ Status EngineBatchLoadTask::_init() {
 
     // Check replica exist
     TabletSharedPtr tablet;
+#ifdef CLOUD_MODE
+    RETURN_IF_ERROR(cloud::tablet_mgr()->get_tablet(_push_req.tablet_id, &tablet));
+#else
     tablet = StorageEngine::instance()->tablet_manager()->get_tablet(_push_req.tablet_id);
     if (tablet == nullptr) {
         LOG(WARNING) << "get tables failed. "
@@ -111,6 +115,7 @@ Status EngineBatchLoadTask::_init() {
                      << ", schema_hash: " << _push_req.schema_hash;
         return Status::InvalidArgument("Could not find tablet {}", _push_req.tablet_id);
     }
+#endif
 
     // check disk capacity
     if (_push_req.push_type == TPushType::LOAD || _push_req.push_type == TPushType::LOAD_V2) {
@@ -348,6 +353,10 @@ Status EngineBatchLoadTask::_delete_data(const TPushReq& request,
         return Status::OLAPInternalError(OLAP_ERR_CE_CMD_PARAMS_ERROR);
     }
 
+#ifdef CLOUD_MODE
+    TabletSharedPtr tablet;
+    RETURN_IF_ERROR(cloud::tablet_mgr()->get_tablet(request.tablet_id, &tablet));
+#else
     // 1. Get all tablets with same tablet_id
     TabletSharedPtr tablet =
             StorageEngine::instance()->tablet_manager()->get_tablet(request.tablet_id);
@@ -355,6 +364,7 @@ Status EngineBatchLoadTask::_delete_data(const TPushReq& request,
         LOG(WARNING) << "can't find tablet. tablet=" << request.tablet_id;
         return Status::OLAPInternalError(OLAP_ERR_TABLE_NOT_FOUND);
     }
+#endif
 
     // 2. Process delete data by push interface
     PushHandler push_handler;

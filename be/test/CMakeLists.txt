@@ -390,6 +390,7 @@ endif()
 
 set(CLOUD_TEST_FILES
     cloud/cloud_meta_mgr_test.cpp
+    cloud/cloud_tablet_mgr_test.cpp
     cloud/cloud_tablet_test.cpp
 )
 

@@ -42,7 +42,7 @@ Status CloudMetaMgr::get_tablet_meta(int64_t tablet_id, TabletMetaSharedPtr* tab
     req.set_tablet_id(tablet_id);
     _stub->get_tablet(&cntl, &req, &resp, nullptr);
     if (cntl.Failed()) {
-        return Status::IOError("failed to get tablet meta: {}", cntl.ErrorText());
+        return Status::RpcError("failed to get tablet meta: {}", cntl.ErrorText());
     }
     if (resp.status().code() != selectdb::MetaServiceCode::OK) {
         return Status::InternalError("failed to get tablet meta: {}", resp.status().msg());
@@ -67,7 +67,7 @@ Status CloudMetaMgr::get_rowset_meta(int64_t tablet_id, Version version_range,
     req.set_end_version(version_range.second);
     _stub->get_rowset(&cntl, &req, &resp, nullptr);
     if (cntl.Failed()) {
-        return Status::IOError("failed to get rowset meta: {}", cntl.ErrorText());
+        return Status::RpcError("failed to get rowset meta: {}", cntl.ErrorText());
     }
     if (resp.status().code() != selectdb::MetaServiceCode::OK) {
         return Status::InternalError("failed to get rowset meta: {}", resp.status().msg());
@@ -93,7 +93,7 @@ Status CloudMetaMgr::write_tablet_meta(const TabletMetaSharedPtr& tablet_meta) {
     tablet_meta->to_meta_pb(req.mutable_tablet_meta());
     _stub->create_tablet(&cntl, &req, &resp, nullptr);
     if (cntl.Failed()) {
-        return Status::IOError("failed to write tablet meta: {}", cntl.ErrorText());
+        return Status::RpcError("failed to write tablet meta: {}", cntl.ErrorText());
     }
     if (resp.status().code() != selectdb::MetaServiceCode::OK) {
         return Status::InternalError("failed to tablet rowset meta: {}", resp.status().msg());
@@ -113,7 +113,7 @@ Status CloudMetaMgr::prepare_rowset(const RowsetMetaSharedPtr& rs_meta, bool is_
     req.set_temporary(is_tmp);
     _stub->prepare_rowset(&cntl, &req, &resp, nullptr);
     if (cntl.Failed()) {
-        return Status::IOError("failed to prepare rowset: {}", cntl.ErrorText());
+        return Status::RpcError("failed to prepare rowset: {}", cntl.ErrorText());
     }
     if (resp.status().code() == selectdb::MetaServiceCode::OK) {
         return Status::OK();
@@ -135,7 +135,7 @@ Status CloudMetaMgr::commit_rowset(const RowsetMetaSharedPtr& rs_meta, bool is_t
     req.set_temporary(is_tmp);
     _stub->commit_rowset(&cntl, &req, &resp, nullptr);
     if (cntl.Failed()) {
-        return Status::IOError("failed to commit rowset: {}", cntl.ErrorText());
+        return Status::RpcError("failed to commit rowset: {}", cntl.ErrorText());
     }
     if (resp.status().code() == selectdb::MetaServiceCode::OK) {
         return Status::OK();
@@ -158,7 +158,7 @@ Status CloudMetaMgr::commit_txn(StreamLoadContext* ctx, bool is_2pc) {
     req.set_is_2pc(is_2pc);
     _stub->commit_txn(&cntl, &req, &resp, nullptr);
     if (cntl.Failed()) {
-        return Status::IOError("failed to commit txn: {}", cntl.ErrorText());
+        return Status::RpcError("failed to commit txn: {}", cntl.ErrorText());
     }
     if (resp.status().code() != selectdb::MetaServiceCode::OK) {
         return Status::InternalError("failed to commit txn: {}", resp.status().msg());
@@ -182,7 +182,7 @@ Status CloudMetaMgr::abort_txn(StreamLoadContext* ctx) {
     }
     _stub->abort_txn(&cntl, &req, &resp, nullptr);
     if (cntl.Failed()) {
-        return Status::IOError("failed to abort txn: {}", cntl.ErrorText());
+        return Status::RpcError("failed to abort txn: {}", cntl.ErrorText());
     }
     if (resp.status().code() != selectdb::MetaServiceCode::OK) {
         return Status::InternalError("failed to abort txn: {}", resp.status().msg());
@@ -202,7 +202,7 @@ Status CloudMetaMgr::precommit_txn(StreamLoadContext* ctx) {
     req.set_txn_id(ctx->txn_id);
     _stub->precommit_txn(&cntl, &req, &resp, nullptr);
     if (cntl.Failed()) {
-        return Status::IOError("failed to precommit txn: {}", cntl.ErrorText());
+        return Status::RpcError("failed to precommit txn: {}", cntl.ErrorText());
     }
     if (resp.status().code() != selectdb::MetaServiceCode::OK) {
         return Status::InternalError("failed to precommit txn: {}", resp.status().msg());

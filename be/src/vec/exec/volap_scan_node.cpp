@@ -17,6 +17,7 @@
 
 #include "vec/exec/volap_scan_node.h"
 
+#include "cloud/utils.h"
 #include "common/resource_tls.h"
 #include "exec/scan_node.h"
 #include "gen_cpp/PlanNodes_types.h"
@@ -908,6 +909,10 @@ Status VOlapScanNode::start_scan_thread(RuntimeState* state) {
     std::unordered_set<std::string> disk_set;
     for (auto& scan_range : _scan_ranges) {
         auto tablet_id = scan_range->tablet_id;
+#ifdef CLOUD_MODE
+        TabletSharedPtr tablet;
+        RETURN_IF_ERROR(cloud::tablet_mgr()->get_tablet(tablet_id, &tablet));
+#else
         std::string err;
         TabletSharedPtr tablet =
                 StorageEngine::instance()->tablet_manager()->get_tablet(tablet_id, true, &err);
@@ -917,6 +922,7 @@ Status VOlapScanNode::start_scan_thread(RuntimeState* state) {
             LOG(WARNING) << ss.str();
             return Status::InternalError(ss.str());
         }
+#endif
 
         std::vector<std::unique_ptr<OlapScanRange>>* ranges = &cond_ranges;
         std::vector<std::unique_ptr<OlapScanRange>> split_ranges;

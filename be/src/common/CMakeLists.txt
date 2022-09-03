@@ -24,6 +24,7 @@ add_library(Common STATIC
   resource_tls.cpp
   logconfig.cpp
   configbase.cpp
+  sync_point.cpp
 )
 
 # Generate env_config.h according to env_config.h.in
