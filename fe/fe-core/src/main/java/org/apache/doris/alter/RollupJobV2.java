@@ -320,12 +320,10 @@ public class RollupJobV2 extends AlterJobV2 implements GsonPostProcessable {
                     TTabletType tabletType = tbl.getPartitionInfo().getTabletType(partitionId);
                     MaterializedIndex rollupIndex = entry.getValue();
 
-                    Map<Long, Long> tabletIdMap = this.partitionIdToBaseRollupTabletIdMap.get(partitionId);
                     for (Tablet rollupTablet : rollupIndex.getTablets()) {
-                        long rollupTabletId = rollupTablet.getId();
                         Env.getCurrentInternalCatalog().createCloudTabletMeta(tableId, rollupIndexId, partitionId,
                                 rollupTablet, tabletType, rollupSchemaHash,
-                                rollupKeysType, rollupShortKeyColumnCount, tbl.getCopiedBfColumns(), 
+                                rollupKeysType, rollupShortKeyColumnCount, tbl.getCopiedBfColumns(),
                                 tbl.getBfFpp(), tbl.getCopiedIndexes(), rollupSchema,
                                 tbl.getDataSortInfo(), tbl.getCompressionType(), tbl.getStoragePolicy(),
                                 tbl.isInMemory(), tbl.isPersistent());

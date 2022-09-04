@@ -449,8 +449,8 @@ public class Column implements Writable {
 
         // when doing schema change, some modified column has a prefix in name.
         // this prefix is only used in FE, not visible to BE, so we should remove this prefix.
-        builder.setName(name.startsWith(SchemaChangeHandler.SHADOW_NAME_PRFIX) ?
-            name.substring(SchemaChangeHandler.SHADOW_NAME_PRFIX.length()) : name);
+        builder.setName(name.startsWith(SchemaChangeHandler.SHADOW_NAME_PRFIX)
+                ? name.substring(SchemaChangeHandler.SHADOW_NAME_PRFIX.length()) : name);
 
         builder.setUniqueId(uniqueId);
         builder.setType(this.getDataType().toString());
@@ -484,8 +484,8 @@ public class Column implements Writable {
         if (indexes != null) {
             for (Index index : indexes) {
                 if (index.getIndexType() == IndexDef.IndexType.BITMAP) {
-                        builder.setHasBitmapIndex(true);
-                        break;
+                    builder.setHasBitmapIndex(true);
+                    break;
                 }
             }
         }

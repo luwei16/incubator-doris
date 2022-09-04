@@ -28,8 +28,8 @@ under the License.
     <suppress files="[\\/]test[\\/]" checks="MissingJavadocMethod" />
     <suppress files="[\\/]test[\\/]" checks="MissingJavadocType" />
     <suppress files="[\\/]test[\\/]" checks="LineLength" />
-    <suppress files="[\\/]selectdb[\\/]" checks=".*" />
-    <suppress files="[\\/]cloud[\\/]" checks=".*" />
+    <suppress files="[\\/]com[\\/]selectdb[\\/]cloud[\\/]" checks="Header" />
+    <suppress files="[\\/]com[\\/]selectdb[\\/]cloud[\\/]" checks="ImportControl" />
 
     <!-- Suppress some rules except nereids -->
     <!-- Java doc -->

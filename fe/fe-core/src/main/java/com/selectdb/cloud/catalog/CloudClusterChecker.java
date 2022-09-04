@@ -75,8 +75,8 @@ public class CloudClusterChecker extends MasterDaemon {
             if (!response.hasStatus() || !response.getStatus().hasCode()
                     || response.getStatus().getCode() != SelectdbCloud.MetaServiceCode.OK) {
                 LOG.warn("failed to get cloud cluster due to incomplete response, "
-                         + "cloud_unique_id={}, clusterId={}, response={}",
-                         Config.cloud_unique_id, clusterId, response);
+                        + "cloud_unique_id={}, clusterId={}, response={}",
+                        Config.cloud_unique_id, clusterId, response);
                 continue;
             }
             LOG.info("get cloud cluster, clusterId={} nodes={}", clusterId, response.getCluster().getNodesList());
@@ -85,9 +85,9 @@ public class CloudClusterChecker extends MasterDaemon {
             String newClusterName = response.getCluster().getClusterName();
             if (!newClusterName.equals(currentClusterName)) {
                 // rename cluster's name
-                LOG.info("cluster_name corresponding to cluster_id has been changed," +
-                        " cluster_id : {} , current_cluster_name : {}, new_cluster_name :{}",
-                    clusterId, currentClusterName, newClusterName);
+                LOG.info("cluster_name corresponding to cluster_id has been changed,"
+                        + " cluster_id : {} , current_cluster_name : {}, new_cluster_name :{}",
+                        clusterId, currentClusterName, newClusterName);
                 // change all be's cluster_name
                 currentBes.forEach(b -> b.setCloudClusterName(newClusterName));
                 // update clusterNameToId
