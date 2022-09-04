@@ -406,6 +406,7 @@ void TabletMeta::init_rs_metas_fs(const io::FileSystemPtr& fs) {
 
 void TabletMeta::init_from_pb(const TabletMetaPB& tablet_meta_pb) {
     _table_id = tablet_meta_pb.table_id();
+    _index_id = tablet_meta_pb.index_id();
     _partition_id = tablet_meta_pb.partition_id();
     _tablet_id = tablet_meta_pb.tablet_id();
     _replica_id = tablet_meta_pb.replica_id();
@@ -496,6 +497,7 @@ void TabletMeta::init_from_pb(const TabletMetaPB& tablet_meta_pb) {
 
 void TabletMeta::to_meta_pb(TabletMetaPB* tablet_meta_pb) {
     tablet_meta_pb->set_table_id(table_id());
+    tablet_meta_pb->set_index_id(index_id());
     tablet_meta_pb->set_partition_id(partition_id());
     tablet_meta_pb->set_tablet_id(tablet_id());
     tablet_meta_pb->set_replica_id(replica_id());

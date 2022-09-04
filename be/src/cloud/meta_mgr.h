@@ -19,7 +19,7 @@ public:
         return Status::NotSupported("not supported");
     }
 
-    virtual Status get_rowset_meta(int64_t tablet_id, Version version_range,
+    virtual Status get_rowset_meta(const TabletMetaSharedPtr& tablet_meta, Version version_range,
                                    std::vector<RowsetMetaSharedPtr>* rs_metas) {
         return Status::NotSupported("not supported");
     }

@@ -68,7 +68,8 @@ BetaRowsetWriter::~BetaRowsetWriter() {
 
 Status BetaRowsetWriter::init(const RowsetWriterContext& rowset_writer_context) {
     _context = rowset_writer_context;
-    _rowset_meta.reset(new RowsetMeta);
+    _rowset_meta.reset(
+            new RowsetMeta(rowset_writer_context.table_id, rowset_writer_context.index_id));
 #ifdef CLOUD_MODE
     if (_context.fs) {
         auto fs = std::reinterpret_pointer_cast<io::S3FileSystem>(_context.fs);

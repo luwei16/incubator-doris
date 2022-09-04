@@ -30,6 +30,8 @@ struct RowsetWriterContext {
     RowsetWriterContext()
             : tablet_id(0),
               tablet_schema_hash(0),
+              table_id(0),
+              index_id(0),
               partition_id(0),
               rowset_type(BETA_ROWSET),
               tablet_schema(nullptr),
@@ -65,6 +67,8 @@ struct RowsetWriterContext {
     RowsetId rowset_id;
     int64_t tablet_id;
     int64_t tablet_schema_hash;
+    int64_t table_id;
+    int64_t index_id;
     int64_t partition_id;
     RowsetTypePB rowset_type;
     std::string tablet_path;

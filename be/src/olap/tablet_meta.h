@@ -122,6 +122,7 @@ public:
     TabletTypePB tablet_type() const { return _tablet_type; }
     TabletUid tablet_uid() const;
     int64_t table_id() const;
+    int64_t index_id() const;
     int64_t partition_id() const;
     int64_t tablet_id() const;
     int64_t replica_id() const;
@@ -222,6 +223,7 @@ private:
 
 private:
     int64_t _table_id = 0;
+    int64_t _index_id = 0;
     int64_t _partition_id = 0;
     int64_t _tablet_id = 0;
     int64_t _replica_id = 0;
@@ -432,6 +434,10 @@ inline TabletUid TabletMeta::tablet_uid() const {
 
 inline int64_t TabletMeta::table_id() const {
     return _table_id;
+}
+
+inline int64_t TabletMeta::index_id() const {
+    return _index_id;
 }
 
 inline int64_t TabletMeta::partition_id() const {

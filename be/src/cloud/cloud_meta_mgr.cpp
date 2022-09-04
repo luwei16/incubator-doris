@@ -53,8 +53,11 @@ Status CloudMetaMgr::get_tablet_meta(int64_t tablet_id, TabletMetaSharedPtr* tab
     return Status::OK();
 }
 
-Status CloudMetaMgr::get_rowset_meta(int64_t tablet_id, Version version_range,
+Status CloudMetaMgr::get_rowset_meta(const TabletMetaSharedPtr& tablet_meta, Version version_range,
                                      std::vector<RowsetMetaSharedPtr>* rs_metas) {
+    int64_t tablet_id = tablet_meta->tablet_id();
+    int64_t table_id = tablet_meta->table_id();
+    int64_t index_id = tablet_meta->index_id();
     VLOG_DEBUG << "send GetRowsetRequest, tablet_id: " << tablet_id
                << ", version: " << version_range;
     brpc::Controller cntl;
@@ -75,7 +78,7 @@ Status CloudMetaMgr::get_rowset_meta(int64_t tablet_id, Version version_range,
     rs_metas->clear();
     rs_metas->reserve(resp.rowset_meta().size());
     for (const auto& meta_pb : resp.rowset_meta()) {
-        auto rs_meta = std::make_shared<RowsetMeta>();
+        auto rs_meta = std::make_shared<RowsetMeta>(table_id, index_id);
         rs_meta->init_from_pb(meta_pb);
         VLOG_DEBUG << "get rowset meta, tablet_id: " << rs_meta->tablet_id()
                    << ", version: " << rs_meta->version();

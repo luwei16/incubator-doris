@@ -529,11 +529,7 @@ void TaskWorkerPool::_alter_tablet(const TAgentTaskRequest& agent_task_req, int6
     // Check last schema change status, if failed delete tablet file
     // Do not need to adjust delete success or not
     // Because if delete failed create rollup will failed
-    TTabletId new_tablet_id;
-    TSchemaHash new_schema_hash = 0;
     if (status.ok()) {
-        new_tablet_id = agent_task_req.alter_tablet_req_v2.new_tablet_id;
-        new_schema_hash = agent_task_req.alter_tablet_req_v2.new_schema_hash;
         EngineAlterTabletTask engine_task(agent_task_req.alter_tablet_req_v2);
         Status sc_status = _env->storage_engine()->execute_task(&engine_task);
         if (!sc_status.ok()) {
@@ -555,24 +551,9 @@ void TaskWorkerPool::_alter_tablet(const TAgentTaskRequest& agent_task_req, int6
     finish_task_request->__set_backend(_backend);
     finish_task_request->__set_report_version(_s_report_version);
     finish_task_request->__set_task_type(task_type);
-    finish_task_request->__set_signature(signature);
-
-    std::vector<TTabletInfo> finish_tablet_infos;
-    if (status.ok()) {
-        TTabletInfo tablet_info;
-        status = _get_tablet_info(new_tablet_id, new_schema_hash, signature, &tablet_info);
-
-        if (!status.ok()) {
-            LOG(WARNING) << process_name << " success, but get new tablet info failed."
-                         << "tablet_id: " << new_tablet_id << ", schema_hash: " << new_schema_hash
-                         << ", signature: " << signature;
-        } else {
-            finish_tablet_infos.push_back(tablet_info);
-        }
-    }
+    finish_task_request->__set_signature(signature); 
 
     if (status.ok()) {
-        finish_task_request->__set_finish_tablet_infos(finish_tablet_infos);
         LOG(INFO) << process_name << " success. signature: " << signature;
         error_msgs.push_back(process_name + " success");
     } else {

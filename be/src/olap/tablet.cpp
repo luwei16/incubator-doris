@@ -537,8 +537,7 @@ Status Tablet::cloud_capture_rs_readers(Version version_range,
 
 Status Tablet::cloud_sync_rowsets(int64_t spec_version) {
     // serially execute sync to reduce unnecessary network overhead
-    static std::mutex s_sync_rowsets_lock;
-    std::lock_guard lock(s_sync_rowsets_lock);
+    std::lock_guard lock(_sync_rowsets_lock);
 
     int64_t max_version = 0;
     {
@@ -550,7 +549,7 @@ Status Tablet::cloud_sync_rowsets(int64_t spec_version) {
     }
     std::vector<RowsetMetaSharedPtr> rs_metas;
     RETURN_IF_ERROR(
-            cloud::meta_mgr()->get_rowset_meta(tablet_id(), {max_version + 1, -1}, &rs_metas));
+            cloud::meta_mgr()->get_rowset_meta(_tablet_meta, {max_version + 1, -1}, &rs_metas));
     for (const auto& rs_meta : rs_metas) {
         // acquire tablet exclusive header_lock in add_rowset_by_meta
         add_rowset_by_meta(rs_meta);
@@ -1787,6 +1786,8 @@ void Tablet::_init_context_common_fields(RowsetWriterContext& context) {
     context.tablet_uid = tablet_uid();
 
     context.tablet_id = tablet_id();
+    context.table_id = table_id();
+    context.index_id = index_id(); 
     context.partition_id = partition_id();
     context.tablet_schema_hash = schema_hash();
     context.rowset_type = tablet_meta()->preferred_rowset_type();

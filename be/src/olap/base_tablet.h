@@ -53,6 +53,7 @@ public:
     // Returns a string can be used to uniquely identify a tablet.
     // The result string will often be printed to the log.
     const std::string full_name() const;
+    int64_t index_id() const; 
     int64_t partition_id() const;
     int64_t tablet_id() const;
     int64_t replica_id() const;
@@ -120,6 +121,10 @@ inline int64_t BaseTablet::table_id() const {
 
 inline const std::string BaseTablet::full_name() const {
     return _full_name;
+}
+
+inline int64_t BaseTablet::index_id() const {
+    return _tablet_meta->index_id();
 }
 
 inline int64_t BaseTablet::partition_id() const {

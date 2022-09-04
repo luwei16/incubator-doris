@@ -71,27 +71,27 @@ TEST_F(CloudMetaMgrTest, write_rowset_meta) {
 }
 
 TEST_F(CloudMetaMgrTest, write_and_get_rowset_meta) {
-    int64_t ts = time(nullptr);
-    auto rs_meta1 = create_rowset_meta(ts, {0, 1}, 0);
+    auto tablet_meta = create_tablet_meta(10015, 20015);
+    auto rs_meta1 = create_rowset_meta(20015, {0, 1}, 0);
     ASSERT_EQ(Status::OK(), meta_mgr->prepare_rowset(rs_meta1, false));
     ASSERT_EQ(Status::OK(), meta_mgr->commit_rowset(rs_meta1, false));
-    auto rs_meta2 = create_rowset_meta(ts, {2, 2}, 0);
+    auto rs_meta2 = create_rowset_meta(20015, {2, 2}, 0);
     ASSERT_EQ(Status::OK(), meta_mgr->prepare_rowset(rs_meta2, false));
     ASSERT_EQ(Status::OK(), meta_mgr->commit_rowset(rs_meta2, false));
-    auto rs_meta3 = create_rowset_meta(ts, {3, 3}, 0);
+    auto rs_meta3 = create_rowset_meta(20015, {3, 3}, 0);
     ASSERT_EQ(Status::OK(), meta_mgr->prepare_rowset(rs_meta3, false));
     ASSERT_EQ(Status::OK(), meta_mgr->commit_rowset(rs_meta3, false));
-    auto rs_meta4 = create_rowset_meta(ts, {4, 4}, 0);
+    auto rs_meta4 = create_rowset_meta(20015, {4, 4}, 0);
     ASSERT_EQ(Status::OK(), meta_mgr->prepare_rowset(rs_meta4, false));
     ASSERT_EQ(Status::OK(), meta_mgr->commit_rowset(rs_meta4, false));
     std::vector<RowsetMetaSharedPtr> rs_metas;
-    ASSERT_EQ(Status::OK(), meta_mgr->get_rowset_meta(ts, {0, 4}, &rs_metas));
+    ASSERT_EQ(Status::OK(), meta_mgr->get_rowset_meta(tablet_meta, {0, 4}, &rs_metas));
     ASSERT_EQ(4, rs_metas.size());
     ASSERT_EQ(*rs_metas[0], *rs_meta1);
     ASSERT_EQ(*rs_metas[1], *rs_meta2);
     ASSERT_EQ(*rs_metas[2], *rs_meta3);
     ASSERT_EQ(*rs_metas[3], *rs_meta4);
-    ASSERT_EQ(Status::OK(), meta_mgr->get_rowset_meta(ts, {0, 2}, &rs_metas));
+    ASSERT_EQ(Status::OK(), meta_mgr->get_rowset_meta(tablet_meta, {0, 2}, &rs_metas));
     ASSERT_EQ(2, rs_metas.size());
     ASSERT_EQ(*rs_metas[0], *rs_meta1);
     ASSERT_EQ(*rs_metas[1], *rs_meta2);

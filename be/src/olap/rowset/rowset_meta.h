@@ -41,6 +41,10 @@ using RowsetMetaSharedPtr = std::shared_ptr<RowsetMeta>;
 
 class RowsetMeta {
 public:
+    RowsetMeta() = default;
+
+    RowsetMeta(int64_t table_id, int64_t index_id) : _table_id(table_id), _index_id(index_id) {}
+
     virtual ~RowsetMeta() = default;
 
     virtual bool init(const std::string& pb_rowset_meta) {
@@ -104,6 +108,10 @@ public:
     const io::ResourceId& resource_id() const { return _rowset_meta_pb.resource_id(); }
 
     bool is_local() const { return !_rowset_meta_pb.has_resource_id(); }
+
+    int64_t table_id() const { return _table_id; }
+
+    int64_t index_id() const { return _index_id; }
 
     RowsetId rowset_id() const { return _rowset_id; }
 
@@ -406,6 +414,11 @@ private:
     std::shared_ptr<TabletSchema> _schema = nullptr;
     RowsetId _rowset_id;
     io::FileSystemPtr _fs;
+
+    // these fields will be used in some statistics
+    int64_t _table_id = 0;
+    int64_t _index_id = 0;
+
     bool _is_removed_from_rowset_meta = false;
 };
 
