@@ -15,6 +15,7 @@ add_library(MetaService
     codec.cpp
     keys.cpp
     doris_txn.cpp
+    mem_txn_kv.cpp
 )
 
 if (${MAKE_TEST} STREQUAL "OFF")

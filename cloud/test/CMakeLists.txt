@@ -30,6 +30,10 @@ add_executable(recycler_test
    recycler_test.cpp
 )
 
+add_executable(mem_txn_kv_test
+   mem_txn_kv_test.cpp
+)
+
 message("Meta-service test dependencies: ${TEST_LINK_LIBS}")
 target_link_libraries(sync_point_test
     ${TEST_LINK_LIBS}
@@ -43,6 +47,7 @@ target_link_libraries(keys_test
     ${TEST_LINK_LIBS} 
 )
 
+
 # FDB related tests need to be linked with libfdb_c
 set(FDB_LINKER_FLAGS "-lfdb_c -L${THIRDPARTY_DIR}/lib")
 
@@ -53,6 +58,11 @@ target_link_libraries(doris_txn_test
 
 target_link_libraries(txn_kv_test
     ${TEST_LINK_LIBS} 
+    ${FDB_LINKER_FLAGS}
+)
+
+target_link_libraries(mem_txn_kv_test
+    ${TEST_LINK_LIBS}
     ${FDB_LINKER_FLAGS}
 )
 
