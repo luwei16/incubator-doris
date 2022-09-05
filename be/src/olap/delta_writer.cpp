@@ -151,7 +151,7 @@ Status DeltaWriter::init() {
     context.rowset_state = PREPARED;
     context.segments_overlap = OVERLAPPING;
     context.tablet_schema = _tablet_schema;
-    context.fs = _tablet->data_dir()->fs();
+    context.fs = cloud::latest_fs();
     RETURN_NOT_OK(_tablet->create_rowset_writer(&context, &_rowset_writer));
     _schema.reset(new Schema(_tablet_schema));
 #ifdef CLOUD_MODE

@@ -48,7 +48,7 @@ public:
         return Status::NotSupported("not supported");
     }
 
-    virtual Status get_s3_info(const std::string& resource_id, S3Conf* s3_info) {
+    virtual Status get_s3_info(std::vector<std::tuple<std::string, S3Conf>>* s3_infos) {
         return Status::NotSupported("not supported");
     }
 };

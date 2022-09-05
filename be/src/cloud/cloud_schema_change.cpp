@@ -175,7 +175,7 @@ Status CloudSchemaChangeHandler::_convert_historical_rowsets(const SchemaChangeP
         context.tablet_schema = new_tablet->tablet_schema();
         context.oldest_write_timestamp = rs_reader->oldest_write_timestamp();
         context.newest_write_timestamp = rs_reader->newest_write_timestamp();
-        context.fs = new_tablet->data_dir()->fs();
+        context.fs = cloud::latest_fs();
         RETURN_IF_ERROR(new_tablet->create_rowset_writer(&context, &rowset_writer));
 
         auto st = meta_mgr()->prepare_rowset(rowset_writer->rowset_meta(), false);

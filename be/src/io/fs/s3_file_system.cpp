@@ -40,6 +40,7 @@
 #include "io/fs/s3_file_writer.h"
 #include "olap/olap_common.h"
 #include "util/async_io.h"
+
 namespace doris {
 namespace io {
 
@@ -62,11 +63,12 @@ S3FileSystem::S3FileSystem(S3Conf s3_conf, ResourceId resource_id)
 S3FileSystem::~S3FileSystem() = default;
 
 Status S3FileSystem::connect() {
-    std::lock_guard lock(_client_mu);
-    _client = ClientFactory::instance().create(_s3_conf);
+    auto client = ClientFactory::instance().create(_s3_conf);
     if (!_client) {
         return Status::InternalError("failed to init s3 client with {}", _s3_conf.to_string());
     }
+    std::lock_guard lock(_client_mu);
+    _client = std::move(client);
     return Status::OK();
 }
 
@@ -332,9 +334,9 @@ struct TmpFileMgr {
         DCHECK(max_cache_size != 0);
     }
 
-    static TmpFileMgr& instance() {
+    static TmpFileMgr* instance() {
         static TmpFileMgr s_tmp_file_mgr(config::max_s3_cache_file_size);
-        return s_tmp_file_mgr;
+        return &s_tmp_file_mgr;
     }
 
     std::mutex mtx;
@@ -344,33 +346,44 @@ struct TmpFileMgr {
     size_t cur_cache_size = 0;
 };
 
-void S3FileSystem::insert(const Path& path, size_t file_size) {
-    std::vector<std::string> remove_paths;
+void S3FileSystem::insert_tmp_file(const Path& path, size_t file_size) {
+    auto tmp_file_mgr = TmpFileMgr::instance();
+    auto local_fs = global_local_filesystem();
+    std::vector<Path> remove_paths;
     {
-        std::lock_guard lock(TmpFileMgr::instance().mtx);
-        TmpFileMgr::instance().cur_cache_size += file_size;
-        while (TmpFileMgr::instance().cur_cache_size > TmpFileMgr::instance().max_cache_size) {
-            auto& [remove_path, size] = TmpFileMgr::instance().file_list.back();
-            TmpFileMgr::instance().file_set.erase(remove_path);
-            TmpFileMgr::instance().cur_cache_size -= size;
-            remove_paths.push_back(remove_path);
-            TmpFileMgr::instance().file_list.pop_back();
+        std::lock_guard lock(tmp_file_mgr->mtx);
+        tmp_file_mgr->cur_cache_size += file_size;
+        while (tmp_file_mgr->cur_cache_size > tmp_file_mgr->max_cache_size) {
+            auto& [remove_path, size] = tmp_file_mgr->file_list.back();
+            tmp_file_mgr->file_set.erase(remove_path);
+            tmp_file_mgr->cur_cache_size -= size;
+            remove_paths.push_back(std::move(remove_path));
+            tmp_file_mgr->file_list.pop_back();
         }
-        TmpFileMgr::instance().file_list.push_front(std::make_pair(path, file_size));
-        TmpFileMgr::instance().file_set.insert(path);
+        tmp_file_mgr->file_list.push_front(std::make_pair(path, file_size));
+        tmp_file_mgr->file_set.insert(path);
     }
-    // Mayby need some buffer when set write cache size
     for (auto& remove_path : remove_paths) {
-        global_local_filesystem()->delete_file(remove_path);
+        auto st = local_fs->delete_file(remove_path);
+        if (!st.ok()) {
+            LOG(WARNING) << "could not remove tmp file. err=" << st;
+        }
     }
 }
 
-FileReaderSPtr S3FileSystem::lookup(const Path& path) {
-    std::lock_guard lock(TmpFileMgr::instance().mtx);
+FileReaderSPtr S3FileSystem::lookup_tmp_file(const Path& path) {
+    auto tmp_file_mgr = TmpFileMgr::instance();
+    {
+        std::lock_guard lock(tmp_file_mgr->mtx);
+        if (tmp_file_mgr->file_set.count(path) == 0) {
+            return nullptr;
+        }
+    }
     FileReaderSPtr file_reader;
-    auto iter = TmpFileMgr::instance().file_set.find(path);
-    if (iter != TmpFileMgr::instance().file_set.end()) {
-        global_local_filesystem()->open_file(*iter, &file_reader);
+    auto st = global_local_filesystem()->open_file(path, &file_reader);
+    if (!st.ok()) {
+        LOG(WARNING) << "could not open tmp file. err=" << st;
+        return nullptr;
     }
     return file_reader;
 }

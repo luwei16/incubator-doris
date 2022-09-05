@@ -883,6 +883,7 @@ CONF_mInt32(meta_service_rpc_timeout_ms, "10000");
 CONF_String(tmp_file_dir, "${DORIS_HOME}/storage/tmp");
 CONF_Int64(tablet_cache_capacity, "10000");
 CONF_Int64(tablet_cache_shards, "16");
+CONF_mInt32(refresh_s3_info_interval_seconds, "60");
 
 } // namespace config
 

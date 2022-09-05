@@ -33,7 +33,7 @@ public:
 
     Status precommit_txn(StreamLoadContext* ctx) override;
 
-    Status get_s3_info(const std::string& resource_id, S3Conf* s3_info) override;
+    Status get_s3_info(std::vector<std::tuple<std::string, S3Conf>>* s3_infos) override;
 
 private:
     std::unique_ptr<selectdb::MetaService_Stub> _stub;

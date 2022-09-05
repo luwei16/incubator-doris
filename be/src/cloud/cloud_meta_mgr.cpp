@@ -7,6 +7,7 @@
 #include "common/config.h"
 #include "gen_cpp/selectdb_cloud.pb.h"
 #include "service/internal_service.h"
+#include "util/s3_util.h"
 
 namespace doris::cloud {
 
@@ -213,13 +214,42 @@ Status CloudMetaMgr::precommit_txn(StreamLoadContext* ctx) {
     return Status::OK();
 }
 
-Status CloudMetaMgr::get_s3_info(const std::string& resource_id, S3Conf* s3_info) {
-    s3_info->ak = config::test_s3_ak;
-    s3_info->sk = config::test_s3_sk;
-    s3_info->endpoint = config::test_s3_endpoint;
-    s3_info->region = config::test_s3_region;
-    s3_info->bucket = config::test_s3_bucket;
-    s3_info->prefix = config::test_s3_prefix;
+Status CloudMetaMgr::get_s3_info(std::vector<std::tuple<std::string, S3Conf>>* s3_infos) {
+    if (config::test_s3_ak != "ak") {
+        // For compatibility reason, will be removed soon.
+        S3Conf s3_conf;
+        s3_conf.ak = config::test_s3_ak;
+        s3_conf.sk = config::test_s3_sk;
+        s3_conf.endpoint = config::test_s3_endpoint;
+        s3_conf.region = config::test_s3_region;
+        s3_conf.bucket = config::test_s3_bucket;
+        s3_conf.prefix = config::test_s3_prefix;
+        s3_infos->emplace_back(config::test_s3_resource, std::move(s3_conf));
+        return Status::OK();
+    }
+
+    brpc::Controller cntl;
+    cntl.set_timeout_ms(config::meta_service_brpc_timeout_ms);
+    selectdb::GetObjStoreInfoRequest req;
+    selectdb::GetObjStoreInfoResponse resp;
+    req.set_cloud_unique_id(config::cloud_unique_id);
+    _stub->get_obj_store_info(&cntl, &req, &resp, nullptr);
+    if (cntl.Failed()) {
+        return Status::RpcError("failed to get s3 info: {}", cntl.ErrorText());
+    }
+    if (resp.status().code() != selectdb::MetaServiceCode::OK) {
+        return Status::InternalError("failed to get s3 info: {}", resp.status().msg());
+    }
+    for (auto& obj_store : resp.obj_info()) {
+        S3Conf s3_conf;
+        s3_conf.ak = obj_store.ak();
+        s3_conf.sk = obj_store.sk();
+        s3_conf.endpoint = obj_store.endpoint();
+        s3_conf.region = obj_store.region();
+        s3_conf.bucket = obj_store.bucket();
+        s3_conf.prefix = obj_store.prefix();
+        s3_infos->emplace_back(obj_store.id(), std::move(s3_conf));
+    }
     return Status::OK();
 }
 

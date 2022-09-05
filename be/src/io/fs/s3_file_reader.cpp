@@ -68,7 +68,7 @@ Status S3FileReader::read_at(size_t offset, Slice result, size_t* bytes_read, IO
 Status S3FileReader::read_at_impl(size_t offset, Slice result, size_t* bytes_read, IOState* state) {
     DCHECK(!closed());
     if (config::enable_write_as_cache) {
-        FileReaderSPtr _cache_file_reader = S3FileSystem::lookup(_local_path);
+        FileReaderSPtr _cache_file_reader = S3FileSystem::lookup_tmp_file(_local_path);
         if (_cache_file_reader) {
             if (state) {
                 state->stats->file_cache_stats.num_io_bytes_read_from_write_cache += result.size;

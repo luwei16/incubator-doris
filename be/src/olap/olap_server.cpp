@@ -28,6 +28,7 @@
 #include "agent/cgroups_mgr.h"
 #include "common/status.h"
 #include "gutil/strings/substitute.h"
+#include "io/fs/s3_file_system.h"
 #include "olap/cumulative_compaction.h"
 #include "olap/olap_common.h"
 #include "olap/olap_define.h"
@@ -42,13 +43,6 @@ namespace doris {
 volatile uint32_t g_schema_change_active_threads = 0;
 
 Status StorageEngine::start_bg_threads() {
-#ifdef CLOUD_MODE
-    // fd cache clean thread
-    RETURN_IF_ERROR(Thread::create(
-            "StorageEngine", "fd_cache_clean_thread",
-            [this]() { this->_fd_cache_clean_callback(); }, &_fd_cache_clean_thread));
-    LOG(INFO) << "fd cache clean thread started";
-#else
     RETURN_IF_ERROR(Thread::create(
             "StorageEngine", "unused_rowset_monitor_thread",
             [this]() { this->_unused_rowset_monitor_thread_callback(); },
@@ -155,10 +149,64 @@ Status StorageEngine::start_bg_threads() {
             .set_min_threads(config::tablet_publish_txn_max_thread)
             .set_max_threads(config::tablet_publish_txn_max_thread)
             .build(&_tablet_publish_txn_thread_pool);
-#endif
 
     LOG(INFO) << "all storage engine's background threads are started.";
     return Status::OK();
+}
+
+Status StorageEngine::cloud_start_bg_threads() {
+    RETURN_IF_ERROR(Thread::create(
+            "StorageEngine", "refresh_s3_info_thread",
+            [this]() { this->_refresh_s3_info_thread_callback(); }, &_refresh_s3_info_thread));
+    LOG(INFO) << "refresh s3 info thread started";
+
+    // fd cache clean thread
+    RETURN_IF_ERROR(Thread::create(
+            "StorageEngine", "fd_cache_clean_thread",
+            [this]() { this->_fd_cache_clean_callback(); }, &_fd_cache_clean_thread));
+    LOG(INFO) << "fd cache clean thread started";
+
+    LOG(INFO) << "all storage engine's background threads are started.";
+    return Status::OK();
+}
+
+void StorageEngine::_refresh_s3_info_thread_callback() {
+    while (!_stop_background_threads_latch.wait_for(
+            std::chrono::seconds(config::refresh_s3_info_interval_seconds))) {
+        std::vector<std::tuple<std::string, S3Conf>> s3_infos;
+        auto st = _meta_mgr->get_s3_info(&s3_infos);
+        if (!st.ok()) {
+            LOG(WARNING) << "failed to refresh object store info. err=" << st;
+            continue;
+        }
+        CHECK(!s3_infos.empty()) << "no s3 infos";
+        auto fs_map = io::FileSystemMap::instance();
+        for (auto& [id, s3_conf] : s3_infos) {
+            auto fs = fs_map->get(id);
+            if (fs == nullptr) {
+                auto s3_fs = std::make_shared<io::S3FileSystem>(std::move(s3_conf), id);
+                st = s3_fs->connect();
+                if (!st.ok()) {
+                    LOG(WARNING) << "failed to connect s3 fs. id=" << id;
+                    continue;
+                }
+                fs_map->insert(id, std::move(s3_fs));
+            } else {
+                auto s3_fs = std::reinterpret_pointer_cast<io::S3FileSystem>(fs);
+                if (s3_fs->s3_conf().ak != s3_conf.ak) {
+                    s3_fs->set_ak(s3_conf.ak);
+                    s3_fs->set_sk(s3_conf.sk);
+                    st = s3_fs->connect();
+                    if (!st.ok()) {
+                        LOG(WARNING) << "failed to connect s3 fs. id=" << id;
+                    }
+                }
+            }
+        }
+        if (auto& id = std::get<0>(s3_infos.back()); latest_fs()->resource_id() != id) {
+            set_latest_fs(fs_map->get(id));
+        }
+    }
 }
 
 void StorageEngine::_fd_cache_clean_callback() {

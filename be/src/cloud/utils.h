@@ -19,5 +19,8 @@ MetaMgr* meta_mgr();
 // Get global CloudTabletMgr
 CloudTabletMgr* tablet_mgr();
 
+// Get fs with latest object store info.
+io::FileSystemPtr latest_fs();
+
 } // namespace cloud
 } // namespace doris

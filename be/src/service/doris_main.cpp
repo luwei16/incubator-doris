@@ -415,7 +415,11 @@ int main(int argc, char** argv) {
     doris::io::global_local_filesystem()->create_directory(doris::config::tmp_file_dir);
     // start all background threads of storage engine.
     // SHOULD be called after exec env is initialized.
+#ifdef CLOUD_MODE
+    EXIT_IF_ERROR(engine->cloud_start_bg_threads());
+#else
     EXIT_IF_ERROR(engine->start_bg_threads());
+#endif
 
     doris::telemetry::init_tracer();
 

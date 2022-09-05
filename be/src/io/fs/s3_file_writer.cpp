@@ -78,7 +78,7 @@ Status S3FileWriter::close() {
     // If enable_write_as_cache == true, tmp file will be cached. And deleted when cache full or be restart
     if (config::enable_write_as_cache) {
         _tmp_file_writer->close();
-        S3FileSystem::insert(_tmp_file_writer->path(), _tmp_file_writer->bytes_appended());
+        S3FileSystem::insert_tmp_file(_tmp_file_writer->path(), _tmp_file_writer->bytes_appended());
     }
     // TODO(cyx): check data correctness
     return Status::OK();

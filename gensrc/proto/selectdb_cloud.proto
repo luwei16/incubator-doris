@@ -344,7 +344,7 @@ message AlterObjStoreInfoRequest {
     enum Operation {
         UNKNOWN         = 0;
         UPDATE_AK_SK    = 1;
-        ADD_OBJ_INFO = 2;
+        ADD_OBJ_INFO    = 2;
     }
     optional string cloud_unique_id = 1; // For auth
     optional ObjectStoreInfoPB obj = 2;

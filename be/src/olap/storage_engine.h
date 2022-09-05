@@ -36,6 +36,7 @@
 #include "gen_cpp/BackendService_types.h"
 #include "gen_cpp/MasterService_types.h"
 #include "gutil/ref_counted.h"
+#include "io/fs/file_system.h"
 #include "olap/compaction_permit_limiter.h"
 #include "olap/olap_common.h"
 #include "olap/olap_define.h"
@@ -72,6 +73,16 @@ public:
     static Status open(const EngineOptions& options, StorageEngine** engine_ptr);
 
     static StorageEngine* instance() { return _s_instance; }
+
+    io::FileSystemPtr latest_fs() const {
+        std::lock_guard lock(_latest_fs_mtx);
+        return _latest_fs;
+    }
+
+    void set_latest_fs(const io::FileSystemPtr& fs) {
+        std::lock_guard lock(_latest_fs_mtx);
+        _latest_fs = fs;
+    }
 
     Status create_tablet(const TCreateTabletReq& request);
 
@@ -163,6 +174,9 @@ public:
     // start all background threads. This should be call after env is ready.
     Status start_bg_threads();
 
+    // CLOUD_MODE
+    Status cloud_start_bg_threads();
+
     // clear trash and snapshot file
     // option: update disk usage after sweep
     Status start_trash_sweep(double* usage, bool ignore_guard = false);
@@ -224,6 +238,9 @@ private:
 
     Status _do_sweep(const std::string& scan_root, const time_t& local_tm_now,
                      const int32_t expire);
+
+    // CLOUD_MODE
+    void _refresh_s3_info_thread_callback();
 
     // All these xxx_callback() functions are for Background threads
     // unused rowset monitor thread
@@ -320,6 +337,11 @@ private:
 
     static StorageEngine* _s_instance;
 
+    // CLOUD_MODE
+    // FileSystem with latest object store info, new data will be written to this fs.
+    mutable std::mutex _latest_fs_mtx;
+    io::FileSystemPtr _latest_fs;
+
     std::mutex _gc_mutex;
     // map<rowset_id(str), RowsetSharedPtr>, if we use RowsetId as the key, we need custom hash func
     std::unordered_map<std::string, RowsetSharedPtr> _unused_rowsets;
@@ -356,6 +378,9 @@ private:
     std::vector<scoped_refptr<Thread>> _path_scan_threads;
     // thread to produce tablet checkpoint tasks
     scoped_refptr<Thread> _tablet_checkpoint_tasks_producer_thread;
+
+    // CLOUD_MODE
+    scoped_refptr<Thread> _refresh_s3_info_thread;
 
     // For tablet and disk-stat report
     std::mutex _report_mtx;

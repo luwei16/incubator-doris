@@ -72,12 +72,8 @@ Status BetaRowsetWriter::init(const RowsetWriterContext& rowset_writer_context) 
             new RowsetMeta(rowset_writer_context.table_id, rowset_writer_context.index_id));
 #ifdef CLOUD_MODE
     if (_context.fs) {
-        auto fs = std::reinterpret_pointer_cast<io::S3FileSystem>(_context.fs);
-        _rowset_meta->set_fs(fs);
+        _rowset_meta->set_fs(_context.fs);
         _rowset_meta->set_creation_time(time(nullptr));
-        _rowset_meta->set_s3_bucket(fs->bucket());
-        _rowset_meta->set_s3_prefix(
-                fmt::format("{}/{}/{}", fs->prefix(), DATA_PREFIX, _context.tablet_id));
     } else {
         // In cloud mode, this branch implies it is an intermediate rowset for external merge sort,
         // we use `global_local_filesystem` to write data to `tmp_file_dir`(see `BetaRowset::local_segment_path`).

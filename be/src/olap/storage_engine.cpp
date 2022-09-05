@@ -33,6 +33,7 @@
 #include <queue>
 #include <random>
 #include <set>
+#include <thread>
 
 #include "agent/cgroups_mgr.h"
 #include "agent/task_worker_pool.h"
@@ -203,13 +204,29 @@ Status StorageEngine::_open() {
     CHECK(dirs.size() == 1);
     _meta_mgr = std::make_unique<cloud::CloudMetaMgr>();
     RETURN_IF_ERROR(_meta_mgr->open());
-    S3Conf s3_conf;
-    RETURN_IF_ERROR(_meta_mgr->get_s3_info(config::test_s3_resource, &s3_conf));
-    VLOG_DEBUG << "s3 conf: " << s3_conf.to_string();
-    auto s3_fs = std::make_shared<io::S3FileSystem>(std::move(s3_conf), config::test_s3_resource);
-    RETURN_IF_ERROR(s3_fs->connect());
-    dirs.front()->set_fs(s3_fs);
-    io::FileSystemMap::instance()->insert(config::test_s3_resource, std::move(s3_fs));
+    std::vector<std::tuple<std::string, S3Conf>> s3_infos;
+
+    Status st;
+    int retry = 3;
+    while (retry--) {
+        st = _meta_mgr->get_s3_info(&s3_infos);
+        if (st.ok()) {
+            break;
+        }
+        LOG(WARNING) << "failed to get s3 info, retry after 5s. retry=" << retry << ", err=" << st;
+        std::this_thread::sleep_for(std::chrono::seconds(5));
+    }
+    if (!st.ok()) {
+        return st;
+    }
+
+    CHECK(!s3_infos.empty()) << "no s3 infos";
+    for (auto& [id, s3_conf] : s3_infos) {
+        auto s3_fs = std::make_shared<io::S3FileSystem>(std::move(s3_conf), id);
+        RETURN_IF_ERROR(s3_fs->connect());
+        io::FileSystemMap::instance()->insert(id, std::move(s3_fs));
+    }
+    set_latest_fs(io::FileSystemMap::instance()->get(std::get<0>(s3_infos.back())));
 #else
     load_data_dirs(dirs);
 #endif

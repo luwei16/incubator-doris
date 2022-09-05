@@ -78,20 +78,18 @@ public:
     };
 
     // Guarded by external lock.
-    void set_ak(std::string ak) { _s3_conf.ak = std::move(ak); }
+    void set_ak(const std::string& ak) { _s3_conf.ak = ak; }
 
     // Guarded by external lock.
-    void set_sk(std::string sk) { _s3_conf.sk = std::move(sk); }
+    void set_sk(const std::string& sk) { _s3_conf.sk = sk; }
 
-    const std::string& prefix() const { return _s3_conf.prefix; }
-
-    const std::string& bucket() const { return _s3_conf.bucket; }
+    const S3Conf& s3_conf() { return _s3_conf; }
 
     // insert tmp file to mgr
-    static void insert(const Path& path, size_t file_size);
+    static void insert_tmp_file(const Path& path, size_t file_size);
 
     // s3_file_reader lookup tmp file
-    static FileReaderSPtr lookup(const Path& path);
+    static FileReaderSPtr lookup_tmp_file(const Path& path);
 
 private:
     std::string get_key(const Path& path) const;
