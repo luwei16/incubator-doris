@@ -43,6 +43,7 @@ class TabletColumn;
 class ShortKeyIndexBuilder;
 class PrimaryKeyIndexBuilder;
 class KeyCoder;
+class RowsetWriterContext;
 
 namespace io {
 class FileWriter;
@@ -58,6 +59,8 @@ extern const uint32_t k_segment_magic_length;
 struct SegmentWriterOptions {
     uint32_t num_rows_per_block = 1024;
     bool enable_unique_key_merge_on_write = false;
+
+    RowsetWriterContext* rowset_ctx = nullptr;
 };
 
 class SegmentWriter {
@@ -67,7 +70,7 @@ public:
                            uint32_t max_row_per_segment, const SegmentWriterOptions& opts);
     ~SegmentWriter();
 
-    Status init(uint32_t write_mbytes_per_sec);
+    Status init(uint32_t write_mbytes_per_sec, const vectorized::Block* block = nullptr);
 
     template <typename RowType>
     Status append_row(const RowType& row);
@@ -88,6 +91,11 @@ public:
     Slice max_encoded_key();
 
 private:
+    Status _create_dynamic_table_columns_writer(
+            const vectorized::Block* block,
+            std::function<Status(const TabletColumn&)> writer_creator);
+    Status _create_static_table_columns_writer(
+            std::function<Status(const TabletColumn&)> writer_creator);
     DISALLOW_COPY_AND_ASSIGN(SegmentWriter);
     Status _write_data();
     Status _write_ordinal_index();

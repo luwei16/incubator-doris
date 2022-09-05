@@ -28,6 +28,10 @@ namespace io {
 class FileWriter;
 } // namespace io
 
+namespace vectorized::object_util {
+class LocalSchemaChangeRecorder;
+}
+
 class BetaRowsetWriter : public RowsetWriter {
 public:
     BetaRowsetWriter();
@@ -76,13 +80,19 @@ public:
 
     const RowsetMetaSharedPtr& rowset_meta() const override { return _rowset_meta; }
 
+    // Maybe modified by local schema change
+    vectorized::object_util::LocalSchemaChangeRecorder* mutable_schema_change_recorder() {
+        return _context.schema_change_recorder.get();
+    }
+
 private:
     template <typename RowType>
     Status _add_row(const RowType& row);
     Status _add_block(const vectorized::Block* block,
                       std::unique_ptr<segment_v2::SegmentWriter>* writer);
 
-    Status _create_segment_writer(std::unique_ptr<segment_v2::SegmentWriter>* writer);
+    Status _create_segment_writer(std::unique_ptr<segment_v2::SegmentWriter>* writer,
+                                  const vectorized::Block* block = nullptr);
 
     Status _flush_segment_writer(std::unique_ptr<segment_v2::SegmentWriter>* writer);
     void _build_rowset_meta(std::shared_ptr<RowsetMeta> rowset_meta);
