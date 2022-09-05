@@ -884,6 +884,9 @@ CONF_String(tmp_file_dir, "${DORIS_HOME}/storage/tmp");
 CONF_Int64(tablet_cache_capacity, "10000");
 CONF_Int64(tablet_cache_shards, "16");
 
+// semi-structure configs
+CONF_Bool(enable_parse_multi_dimession_array, "true");
+
 } // namespace config
 
 } // namespace doris
