@@ -366,6 +366,8 @@ public:
 
     bool check_all_rowset_segment();
 
+    void update_max_version_schema(const TabletSchemaSPtr& tablet_schema);
+
 private:
     Status _init_once_action();
     void _print_missed_versions(const std::vector<Version>& missed_versions) const;
@@ -471,6 +473,9 @@ private:
 
     // Remote rowsets not shared by other BE. We can delete them when drop tablet.
     std::unordered_set<RowsetSharedPtr> _self_owned_remote_rowsets; // guarded by _meta_lock
+
+    // Max schema_version schema from Rowset or FE
+    TabletSchemaSPtr _max_version_schema;
 
     DISALLOW_COPY_AND_ASSIGN(Tablet);
 
