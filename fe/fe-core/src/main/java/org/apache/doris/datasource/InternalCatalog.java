@@ -3770,4 +3770,33 @@ public class InternalCatalog implements CatalogIf<Database> {
             throw new DdlException(response.getStatus().getMsg());
         }
     }
+
+    public void dropCloudPartition(long tableId, List<Long> partitionIds, List<Long> indexIds)
+            throws DdlException {
+        SelectdbCloud.PartitionRequest.Builder partitionRequestBuilder = SelectdbCloud.PartitionRequest.newBuilder();
+        partitionRequestBuilder.setCloudUniqueId(Config.cloud_unique_id);
+        partitionRequestBuilder.setTableId(tableId);
+        partitionRequestBuilder.addAllPartitionIds(partitionIds);
+        partitionRequestBuilder.addAllIndexIds(indexIds);
+        SelectdbCloud.PartitionRequest partitionRequest = partitionRequestBuilder.build();
+        LOG.info("dropPartition request: {} ", partitionRequest);
+        String metaEndPoint = Config.meta_service_endpoint;
+        String[] splitMetaEndPoint = metaEndPoint.split(":");
+        TNetworkAddress metaAddress =
+                new TNetworkAddress(splitMetaEndPoint[0], Integer.parseInt(splitMetaEndPoint[1]));
+
+        SelectdbCloud.MetaServiceGenericResponse response = null;
+        try {
+            response = MetaServiceProxy.getInstance().dropPartition(metaAddress, partitionRequest);
+        } catch (RpcException e) {
+            LOG.warn("dropPartition response: {} ", response);
+            throw new DdlException(e.getMessage());
+        }
+        LOG.info("dropPartition response: {} ", response);
+
+        if (response.getStatus().getCode() != SelectdbCloud.MetaServiceCode.OK) {
+            LOG.warn("dropPartition response: {} ", response);
+            throw new DdlException(response.getStatus().getMsg());
+        }
+    }
 }

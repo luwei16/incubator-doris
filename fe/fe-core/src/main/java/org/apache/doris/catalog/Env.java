@@ -204,6 +204,7 @@ import org.apache.doris.qe.GlobalVariable;
 import org.apache.doris.qe.JournalObservable;
 import org.apache.doris.qe.VariableMgr;
 import org.apache.doris.resource.Tag;
+import org.apache.doris.rpc.RpcException;
 import org.apache.doris.service.FrontendOptions;
 import org.apache.doris.statistics.StatisticsJobManager;
 import org.apache.doris.statistics.StatisticsJobScheduler;
@@ -237,6 +238,9 @@ import com.google.common.collect.Maps;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.Queues;
 import com.selectdb.cloud.catalog.CloudClusterChecker;
+import com.selectdb.cloud.catalog.CloudReplica;
+import com.selectdb.cloud.proto.SelectdbCloud;
+import com.selectdb.cloud.rpc.MetaServiceProxy;
 import com.sleepycat.je.rep.InsufficientLogException;
 import com.sleepycat.je.rep.NetworkRestore;
 import com.sleepycat.je.rep.NetworkRestoreConfig;
@@ -4938,6 +4942,37 @@ public class Env {
         }
     }
 
+    public void dropTableByIndexs(OlapTable olapTable) {
+        List<Long> indexs = new ArrayList<Long>();
+        for (Partition partition : olapTable.getAllPartitions()) {
+            List<MaterializedIndex> allIndices = partition.getMaterializedIndices(IndexExtState.ALL);
+            for (MaterializedIndex materializedIndex : allIndices) {
+                long indexId = materializedIndex.getId();
+                indexs.add(indexId);
+            }
+        }
+
+        int tryCnt = 0;
+        while(true) {
+            try {
+                Env.getCurrentInternalCatalog().dropCloudMaterializedIndex(olapTable, indexs);
+                tryCnt++;
+            } catch (Exception e) {
+                LOG.warn("failed to drop index {} of table {}, try cnt {}, execption {}",
+                    indexs, olapTable.getId(), tryCnt, e);
+                try {
+                    Thread.sleep(3000);
+                } catch (InterruptedException ie) {
+                    LOG.warn("Thread sleep is interrupted");
+                }
+                continue;
+            }
+            break;
+        }
+
+        Env.getCurrentColocateIndex().removeTable(olapTable.getId());
+    }
+
     public void onEraseOlapTable(OlapTable olapTable, boolean isReplay) {
         // inverted index
         TabletInvertedIndex invertedIndex = Env.getCurrentInvertedIndex();
@@ -4950,7 +4985,12 @@ public class Env {
             }
         }
 
-        if (!isReplay && Config.cloud_unique_id.isEmpty()) { // Cloud mode do not need to send request
+        if (!Config.cloud_unique_id.isEmpty() && Env.getCurrentEnv().isMaster()) {
+            dropTableByIndexs(olapTable);
+            return;
+        }
+
+        if (!isReplay) { // Cloud mode do not need to send request
             // drop all replicas
             AgentBatchTask batchTask = new AgentBatchTask();
             for (Partition partition : olapTable.getAllPartitions()) {
@@ -4978,6 +5018,37 @@ public class Env {
         Env.getCurrentColocateIndex().removeTable(olapTable.getId());
     }
 
+    public void dropPartition(Partition partition) {
+        long tableId = -1;
+        List<Long> partitionIds = new ArrayList<Long>();
+        List<Long> indexIds = new ArrayList<Long>();
+        for (MaterializedIndex index : partition.getMaterializedIndices(IndexExtState.ALL)) {
+            indexIds.add(index.getId());
+            if (tableId == -1) {
+                tableId = ((CloudReplica) index.getTablets().get(0).getReplicas().get(0)) .getTableId();
+            }
+        }
+        partitionIds.add(partition.getId());
+
+        int tryCnt = 0;
+        while(true) {
+            try {
+                Env.getCurrentInternalCatalog().dropCloudPartition(tableId, partitionIds, indexIds);
+                tryCnt++;
+            } catch (Exception e) {
+                LOG.warn("failed to drop partition {} of table {}, try cnt {}, execption {}",
+                    partitionIds, tableId, tryCnt, e);
+                try {
+                    Thread.sleep(3000);
+                } catch (InterruptedException ie) {
+                    LOG.warn("Thread sleep is interrupted");
+                }
+                continue;
+            }
+            break;
+        }
+    }
+
     public void onErasePartition(Partition partition) {
         // remove tablet in inverted index
         TabletInvertedIndex invertedIndex = Env.getCurrentInvertedIndex();
@@ -4985,6 +5056,10 @@ public class Env {
             for (Tablet tablet : index.getTablets()) {
                 invertedIndex.deleteTablet(tablet.getId());
             }
+        }
+
+        if (!Config.cloud_unique_id.isEmpty() && Env.getCurrentEnv().isMaster()) {
+            dropPartition(partition);
         }
     }
 
