@@ -144,6 +144,7 @@ int get_byte_size(PrimitiveType type) {
     case TYPE_QUANTILE_STATE:
     case TYPE_ARRAY:
     case TYPE_MAP:
+    case TYPE_VARIANT:
         return 0;
 
     case TYPE_NULL:
@@ -620,6 +621,7 @@ int get_slot_size(PrimitiveType type) {
     case TYPE_OBJECT:
     case TYPE_HLL:
     case TYPE_QUANTILE_STATE:
+    case TYPE_VARIANT:
         return sizeof(StringValue);
     case TYPE_ARRAY:
         return sizeof(CollectionValue);

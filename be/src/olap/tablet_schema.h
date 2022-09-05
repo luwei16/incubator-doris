@@ -53,6 +53,7 @@ public:
     FieldType type() const { return _type; }
     bool is_key() const { return _is_key; }
     bool is_nullable() const { return _is_nullable; }
+    bool is_variant_type() const { return _type == OLAP_FIELD_TYPE_VARIANT; }
     bool is_bf_column() const { return _is_bf_column; }
     bool has_bitmap_index() const { return _has_bitmap_index; }
     bool is_length_variable_type() const {

@@ -50,6 +50,10 @@ set(VEC_FILES
   columns/column_string.cpp
   columns/column_vector.cpp
   columns/columns_common.cpp
+  columns/column_object.cpp
+  json/parse2column.cpp
+  json/path_in_data.cpp
+  common/object_util.cpp
   common/demangle.cpp
   common/exception.cpp
   common/mremap.cpp
@@ -80,6 +84,7 @@ set(VEC_FILES
   data_types/data_type_date.cpp
   data_types/data_type_date_time.cpp
   data_types/data_type_time_v2.cpp
+  data_types/data_type_object.cpp
   exec/vaggregation_node.cpp
   exec/varrow_scanner.cpp
   exec/ves_http_scan_node.cpp

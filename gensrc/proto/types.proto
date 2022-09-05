@@ -101,6 +101,8 @@ message PGenericType {
         NOTHING = 27;
         DATEV2 = 28;
         DATETIMEV2 = 29;
+
+	VARIANT = 100;
         UNKNOWN = 999;
     }
     required TypeId id = 2;

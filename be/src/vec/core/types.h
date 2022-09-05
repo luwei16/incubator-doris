@@ -77,6 +77,10 @@ enum class TypeIndex {
     DateV2,
     DateTimeV2,
     TimeV2,
+<<<<<<< HEAD
+=======
+    VARIANT,
+>>>>>>> 015ee89fc... x
 };
 
 struct Consted {
@@ -444,6 +448,8 @@ inline const char* getTypeName(TypeIndex idx) {
         return "AggregateFunction";
     case TypeIndex::LowCardinality:
         return "LowCardinality";
+    case TypeIndex::VARIANT:
+        return "Variant";
     case TypeIndex::BitMap:
         return TypeName<BitmapValue>::get();
     case TypeIndex::HLL:

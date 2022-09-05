@@ -90,13 +90,15 @@ enum TPrimitiveType {
   DECIMAL32,
   DECIMAL64,
   DECIMAL128,
+  VARIANT = 100,
 }
 
 enum TTypeNodeType {
     SCALAR,
     ARRAY,
     MAP,
-    STRUCT
+    STRUCT,
+    VARIANT = 100,
 }
 
 enum TStorageBackendType {

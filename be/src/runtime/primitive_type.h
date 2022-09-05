@@ -68,6 +68,7 @@ enum PrimitiveType {
     TYPE_DECIMAL32,      /* 28 */
     TYPE_DECIMAL64,      /* 29 */
     TYPE_DECIMAL128,     /* 30 */
+    TYPE_VARIANT         /* 31 */
 };
 
 PrimitiveType convert_type_to_primitive(FunctionContext::Type type);

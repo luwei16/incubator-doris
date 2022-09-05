@@ -359,6 +359,10 @@ public abstract class Type {
         return isStructType() || isCollectionType();
     }
 
+    public boolean isVariantType() {
+        return this instanceof VariantType;
+    }
+
     public boolean isCollectionType() {
         return isMapType() || isArrayType() || isMultiRowType();
     }
@@ -659,6 +663,8 @@ public abstract class Type {
                 return Type.BITMAP;
             case QUANTILE_STATE:
                 return Type.QUANTILE_STATE;
+            case VARIANT:
+                return new VariantType();
             default:
                 return null;
         }
@@ -1397,7 +1403,8 @@ public abstract class Type {
                         || t1 == PrimitiveType.TIME || t2 == PrimitiveType.TIME
                         || t1 == PrimitiveType.TIMEV2 || t2 == PrimitiveType.TIMEV2
                         || t1 == PrimitiveType.MAP || t2 == PrimitiveType.MAP
-                        || t1 == PrimitiveType.STRUCT || t2 == PrimitiveType.STRUCT) {
+                        || t1 == PrimitiveType.STRUCT || t2 == PrimitiveType.STRUCT
+                        || t1 == PrimitiveType.VARIANT|| t2 == PrimitiveType.VARIANT) {
                     continue;
                 }
                 Preconditions.checkNotNull(compatibilityMatrix[i][j]);
