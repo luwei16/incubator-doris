@@ -124,6 +124,11 @@ public:
                             ::selectdb::GetObjStoreInfoResponse* response,
                             ::google::protobuf::Closure* done) override;
 
+    void alter_obj_store_info(google::protobuf::RpcController* controller,
+                              const ::selectdb::AlterObjStoreInfoRequest* request,
+                              ::selectdb::MetaServiceGenericResponse* response,
+                              ::google::protobuf::Closure* done) override;
+
     void create_instance(google::protobuf::RpcController* controller,
                          const ::selectdb::CreateInstanceRequest* request,
                          ::selectdb::MetaServiceGenericResponse* response,

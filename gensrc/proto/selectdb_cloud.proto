@@ -19,7 +19,7 @@ message InstanceInfoPB {
     optional int64 ctime = 5;
     optional int64 mtime = 6;
     repeated ClusterPB clusters = 7;
-    optional ObjectStoreInfoPB obj_store = 8;
+    repeated ObjectStoreInfoPB obj_info = 8;
 }
 
 message ClusterPB {
@@ -55,12 +55,15 @@ enum NodeStatusPB {
 }
 
 message ObjectStoreInfoPB {
-    optional string ak = 1;
-    optional string sk = 2;
-    optional string bucket = 3;
-    optional string prefix = 4;
-    optional string endpoint = 5;
-    optional string region = 6;
+    optional int64 ctime = 1;
+    optional int64 mtime = 2;
+    optional string id = 3;
+    optional string ak = 4;
+    optional string sk = 5;
+    optional string bucket = 6;
+    optional string prefix = 7;
+    optional string endpoint = 8;
+    optional string region = 9;
 }
 
 //==============================================================================
@@ -335,12 +338,22 @@ message GetVersionResponse {
 
 message GetObjStoreInfoRequest {
     optional string cloud_unique_id = 1; // For auth
-    optional string resource_id = 2;
 };
+
+message AlterObjStoreInfoRequest {
+    enum Operation {
+        UNKNOWN         = 0;
+        UPDATE_AK_SK    = 1;
+        ADD_OBJ_INFO = 2;
+    }
+    optional string cloud_unique_id = 1; // For auth
+    optional ObjectStoreInfoPB obj = 2;
+    optional Operation op = 3;
+}
 
 message GetObjStoreInfoResponse {
     optional MetaServiceResponseStatus status = 1;
-    optional ObjectStoreInfoPB obj = 2;
+    repeated ObjectStoreInfoPB obj_info = 2;
 };
 
 message CreateTabletRequest {
@@ -416,6 +429,7 @@ message CreateInstanceRequest {
     optional string instance_id = 1;
     optional string user_id = 2;
     optional string name = 3; // Alias
+    optional ObjectStoreInfoPB obj_info = 4;
 }
 
 message AlterClusterRequest {
@@ -530,6 +544,7 @@ service MetaService {
     rpc http(MetaServiceHttpRequest) returns (MetaServiceHttpResponse);
 
     rpc get_obj_store_info(GetObjStoreInfoRequest) returns (GetObjStoreInfoResponse);
+    rpc alter_obj_store_info(AlterObjStoreInfoRequest) returns (MetaServiceGenericResponse);
     rpc create_instance(CreateInstanceRequest) returns (MetaServiceGenericResponse);
     rpc alter_cluster(AlterClusterRequest) returns (MetaServiceGenericResponse);
     rpc get_cluster(GetClusterRequest) returns (GetClusterResponse);

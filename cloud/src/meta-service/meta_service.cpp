@@ -6,6 +6,7 @@
 #include "common/config.h"
 #include "common/logging.h"
 #include "common/util.h"
+#include "common/md5.h"
 
 #include "brpc/closure_guard.h"
 #include "brpc/controller.h"
@@ -18,6 +19,8 @@
 #include <string>
 #include <sstream>
 #include <type_traits>
+#include <ios>
+#include <iomanip>
 // clang-format on
 
 using namespace std::chrono;
@@ -2345,6 +2348,7 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
     }
     req = ss.str();
     ss.clear();
+    ss.str("");
     request_body = cntl->request_attachment().to_string(); // Just copy
 
     // Auth
@@ -2357,6 +2361,57 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
     }
 
     // Process http request
+    // just for debug and regression test
+    if (unresolved_path == "get_obj_store_info") {
+        GetObjStoreInfoRequest req;
+        auto st = google::protobuf::util::JsonStringToMessage(request_body, &req);
+        if (!st.ok()) {
+            msg = "failed to GetObjStoreInfoRequest, error: " + st.message().ToString();
+            response_body = msg;
+            LOG(WARNING) << msg;
+            return;
+        }
+        GetObjStoreInfoResponse res;
+        get_obj_store_info(cntl, &req, &res, nullptr);
+        ret = res.status().code();
+        msg = res.status().msg();
+        response_body = msg;
+        return;
+    }
+    if (unresolved_path == "update_ak_sk") {
+        AlterObjStoreInfoRequest req;
+        auto st = google::protobuf::util::JsonStringToMessage(request_body, &req);
+        if (!st.ok()) {
+            msg = "failed to SetObjStoreInfoRequest, error: " + st.message().ToString();
+            response_body = msg;
+            LOG(WARNING) << msg;
+            return;
+        }
+        req.set_op(AlterObjStoreInfoRequest::UPDATE_AK_SK);
+        MetaServiceGenericResponse res;
+        alter_obj_store_info(cntl, &req, &res, nullptr);
+        ret = res.status().code();
+        msg = res.status().msg();
+        response_body = msg;
+        return;
+    }
+    if (unresolved_path == "add_obj_info") {
+        AlterObjStoreInfoRequest req;
+        auto st = google::protobuf::util::JsonStringToMessage(request_body, &req);
+        if (!st.ok()) {
+            msg = "failed to SetObjStoreInfoRequest, error: " + st.message().ToString();
+            response_body = msg;
+            LOG(WARNING) << msg;
+            return;
+        }
+        req.set_op(AlterObjStoreInfoRequest::ADD_OBJ_INFO);
+        MetaServiceGenericResponse res;
+        alter_obj_store_info(cntl, &req, &res, nullptr);
+        ret = res.status().code();
+        msg = res.status().msg();
+        response_body = msg;
+        return;
+    }
     if (unresolved_path == "decode_key") { // TODO: implement this in a separate src file
         if (uri.GetQuery("key") == nullptr || uri.GetQuery("key")->empty()) {
             msg = "no key to decode";
@@ -2502,7 +2557,253 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
 void MetaServiceImpl::get_obj_store_info(google::protobuf::RpcController* controller,
                                          const ::selectdb::GetObjStoreInfoRequest* request,
                                          ::selectdb::GetObjStoreInfoResponse* response,
-                                         ::google::protobuf::Closure* done) {}
+                                         ::google::protobuf::Closure* done) {
+    auto ctrl = static_cast<brpc::Controller*>(controller);
+    LOG(INFO) << "rpc from " << ctrl->remote_side() << " request=" << request->DebugString();
+    brpc::ClosureGuard closure_guard(done);
+    int ret = 0;
+    MetaServiceCode code = MetaServiceCode::OK;
+    std::string msg = "OK";
+    std::unique_ptr<int, std::function<void(int*)>> defer_status(
+            (int*)0x01, [&ret, &code, &msg, &response, &ctrl](int*) {
+                response->mutable_status()->set_code(code);
+                response->mutable_status()->set_msg(msg);
+                LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
+                          << ctrl->remote_side() << " " << msg;
+            });
+
+    // Prepare data
+    std::string cloud_unique_id = request->has_cloud_unique_id() ? request->cloud_unique_id() : "";
+    if (cloud_unique_id.empty()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "cloud unique id not set";
+        return;
+    }
+
+    std::string instance_id = get_instance_id(resource_mgr_, cloud_unique_id);
+    if (instance_id.empty()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "empty instance_id";
+        LOG(INFO) << msg << ", cloud_unique_id=" << cloud_unique_id;
+        return;
+    }
+
+    InstanceKeyInfo key_info {instance_id};
+    std::string key;
+    std::string val;
+    instance_key(key_info, &key);
+
+    std::unique_ptr<Transaction> txn;
+    ret = txn_kv_->create_txn(&txn);
+    if (ret != 0) {
+        code = MetaServiceCode::KV_TXN_CREATE_ERR;
+        msg = "failed to create txn";
+        LOG(WARNING) << msg << " ret=" << ret;
+        return;
+    }
+    ret = txn->get(key, &val);
+    LOG(INFO) << "get instance_key=" << hex(key);
+
+    std::stringstream ss;
+    if (ret != 0) {
+        code = MetaServiceCode::KV_TXN_GET_ERR;
+        ss << "failed to get instance, instance_id=" << instance_id << " ret=" << ret;
+        msg = ss.str();
+        return;
+    }
+
+    InstanceInfoPB instance;
+    if (!instance.ParseFromString(val)) {
+        code = MetaServiceCode::PROTOBUF_PARSE_ERR;
+        msg = "failed to parse InstanceInfoPB";
+        return;
+    }
+
+    response->mutable_obj_info()->CopyFrom(instance.obj_info());
+    msg = proto_to_json(*response);
+    return;
+}
+
+void MetaServiceImpl::alter_obj_store_info(google::protobuf::RpcController* controller,
+                                           const ::selectdb::AlterObjStoreInfoRequest* request,
+                                           ::selectdb::MetaServiceGenericResponse* response,
+                                           ::google::protobuf::Closure* done) {
+    auto ctrl = static_cast<brpc::Controller*>(controller);
+    LOG(INFO) << "rpc from " << ctrl->remote_side() << " request=" << request->DebugString();
+    brpc::ClosureGuard closure_guard(done);
+    int ret = 0;
+    MetaServiceCode code = MetaServiceCode::OK;
+    std::string msg = "OK";
+    std::unique_ptr<int, std::function<void(int*)>> defer_status(
+            (int*)0x01, [&ret, &code, &msg, &response, &ctrl](int*) {
+                response->mutable_status()->set_code(code);
+                response->mutable_status()->set_msg(msg);
+                LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
+                          << ctrl->remote_side() << " " << msg;
+            });
+
+    // Prepare data
+    if (!request->has_obj() || !request->obj().has_ak() || !request->obj().has_sk()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "s3 obj info err " + proto_to_json(*request);
+        return;
+    }
+
+    auto& obj = request->obj();
+    std::string ak = obj.has_ak() ? obj.ak() : "";
+    std::string sk = obj.has_sk() ? obj.sk() : "";
+    std::string bucket = obj.has_bucket() ? obj.bucket() : "";
+    std::string prefix = obj.has_prefix() ? obj.prefix() : "";
+    std::string endpoint = obj.has_endpoint() ? obj.endpoint() : "";
+    std::string region = obj.has_region() ? obj.region() : "";
+
+    //  obj size > 1k, refuse
+    if (obj.ByteSizeLong() > 1024) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "s3 obj info greater than 1k " + proto_to_json(*request);
+        return;
+    }
+
+    // TODO(dx): check s3 info right
+
+    std::string cloud_unique_id = request->has_cloud_unique_id() ? request->cloud_unique_id() : "";
+    if (cloud_unique_id.empty()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "cloud unique id not set";
+        return;
+    }
+
+    std::string instance_id = get_instance_id(resource_mgr_, cloud_unique_id);
+    if (instance_id.empty()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "empty instance_id";
+        LOG(INFO) << msg << ", cloud_unique_id=" << cloud_unique_id;
+        return;
+    }
+
+    InstanceKeyInfo key_info {instance_id};
+    std::string key;
+    std::string val;
+    instance_key(key_info, &key);
+
+    std::unique_ptr<Transaction> txn;
+    ret = txn_kv_->create_txn(&txn);
+    if (ret != 0) {
+        code = MetaServiceCode::KV_TXN_CREATE_ERR;
+        msg = "failed to create txn";
+        LOG(WARNING) << msg << " ret=" << ret;
+        return;
+    }
+    ret = txn->get(key, &val);
+    LOG(INFO) << "get instance_key=" << hex(key);
+
+    std::stringstream ss;
+    if (ret != 0) {
+        code = MetaServiceCode::KV_TXN_GET_ERR;
+        ss << "failed to get instance, instance_id=" << instance_id << " ret=" << ret;
+        msg = ss.str();
+        return;
+    }
+
+    InstanceInfoPB instance;
+    if (!instance.ParseFromString(val)) {
+        code = MetaServiceCode::PROTOBUF_PARSE_ERR;
+        msg = "failed to parse InstanceInfoPB";
+        return;
+    }
+
+    auto now_time = std::chrono::system_clock::now();
+    uint64_t time =
+            std::chrono::duration_cast<std::chrono::seconds>(now_time.time_since_epoch()).count();
+
+    switch (request->op()) {
+    case AlterObjStoreInfoRequest::UPDATE_AK_SK: {
+        // get id
+        std::string id = request->obj().has_id() ? request->obj().id() : "0";
+        int idx = std::stoi(id);
+        if (idx < 1 || idx > instance.obj_info().size()) {
+            // err
+            code = MetaServiceCode::INVALID_ARGUMENT;
+            msg = "id invalid, please check it";
+            return;
+        }
+        auto& obj_info =
+                const_cast<std::decay_t<decltype(instance.obj_info())>&>(instance.obj_info());
+        for (auto& it : obj_info) {
+            if (std::stoi(it.id()) == idx) {
+                if (it.ak() == ak && it.sk() == sk) {
+                    code = MetaServiceCode::INVALID_ARGUMENT;
+                    msg = "ak sk eq original, please check it";
+                    return;
+                }
+                it.set_mtime(time);
+                it.set_ak(ak);
+                it.set_sk(sk);
+            }
+        }
+    } break;
+    case AlterObjStoreInfoRequest::ADD_OBJ_INFO: {
+        if (instance.obj_info().size() >= 10) {
+            code = MetaServiceCode::UNDEFINED_ERR;
+            msg = "this instance history has greater than 10 objs, please new another instance";
+            return;
+        }
+        auto save_objs = instance.obj_info();
+        for (auto it : save_objs) {
+            if (bucket == it.bucket() && prefix == it.prefix() && endpoint == it.endpoint() &&
+                region == it.region() && ak == it.ak() && sk == it.sk()) {
+                // err, anything not changed
+                code = MetaServiceCode::INVALID_ARGUMENT;
+                msg = "original obj infos has a same conf, please check it";
+                return;
+            }
+        }
+        // calc id
+        selectdb::ObjectStoreInfoPB first_item;
+        first_item.set_ctime(time);
+        first_item.set_mtime(time);
+        first_item.set_id(std::to_string(instance.obj_info().size() + 1));
+        first_item.set_ak(ak);
+        first_item.set_sk(sk);
+        first_item.set_bucket(bucket);
+        first_item.set_prefix(prefix);
+        first_item.set_endpoint(endpoint);
+        first_item.set_region(region);
+        // clear instance.obj_store_history
+        instance.clear_obj_info();
+        // set first_item in instance.obj_store_history
+        instance.add_obj_info()->CopyFrom(first_item);
+        // set save_objs append instance.obj_store_history
+        instance.mutable_obj_info()->MergeFrom(save_objs);
+    } break;
+    default: {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        ss << "invalid request op, op=" << request->op();
+        msg = ss.str();
+        return;
+    }
+    }
+
+    LOG(INFO) << "instance " << instance_id << " has " << instance.obj_info().size()
+              << " s3 history info, and instance = " << proto_to_json(instance);
+
+    val = instance.SerializeAsString();
+    if (val.empty()) {
+        msg = "failed to serialize";
+        code = MetaServiceCode::PROTOBUF_SERIALIZE_ERR;
+        return;
+    }
+
+    txn->put(key, val);
+    LOG(INFO) << "put instance_id=" << instance_id << " instance_key=" << hex(key);
+    ret = txn->commit();
+    if (ret != 0) {
+        code = MetaServiceCode::KV_TXN_COMMIT_ERR;
+        msg = "failed to commit kv txn";
+        LOG(WARNING) << msg << " ret=" << ret;
+    }
+    return;
+}
 
 void MetaServiceImpl::create_instance(google::protobuf::RpcController* controller,
                                       const ::selectdb::CreateInstanceRequest* request,
@@ -2523,10 +2824,40 @@ void MetaServiceImpl::create_instance(google::protobuf::RpcController* controlle
             });
 
     // Prepare data
+    auto& obj = request->obj_info();
+    std::string ak = obj.has_ak() ? obj.ak() : "";
+    std::string sk = obj.has_sk() ? obj.sk() : "";
+    std::string bucket = obj.has_bucket() ? obj.bucket() : "";
+    std::string prefix = obj.has_prefix() ? obj.prefix() : "";
+    std::string endpoint = obj.has_endpoint() ? obj.endpoint() : "";
+    std::string region = obj.has_region() ? obj.region() : "";
+
+    // ATTN: prefix may be empty
+    if (ak == "" || sk == "" || bucket == "" || endpoint == "" || region == "") {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "s3 conf info err, please check it";
+        return;
+    }
+
     InstanceInfoPB instance;
     instance.set_instance_id(request->has_instance_id() ? request->instance_id() : "");
     instance.set_user_id(request->has_user_id() ? request->user_id() : "");
     instance.set_name(request->has_name() ? request->name() : "");
+    auto obj_info = instance.add_obj_info();
+    obj_info->set_ak(ak);
+    obj_info->set_sk(sk);
+    obj_info->set_bucket(bucket);
+    obj_info->set_prefix(prefix);
+    obj_info->set_endpoint(endpoint);
+    obj_info->set_region(region);
+    std::ostringstream oss;
+    // create instance's s3 conf, id = 1
+    obj_info->set_id(std::to_string(1));
+    auto now_time = std::chrono::system_clock::now();
+    uint64_t time =
+            std::chrono::duration_cast<std::chrono::seconds>(now_time.time_since_epoch()).count();
+    obj_info->set_ctime(time);
+    obj_info->set_mtime(time);
 
     if (instance.instance_id().empty()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
