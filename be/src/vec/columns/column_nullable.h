@@ -300,6 +300,12 @@ public:
         get_nested_column().generate_hash_values_for_runtime_filter();
     }
 
+    void get_indices_of_non_default_rows(Offsets & indices, size_t from, size_t limit) const override {
+        get_indices_of_non_default_rows_impl<ColumnNullable>(indices, from, limit);
+    }
+
+    ColumnPtr index(const IColumn & indexes, size_t limit) const override;
+
 private:
     WrappedPtr nested_column;
     WrappedPtr null_map;

@@ -27,6 +27,8 @@
 #include "vec/common/exception.h"
 #include "vec/common/sip_hash.h"
 #include "vec/common/unaligned.h"
+#include "vec/columns/column_impl.h"
+#include "vec/columns/columns_common.h"
 
 template <typename T>
 bool decimal_less(T x, T y, doris::vectorized::UInt32 x_scale, doris::vectorized::UInt32 y_scale);
@@ -337,6 +339,11 @@ Decimal64 ColumnDecimal<Decimal64>::get_scale_multiplier() const {
 template <>
 Decimal128 ColumnDecimal<Decimal128>::get_scale_multiplier() const {
     return common::exp10_i128(scale);
+}
+
+template <typename T>
+ColumnPtr ColumnDecimal<T>::index(const IColumn & indexes, size_t limit) const {
+    return select_index_impl(*this, indexes, limit);
 }
 
 template class ColumnDecimal<Decimal32>;

@@ -25,6 +25,7 @@
 #include "vec/common/assert_cast.h"
 #include "vec/common/memcmp_small.h"
 #include "vec/common/unaligned.h"
+#include "vec/columns/column_impl.h"
 
 namespace doris::vectorized {
 
@@ -426,6 +427,10 @@ void ColumnString::get_extremes(Field& min, Field& max) const {
 void ColumnString::protect() {
     get_chars().protect();
     get_offsets().protect();
+}
+
+ColumnPtr ColumnString::index(const IColumn & indexes, size_t limit) const {
+    return select_index_impl(*this, indexes, limit);
 }
 
 } // namespace doris::vectorized
