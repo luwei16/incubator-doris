@@ -77,10 +77,7 @@ enum class TypeIndex {
     DateV2,
     DateTimeV2,
     TimeV2,
-<<<<<<< HEAD
-=======
     VARIANT,
->>>>>>> 015ee89fc... x
 };
 
 struct Consted {
@@ -243,6 +240,10 @@ struct TypeId<Float32> {
 template <>
 struct TypeId<Float64> {
     static constexpr const TypeIndex value = TypeIndex::Float64;
+};
+template <>
+struct TypeId<String> {
+    static constexpr const TypeIndex value = TypeIndex::String;
 };
 
 /// Not a data type in database, defined just for convenience.

@@ -111,6 +111,10 @@ public:
         LOG(FATAL) << "get_permutation not supported in ColumnDictionary";
     }
 
+    [[noreturn]] TypeIndex get_data_type() const override {
+        LOG(FATAL) << "ColumnDictionary get_data_type not implemeted";
+    }
+
     void reserve(size_t n) override {
         _reserve_size = n;
         _codes.reserve(n);

@@ -71,6 +71,8 @@ public:
         return data->get_data_at_with_terminating_zero(0);
     }
 
+    TypeIndex get_data_type() const override { return data->get_data_type(); }
+
     UInt64 get64(size_t) const override { return data->get64(0); }
 
     UInt64 get_uint(size_t) const override { return data->get_uint(0); }

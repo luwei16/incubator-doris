@@ -375,6 +375,8 @@ public:
         data[self_row] = T();
     }
 
+    TypeIndex get_data_type() const override { return TypeId<T>::value; }
+
 protected:
     Container data;
 };

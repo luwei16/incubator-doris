@@ -367,6 +367,8 @@ public:
         }
         return shrinked_column;
     }
+
+    TypeIndex get_data_type() const override { return TypeIndex::String; }
 };
 
 } // namespace doris::vectorized
