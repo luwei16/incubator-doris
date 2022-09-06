@@ -354,6 +354,10 @@ class MutableBlock {
 private:
     MutableColumns _columns;
     DataTypes _data_types;
+    Names _names;
+
+    using IndexByName = phmap::flat_hash_map<String, size_t>;
+    IndexByName index_by_name;
 
 public:
     static MutableBlock build_mutable_block(Block* block) {
@@ -365,13 +369,23 @@ public:
     MutableBlock(const std::vector<TupleDescriptor*>& tuple_descs);
 
     MutableBlock(Block* block)
-            : _columns(block->mutate_columns()), _data_types(block->get_data_types()) {}
+            : _columns(block->mutate_columns()),
+              _data_types(block->get_data_types()),
+              _names(block->get_names()) {
+        initialize_index_by_name();
+    }
     MutableBlock(Block&& block)
-            : _columns(block.mutate_columns()), _data_types(block.get_data_types()) {}
+            : _columns(block.mutate_columns()),
+              _data_types(block.get_data_types()),
+              _names(block.get_names()) {
+        initialize_index_by_name();
+    }
 
     void operator=(MutableBlock&& m_block) {
         _columns = std::move(m_block._columns);
         _data_types = std::move(m_block._data_types);
+        _names = std::move(m_block._names);
+        initialize_index_by_name();
     }
 
     size_t rows() const;
@@ -416,6 +430,7 @@ public:
     void merge(T&& block) {
         if (_columns.size() == 0 && _data_types.size() == 0) {
             _data_types = block.get_data_types();
+            _names = block.get_names();
             _columns.resize(block.columns());
             for (size_t i = 0; i < block.columns(); ++i) {
                 if (block.get_by_position(i).column) {
@@ -426,6 +441,7 @@ public:
                     _columns[i] = _data_types[i]->create_column();
                 }
             }
+            initialize_index_by_name();
         } else {
             DCHECK_EQ(_columns.size(), block.columns());
             for (int i = 0; i < _columns.size(); ++i) {
@@ -458,14 +474,15 @@ public:
     void swap(MutableBlock&& other) noexcept;
 
     void add_row(const Block* block, int row);
-    void add_rows(const Block* block, const int* row_begin, const int* row_end);
-    void add_rows(const Block* block, size_t row_begin, size_t length);
+    void add_rows(const Block* block, const int* row_begin, const int* row_end, bool align = false);
+    void add_rows(const Block* block, size_t row_begin, size_t length, bool align = false);
 
     std::string dump_data(size_t row_limit = 100) const;
 
     void clear() {
         _columns.clear();
         _data_types.clear();
+        _names.clear();
     }
 
     void clear_column_data() noexcept;
@@ -480,6 +497,18 @@ public:
 
         return res;
     }
+
+    Names& get_names() { return _names; }
+
+    bool has(const std::string& name) const;
+
+    size_t get_position_by_name(const std::string& name) const;
+
+    /** Get a list of column names separated by commas. */
+    std::string dump_names() const;
+
+private:
+    void initialize_index_by_name();
 };
 
 } // namespace vectorized
