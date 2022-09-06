@@ -56,8 +56,6 @@ void VNodeChannel::clear_all_blocks() {
 Status VNodeChannel::init(RuntimeState* state) {
     RETURN_IF_ERROR(NodeChannel::init(state));
 
-    _cur_mutable_block.reset(new vectorized::MutableBlock({_tuple_desc}));
-
     // Initialize _cur_add_block_request
     _cur_add_block_request.set_allocated_id(&_parent->_load_id);
     _cur_add_block_request.set_index_id(_index_channel->_index_id);
@@ -188,6 +186,10 @@ Status VNodeChannel::add_row(const BlockRow& block_row, int64_t tablet_id) {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 
+    if (UNLIKELY(!_cur_mutable_block)) {
+        _cur_mutable_block.reset(new vectorized::MutableBlock(block_row.first->clone_empty()));
+    }
+
     _cur_mutable_block->add_row(block_row.first, block_row.second);
     _cur_add_block_request.add_tablet_ids(tablet_id);
 
@@ -202,7 +204,7 @@ Status VNodeChannel::add_row(const BlockRow& block_row, int64_t tablet_id) {
             _pending_batches_num++;
         }
 
-        _cur_mutable_block.reset(new vectorized::MutableBlock({_tuple_desc}));
+        _cur_mutable_block.reset(new vectorized::MutableBlock(block_row.first->clone_empty()));
         _cur_add_block_request.clear_tablet_ids();
     }
 
@@ -369,6 +371,10 @@ void VNodeChannel::mark_close() {
     {
         debug::ScopedTSANIgnoreReadsAndWrites ignore_tsan;
         std::lock_guard<std::mutex> l(_pending_batches_lock);
+        if (!_cur_mutable_block) {
+            // add a dummy block
+            _cur_mutable_block.reset(new vectorized::MutableBlock());
+        }
         _pending_blocks.emplace(std::move(_cur_mutable_block), _cur_add_block_request);
         _pending_batches_num++;
         DCHECK(_pending_blocks.back().second.eos());
@@ -555,7 +561,7 @@ Status VOlapTableSink::_validate_data(RuntimeState* state, vectorized::Block* bl
                 stop_processing);
     };
 
-    for (int i = 0; i < _output_tuple_desc->slots().size(); ++i) {
+    for (int i = 0; i < _output_tuple_desc->slots().size() && i < block->columns(); ++i) {
         SlotDescriptor* desc = _output_tuple_desc->slots()[i];
         block->get_by_position(i).column =
                 block->get_by_position(i).column->convert_to_full_column_if_const();
@@ -670,7 +676,7 @@ Status VOlapTableSink::_validate_data(RuntimeState* state, vectorized::Block* bl
 }
 
 void VOlapTableSink::_convert_to_dest_desc_block(doris::vectorized::Block* block) {
-    for (int i = 0; i < _output_tuple_desc->slots().size(); ++i) {
+    for (int i = 0; i < _output_tuple_desc->slots().size() && i < block->columns(); ++i) {
         SlotDescriptor* desc = _output_tuple_desc->slots()[i];
         if (desc->is_nullable() != block->get_by_position(i).type->is_nullable()) {
             if (desc->is_nullable()) {
