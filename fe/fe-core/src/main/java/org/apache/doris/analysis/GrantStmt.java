@@ -60,11 +60,12 @@ public class GrantStmt extends DdlStmt {
     }
 
     public GrantStmt(UserIdentity userIdent, String role,
-            ResourcePattern resourcePattern, List<AccessPrivilege> privileges) {
+            ResourcePattern resourcePattern, List<AccessPrivilege> privileges, boolean isCloudCluster) {
         this.userIdent = userIdent;
         this.role = role;
         this.tblPattern = null;
         this.resourcePattern = resourcePattern;
+        this.resourcePattern.setIsCloudCluster(isCloudCluster);
         PrivBitSet privs = PrivBitSet.of();
         for (AccessPrivilege accessPrivilege : privileges) {
             privs.or(accessPrivilege.toPaloPrivilege());
@@ -110,7 +111,7 @@ public class GrantStmt extends DdlStmt {
             tblPattern.analyze(analyzer);
         } else {
             // TODO(wyb): spark-load
-            if (!Config.enable_spark_load) {
+            if (!resourcePattern.getIsCloudCluster() && !Config.enable_spark_load) {
                 throw new AnalysisException("GRANT ON RESOURCE is coming soon");
             }
             resourcePattern.analyze();
@@ -217,8 +218,13 @@ public class GrantStmt extends DdlStmt {
                 if (!Env.getCurrentEnv().getAuth().checkGlobalPriv(ConnectContext.get(), PrivPredicate.GRANT)) {
                     ErrorReport.reportAnalysisException(ErrorCode.ERR_SPECIFIC_ACCESS_DENIED_ERROR, "GRANT/ROVOKE");
                 }
-            } else {
+            } else if (!resourcePattern.getIsCloudCluster()) {
                 if (!Env.getCurrentEnv().getAuth().checkResourcePriv(ConnectContext.get(),
+                        resourcePattern.getResourceName(), PrivPredicate.GRANT)) {
+                    ErrorReport.reportAnalysisException(ErrorCode.ERR_SPECIFIC_ACCESS_DENIED_ERROR, "GRANT/ROVOKE");
+                }
+            } else {
+                if (!Env.getCurrentEnv().getAuth().checkCloudClusterPriv(ConnectContext.get().getCurrentUserIdentity(),
                         resourcePattern.getResourceName(), PrivPredicate.GRANT)) {
                     ErrorReport.reportAnalysisException(ErrorCode.ERR_SPECIFIC_ACCESS_DENIED_ERROR, "GRANT/ROVOKE");
                 }

@@ -32,7 +32,7 @@ import com.google.common.collect.ImmutableList;
 public class AuthProcDir implements ProcDirInterface {
     public static final ImmutableList<String> TITLE_NAMES = new ImmutableList.Builder<String>()
             .add("UserIdentity").add("Password").add("GlobalPrivs").add("CatalogPrivs")
-            .add("DatabasePrivs").add("TablePrivs").add("ResourcePrivs").build();
+            .add("DatabasePrivs").add("TablePrivs").add("ResourcePrivs").add("CloudCluster").build();
 
     private PaloAuth auth;
 

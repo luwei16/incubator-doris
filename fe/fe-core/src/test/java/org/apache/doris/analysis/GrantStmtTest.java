@@ -100,12 +100,12 @@ public class GrantStmtTest {
 
         String resourceName = "spark0";
         List<AccessPrivilege> privileges = Lists.newArrayList(AccessPrivilege.USAGE_PRIV);
-        GrantStmt stmt = new GrantStmt(new UserIdentity("testUser", "%"), null, new ResourcePattern(resourceName), privileges);
+        GrantStmt stmt = new GrantStmt(new UserIdentity("testUser", "%"), null, new ResourcePattern(resourceName), privileges, false);
         stmt.analyze(analyzer);
         Assert.assertEquals(resourceName, stmt.getResourcePattern().getResourceName());
         Assert.assertEquals(PaloAuth.PrivLevel.RESOURCE, stmt.getResourcePattern().getPrivLevel());
 
-        stmt = new GrantStmt(new UserIdentity("testUser", "%"), null, new ResourcePattern("*"), privileges);
+        stmt = new GrantStmt(new UserIdentity("testUser", "%"), null, new ResourcePattern("*"), privileges, false);
         stmt.analyze(analyzer);
         Assert.assertEquals(PaloAuth.PrivLevel.GLOBAL, stmt.getResourcePattern().getPrivLevel());
         Assert.assertEquals("GRANT Usage_priv ON RESOURCE '*' TO 'testCluster:testUser'@'%'", stmt.toSql());

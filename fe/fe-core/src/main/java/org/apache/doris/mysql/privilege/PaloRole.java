@@ -50,6 +50,7 @@ public class PaloRole implements Writable {
     private String roleName;
     private Map<TablePattern, PrivBitSet> tblPatternToPrivs = Maps.newConcurrentMap();
     private Map<ResourcePattern, PrivBitSet> resourcePatternToPrivs = Maps.newConcurrentMap();
+    private Map<ResourcePattern, PrivBitSet> clusterPatternToPrivs = Maps.newConcurrentMap();
     // users which this role
     private Set<UserIdentity> users = Sets.newConcurrentHashSet();
 
@@ -88,6 +89,10 @@ public class PaloRole implements Writable {
 
     public Map<ResourcePattern, PrivBitSet> getResourcePatternToPrivs() {
         return resourcePatternToPrivs;
+    }
+
+    public Map<ResourcePattern, PrivBitSet> getClusterPatternToPrivs() {
+        return clusterPatternToPrivs;
     }
 
     public Set<UserIdentity> getUsers() {

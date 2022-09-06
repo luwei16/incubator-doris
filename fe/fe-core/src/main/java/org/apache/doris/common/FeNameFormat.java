@@ -113,8 +113,12 @@ public class FeNameFormat {
         }
     }
 
-    public static void checkResourceName(String resourceName) throws AnalysisException {
-        checkCommonName("resource", resourceName);
+    public static void checkResourceName(String resourceName, boolean isCloudCluster) throws AnalysisException {
+        if (!isCloudCluster) {
+            checkCommonName("resource", resourceName);
+        } else {
+            checkCommonName("clusterName", resourceName);
+        }
     }
 
     public static void checkCommonName(String type, String name) throws AnalysisException {

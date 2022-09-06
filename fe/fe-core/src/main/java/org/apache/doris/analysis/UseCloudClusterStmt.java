@@ -17,10 +17,13 @@
 
 package org.apache.doris.analysis;
 
+import org.apache.doris.catalog.Env;
 import org.apache.doris.common.AnalysisException;
 import org.apache.doris.common.ErrorCode;
 import org.apache.doris.common.ErrorReport;
 import org.apache.doris.common.UserException;
+import org.apache.doris.mysql.privilege.PrivPredicate;
+import org.apache.doris.qe.ConnectContext;
 
 import com.google.common.base.Strings;
 import org.apache.logging.log4j.LogManager;
@@ -53,8 +56,15 @@ public class UseCloudClusterStmt extends StatementBase {
 
     public void analyze(Analyzer analyzer) throws AnalysisException, UserException {
         super.analyze(analyzer);
+        // check resource usage privilege
         if (Strings.isNullOrEmpty(cluster)) {
             ErrorReport.reportAnalysisException(ErrorCode.ERR_NO_CLUSTER_ERROR);
+        }
+        if (!Env.getCurrentEnv().getAuth().checkCloudClusterPriv(ConnectContext.get().getCurrentUserIdentity(),
+                cluster, PrivPredicate.USAGE)) {
+            throw new AnalysisException("USAGE denied to user '" + ConnectContext.get().getQualifiedUser()
+                + "'@'" + ConnectContext.get().getRemoteIP()
+                + "' for cloud cluster '" + cluster + "'");
         }
     }
 

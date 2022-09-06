@@ -55,11 +55,12 @@ public class RevokeStmt extends DdlStmt {
     }
 
     public RevokeStmt(UserIdentity userIdent, String role,
-            ResourcePattern resourcePattern, List<AccessPrivilege> privileges) {
+            ResourcePattern resourcePattern, List<AccessPrivilege> privileges, boolean isCloudCluster) {
         this.userIdent = userIdent;
         this.role = role;
         this.tblPattern = null;
         this.resourcePattern = resourcePattern;
+        this.resourcePattern.setIsCloudCluster(isCloudCluster);
         PrivBitSet privs = PrivBitSet.of();
         for (AccessPrivilege accessPrivilege : privileges) {
             privs.or(accessPrivilege.toPaloPrivilege());
@@ -100,7 +101,7 @@ public class RevokeStmt extends DdlStmt {
             tblPattern.analyze(analyzer);
         } else {
             // TODO(wyb): spark-load
-            if (!Config.enable_spark_load) {
+            if (!resourcePattern.getIsCloudCluster() && !Config.enable_spark_load) {
                 throw new AnalysisException("REVOKE ON RESOURCE is coming soon");
             }
             resourcePattern.analyze();

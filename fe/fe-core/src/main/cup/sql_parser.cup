@@ -2141,11 +2141,15 @@ grant_stmt ::=
     :}
     | KW_GRANT privilege_list:privs KW_ON KW_RESOURCE resource_pattern:resourcePattern KW_TO user_identity:userId
     {:
-        RESULT = new GrantStmt(userId, null, resourcePattern, privs);
+        RESULT = new GrantStmt(userId, null, resourcePattern, privs, false);
     :}
     | KW_GRANT privilege_list:privs KW_ON KW_RESOURCE resource_pattern:resourcePattern KW_TO KW_ROLE STRING_LITERAL:role
     {:
-        RESULT = new GrantStmt(null, role, resourcePattern, privs);
+        RESULT = new GrantStmt(null, role, resourcePattern, privs, false);
+    :}
+    | KW_GRANT privilege_list:privs KW_ON KW_CLUSTER resource_pattern:resourcePattern KW_TO user_identity:userId
+    {:
+        RESULT = new GrantStmt(userId, null, resourcePattern, privs, true);
     :}
     ;
 
@@ -2198,11 +2202,15 @@ revoke_stmt ::=
     :}
     | KW_REVOKE privilege_list:privs KW_ON KW_RESOURCE resource_pattern:resourcePattern KW_FROM user_identity:userId
     {:
-        RESULT = new RevokeStmt(userId, null, resourcePattern, privs);
+        RESULT = new RevokeStmt(userId, null, resourcePattern, privs, false);
     :}
     | KW_REVOKE privilege_list:privs KW_ON KW_RESOURCE resource_pattern:resourcePattern KW_FROM KW_ROLE STRING_LITERAL:role
     {:
-        RESULT = new RevokeStmt(null, role, resourcePattern, privs);
+        RESULT = new RevokeStmt(null, role, resourcePattern, privs, false);
+    :}
+    | KW_REVOKE privilege_list:privs KW_ON KW_CLUSTER resource_pattern:resourcePattern KW_FROM user_identity:userId
+    {:
+        RESULT = new RevokeStmt(userId, null, resourcePattern, privs, true);
     :}
     ;
 

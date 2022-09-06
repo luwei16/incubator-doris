@@ -38,6 +38,12 @@ public class ResourcePattern implements Writable {
     @SerializedName(value = "resourceName")
     private String resourceName;
 
+
+    // just for cloud
+    // GRANT USAGE_PRIV ON CLUSTER '${clusterName}' TO '${userName}';
+    @SerializedName(value = "isCloudCluster")
+    private boolean isCloudCluster;
+
     public static ResourcePattern ALL;
 
     static {
@@ -56,6 +62,14 @@ public class ResourcePattern implements Writable {
         this.resourceName = Strings.isNullOrEmpty(resourceName) ? "*" : resourceName;
     }
 
+    public void setIsCloudCluster(boolean cloudCluster) {
+        isCloudCluster = cloudCluster;
+    }
+
+    public boolean getIsCloudCluster() {
+        return isCloudCluster;
+    }
+
     public String getResourceName() {
         return resourceName;
     }
@@ -70,7 +84,7 @@ public class ResourcePattern implements Writable {
 
     public void analyze() throws AnalysisException {
         if (!resourceName.equals("*")) {
-            FeNameFormat.checkResourceName(resourceName);
+            FeNameFormat.checkResourceName(resourceName, isCloudCluster);
         }
     }
 
