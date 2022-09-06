@@ -64,7 +64,7 @@ S3FileSystem::~S3FileSystem() = default;
 
 Status S3FileSystem::connect() {
     auto client = ClientFactory::instance().create(_s3_conf);
-    if (!_client) {
+    if (!client) {
         return Status::InternalError("failed to init s3 client with {}", _s3_conf.to_string());
     }
     std::lock_guard lock(_client_mu);
