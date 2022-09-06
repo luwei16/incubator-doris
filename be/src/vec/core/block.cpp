@@ -43,6 +43,7 @@
 #include "vec/columns/columns_number.h"
 #include "vec/common/assert_cast.h"
 #include "vec/common/exception.h"
+#include "vec/common/object_util.h"
 #include "vec/common/string_ref.h"
 #include "vec/common/typeid_cast.h"
 #include "vec/data_types/data_type_bitmap.h"
@@ -953,7 +954,12 @@ void MutableBlock::add_row(const Block* block, int row) {
     }
 }
 
-void MutableBlock::add_rows(const Block* block, const int* row_begin, const int* row_end) {
+void MutableBlock::add_rows(const Block* block, const int* row_begin, const int* row_end,
+                            bool align) {
+    if (align) {
+        object_util::align_block_by_name_and_type(this, block, row_begin, row_end);
+        return;
+    }
     auto& block_data = block->get_columns_with_type_and_name();
     for (size_t i = 0; i < _columns.size(); ++i) {
         auto& dst = _columns[i];
@@ -962,7 +968,11 @@ void MutableBlock::add_rows(const Block* block, const int* row_begin, const int*
     }
 }
 
-void MutableBlock::add_rows(const Block* block, size_t row_begin, size_t length) {
+void MutableBlock::add_rows(const Block* block, size_t row_begin, size_t length, bool align) {
+    if (align) {
+        object_util::align_block_by_name_and_type(this, block, row_begin, length);
+        return;
+    }
     auto& block_data = block->get_columns_with_type_and_name();
     for (size_t i = 0; i < _columns.size(); ++i) {
         auto& dst = _columns[i];

@@ -36,6 +36,12 @@
 #include "runtime/descriptors.h"
 #include "util/runtime_profile.h"
 
+// dynamic table
+#include "vec/common/object_util.h"
+#include "vec/json/json_parser.h"
+#include "vec/json/parse2column.h"
+#include "vec/json/simd_json_parser.h"
+
 namespace doris {
 class ExprContext;
 class RuntimeState;
@@ -74,7 +80,7 @@ public:
 
     ~VJsonReader();
 
-    Status init(const std::string& jsonpath, const std::string& json_root);
+    Status init(const std::string& jsonpath, const std::string& json_root, bool is_dynamic_schema);
 
     Status read_json_column(std::vector<MutableColumnPtr>& columns,
                             const std::vector<SlotDescriptor*>& slot_descs, bool* is_empty_row,
@@ -84,6 +90,10 @@ private:
     Status (VJsonReader::*_vhandle_json_callback)(
             std::vector<vectorized::MutableColumnPtr>& columns,
             const std::vector<SlotDescriptor*>& slot_descs, bool* is_empty_row, bool* eof);
+
+    Status _vhandle_dynamic_json(std::vector<MutableColumnPtr>& columns,
+                                 const std::vector<SlotDescriptor*>& slot_descs, bool* is_empty_row,
+                                 bool* eof);
 
     Status _vhandle_simple_json(std::vector<MutableColumnPtr>& columns,
                                 const std::vector<SlotDescriptor*>& slot_descs, bool* is_empty_row,
@@ -112,6 +122,9 @@ private:
 
     Status _append_error_msg(const rapidjson::Value& objectValue, std::string error_msg,
                              std::string col_name, bool* valid);
+
+    // dynamic table
+    std::unique_ptr<vectorized::JSONDataParser<vectorized::SimdJSONParser>> _json_parser;
 };
 
 class VSIMDJsonReader {
@@ -122,7 +135,7 @@ public:
 
     ~VSIMDJsonReader();
 
-    Status init(const std::string& jsonpath, const std::string& json_root);
+    Status init(const std::string& jsonpath, const std::string& json_root, bool is_dynamic_schema);
 
     Status read_json_column(Block& block, const std::vector<SlotDescriptor*>& slot_descs,
                             bool* is_empty_row, bool* eof);
@@ -131,6 +144,9 @@ private:
     Status (VSIMDJsonReader::*_vhandle_json_callback)(
             Block& block, const std::vector<SlotDescriptor*>& slot_descs, bool* is_empty_row,
             bool* eof);
+
+    Status _vhandle_dynamic_json(Block& block, const std::vector<SlotDescriptor*>& slot_descs,
+                                 bool* is_empty_row, bool* eof);
 
     Status _vhandle_simple_json(Block& block, const std::vector<SlotDescriptor*>& slot_descs,
                                 bool* is_empty_row, bool* eof);
@@ -164,6 +180,7 @@ private:
     Status _append_error_msg(std::string error_msg, std::string col_name, bool* valid);
 
     std::unique_ptr<simdjson::ondemand::parser> _json_parser = nullptr;
+    std::unique_ptr<vectorized::JSONDataParser<vectorized::SimdJSONParser>> _dynamic_json_parser;
     simdjson::ondemand::document _original_json_doc;
     simdjson::ondemand::value _json_value;
     // for strip outer array
