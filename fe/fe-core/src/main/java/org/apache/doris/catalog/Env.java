@@ -204,7 +204,6 @@ import org.apache.doris.qe.GlobalVariable;
 import org.apache.doris.qe.JournalObservable;
 import org.apache.doris.qe.VariableMgr;
 import org.apache.doris.resource.Tag;
-import org.apache.doris.rpc.RpcException;
 import org.apache.doris.service.FrontendOptions;
 import org.apache.doris.statistics.StatisticsJobManager;
 import org.apache.doris.statistics.StatisticsJobScheduler;
@@ -239,8 +238,6 @@ import com.google.common.collect.Multimap;
 import com.google.common.collect.Queues;
 import com.selectdb.cloud.catalog.CloudClusterChecker;
 import com.selectdb.cloud.catalog.CloudReplica;
-import com.selectdb.cloud.proto.SelectdbCloud;
-import com.selectdb.cloud.rpc.MetaServiceProxy;
 import com.sleepycat.je.rep.InsufficientLogException;
 import com.sleepycat.je.rep.NetworkRestore;
 import com.sleepycat.je.rep.NetworkRestoreConfig;
@@ -4953,13 +4950,13 @@ public class Env {
         }
 
         int tryCnt = 0;
-        while(true) {
+        while (true) {
             try {
                 Env.getCurrentInternalCatalog().dropCloudMaterializedIndex(olapTable, indexs);
                 tryCnt++;
             } catch (Exception e) {
                 LOG.warn("failed to drop index {} of table {}, try cnt {}, execption {}",
-                    indexs, olapTable.getId(), tryCnt, e);
+                        indexs, olapTable.getId(), tryCnt, e);
                 try {
                     Thread.sleep(3000);
                 } catch (InterruptedException ie) {
@@ -5025,19 +5022,19 @@ public class Env {
         for (MaterializedIndex index : partition.getMaterializedIndices(IndexExtState.ALL)) {
             indexIds.add(index.getId());
             if (tableId == -1) {
-                tableId = ((CloudReplica) index.getTablets().get(0).getReplicas().get(0)) .getTableId();
+                tableId = ((CloudReplica) index.getTablets().get(0).getReplicas().get(0)).getTableId();
             }
         }
         partitionIds.add(partition.getId());
 
         int tryCnt = 0;
-        while(true) {
+        while (true) {
             try {
                 Env.getCurrentInternalCatalog().dropCloudPartition(tableId, partitionIds, indexIds);
                 tryCnt++;
             } catch (Exception e) {
                 LOG.warn("failed to drop partition {} of table {}, try cnt {}, execption {}",
-                    partitionIds, tableId, tryCnt, e);
+                        partitionIds, tableId, tryCnt, e);
                 try {
                     Thread.sleep(3000);
                 } catch (InterruptedException ie) {
