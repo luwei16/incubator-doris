@@ -273,7 +273,6 @@ public class SchemaChangeJobV2 extends AlterJobV2 {
         } finally {
             tbl.readUnlock();
         }
-
         if (!FeConstants.runningUnitTest) {
             // send all tasks and wait them finished
             AgentTaskQueue.addBatchTask(batchTask);
@@ -541,6 +540,7 @@ public class SchemaChangeJobV2 extends AlterJobV2 {
             tbl.readUnlock();
         }
 
+        LOG.debug("schemaChangeBatchTask:{}", schemaChangeBatchTask);
         AgentTaskQueue.addBatchTask(schemaChangeBatchTask);
         AgentTaskExecutor.submit(schemaChangeBatchTask);
 
@@ -576,7 +576,9 @@ public class SchemaChangeJobV2 extends AlterJobV2 {
         if (!schemaChangeBatchTask.isFinished()) {
             LOG.info("schema change tasks not finished. job: {}", jobId);
             List<AgentTask> tasks = schemaChangeBatchTask.getUnfinishedTasks(2000);
+            LOG.debug("schema change tasks: {}", tasks);
             for (AgentTask task : tasks) {
+                LOG.debug("schema change task: {}, {}", task, task.getFailedTimes());
                 if (task.getFailedTimes() >= 3) {
                     task.setFinished(true);
                     AgentTaskQueue.removeTask(task.getBackendId(), TTaskType.ALTER, task.getSignature());

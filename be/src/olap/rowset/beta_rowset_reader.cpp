@@ -49,7 +49,9 @@ Status BetaRowsetReader::init(RowsetReaderContext* read_context) {
 
     // convert RowsetReaderContext to StorageReadOptions
     StorageReadOptions read_options;
-    read_options.query_id = read_context->runtime_state->query_id();
+    if (read_context->runtime_state != nullptr) {
+        read_options.query_id = read_context->runtime_state->query_id();
+    }
     read_options.stats = _stats;
     if (read_context->lower_bound_keys != nullptr) {
         for (int i = 0; i < read_context->lower_bound_keys->size(); ++i) {
