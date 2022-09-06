@@ -51,6 +51,7 @@ set(VEC_FILES
   columns/column_vector.cpp
   columns/columns_common.cpp
   columns/column_object.cpp
+  columns/column_sparse.cpp
   json/json_parser.cpp
   json/parse2column.cpp
   json/path_in_data.cpp

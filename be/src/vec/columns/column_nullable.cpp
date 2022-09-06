@@ -516,4 +516,23 @@ ColumnPtr ColumnNullable::index(const IColumn& indexes, size_t limit) const {
     return ColumnNullable::create(indexed_data, indexed_null_map);
 }
 
+ColumnPtr ColumnNullable::create_with_offsets(const IColumn::Offsets& offsets,
+                                              const Field& default_field, size_t total_rows,
+                                              size_t shift) const {
+    ColumnPtr new_values;
+    ColumnPtr new_null_map;
+    if (default_field.get_type() == Field::Types::Null) {
+        auto default_column = nested_column->clone_empty();
+        default_column->insert_default();
+        /// Value in main column, when null map is 1 is implementation defined. So, take any value.
+        new_values = nested_column->create_with_offsets(offsets, (*default_column)[0], total_rows,
+                                                        shift);
+        new_null_map = null_map->create_with_offsets(offsets, Field(1u), total_rows, shift);
+    } else {
+        new_values = nested_column->create_with_offsets(offsets, default_field, total_rows, shift);
+        new_null_map = null_map->create_with_offsets(offsets, Field(0u), total_rows, shift);
+    }
+    return ColumnNullable::create(new_values, new_null_map);
+}
+
 } // namespace doris::vectorized

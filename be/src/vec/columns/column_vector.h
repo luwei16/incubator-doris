@@ -377,6 +377,18 @@ public:
 
     TypeIndex get_data_type() const override { return TypeId<T>::value; }
 
+    void get_indices_of_non_default_rows(IColumn::Offsets& indices, size_t from,
+                                         size_t limit) const override {
+        return this->template get_indices_of_non_default_rows_impl<Self>(indices, from, limit);
+    }
+
+    ColumnPtr index(const IColumn& indexes, size_t limit) const override;
+
+    bool is_default_at(size_t n) const override { return data[n] == T {}; }
+
+    ColumnPtr create_with_offsets(const IColumn::Offsets& offsets, const Field& default_field,
+                                  size_t total_rows, size_t shift) const override;
+
 protected:
     Container data;
 };
@@ -397,12 +409,5 @@ ColumnPtr ColumnVector<T>::index_impl(const PaddedPODArray<Type>& indexes, size_
 
     return res;
 }
-
-void get_indices_of_non_default_rows(IColumn::Offsets& indices, size_t from,
-                                     size_t limit) const override {
-    return this->template get_indices_of_non_default_rows_impl<Self>(indices, from, limit);
-}
-
-ColumnPtr index(const IColumn& indexes, size_t limit) const override;
 
 } // namespace doris::vectorized

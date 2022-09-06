@@ -376,6 +376,11 @@ public:
     }
 
     ColumnPtr index(const IColumn& indexes, size_t limit) const override;
+
+    bool is_default_at(size_t n) const override {
+        assert(n < size());
+        return size_at(n) == 1;
+    }
 };
 
 } // namespace doris::vectorized

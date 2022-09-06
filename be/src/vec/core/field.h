@@ -1,4 +1,4 @@
-// Licensed to the Apache Software Foundation (ASF) under one
+// Licensed to the Apache Software Foundation (ASF) under onerray
 // or more contributor license agreements.  See the NOTICE file
 // distributed with this work for additional information
 // regarding copyright ownership.  The ASF licenses this file
@@ -343,20 +343,12 @@ public:
     }
 
     template <typename T>
-    T& safe_get() {
-        const Types::Which requested = TypeToEnum<std::decay_t<T>>::value;
-        CHECK_EQ(which, requested) << fmt::format("Bad get: has {}, requested {}", get_type_name(),
-                                                  Types::to_string(requested));
-        return get<T>();
+    auto& safe_get() const {
+        return const_cast<Field*>(this)->safe_get<T>();
     }
 
     template <typename T>
-    const T& safe_get() const {
-        const Types::Which requested = TypeToEnum<std::decay_t<T>>::value;
-        CHECK_EQ(which, requested) << fmt::format("Bad get: has {}, requested {}", get_type_name(),
-                                                  Types::to_string(requested));
-        return get<T>();
-    }
+    auto& safe_get();
 
     bool operator<(const Field& rhs) const {
         if (which < rhs.which) return true;
@@ -607,7 +599,6 @@ private:
             break;
         case Types::AggregateFunctionState:
             destroy<AggregateFunctionStateData>();
-            break;
         case Types::Object:
             destroy<Object>();
             break;
@@ -648,6 +639,7 @@ template <>
 struct TypeId<DecimalField<Decimal128>> {
     static constexpr const TypeIndex value = TypeIndex::Decimal128;
 };
+
 template <>
 struct Field::TypeToEnum<Null> {
     static constexpr Types::Which value = Types::Null;
@@ -683,6 +675,10 @@ struct Field::TypeToEnum<Array> {
 template <>
 struct Field::TypeToEnum<Tuple> {
     static constexpr Types::Which value = Types::Tuple;
+};
+template <>
+struct Field::TypeToEnum<Object> {
+    static constexpr Types::Which value = Types::Object;
 };
 template <>
 struct Field::TypeToEnum<DecimalField<Decimal32>> {
@@ -738,6 +734,10 @@ struct Field::EnumToType<Field::Types::Tuple> {
     using Type = Tuple;
 };
 template <>
+struct Field::EnumToType<Field::Types::Object> {
+    using Type = Object;
+};
+template <>
 struct Field::EnumToType<Field::Types::Decimal32> {
     using Type = DecimalField<Decimal32>;
 };
@@ -752,10 +752,6 @@ struct Field::EnumToType<Field::Types::Decimal128> {
 template <>
 struct Field::EnumToType<Field::Types::AggregateFunctionState> {
     using Type = DecimalField<AggregateFunctionStateData>;
-};
-template <>
-struct Field::EnumToType<Field::Types::Object> {
-    using Type = Object;
 };
 
 template <typename T>
@@ -786,7 +782,6 @@ template <>
 struct TypeName<Tuple> {
     static std::string get() { return "Tuple"; }
 };
-
 template <>
 struct TypeName<Object> {
     static std::string get() { return "Object"; }
@@ -833,11 +828,6 @@ struct NearestFieldTypeImpl<Int16> {
 template <>
 struct NearestFieldTypeImpl<Int32> {
     using Type = Int64;
-};
-
-template <>
-struct NearestFieldTypeImpl<Object> {
-    using Type = Object;
 };
 
 /// long and long long are always different types that may behave identically or not.
@@ -908,6 +898,10 @@ struct NearestFieldTypeImpl<Array> {
     using Type = Array;
 };
 template <>
+struct NearestFieldTypeImpl<Object> {
+    using Type = Object;
+};
+template <>
 struct NearestFieldTypeImpl<Tuple> {
     using Type = Tuple;
 };
@@ -924,7 +918,6 @@ template <>
 struct NearestFieldTypeImpl<std::string_view> {
     using Type = String;
 };
-
 template <>
 struct NearestFieldTypeImpl<AggregateFunctionStateData> {
     using Type = AggregateFunctionStateData;
@@ -950,6 +943,14 @@ template <typename T>
 Field::Field(T&& rhs, std::enable_if_t<!std::is_same_v<std::decay_t<T>, Field>, void*>) {
     auto&& val = cast_to_nearest_field_type(std::forward<T>(rhs));
     create_concrete(std::forward<decltype(val)>(val));
+}
+
+template <typename T>
+auto& Field::safe_get() {
+    const Types::Which requested = TypeToEnum<NearestFieldType<std::decay_t<T>>>::value;
+    if (which != requested)
+        LOG(FATAL) << fmt::format("Bad get: has {}, requested {}", get_type_name(), requested);
+    return get<T>();
 }
 
 template <typename T>

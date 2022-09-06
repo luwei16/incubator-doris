@@ -222,6 +222,11 @@ public:
         nested_column->clear();
     }
 
+    ColumnPtr create_with_offsets(const Offsets& offsets, const Field& default_field,
+                                  size_t total_rows, size_t shift) const override;
+
+    bool is_default_at(size_t n) const override { return is_null_at(n); }
+
     NullMap& get_null_map_data() { return get_null_map_column().get_data(); }
     const NullMap& get_null_map_data() const { return get_null_map_column().get_data(); }
 

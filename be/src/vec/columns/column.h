@@ -75,6 +75,10 @@ public:
     /// Creates empty column with the same type.
     virtual MutablePtr clone_empty() const { return clone_resized(0); }
 
+    /// If column isn't ColumnSparse, return itself.
+    /// If column is ColumnSparse, transforms it to full column.
+    virtual Ptr convert_to_full_column_if_sparse() const { return get_ptr(); }
+
     /// Creates column with the same type and specified size.
     /// If size is less current size, then data is cut.
     /// If size is greater, than default values are appended.
@@ -458,6 +462,8 @@ public:
     virtual bool is_nullable() const { return false; }
 
     virtual bool is_bitmap() const { return false; }
+
+    virtual bool is_sparse() const { return false; }
 
     // true if column has null element
     virtual bool has_null() const { return false; }
