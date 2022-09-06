@@ -31,6 +31,7 @@ import org.apache.doris.common.Pair;
 import org.apache.doris.common.Status;
 import org.apache.doris.common.UserException;
 import org.apache.doris.common.io.CountingDataOutputStream;
+import org.apache.doris.ha.FrontendNodeType;
 import org.apache.doris.metric.MetricRepo;
 import org.apache.doris.resource.Tag;
 import org.apache.doris.rpc.RpcException;
@@ -271,6 +272,15 @@ public class SystemInfoService {
         return clusterIdToBackend;
     }
 
+    public List<Pair<String, Integer>> getCurrentObFrontends() {
+        List<Frontend> frontends = Env.getCurrentEnv().getFrontends(FrontendNodeType.OBSERVER);
+        List<Pair<String, Integer>> frontendsPair = new ArrayList<>();
+        for (Frontend frontend : frontends) {
+            frontendsPair.add(new Pair<>(frontend.getHost(), frontend.getEditLogPort()));
+        }
+        return frontendsPair;
+    }
+
     // for deploy manager
     public void addBackends(List<Pair<String, Integer>> hostPortPairs, boolean isFree) throws UserException {
         addBackends(hostPortPairs, isFree, "", Tag.DEFAULT_BACKEND_TAG.toMap());
@@ -293,6 +303,27 @@ public class SystemInfoService {
 
         for (Pair<String, Integer> pair : hostPortPairs) {
             addBackend(pair.first, pair.second, isFree, destCluster, tagMap);
+        }
+    }
+
+    public synchronized void updateCloudFrontends(List<Frontend> toAdd,
+                                                  List<Frontend> toDel) throws DdlException {
+        LOG.debug("updateCloudFrontends toAdd={} toDel={}", toAdd, toDel);
+        String masterIp = Env.getCurrentEnv().getMasterIp();
+        for (Frontend fe : toAdd) {
+            if (masterIp.equals(fe.getHost())) {
+                continue;
+            }
+            Env.getCurrentEnv().addFrontend(FrontendNodeType.OBSERVER,
+                    fe.getHost(), fe.getEditLogPort(), fe.getNodeName());
+            LOG.info("added cloud frontend={} ", fe);
+        }
+        for (Frontend fe : toDel) {
+            if (masterIp.equals(fe.getHost())) {
+                continue;
+            }
+            Env.getCurrentEnv().dropFrontend(FrontendNodeType.OBSERVER, fe.getHost(), fe.getEditLogPort());
+            LOG.info("dropped cloud frontend={} ", fe);
         }
     }
 

@@ -1775,4 +1775,10 @@ public class Config extends ConfigBase {
      */
     @ConfField(mutable = true)
     public static long remote_fragment_exec_timeout_ms = 5000; // 5 sec
+
+    @ConfField
+    public static String cloud_observer_cluster_name = "RESERVED_CLUSTER_NAME_FOR_SQL_SERVER";
+
+    @ConfField
+    public static String cloud_observer_cluster_id = "RESERVED_CLUSTER_ID_FOR_SQL_SERVER";
 }

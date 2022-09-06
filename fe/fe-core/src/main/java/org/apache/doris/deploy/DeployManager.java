@@ -579,10 +579,10 @@ public class DeployManager extends MasterDaemon {
                 try {
                     switch (nodeType) {
                         case ELECTABLE:
-                            env.addFrontend(FrontendNodeType.FOLLOWER, remoteIp, remotePort);
+                            env.addFrontend(FrontendNodeType.FOLLOWER, remoteIp, remotePort, "");
                             break;
                         case OBSERVER:
-                            env.addFrontend(FrontendNodeType.OBSERVER, remoteIp, remotePort);
+                            env.addFrontend(FrontendNodeType.OBSERVER, remoteIp, remotePort, "");
                             break;
                         case BACKEND:
                             List<Pair<String, Integer>> newBackends = Lists.newArrayList();

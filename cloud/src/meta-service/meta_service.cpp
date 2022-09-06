@@ -493,7 +493,7 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
         code = MetaServiceCode::INVALID_ARGUMENT;
         msg = "empty instance_id";
         LOG(INFO) << msg << ", cloud_unique_id=" << request->cloud_unique_id()
-            << " txn_id=" << txn_id;
+                  << " txn_id=" << txn_id;
         return;
     }
 
@@ -586,8 +586,8 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
     std::unique_ptr<int, std::function<void(int*)>> defer_log_range(
             (int*)0x01, [rs_tmp_key0, rs_tmp_key1, &num_rowsets, &txn_id](int*) {
                 LOG(INFO) << "get tmp rowset meta, txn_id=" << txn_id
-                          << " num_rowsets=" << num_rowsets << " range=["
-                          << hex(rs_tmp_key0) << "," << hex(rs_tmp_key1) << ")";
+                          << " num_rowsets=" << num_rowsets << " range=[" << hex(rs_tmp_key0) << ","
+                          << hex(rs_tmp_key1) << ")";
             });
 
     std::unique_ptr<RangeGetIterator> it;
@@ -701,7 +701,7 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
         while (tablet_stats.count(stat_key) == 0) {
             ret = txn->get(stat_key, &stat_val);
             LOG(INFO) << "get tablet_stats_key, key=" << hex(stat_key) << " ret=" << ret
-                << " txn_id=" << txn_id;
+                      << " txn_id=" << txn_id;
             if (ret != 1 && ret != 0) {
                 code = MetaServiceCode::KV_TXN_GET_ERR;
                 ss << "failed to get tablet stats, tablet_id=" << i.tablet_id()
@@ -2748,8 +2748,8 @@ void MetaServiceImpl::alter_obj_store_info(google::protobuf::RpcController* cont
             msg = "this instance history has greater than 10 objs, please new another instance";
             return;
         }
-        auto save_objs = instance.obj_info();
-        for (auto it : save_objs) {
+        auto& objs = instance.obj_info();
+        for (auto& it : objs) {
             if (bucket == it.bucket() && prefix == it.prefix() && endpoint == it.endpoint() &&
                 region == it.region() && ak == it.ak() && sk == it.sk()) {
                 // err, anything not changed
@@ -2759,22 +2759,17 @@ void MetaServiceImpl::alter_obj_store_info(google::protobuf::RpcController* cont
             }
         }
         // calc id
-        selectdb::ObjectStoreInfoPB first_item;
-        first_item.set_ctime(time);
-        first_item.set_mtime(time);
-        first_item.set_id(std::to_string(instance.obj_info().size() + 1));
-        first_item.set_ak(ak);
-        first_item.set_sk(sk);
-        first_item.set_bucket(bucket);
-        first_item.set_prefix(prefix);
-        first_item.set_endpoint(endpoint);
-        first_item.set_region(region);
-        // clear instance.obj_store_history
-        instance.clear_obj_info();
-        // set first_item in instance.obj_store_history
-        instance.add_obj_info()->CopyFrom(first_item);
-        // set save_objs append instance.obj_store_history
-        instance.mutable_obj_info()->MergeFrom(save_objs);
+        selectdb::ObjectStoreInfoPB last_item;
+        last_item.set_ctime(time);
+        last_item.set_mtime(time);
+        last_item.set_id(std::to_string(instance.obj_info().size() + 1));
+        last_item.set_ak(ak);
+        last_item.set_sk(sk);
+        last_item.set_bucket(bucket);
+        last_item.set_prefix(prefix);
+        last_item.set_endpoint(endpoint);
+        last_item.set_region(region);
+        instance.add_obj_info()->CopyFrom(last_item);
     } break;
     default: {
         code = MetaServiceCode::INVALID_ARGUMENT;

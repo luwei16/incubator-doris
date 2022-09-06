@@ -237,6 +237,8 @@ import com.google.common.collect.Multimap;
 import com.google.common.collect.Queues;
 import com.selectdb.cloud.catalog.CloudClusterChecker;
 import com.selectdb.cloud.catalog.CloudReplica;
+import com.selectdb.cloud.proto.SelectdbCloud;
+import com.selectdb.cloud.proto.SelectdbCloud.NodeInfoPB;
 import com.sleepycat.je.rep.InsufficientLogException;
 import com.sleepycat.je.rep.NetworkRestore;
 import com.sleepycat.je.rep.NetworkRestoreConfig;
@@ -881,14 +883,71 @@ public class Env {
         return isReady.get();
     }
 
-    private void getClusterIdAndRole() throws IOException {
+    private SelectdbCloud.NodeInfoPB getLocalTypeFromMetaService() {
+        // get helperNodes from ms
+        SelectdbCloud.GetClusterResponse response =
+                Env.getCurrentSystemInfo()
+                .getCloudCluster(Config.cloud_observer_cluster_name, Config.cloud_observer_cluster_id, "");
+        if (!response.hasStatus() || !response.getStatus().hasCode()
+                || response.getStatus().getCode() != SelectdbCloud.MetaServiceCode.OK) {
+            LOG.warn("failed to get cloud cluster due to incomplete response, "
+                    + "cloud_unique_id={}, clusterId={}, response={}",
+                    Config.cloud_unique_id, Config.cloud_observer_cluster_id, response);
+            return null;
+        }
+        List<SelectdbCloud.NodeInfoPB> allNodes = response.getCluster().getNodesList()
+                .stream().filter(NodeInfoPB::hasNodeType).collect(Collectors.toList());
+
+        helperNodes.clear();
+        helperNodes.addAll(allNodes.stream()
+                .filter(nodeInfoPB -> nodeInfoPB.getNodeType() == NodeInfoPB.NodeType.FE_MASTER)
+                .map(nodeInfoPB -> Pair.create(nodeInfoPB.getIp(), nodeInfoPB.getEditLogPort()))
+                .collect(Collectors.toList()));
+        // check only have one master node.
+        Preconditions.checkState(helperNodes.size() == 1);
+
+        Optional<NodeInfoPB> local = allNodes.stream().filter(n -> {
+            String s = n.getIp() + ":" + n.getEditLogPort();
+            return s.equals(selfNode.toString());
+        }).findAny();
+        return local.orElse(null);
+    }
+
+    private void getClusterIdAndRole() throws IOException, InterruptedException {
+        NodeInfoPB.NodeType type = NodeInfoPB.NodeType.UNKNOWN;
+        String feNodeNameFromMeta = "";
+        if (!Config.cloud_unique_id.isEmpty()) {
+            // cloud mode
+            while (true) {
+                SelectdbCloud.NodeInfoPB nodeInfoPB = getLocalTypeFromMetaService();
+                if (nodeInfoPB == null) {
+                    LOG.warn("failed to get local fe's type, sleep 5 s, try again.");
+                    Thread.sleep(5000);
+                    continue;
+                }
+                type = nodeInfoPB.getNodeType();
+                feNodeNameFromMeta = genFeNodeNameFromMeta(nodeInfoPB.getIp(),
+                        nodeInfoPB.getEditLogPort(), nodeInfoPB.getCtime() * 1000);
+                break;
+            }
+
+            LOG.debug("current fe's role is {}",
+                    type == NodeInfoPB.NodeType.FE_MASTER ? "MASTER" :
+                    type == NodeInfoPB.NodeType.FE_OBSERVER ? "OBSERVER" : "UNKNOWN");
+            if (type == NodeInfoPB.NodeType.UNKNOWN) {
+                LOG.warn("type current not support, please check it");
+                System.exit(-1);
+            }
+        }
+
         File roleFile = new File(this.imageDir, Storage.ROLE_FILE);
         File versionFile = new File(this.imageDir, Storage.VERSION_FILE);
 
         // if helper node is point to self, or there is ROLE and VERSION file in local.
         // get the node type from local
-        if (isMyself() || (roleFile.exists() && versionFile.exists())) {
-
+        if ((!Config.cloud_unique_id.isEmpty() && type == NodeInfoPB.NodeType.FE_MASTER)
+                || type != NodeInfoPB.NodeType.FE_OBSERVER && (isMyself()
+                || (roleFile.exists() && versionFile.exists()))) {
             if (!isMyself()) {
                 LOG.info("find ROLE and VERSION file in local, ignore helper nodes: {}", helperNodes);
             }
@@ -915,7 +974,11 @@ public class Env {
                 // For compatibility. Because this is the very first time to start, so we arbitrarily choose
                 // a new name for this node
                 role = FrontendNodeType.FOLLOWER;
-                nodeName = genFeNodeName(selfNode.first, selfNode.second, false /* new style */);
+                if (!Config.cloud_unique_id.isEmpty() && type == NodeInfoPB.NodeType.FE_MASTER) {
+                    nodeName = feNodeNameFromMeta;
+                } else {
+                    nodeName = genFeNodeName(selfNode.first, selfNode.second, false /* new style */);
+                }
                 storage.writeFrontendRoleAndNodeName(role, nodeName);
                 LOG.info("very first time to start this node. role: {}, node name: {}", role.name(), nodeName);
             } else {
@@ -931,7 +994,11 @@ public class Env {
                     // But we will get a empty nodeName after upgrading.
                     // So for forward compatibility, we use the "old-style" way of naming: "ip_port",
                     // and update the ROLE file.
-                    nodeName = genFeNodeName(selfNode.first, selfNode.second, true/* old style */);
+                    if (!Config.cloud_unique_id.isEmpty() && type == NodeInfoPB.NodeType.FE_MASTER) {
+                        nodeName = feNodeNameFromMeta;
+                    } else {
+                        nodeName = genFeNodeName(selfNode.first, selfNode.second, true /* old style */);
+                    }
                     storage.writeFrontendRoleAndNodeName(role, nodeName);
                     LOG.info("forward compatibility. role: {}, node name: {}", role.name(), nodeName);
                 } else {
@@ -979,6 +1046,7 @@ public class Env {
                 isFirstTimeStartUp = false;
             }
         } else {
+            // cloud mode, type == NodeInfoPB.NodeType.FE_OBSERVER
             // try to get role and node name from helper node,
             // this loop will not end until we get certain role type and name
             while (true) {
@@ -1088,6 +1156,14 @@ public class Env {
         } else {
             return name + "_" + System.currentTimeMillis();
         }
+    }
+
+    public static String genFeNodeNameFromMeta(String host, int port, long timeMs) {
+        return host + "_" + port + "_" + timeMs;
+    }
+
+    public static String[] splitFeNodeName(String nodeName) {
+        return nodeName.split("_");
     }
 
     // Get the role info and node name from helper node.
@@ -2502,7 +2578,8 @@ public class Env {
         };
     }
 
-    public void addFrontend(FrontendNodeType role, String host, int editLogPort) throws DdlException {
+
+    public void addFrontend(FrontendNodeType role, String host, int editLogPort, String nodeName) throws DdlException {
         if (!tryLock(false)) {
             throw new DdlException("Failed to acquire catalog lock. Try again");
         }
@@ -2512,7 +2589,9 @@ public class Env {
                 throw new DdlException("frontend already exists " + fe);
             }
 
-            String nodeName = genFeNodeName(host, editLogPort, false /* new name style */);
+            if (Strings.isNullOrEmpty(nodeName)) {
+                nodeName = genFeNodeName(host, editLogPort, false /* new name style */);
+            }
 
             if (removedFrontends.contains(nodeName)) {
                 throw new DdlException("frontend name already exists " + nodeName + ". Try again");

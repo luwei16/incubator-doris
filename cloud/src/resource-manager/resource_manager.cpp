@@ -5,7 +5,6 @@
 #include "common/logging.h"
 #include "common/util.h"
 
-
 #include <sstream>
 // clang-format on
 
@@ -105,6 +104,43 @@ std::string ResourceManager::add_node(const std::string& instance_id, const Node
     return "";
 }
 
+bool ResourceManager::check_cluster_params_valid(const ClusterPB& cluster, std::string* err) {
+    // check
+    if (!cluster.has_type()) {
+        *err = "add cluster must have type arg";
+        return false;
+    }
+
+    std::stringstream ss;
+    bool no_err = true;
+    int master_num = 0;
+    for (auto& n : cluster.nodes()) {
+        auto& node = const_cast<std::decay_t<decltype(n)>&>(n);
+        node.set_ctime(std::time(nullptr));
+        node.set_mtime(std::time(nullptr));
+        if (ClusterPB::SQL == cluster.type() && n.has_edit_log_port() && n.has_node_type() &&
+            (n.node_type() == NodeInfoPB_NodeType_FE_MASTER ||
+             n.node_type() == NodeInfoPB_NodeType_FE_OBSERVER)) {
+            master_num += n.node_type() == NodeInfoPB_NodeType_FE_MASTER ? 1 : 0;
+            continue;
+        }
+        if (ClusterPB::COMPUTE == cluster.type() && n.heartbeat_port()) {
+            continue;
+        }
+        ss << "check cluster params failed, node : " << n.DebugString();
+        *err = ss.str();
+        no_err = false;
+        break;
+    }
+    if (ClusterPB::SQL == cluster.type() && master_num != 1) {
+        no_err = false;
+        ss << "cluster is SQL type, must have only one master node, now master count: "
+           << master_num;
+        *err = ss.str();
+    }
+    return no_err;
+}
+
 std::string ResourceManager::add_cluster(const std::string& instance_id,
                                          const ClusterInfo& cluster) {
     std::string err;
@@ -112,6 +148,11 @@ std::string ResourceManager::add_cluster(const std::string& instance_id,
 
     std::unique_ptr<int, std::function<void(int*)>> defer(
             (int*)0x01, [&err](int*) { LOG(INFO) << "add_cluster err=" << err; });
+
+    if (!check_cluster_params_valid(cluster.cluster, &err)) {
+        LOG(INFO) << err;
+        return err;
+    }
 
     // FIXME(gavin): ensure atomicity of the entire process of adding cluster.
     //               Inserting a placeholer to node_info_ before persistence

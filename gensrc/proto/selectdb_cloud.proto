@@ -36,6 +36,11 @@ message ClusterPB {
 }
 
 message NodeInfoPB {
+    enum NodeType {
+        UNKNOWN = 0;
+        FE_MASTER = 1;
+        FE_OBSERVER = 2;
+    }
     optional string cloud_unique_id = 1;
     optional string name = 2;
     optional string ip = 3;
@@ -46,6 +51,8 @@ message NodeInfoPB {
     // There may be other ports, just add new fields in need
     optional int32 heartbeat_port = 8; 
     optional string desc = 9;
+    optional int32 edit_log_port = 10;
+    optional NodeType node_type = 11;
 }
 
 enum NodeStatusPB {

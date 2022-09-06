@@ -110,6 +110,8 @@ private:
 
     void add_cluster_to_index_no_lock(const std::string& instance_id, const ClusterPB& cluster);
 
+    bool check_cluster_params_valid(const ClusterPB& cluster, std::string* err);
+
 private:
     std::shared_mutex mtx_;
     // cloud_unique_id -> NodeInfo

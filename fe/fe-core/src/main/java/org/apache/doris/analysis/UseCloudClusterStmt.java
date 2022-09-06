@@ -60,6 +60,6 @@ public class UseCloudClusterStmt extends StatementBase {
 
     @Override
     public RedirectStatus getRedirectStatus() {
-        return RedirectStatus.NO_FORWARD;
+        return RedirectStatus.FORWARD_WITH_SYNC;
     }
 }
