@@ -2469,6 +2469,42 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
         return;
     }
 
+    if (unresolved_path == "add_node") {
+        AlterClusterRequest req;
+        auto st = google::protobuf::util::JsonStringToMessage(request_body, &req);
+        if (!st.ok()) {
+            msg = "failed to parse AlterClusterRequest, error: " + st.message().ToString();
+            response_body = msg;
+            LOG(WARNING) << msg;
+            return;
+        }
+        req.set_op(AlterClusterRequest::ADD_NODE);
+        MetaServiceGenericResponse res;
+        alter_cluster(cntl, &req, &res, nullptr);
+        ret = res.status().code();
+        msg = res.status().msg();
+        response_body = msg;
+        return;
+    }
+
+    if (unresolved_path == "drop_node") {
+        AlterClusterRequest req;
+        auto st = google::protobuf::util::JsonStringToMessage(request_body, &req);
+        if (!st.ok()) {
+            msg = "failed to parse AlterClusterRequest, error: " + st.message().ToString();
+            response_body = msg;
+            LOG(WARNING) << msg;
+            return;
+        }
+        req.set_op(AlterClusterRequest::DROP_NODE);
+        MetaServiceGenericResponse res;
+        alter_cluster(cntl, &req, &res, nullptr);
+        ret = res.status().code();
+        msg = res.status().msg();
+        response_body = msg;
+        return;
+    }
+
     // This is useful for debuggin
     if (unresolved_path == "get_cluster") {
         GetClusterRequest req;
@@ -2969,8 +3005,50 @@ void MetaServiceImpl::alter_cluster(google::protobuf::RpcController* controller,
                 });
     } break;
     case AlterClusterRequest::ADD_NODE: {
+        resource_mgr_->check_cluster_params_valid(request->cluster(), &msg, false);
+        if (msg != "") {
+            LOG(INFO) << msg;
+            break;
+        }
+        std::vector<NodeInfo> to_add;
+        std::vector<NodeInfo> to_del;
+        for (auto& n : request->cluster().nodes()) {
+            NodeInfo node;
+            node.instance_id = request->instance_id();
+            node.node_info = n;
+            node.cluster_id = request->cluster().cluster_id();
+            node.cluster_name = request->cluster().cluster_name();
+            node.role =
+                    (request->cluster().type() == ClusterPB::SQL
+                             ? Role::SQL_SERVER
+                             : (request->cluster().type() == ClusterPB::COMPUTE ? Role::COMPUTE_NODE
+                                                                                : Role::UNDEFINED));
+            to_add.emplace_back(std::move(node));
+        }
+        msg = resource_mgr_->modify_nodes(instance_id, to_add, to_del);
     } break;
     case AlterClusterRequest::DROP_NODE: {
+        resource_mgr_->check_cluster_params_valid(request->cluster(), &msg, false);
+        if (msg != "") {
+            LOG(INFO) << msg;
+            break;
+        }
+        std::vector<NodeInfo> to_add;
+        std::vector<NodeInfo> to_del;
+        for (auto& n : request->cluster().nodes()) {
+            NodeInfo node;
+            node.instance_id = request->instance_id();
+            node.node_info = n;
+            node.cluster_id = request->cluster().cluster_id();
+            node.cluster_name = request->cluster().cluster_name();
+            node.role =
+                    (request->cluster().type() == ClusterPB::SQL
+                             ? Role::SQL_SERVER
+                             : (request->cluster().type() == ClusterPB::COMPUTE ? Role::COMPUTE_NODE
+                                                                                : Role::UNDEFINED));
+            to_del.emplace_back(std::move(node));
+        }
+        msg = resource_mgr_->modify_nodes(instance_id, to_add, to_del);
     } break;
     case AlterClusterRequest::RENAME_CLUSTER: {
         msg = resource_mgr_->update_cluster(

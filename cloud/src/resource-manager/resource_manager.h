@@ -55,15 +55,6 @@ public:
      */
     std::string get_node(const std::string& cloud_unique_id, std::vector<NodeInfo>* nodes);
 
-    /**
-     * Add a node to the instance
-     *
-     * @return empty string for success, otherwise failure reason returned
-     */
-    std::string add_node(const std::string& instance_id, const NodeInfo& node);
-
-    // TODO: update_cluster, get_cluster, rename_cluster
-
     std::string add_cluster(const std::string& instance_id, const ClusterInfo& cluster);
 
     /**
@@ -96,6 +87,12 @@ public:
     std::pair<int, std::string> get_instance(std::shared_ptr<Transaction> txn,
                                              const std::string& instance_id,
                                              InstanceInfoPB* inst_pb);
+    // return err msg
+    std::string modify_nodes(const std::string& instance_id, const std::vector<NodeInfo>& to_add,
+                             const std::vector<NodeInfo>& to_del);
+
+    bool check_cluster_params_valid(const ClusterPB& cluster, std::string* err,
+                                    bool check_master_num);
 
 private:
     void add_cluster_to_index(const std::string& instance_id, const ClusterPB& cluster);
@@ -109,8 +106,6 @@ private:
                                            const ClusterPB& cluster);
 
     void add_cluster_to_index_no_lock(const std::string& instance_id, const ClusterPB& cluster);
-
-    bool check_cluster_params_valid(const ClusterPB& cluster, std::string* err);
 
 private:
     std::shared_mutex mtx_;
