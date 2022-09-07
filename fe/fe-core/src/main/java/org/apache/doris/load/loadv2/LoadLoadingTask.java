@@ -91,7 +91,8 @@ public class LoadLoadingTask extends LoadTask {
         this.strictMode = strictMode;
         this.txnId = txnId;
         this.failMsg = new FailMsg(FailMsg.CancelType.LOAD_RUN_FAIL);
-        this.retryTime = 2; // 2 times is enough
+        // No need to retry for cloud mode, txn id should not be reused
+        this.retryTime = 1;
         this.timezone = timezone;
         this.timeoutS = timeoutS;
         this.loadParallelism = loadParallelism;
