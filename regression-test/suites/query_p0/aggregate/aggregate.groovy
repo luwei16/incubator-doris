@@ -30,6 +30,10 @@ suite("aggregate") {
                 c_string string,
                 c_date date,
                 c_timestamp datetime,
+                c_date_1 datev2,
+                c_timestamp_1 datetimev2,
+                c_timestamp_2 datetimev2(3),
+                c_timestamp_3 datetimev2(6),
                 c_boolean boolean,
                 c_short_decimal decimal(5,2),
                 c_long_decimal decimal(27,9)
@@ -82,6 +86,10 @@ suite("aggregate") {
     qt_aggregate """ select count(distinct c_bigint),count(distinct c_double),count(distinct c_string),count(distinct c_date),count(distinct c_timestamp),count(distinct c_boolean) from ${tableName} """
     qt_aggregate """ select max(c_bigint), max(c_double),max(c_string), max(c_date), max(c_timestamp) from ${tableName} """
     qt_aggregate """ select min(c_bigint), min(c_double), min(c_string), min(c_date), min(c_timestamp) from ${tableName} """
+    qt_aggregate """ select count(c_bigint),count(c_double),count(c_string),count(c_date_1),count(c_timestamp_1),count(c_timestamp_2),count(c_timestamp_3),count(c_boolean) from ${tableName} """
+    qt_aggregate """ select count(distinct c_bigint),count(distinct c_double),count(distinct c_string),count(distinct c_date_1),count(distinct c_timestamp_1),count(distinct c_timestamp_2),count(distinct c_timestamp_3),count(distinct c_boolean) from ${tableName} """
+    qt_aggregate """ select max(c_bigint), max(c_double),max(c_string), max(c_date_1), max(c_timestamp_1), max(c_timestamp_2), max(c_timestamp_3) from ${tableName} """
+    qt_aggregate """ select min(c_bigint), min(c_double), min(c_string), min(c_date_1), min(c_timestamp_1), min(c_timestamp_2), min(c_timestamp_3) from ${tableName} """
     qt_aggregate """ select count(c_string), max(c_double), avg(c_bigint) from ${tableName} """
     qt_aggregate """ select stddev_pop(c_bigint), stddev_pop(c_double) from ${tableName} """
     qt_aggregate """ select stddev_pop(distinct c_bigint), stddev_pop(c_double) from ${tableName} """
@@ -102,6 +110,31 @@ suite("aggregate") {
     qt_aggregate """ select variance(c_bigint), variance(distinct c_double) from ${tableName}  """
     qt_aggregate """ select 1 k1, 2 k2, c_bigint k3, sum(c_double) from ${tableName} group by 1, k2, k3 order by k1, k2, k3 """
     qt_aggregate """ select (k1 + k2) * k3 k4 from (select 1 k1, 2 k2, c_bigint k3, sum(c_double) from ${tableName} group by 1, k2, k3) t order by k4 """
+    qt_aggregate """
+                SELECT c_bigint,  
+                    CASE
+                    WHEN c_string IN ('sample', 'Sample') THEN
+                    'sample'
+                    WHEN c_string IN ('Again', 'AGAIN') THEN
+                    'again'
+                    ELSE 'other' end, avg(c_double)
+                FROM ${tableName}
+                GROUP BY  c_bigint,
+                    CASE
+                    WHEN c_string IN ('sample', 'Sample') THEN
+                    'sample'
+                    WHEN c_string IN ('Again', 'AGAIN') THEN
+                    'again'
+                    ELSE 'other'
+                    END
+                ORDER BY  c_bigint,
+                    CASE
+                    WHEN c_string IN ('sample', 'Sample') THEN
+                    'sample'
+                    WHEN c_string IN ('Again', 'AGAIN') THEN
+                    'again'
+                    ELSE 'other' end
+                 """
 
     sql "use test_query_db"
     List<String> fields = ["k1", "k2", "k3", "k4", "k5", "k6", "k10", "k11", "k7", "k8", "k9"]

@@ -315,6 +315,8 @@ public abstract class Table extends MetaObject implements Writable, TableIf {
         TableType type = TableType.valueOf(Text.readString(in));
         if (type == TableType.OLAP) {
             table = new OlapTable();
+        } else if (type == TableType.MATERIALIZED_VIEW) {
+            table = new MaterializedView();
         } else if (type == TableType.ODBC) {
             table = new OdbcTable();
         } else if (type == TableType.MYSQL) {
@@ -387,10 +389,6 @@ public abstract class Table extends MetaObject implements Writable, TableIf {
 
         // read create time
         this.createTime = in.readLong();
-    }
-
-    public boolean equals(Table table) {
-        return true;
     }
 
     // return if this table is partitioned.

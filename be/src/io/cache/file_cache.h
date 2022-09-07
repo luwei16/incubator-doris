@@ -27,6 +27,8 @@
 namespace doris {
 namespace io {
 
+const std::string CACHE_DONE_FILE_SUFFIX = "_DONE";
+
 class FileCache : public FileReader {
 public:
     FileCache() = default;
@@ -44,8 +46,13 @@ public:
 
     virtual Status clean_all_cache() = 0;
 
+
     // Dummy fs
     FileSystem* fs() const override { return nullptr; }
+
+    Status download_cache_to_local(const Path& cache_file, const Path& cache_done_file,
+                                   io::FileReaderSPtr remote_file_reader, size_t req_size,
+                                   size_t offset = 0);
 };
 
 using FileCachePtr = std::shared_ptr<FileCache>;

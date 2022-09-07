@@ -912,7 +912,7 @@ uint32_t VecDateTimeValue::year_week(uint8_t mode) const {
     // not covered by year_week_table, calculate at runtime
     uint32_t year = 0;
     // The range of the week in the year_week is 1-53, so the mode WEEK_YEAR is always true.
-    uint8_t week = calc_week(*this, mode | 2, &year);
+    uint8_t week = calc_week(*this, mode | 2, &year, true);
     // When the mode WEEK_FIRST_WEEKDAY is not set,
     // the week in which the last three days of the year fall may belong to the following year.
     if (week == 53 && day() >= 29 && !(mode & 4)) {
@@ -1754,7 +1754,7 @@ bool DateV2Value<T>::from_date_str(const char* date_str, int len, int scale) {
 
     int field_idx = 0;
     int field_len = year_len;
-    while (ptr < end && isdigit(*ptr) && field_idx <= MAX_DATE_PARTS) {
+    while (ptr < end && isdigit(*ptr) && field_idx < MAX_DATE_PARTS) {
         const char* start = ptr;
         int temp_val = 0;
         bool scan_to_delim = (!is_interval_format) && (field_idx != 6);
@@ -1767,6 +1767,7 @@ bool DateV2Value<T>::from_date_str(const char* date_str, int len, int scale) {
             if constexpr (is_datetime) {
                 if (scale >= 0) {
                     temp_val /= std::pow(10, 6 - scale);
+                    temp_val *= std::pow(10, 6 - scale);
                 }
             }
         }
@@ -1785,7 +1786,6 @@ bool DateV2Value<T>::from_date_str(const char* date_str, int len, int scale) {
         if (field_idx == 2 && *ptr == 'T') {
             // YYYYMMDDTHHMMDD, skip 'T' and continue
             ptr++;
-            field_idx++;
             continue;
         }
 
@@ -2301,11 +2301,20 @@ int32_t DateV2Value<T>::to_buffer(char* buffer, int scale) const {
         /* Second */
         *buffer++ = (char)('0' + (date_v2_value_.second_ / 10));
         *buffer++ = (char)('0' + (date_v2_value_.second_ % 10));
-        if (scale != 0 && date_v2_value_.microsecond_ > 0) {
+        if (scale < 0 && date_v2_value_.microsecond_ > 0) {
             *buffer++ = '.';
             /* Microsecond */
             uint32_t ms = date_v2_value_.microsecond_;
             int ms_width = scale == -1 ? 6 : std::min(6, scale);
+            for (int i = 0; i < ms_width; i++) {
+                *buffer++ = (char)('0' + (ms / std::pow(10, 5 - i)));
+                ms %= (uint32_t)std::pow(10, 5 - i);
+            }
+        } else if (scale > 0) {
+            *buffer++ = '.';
+            /* Microsecond */
+            uint32_t ms = date_v2_value_.microsecond_;
+            int ms_width = std::min(6, scale);
             for (int i = 0; i < ms_width; i++) {
                 *buffer++ = (char)('0' + (ms / std::pow(10, 5 - i)));
                 ms %= (uint32_t)std::pow(10, 5 - i);
@@ -2587,7 +2596,6 @@ bool DateV2Value<T>::from_unixtime(int64_t timestamp, const std::string& timezon
 
 template <typename T>
 bool DateV2Value<T>::from_unixtime(int64_t timestamp, const cctz::time_zone& ctz) {
-    DCHECK(is_datetime);
     static const cctz::time_point<cctz::sys_seconds> epoch =
             std::chrono::time_point_cast<cctz::sys_seconds>(
                     std::chrono::system_clock::from_time_t(0));
@@ -2596,6 +2604,31 @@ bool DateV2Value<T>::from_unixtime(int64_t timestamp, const cctz::time_zone& ctz
     const auto tp = cctz::convert(t, ctz);
 
     set_time(tp.year(), tp.month(), tp.day(), tp.hour(), tp.minute(), tp.second(), 0);
+    return true;
+}
+
+template <typename T>
+bool DateV2Value<T>::from_unixtime(int64_t timestamp, int32_t nano_seconds,
+                                   const std::string& timezone, const int scale) {
+    cctz::time_zone ctz;
+    if (!TimezoneUtils::find_cctz_time_zone(timezone, ctz)) {
+        return false;
+    }
+    return from_unixtime(timestamp, nano_seconds, ctz, scale);
+}
+
+template <typename T>
+bool DateV2Value<T>::from_unixtime(int64_t timestamp, int32_t nano_seconds,
+                                   const cctz::time_zone& ctz, const int scale) {
+    static const cctz::time_point<cctz::sys_seconds> epoch =
+            std::chrono::time_point_cast<cctz::sys_seconds>(
+                    std::chrono::system_clock::from_time_t(0));
+    cctz::time_point<cctz::sys_seconds> t = epoch + cctz::seconds(timestamp);
+
+    const auto tp = cctz::convert(t, ctz);
+
+    set_time(tp.year(), tp.month(), tp.day(), tp.hour(), tp.minute(), tp.second(),
+             nano_seconds / std::pow(10, 9 - scale) * std::pow(10, 6 - scale));
     return true;
 }
 
@@ -2639,6 +2672,15 @@ void DateV2Value<T>::set_time(uint8_t hour, uint8_t minute, uint8_t second, uint
         date_v2_value_.microsecond_ = microsecond;
     } else {
         LOG(FATAL) << "Invalid operation 'set_time' for date!";
+    }
+}
+
+template <typename T>
+void DateV2Value<T>::set_microsecond(uint32_t microsecond) {
+    if constexpr (is_datetime) {
+        date_v2_value_.microsecond_ = microsecond;
+    } else {
+        LOG(FATAL) << "Invalid operation 'set_microsecond' for date!";
     }
 }
 

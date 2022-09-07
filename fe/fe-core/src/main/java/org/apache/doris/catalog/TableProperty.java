@@ -76,7 +76,7 @@ public class TableProperty implements Writable {
 
     private boolean enableLightSchemaChange = false;
 
-    private Boolean disableAutoCompaction;
+    private boolean disableAutoCompaction = false;
 
     private DataSortInfo dataSortInfo = new DataSortInfo();
 

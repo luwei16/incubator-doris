@@ -184,9 +184,6 @@ Status Tablet::revise_tablet_meta(const std::vector<RowsetMetaSharedPtr>& rowset
         // delete versions from new local tablet_meta
         for (const Version& version : versions_to_delete) {
             new_tablet_meta->delete_rs_meta_by_version(version, nullptr);
-            if (new_tablet_meta->version_for_delete_predicate(version)) {
-                new_tablet_meta->remove_delete_predicate_by_version(version);
-            }
             LOG(INFO) << "delete version from new local tablet_meta when clone. [table="
                       << full_name() << ", version=" << version << "]";
         }
@@ -206,10 +203,13 @@ Status Tablet::revise_tablet_meta(const std::vector<RowsetMetaSharedPtr>& rowset
         _tablet_meta = new_tablet_meta;
     } while (0);
 
+    RowsetVector rs_to_delete, rs_to_add;
+
     for (auto& version : versions_to_delete) {
         auto it = _rs_version_map.find(version);
         DCHECK(it != _rs_version_map.end());
         StorageEngine::instance()->add_unused_rowset(it->second);
+        rs_to_delete.push_back(it->second);
         _rs_version_map.erase(it);
     }
 
@@ -221,7 +221,14 @@ Status Tablet::revise_tablet_meta(const std::vector<RowsetMetaSharedPtr>& rowset
             LOG(WARNING) << "fail to init rowset. version=" << version;
             return res;
         }
+        rs_to_add.push_back(rowset);
         _rs_version_map[version] = std::move(rowset);
+    }
+
+    if (keys_type() == UNIQUE_KEYS && enable_unique_key_merge_on_write()) {
+        auto new_rowset_tree = std::make_unique<RowsetTree>();
+        ModifyRowSetTree(*_rowset_tree, rs_to_delete, rs_to_add, new_rowset_tree.get());
+        _rowset_tree = std::move(new_rowset_tree);
     }
 
     // reconstruct from tablet meta
@@ -854,19 +861,8 @@ Status Tablet::capture_rs_readers(const std::vector<Version>& version_path,
     return Status::OK();
 }
 
-void Tablet::add_delete_predicate(const DeletePredicatePB& delete_predicate, int64_t version) {
-    _tablet_meta->add_delete_predicate(delete_predicate, version);
-}
-
-// TODO(lingbin): what is the difference between version_for_delete_predicate() and
-// version_for_load_deletion()? should at least leave a comment
 bool Tablet::version_for_delete_predicate(const Version& version) {
     return _tablet_meta->version_for_delete_predicate(version);
-}
-
-bool Tablet::version_for_load_deletion(const Version& version) {
-    RowsetSharedPtr rowset = _rs_version_map.at(version);
-    return rowset->delete_flag();
 }
 
 bool Tablet::can_do_compaction(size_t path_hash, CompactionType compaction_type) {
@@ -1249,17 +1245,18 @@ TabletInfo Tablet::get_tablet_info() const {
 }
 
 void Tablet::pick_candidate_rowsets_to_cumulative_compaction(
-        std::vector<RowsetSharedPtr>* candidate_rowsets) {
+        std::vector<RowsetSharedPtr>* candidate_rowsets,
+        std::shared_lock<std::shared_mutex>& /* meta lock*/) {
     if (_cumulative_point == K_INVALID_CUMULATIVE_POINT) {
         return;
     }
-    std::shared_lock rdlock(_meta_lock);
     _cumulative_compaction_policy->pick_candidate_rowsets(_rs_version_map, _cumulative_point,
                                                           candidate_rowsets);
 }
 
-void Tablet::pick_candidate_rowsets_to_base_compaction(vector<RowsetSharedPtr>* candidate_rowsets) {
-    std::shared_lock rdlock(_meta_lock);
+void Tablet::pick_candidate_rowsets_to_base_compaction(
+        vector<RowsetSharedPtr>* candidate_rowsets,
+        std::shared_lock<std::shared_mutex>& /* meta lock*/) {
     for (auto& it : _rs_version_map) {
         // Do compaction on local rowsets only.
         if (it.first.first < _cumulative_point && it.second->is_local()) {
@@ -1872,10 +1869,6 @@ Status Tablet::cooldown() {
         has_shutdown = tablet_state() == TABLET_SHUTDOWN;
         if (!has_shutdown) {
             modify_rowsets(to_add, to_delete);
-            if (new_rowset_meta->has_delete_predicate()) {
-                add_delete_predicate(new_rowset_meta->delete_predicate(),
-                                     new_rowset_meta->start_version());
-            }
             _self_owned_remote_rowsets.insert(to_add.front());
             save_meta();
         }
@@ -2120,7 +2113,7 @@ Status Tablet::calc_delete_bitmap(RowsetId rowset_id,
                 CHECK(st.ok() || st.is_not_found() || st.is_already_exist());
                 if (st.is_not_found()) continue;
 
-                // sequece id smaller than the previous one, so delelte current row
+                // sequence id smaller than the previous one, so delete current row
                 if (st.is_already_exist()) {
                     loc.rowset_id = rowset_id;
                     loc.segment_id = seg->id();
@@ -2186,7 +2179,8 @@ Status Tablet::update_delete_bitmap(const RowsetSharedPtr& rowset, DeleteBitmapP
     std::vector<segment_v2::SegmentSharedPtr> segments;
     _load_rowset_segments(rowset, &segments);
 
-    std::lock_guard<std::shared_mutex> meta_wrlock(_meta_lock);
+    std::lock_guard<std::mutex> rwlock(_rowset_update_lock);
+    std::shared_lock meta_rlock(_meta_lock);
     cur_rowset_ids = all_rs_id();
     _rowset_ids_difference(cur_rowset_ids, pre_rowset_ids, &rowset_ids_to_add, &rowset_ids_to_del);
     if (!rowset_ids_to_add.empty() || !rowset_ids_to_del.empty()) {
@@ -2201,7 +2195,9 @@ Status Tablet::update_delete_bitmap(const RowsetSharedPtr& rowset, DeleteBitmapP
                                            delete_bitmap, true));
     }
 
-    // update version
+    // update version without write lock, compaction and publish_txn
+    // will update delete bitmap, handle compaction with _rowset_update_lock
+    // and publish_txn runs sequential so no need to lock here
     for (auto iter = delete_bitmap->delete_bitmap.begin();
          iter != delete_bitmap->delete_bitmap.end(); ++iter) {
         int ret = _tablet_meta->delete_bitmap().set(

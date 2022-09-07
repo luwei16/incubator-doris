@@ -49,8 +49,8 @@ Status CloudSchemaChangeHandler::process_alter_tablet(const TAlterTabletReqV2& r
     std::vector<RowsetReaderSharedPtr> rs_readers;
     // delete handlers for new tablet
     DeleteHandler delete_handler;
-    std::vector<ColumnId> return_columns;
-    auto base_tablet_schema = std::make_shared<TabletSchema>();
+    // Create a new tablet schema, should merge with dropped columns in light weight schema change
+    TabletSchemaSPtr base_tablet_schema = std::make_shared<TabletSchema>();
     base_tablet_schema->copy_from(*base_tablet->tablet_schema());
     if (!request.columns.empty() && request.columns[0].col_unique_id >= 0) {
         base_tablet_schema->clear_columns();
@@ -58,7 +58,17 @@ Status CloudSchemaChangeHandler::process_alter_tablet(const TAlterTabletReqV2& r
             base_tablet_schema->append_column(TabletColumn(column));
         }
     }
+    auto& all_del_preds = base_tablet->delete_predicates();
+    for (auto& delete_pred : all_del_preds) {
+        if (delete_pred->version().first > end_version) {
+            continue;
+        }
+        base_tablet_schema->merge_dropped_columns(
+                base_tablet->tablet_schema(delete_pred->version()));
+    }
+    RETURN_IF_ERROR(delete_handler.init(base_tablet_schema, all_del_preds, end_version));
 
+    std::vector<ColumnId> return_columns;
     {
         size_t num_cols = base_tablet_schema->num_columns();
         return_columns.resize(num_cols);
@@ -99,9 +109,6 @@ Status CloudSchemaChangeHandler::process_alter_tablet(const TAlterTabletReqV2& r
         reader_params.version = {0, request.alter_version};
         // BlockReader::init will call base_tablet->get_header_lock(), but this lock we already get at outer layer, so we just call TabletReader::init
         RETURN_IF_ERROR(reader.init(reader_params));
-
-        RETURN_IF_ERROR(delete_handler.init(base_tablet_schema, base_tablet->delete_predicates(),
-                                            request.alter_version, &reader));
 
         for (auto& rs_reader : rs_readers) {
             RETURN_IF_ERROR(rs_reader->init(&reader_context));

@@ -242,8 +242,6 @@ public:
 
     bool delete_flag() const { return _rowset_meta_pb.delete_flag(); }
 
-    void set_delete_flag(bool delete_flag) { _rowset_meta_pb.set_delete_flag(delete_flag); }
-
     int64_t creation_time() const { return _rowset_meta_pb.creation_time(); }
 
     void set_creation_time(int64_t creation_time) {
@@ -411,7 +409,7 @@ private:
 
 private:
     RowsetMetaPB _rowset_meta_pb;
-    std::shared_ptr<TabletSchema> _schema = nullptr;
+    TabletSchemaSPtr _schema = nullptr;
     RowsetId _rowset_id;
     io::FileSystemPtr _fs;
 

@@ -289,6 +289,7 @@ void VOlapScanNode::transfer_thread(RuntimeState* state) {
     // scanner open pushdown to scanThread
     START_AND_SCOPE_SPAN(state->get_tracer(), span, "VOlapScanNode::transfer_thread");
     SCOPED_ATTACH_TASK(state);
+    SCOPED_CONSUME_MEM_TRACKER(mem_tracker());
     Status status = Status::OK();
 
     if (_vconjunct_ctx_ptr) {
@@ -404,6 +405,7 @@ void VOlapScanNode::transfer_thread(RuntimeState* state) {
 void VOlapScanNode::scanner_thread(VOlapScanner* scanner) {
 #if !defined(USE_BTHREAD_SCANNER)
     SCOPED_ATTACH_TASK(_runtime_state);
+    SCOPED_CONSUME_MEM_TRACKER(mem_tracker());
     Thread::set_self_name("volap_scanner");
 #else
     // TODO: not support mem_tracker now
@@ -447,7 +449,7 @@ void VOlapScanNode::scanner_thread(VOlapScanner* scanner) {
             DCHECK(runtime_filter != nullptr);
             bool ready = runtime_filter->is_ready();
             if (ready) {
-                runtime_filter->get_prepared_vexprs(&vexprs, row_desc());
+                runtime_filter->get_prepared_vexprs(&vexprs, _row_descriptor);
                 scanner_filter_apply_marks[i] = true;
                 if (!_runtime_filter_ready_flag[i] && !vexprs.empty()) {
                     std::lock_guard<std::shared_mutex> l(_rf_lock);
@@ -1209,12 +1211,7 @@ int VOlapScanNode::_start_scanner_thread_task(RuntimeState* state, int block_per
 
 #if !defined(USE_BTHREAD_SCANNER)
     // post volap scanners to thread-pool
-    ThreadPoolToken* thread_token = nullptr;
-    if (_limit > -1 && _limit < 1024) {
-        thread_token = state->get_query_fragments_ctx()->get_serial_token();
-    } else {
-        thread_token = state->get_query_fragments_ctx()->get_token();
-    }
+    ThreadPoolToken* thread_token = state->get_query_fragments_ctx()->get_token();
     auto iter = olap_scanners.begin();
     if (thread_token != nullptr) {
         while (iter != olap_scanners.end()) {
@@ -1865,7 +1862,14 @@ VExpr* VOlapScanNode::_normalize_predicate(RuntimeState* state, VExpr* conjunct_
 
 Status VOlapScanNode::_append_rf_into_conjuncts(RuntimeState* state, std::vector<VExpr*>& vexprs) {
     if (!vexprs.empty()) {
-        auto last_expr = _vconjunct_ctx_ptr ? (*_vconjunct_ctx_ptr)->root() : vexprs[0];
+        VExpr* last_expr = nullptr;
+        if (_vconjunct_ctx_ptr) {
+            last_expr = (*_vconjunct_ctx_ptr)->root();
+        } else {
+            DCHECK(_rf_vexpr_set.find(vexprs[0]) == _rf_vexpr_set.end());
+            last_expr = vexprs[0];
+            _rf_vexpr_set.insert(vexprs[0]);
+        }
         for (size_t j = _vconjunct_ctx_ptr ? 0 : 1; j < vexprs.size(); j++) {
             if (_rf_vexpr_set.find(vexprs[j]) != _rf_vexpr_set.end()) {
                 continue;
@@ -1900,7 +1904,7 @@ Status VOlapScanNode::_append_rf_into_conjuncts(RuntimeState* state, std::vector
         if (_vconjunct_ctx_ptr) {
             (*_vconjunct_ctx_ptr)->clone_fn_contexts(new_vconjunct_ctx_ptr);
         }
-        RETURN_IF_ERROR(new_vconjunct_ctx_ptr->prepare(state, row_desc()));
+        RETURN_IF_ERROR(new_vconjunct_ctx_ptr->prepare(state, _row_descriptor));
         RETURN_IF_ERROR(new_vconjunct_ctx_ptr->open(state));
         if (_vconjunct_ctx_ptr) {
             (*(_vconjunct_ctx_ptr.get()))->mark_as_stale();
@@ -1911,4 +1915,9 @@ Status VOlapScanNode::_append_rf_into_conjuncts(RuntimeState* state, std::vector
     }
     return Status::OK();
 }
+
+std::string VOlapScanNode::get_name() {
+    return fmt::format("VOlapScanNode({0})", _olap_scan_node.table_name);
+}
+
 } // namespace doris::vectorized
