@@ -4,11 +4,9 @@ import com.selectdb.cloud.proto.SelectdbCloud;
 import com.selectdb.cloud.rpc.MetaServiceProxy;
 
 import org.apache.doris.catalog.DistributionInfo;
-import org.apache.doris.catalog.Env;
 import org.apache.doris.catalog.MaterializedIndex;
 import org.apache.doris.catalog.Partition;
 import org.apache.doris.rpc.RpcException;
-import org.apache.doris.thrift.TNetworkAddress;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -126,16 +124,13 @@ public class CloudPartition extends Partition {
      * @return failed: -1, success: other
      */
     public long getVersionFromMeta(long timeoutTs) {
-        TNetworkAddress metaAddress =
-                new TNetworkAddress(Env.getCurrentSystemInfo().metaServiceHostPort.first,
-                    Env.getCurrentSystemInfo().metaServiceHostPort.second);
         SelectdbCloud.GetVersionRequest.Builder builder = SelectdbCloud.GetVersionRequest.newBuilder();
         builder.setDbId(this.dbId).setTableId(this.tableId).setPartitionId(super.getId());
         final SelectdbCloud.GetVersionRequest pRequest = builder.build();
 
         try {
             Future<SelectdbCloud.GetVersionResponse> future =
-                    MetaServiceProxy.getInstance().getVisibleVersionAsync(metaAddress, pRequest);
+                    MetaServiceProxy.getInstance().getVisibleVersionAsync(pRequest);
 
             SelectdbCloud.GetVersionResponse pResult = null;
             while (pResult == null) {

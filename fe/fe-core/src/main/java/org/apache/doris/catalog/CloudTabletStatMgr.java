@@ -22,7 +22,6 @@ import org.apache.doris.catalog.TableIf.TableType;
 import org.apache.doris.common.Config;
 import org.apache.doris.common.util.MasterDaemon;
 import org.apache.doris.rpc.RpcException;
-import org.apache.doris.thrift.TNetworkAddress;
 
 import com.selectdb.cloud.proto.SelectdbCloud;
 import com.selectdb.cloud.rpc.MetaServiceProxy;
@@ -176,14 +175,9 @@ public class CloudTabletStatMgr extends MasterDaemon {
 
     private SelectdbCloud.GetTabletStatsResponse getTabletStats(SelectdbCloud.GetTabletStatsRequest req)
             throws RpcException {
-        String metaEndPoint = Config.meta_service_endpoint;
-        String[] splitMetaEndPoint = metaEndPoint.split(":");
-        TNetworkAddress metaAddress =
-                new TNetworkAddress(splitMetaEndPoint[0], Integer.parseInt(splitMetaEndPoint[1]));
-
         SelectdbCloud.GetTabletStatsResponse response;
         try {
-            response = MetaServiceProxy.getInstance().getTabletStats(metaAddress, req);
+            response = MetaServiceProxy.getInstance().getTabletStats(req);
         } catch (RpcException e) {
             LOG.info("lw test get exception {}", e);
             throw e;

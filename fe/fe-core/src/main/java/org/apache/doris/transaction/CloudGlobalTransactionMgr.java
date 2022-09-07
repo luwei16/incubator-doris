@@ -34,7 +34,6 @@ import org.apache.doris.load.loadv2.LoadJobFinalOperation;
 import org.apache.doris.persist.BatchRemoveTransactionsOperation;
 import org.apache.doris.persist.EditLog;
 import org.apache.doris.rpc.RpcException;
-import org.apache.doris.thrift.TNetworkAddress;
 import org.apache.doris.thrift.TStatus;
 import org.apache.doris.thrift.TUniqueId;
 import org.apache.doris.thrift.TWaitingTxnStatusRequest;
@@ -130,8 +129,6 @@ public class CloudGlobalTransactionMgr implements GlobalTransactionMgrInterface 
         Preconditions.checkNotNull(label);
         FeNameFormat.checkLabel(label);
 
-        TNetworkAddress metaAddress = getMetaSerivceAddress();
-
         TxnInfoPB.Builder txnInfoBuilder = TxnInfoPB.newBuilder();
         txnInfoBuilder.setDbId(dbId);
         txnInfoBuilder.addAllTableIds(tableIdList);
@@ -156,7 +153,7 @@ public class CloudGlobalTransactionMgr implements GlobalTransactionMgrInterface 
         BeginTxnResponse beginTxnResponse = null;
         try {
             LOG.info("beginTxnRequest: {}", beginTxnRequest);
-            beginTxnResponse = MetaServiceProxy.getInstance().beginTxn(metaAddress, beginTxnRequest);
+            beginTxnResponse = MetaServiceProxy.getInstance().beginTxn(beginTxnRequest);
             LOG.info("beginTxnResponse: {}", beginTxnResponse);
         } catch (RpcException e) {
             LOG.warn("beginTransaction() rpc failed, RpcException= {}", e);
@@ -191,8 +188,6 @@ public class CloudGlobalTransactionMgr implements GlobalTransactionMgrInterface 
             throw new TransactionCommitFailedException("disable_load_job is set to true, all load jobs are prevented");
         }
 
-        TNetworkAddress metaAddress = getMetaSerivceAddress();
-
         PrecommitTxnRequest.Builder builder = PrecommitTxnRequest.newBuilder();
         builder.setDbId(db.getId());
         builder.setTxnId(transactionId);
@@ -212,7 +207,7 @@ public class CloudGlobalTransactionMgr implements GlobalTransactionMgrInterface 
         try {
             LOG.info("precommitTxnRequest: {}", precommitTxnRequest);
             precommitTxnResponse = MetaServiceProxy
-                    .getInstance().precommitTxn(metaAddress, precommitTxnRequest);
+                    .getInstance().precommitTxn(precommitTxnRequest);
             LOG.info("precommitTxnResponse: {}", precommitTxnResponse);
         } catch (RpcException e) {
             throw new UserException(e.getMessage());
@@ -246,7 +241,6 @@ public class CloudGlobalTransactionMgr implements GlobalTransactionMgrInterface 
             throw new TransactionCommitFailedException("disable_load_job is set to true, all load jobs are prevented");
         }
 
-        TNetworkAddress metaAddress = getMetaSerivceAddress();
         CommitTxnRequest.Builder builder = CommitTxnRequest.newBuilder();
         builder.setDbId(dbId)
                 .setTxnId(transactionId)
@@ -268,7 +262,7 @@ public class CloudGlobalTransactionMgr implements GlobalTransactionMgrInterface 
         try {
             LOG.info("commitTxnRequest:{}", commitTxnRequest);
             commitTxnResponse = MetaServiceProxy
-                    .getInstance().commitTxn(metaAddress, commitTxnRequest);
+                    .getInstance().commitTxn(commitTxnRequest);
             LOG.info("commitTxnResponse: {}", commitTxnResponse);
         } catch (Exception e) {
             throw new UserException(e.getMessage());
@@ -323,7 +317,6 @@ public class CloudGlobalTransactionMgr implements GlobalTransactionMgrInterface 
             TxnCommitAttachment txnCommitAttachment) throws UserException {
         LOG.info("try to abort transaction, dbId:{}, transactionId:{}", dbId, transactionId);
 
-        TNetworkAddress metaAddress = getMetaSerivceAddress();
         AbortTxnRequest.Builder builder = AbortTxnRequest.newBuilder();
         builder.setDbId(dbId);
         builder.setTxnId(transactionId);
@@ -335,7 +328,7 @@ public class CloudGlobalTransactionMgr implements GlobalTransactionMgrInterface 
         try {
             LOG.info("abortTxnRequest:{}", abortTxnRequest);
             abortTxnResponse = MetaServiceProxy
-                    .getInstance().abortTxn(metaAddress, abortTxnRequest);
+                    .getInstance().abortTxn(abortTxnRequest);
             LOG.info("abortTxnResponse: {}", abortTxnResponse);
         } catch (RpcException e) {
             throw new UserException(e);
@@ -360,7 +353,6 @@ public class CloudGlobalTransactionMgr implements GlobalTransactionMgrInterface 
     public void abortTransaction(Long dbId, String label, String reason) throws UserException {
         LOG.info("try to abort transaction, label:{}, transactionId:{}", dbId, label);
 
-        TNetworkAddress metaAddress = getMetaSerivceAddress();
         AbortTxnRequest.Builder builder = AbortTxnRequest.newBuilder();
         builder.setDbId(dbId);
         builder.setLabel(label);
@@ -372,7 +364,7 @@ public class CloudGlobalTransactionMgr implements GlobalTransactionMgrInterface 
         try {
             LOG.info("abortTxnRequest:{}", abortTxnRequest);
             abortTxnResponse = MetaServiceProxy
-                    .getInstance().abortTxn(metaAddress, abortTxnRequest);
+                    .getInstance().abortTxn(abortTxnRequest);
             LOG.info("abortTxnResponse: {}", abortTxnResponse);
         } catch (RpcException e) {
             throw new UserException(e);
@@ -424,7 +416,6 @@ public class CloudGlobalTransactionMgr implements GlobalTransactionMgrInterface 
         LOG.info("isPreviousTransactionsFinished(), endTransactionId:{}, dbId:{}, tableIdList:{}",
                 endTransactionId, dbId, tableIdList);
 
-        TNetworkAddress metaAddress = getMetaSerivceAddress();
         CheckTxnConflictRequest.Builder builder = CheckTxnConflictRequest.newBuilder();
         builder.setDbId(dbId);
         builder.setEndTxnId(endTransactionId);
@@ -436,7 +427,7 @@ public class CloudGlobalTransactionMgr implements GlobalTransactionMgrInterface 
         try {
             LOG.info("CheckTxnConflictRequest:{}", checkTxnConflictRequest);
             checkTxnConflictResponse = MetaServiceProxy
-                    .getInstance().checkTxnConflict(metaAddress, checkTxnConflictRequest);
+                    .getInstance().checkTxnConflict(checkTxnConflictRequest);
             LOG.info("CheckTxnConflictResponse: {}", checkTxnConflictResponse);
         } catch (RpcException e) {
             throw new AnalysisException(e.getMessage());
@@ -456,7 +447,6 @@ public class CloudGlobalTransactionMgr implements GlobalTransactionMgrInterface 
     @Override
     public TransactionState getTransactionState(long dbId, long transactionId) {
         LOG.info("try to get transaction state, dbId:{}, transactionId:{}", dbId, transactionId);
-        TNetworkAddress metaAddress = getMetaSerivceAddress();
         GetTxnRequest.Builder builder = GetTxnRequest.newBuilder();
         builder.setDbId(dbId);
         builder.setTxnId(transactionId);
@@ -467,7 +457,7 @@ public class CloudGlobalTransactionMgr implements GlobalTransactionMgrInterface 
         try {
             LOG.info("getTxnRequest:{}", getTxnRequest);
             getTxnResponse = MetaServiceProxy
-                    .getInstance().getTxn(metaAddress, getTxnRequest);
+                    .getInstance().getTxn(getTxnRequest);
             LOG.info("getTxnRequest: {}", getTxnResponse);
         } catch (RpcException e) {
             LOG.info("getTransactionState exception: {}", e.getMessage());
@@ -524,7 +514,6 @@ public class CloudGlobalTransactionMgr implements GlobalTransactionMgrInterface 
     @Override
     public long getNextTransactionId(long dbId) {
         LOG.info("try to getNextTransactionId() dbId:{}", dbId);
-        TNetworkAddress metaAddress = getMetaSerivceAddress();
         GetCurrentMaxTxnRequest.Builder builder = GetCurrentMaxTxnRequest.newBuilder();
         builder.setCloudUniqueId(Config.cloud_unique_id);
 
@@ -533,7 +522,7 @@ public class CloudGlobalTransactionMgr implements GlobalTransactionMgrInterface 
         try {
             LOG.info("GetCurrentMaxTxnRequest:{}", getCurrentMaxTxnRequest);
             getCurrentMaxTxnResponse = MetaServiceProxy
-                    .getInstance().getCurrentMaxTxnId(metaAddress, getCurrentMaxTxnRequest);
+                    .getInstance().getCurrentMaxTxnId(getCurrentMaxTxnRequest);
             LOG.info("GetCurrentMaxTxnResponse: {}", getCurrentMaxTxnResponse);
         } catch (RpcException e) {
             LOG.info("getNextTransactionId() exception: {}", e.getMessage());
@@ -621,15 +610,6 @@ public class CloudGlobalTransactionMgr implements GlobalTransactionMgrInterface 
     @Override
     public void addTableIndexes(long dbId, long transactionId, OlapTable table) throws UserException{
         //do nothing
-    }
-
-    private TNetworkAddress getMetaSerivceAddress() {
-        String metaServiceEndpoint = Config.meta_service_endpoint;
-        String[] splitMetaServiceEndpoint = metaServiceEndpoint.split(":");
-
-        TNetworkAddress metaAddress =
-                new TNetworkAddress(splitMetaServiceEndpoint[0], Integer.parseInt(splitMetaServiceEndpoint[1]));
-        return metaAddress;
     }
 
     private void checkValidTimeoutSecond(long timeoutSecond, int maxLoadTimeoutSecond,

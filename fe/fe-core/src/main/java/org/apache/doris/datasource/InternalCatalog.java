@@ -166,7 +166,6 @@ import org.apache.doris.task.AgentTaskExecutor;
 import org.apache.doris.task.AgentTaskQueue;
 import org.apache.doris.task.CreateReplicaTask;
 import org.apache.doris.thrift.TCompressionType;
-import org.apache.doris.thrift.TNetworkAddress;
 import org.apache.doris.thrift.TSortType;
 import org.apache.doris.thrift.TStorageFormat;
 import org.apache.doris.thrift.TStorageMedium;
@@ -3540,14 +3539,9 @@ public class InternalCatalog implements CatalogIf<Database> {
         SelectdbCloud.CreateTabletRequest createTableReq = requestBuilder.build();
         LOG.info("createTableReq: {} ", createTableReq);
 
-        String metaEndPoint = Config.meta_service_endpoint;
-        String[] splitMetaEndPoint = metaEndPoint.split(":");
-        TNetworkAddress metaAddress =
-                new TNetworkAddress(splitMetaEndPoint[0], Integer.parseInt(splitMetaEndPoint[1]));
-
         SelectdbCloud.MetaServiceGenericResponse response;
         try {
-            response = MetaServiceProxy.getInstance().createTablet(metaAddress, createTableReq);
+            response = MetaServiceProxy.getInstance().createTablet(createTableReq);
         } catch (RpcException e) {
             throw new RuntimeException(e);
         }
@@ -3651,14 +3645,10 @@ public class InternalCatalog implements CatalogIf<Database> {
         indexRequestBuilder.setTableId(olapTable.getId());
         SelectdbCloud.IndexRequest indexRequest = indexRequestBuilder.build();
         LOG.info("prepareIndex request: {} ", indexRequest);
-        String metaEndPoint = Config.meta_service_endpoint;
-        String[] splitMetaEndPoint = metaEndPoint.split(":");
-        TNetworkAddress metaAddress =
-                new TNetworkAddress(splitMetaEndPoint[0], Integer.parseInt(splitMetaEndPoint[1]));
 
         SelectdbCloud.MetaServiceGenericResponse response = null;
         try {
-            response = MetaServiceProxy.getInstance().prepareIndex(metaAddress, indexRequest);
+            response = MetaServiceProxy.getInstance().prepareIndex(indexRequest);
         } catch (RpcException e) {
             LOG.warn("prepareIndex response: {} ", response);
             throw new DdlException(e.getMessage());
@@ -3680,14 +3670,10 @@ public class InternalCatalog implements CatalogIf<Database> {
         indexRequestBuilder.setTableId(olapTable.getId());
         SelectdbCloud.IndexRequest indexRequest = indexRequestBuilder.build();
         LOG.info("commitIndex request: {} ", indexRequest);
-        String metaEndPoint = Config.meta_service_endpoint;
-        String[] splitMetaEndPoint = metaEndPoint.split(":");
-        TNetworkAddress metaAddress =
-                new TNetworkAddress(splitMetaEndPoint[0], Integer.parseInt(splitMetaEndPoint[1]));
 
         SelectdbCloud.MetaServiceGenericResponse response = null;
         try {
-            response = MetaServiceProxy.getInstance().commitIndex(metaAddress, indexRequest);
+            response = MetaServiceProxy.getInstance().commitIndex(indexRequest);
         } catch (RpcException e) {
             LOG.warn("commitIndex response: {} ", response);
             throw new DdlException(e.getMessage());
@@ -3708,14 +3694,10 @@ public class InternalCatalog implements CatalogIf<Database> {
         indexRequestBuilder.setTableId(olapTable.getId());
         SelectdbCloud.IndexRequest indexRequest = indexRequestBuilder.build();
         LOG.info("dropIndex request: {} ", indexRequest);
-        String metaEndPoint = Config.meta_service_endpoint;
-        String[] splitMetaEndPoint = metaEndPoint.split(":");
-        TNetworkAddress metaAddress =
-                new TNetworkAddress(splitMetaEndPoint[0], Integer.parseInt(splitMetaEndPoint[1]));
 
         SelectdbCloud.MetaServiceGenericResponse response = null;
         try {
-            response = MetaServiceProxy.getInstance().dropIndex(metaAddress, indexRequest);
+            response = MetaServiceProxy.getInstance().dropIndex(indexRequest);
         } catch (RpcException e) {
             LOG.warn("dropIndex response: {} ", response);
             throw new DdlException(e.getMessage());
@@ -3736,14 +3718,10 @@ public class InternalCatalog implements CatalogIf<Database> {
         partitionRequestBuilder.addAllIndexIds(indexIds);
         SelectdbCloud.PartitionRequest partitionRequest = partitionRequestBuilder.build();
         LOG.info("preparePartition request: {} ", partitionRequest);
-        String metaEndPoint = Config.meta_service_endpoint;
-        String[] splitMetaEndPoint = metaEndPoint.split(":");
-        TNetworkAddress metaAddress =
-                new TNetworkAddress(splitMetaEndPoint[0], Integer.parseInt(splitMetaEndPoint[1]));
 
         SelectdbCloud.MetaServiceGenericResponse response = null;
         try {
-            response = MetaServiceProxy.getInstance().preparePartition(metaAddress, partitionRequest);
+            response = MetaServiceProxy.getInstance().preparePartition(partitionRequest);
         } catch (RpcException e) {
             LOG.warn("preparePartition response: {} ", response);
             throw new DdlException(e.getMessage());
@@ -3763,14 +3741,10 @@ public class InternalCatalog implements CatalogIf<Database> {
         partitionRequestBuilder.setTableId(tableId);
         SelectdbCloud.PartitionRequest partitionRequest = partitionRequestBuilder.build();
         LOG.info("commitPartition request: {} ", partitionRequest);
-        String metaEndPoint = Config.meta_service_endpoint;
-        String[] splitMetaEndPoint = metaEndPoint.split(":");
-        TNetworkAddress metaAddress =
-                new TNetworkAddress(splitMetaEndPoint[0], Integer.parseInt(splitMetaEndPoint[1]));
 
         SelectdbCloud.MetaServiceGenericResponse response = null;
         try {
-            response = MetaServiceProxy.getInstance().commitPartition(metaAddress, partitionRequest);
+            response = MetaServiceProxy.getInstance().commitPartition(partitionRequest);
         } catch (RpcException e) {
             LOG.warn("commitPartition response: {} ", response);
             throw new DdlException(e.getMessage());
@@ -3792,14 +3766,10 @@ public class InternalCatalog implements CatalogIf<Database> {
         partitionRequestBuilder.addAllIndexIds(indexIds);
         SelectdbCloud.PartitionRequest partitionRequest = partitionRequestBuilder.build();
         LOG.info("dropPartition request: {} ", partitionRequest);
-        String metaEndPoint = Config.meta_service_endpoint;
-        String[] splitMetaEndPoint = metaEndPoint.split(":");
-        TNetworkAddress metaAddress =
-                new TNetworkAddress(splitMetaEndPoint[0], Integer.parseInt(splitMetaEndPoint[1]));
 
         SelectdbCloud.MetaServiceGenericResponse response = null;
         try {
-            response = MetaServiceProxy.getInstance().dropPartition(metaAddress, partitionRequest);
+            response = MetaServiceProxy.getInstance().dropPartition(partitionRequest);
         } catch (RpcException e) {
             LOG.warn("dropPartition response: {} ", response);
             throw new DdlException(e.getMessage());

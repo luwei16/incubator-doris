@@ -36,7 +36,6 @@ import org.apache.doris.metric.MetricRepo;
 import org.apache.doris.resource.Tag;
 import org.apache.doris.rpc.RpcException;
 import org.apache.doris.system.Backend.BackendState;
-import org.apache.doris.thrift.TNetworkAddress;
 import org.apache.doris.thrift.TStatusCode;
 import org.apache.doris.thrift.TStorageMedium;
 
@@ -96,18 +95,6 @@ public class SystemInfoService {
     private long lastBackendIdForOther = -1;
 
     private volatile ImmutableMap<Long, DiskInfo> pathHashToDishInfoRef = ImmutableMap.of();
-
-    public static Pair<String, Integer> metaServiceHostPort;
-
-    static {
-        if (!Config.cloud_unique_id.isEmpty()) {
-            try {
-                metaServiceHostPort = validateHostAndPort(Config.meta_service_endpoint);
-            } catch (AnalysisException e) {
-                throw new RuntimeException(e);
-            }
-        }
-    }
 
     // sort host backends list by num of backends, descending
     private static final Comparator<List<Backend>> hostBackendsListComparator = new Comparator<List<Backend>>() {
@@ -1459,9 +1446,6 @@ public class SystemInfoService {
      * @return
      */
     public SelectdbCloud.GetClusterResponse getCloudCluster(String clusterName, String clusterId, String userName) {
-        TNetworkAddress metaAddress =
-                new TNetworkAddress(Env.getCurrentSystemInfo().metaServiceHostPort.first,
-                Env.getCurrentSystemInfo().metaServiceHostPort.second);
         SelectdbCloud.GetClusterRequest.Builder builder =
                 SelectdbCloud.GetClusterRequest.newBuilder();
         builder.setCloudUniqueId(Config.cloud_unique_id)
@@ -1469,7 +1453,7 @@ public class SystemInfoService {
         final SelectdbCloud.GetClusterRequest pRequest = builder.build();
         SelectdbCloud.GetClusterResponse response;
         try {
-            response = MetaServiceProxy.getInstance().getCluster(metaAddress, pRequest);
+            response = MetaServiceProxy.getInstance().getCluster(pRequest);
             return response;
         } catch (RpcException e) {
             LOG.warn("rpcToMetaGetClusterInfo exception: {}", e.getMessage());
