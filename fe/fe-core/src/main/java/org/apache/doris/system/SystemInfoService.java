@@ -263,7 +263,7 @@ public class SystemInfoService {
         List<Frontend> frontends = Env.getCurrentEnv().getFrontends(FrontendNodeType.OBSERVER);
         List<Pair<String, Integer>> frontendsPair = new ArrayList<>();
         for (Frontend frontend : frontends) {
-            frontendsPair.add(new Pair<>(frontend.getHost(), frontend.getEditLogPort()));
+            frontendsPair.add(Pair.of(frontend.getHost(), frontend.getEditLogPort()));
         }
         return frontendsPair;
     }

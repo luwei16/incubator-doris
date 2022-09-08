@@ -203,12 +203,15 @@ public class TxnUtil {
 
     public static LoadJobFinalOperation loadJobFinalOperationFromPb(TxnCommitAttachmentPB txnCommitAttachmentPB)  {
         LoadJobFinalOperationPB loadJobFinalOperationPB = txnCommitAttachmentPB.getLoadJobFinalOperation();
+        LOG.debug("loadJobFinalOperationPB={}", loadJobFinalOperationPB);
+        FailMsg failMsg = loadJobFinalOperationPB.hasFailMsg()
+                ? TxnUtil.failMsgFromPb(loadJobFinalOperationPB.getFailMsg()) : null;
         return new LoadJobFinalOperation(loadJobFinalOperationPB.getId(),
                 TxnUtil.etlStatusFromPb(loadJobFinalOperationPB.getLoadingStatus()),
                 loadJobFinalOperationPB.getProgress(), loadJobFinalOperationPB.getLoadStartTimestamp(),
                 loadJobFinalOperationPB.getFinishTimestamp(),
                 TxnUtil.jobStateFromPb(loadJobFinalOperationPB.getJobState()),
-                TxnUtil.failMsgFromPb(loadJobFinalOperationPB.getFailMsg()));
+                failMsg);
     }
 
     public static TxnCoordinatorPB txnCoordinatorToPb(TxnCoordinator txnCoordinator) {
@@ -226,6 +229,7 @@ public class TxnUtil {
     }
 
     public static TransactionState transactionStateFromPb(TxnInfoPB txnInfo)  {
+        LOG.debug("txnInfo={}", txnInfo);
         long dbId = txnInfo.getDbId();
         List<Long> tableIdList = txnInfo.getTableIdsList();
         long transactionId = txnInfo.getTxnId();
@@ -242,7 +246,7 @@ public class TxnUtil {
         }
         TxnCoordinator txnCoordinator = null;
         if (txnInfo.hasCoordinator()) {
-            TxnUtil.txnCoordinatorFromPb(txnInfo.getCoordinator());
+            txnCoordinator = TxnUtil.txnCoordinatorFromPb(txnInfo.getCoordinator());
         }
 
         TransactionStatus transactionStatus = TransactionStatus.valueOf(txnInfo.getStatus().getNumber());
@@ -270,7 +274,7 @@ public class TxnUtil {
                 timeoutMs,
                 commitAttachment
         );
-
+        LOG.debug("transactionState={}", transactionState);
         return transactionState;
     }
 }

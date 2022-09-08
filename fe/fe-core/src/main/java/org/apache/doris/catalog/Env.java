@@ -901,7 +901,7 @@ public class Env {
         helperNodes.clear();
         helperNodes.addAll(allNodes.stream()
                 .filter(nodeInfoPB -> nodeInfoPB.getNodeType() == NodeInfoPB.NodeType.FE_MASTER)
-                .map(nodeInfoPB -> Pair.create(nodeInfoPB.getIp(), nodeInfoPB.getEditLogPort()))
+                .map(nodeInfoPB -> Pair.of(nodeInfoPB.getIp(), nodeInfoPB.getEditLogPort()))
                 .collect(Collectors.toList()));
         // check only have one master node.
         Preconditions.checkState(helperNodes.size() == 1);

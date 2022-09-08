@@ -275,12 +275,13 @@ public class CloudGlobalTransactionMgr implements GlobalTransactionMgrInterface 
         TransactionState txnState = TxnUtil.transactionStateFromPb(commitTxnResponse.getTxnInfo());
         TxnStateChangeCallback cb = callbackFactory.getCallback(txnState.getCallbackId());
         if (cb == null) {
-            LOG.info("no callback to run for this txn, txnId={} callbackId={}", txnState.getTransactionId(),
-                        txnState.getCallbackId());
+            LOG.info("no callback to run for this txn, txnId={} callbackId={}, txnState={}",
+                    txnState.getTransactionId(), txnState.getCallbackId(), txnState);
             return;
         }
 
-        LOG.info("run txn callback, txnId={} callbackId={}", txnState.getTransactionId(), txnState.getCallbackId());
+        LOG.info("run txn callback, txnId={} callbackId={}, txnState={}", txnState.getTransactionId(),
+                txnState.getCallbackId(), txnState);
         cb.afterCommitted(txnState, true);
         cb.afterVisible(txnState, true);
     }
