@@ -234,6 +234,12 @@ message TabletIndexPB {
     optional int64 tablet_id = 5;
 }
 
+message TabletMetaInfoPB {
+    optional int64 tablet_id = 1;
+    optional bool is_in_memory = 2; 
+    optional bool is_persistent = 3;
+}
+
 //==============================================================================
 // Stats
 //==============================================================================
@@ -366,6 +372,11 @@ message GetObjStoreInfoResponse {
 message CreateTabletRequest {
     optional string cloud_unique_id = 1; // For auth
     optional doris.TabletMetaPB tablet_meta = 2;
+}
+
+message UpdateTabletRequest {
+    optional string cloud_unique_id = 1; // For auth
+    repeated TabletMetaInfoPB tablet_meta_infos = 2;
 }
 
 message DropTabletRequest {
@@ -537,6 +548,7 @@ service MetaService {
     rpc get_version(GetVersionRequest) returns (GetVersionResponse);
 
     rpc create_tablet(CreateTabletRequest) returns (MetaServiceGenericResponse);
+    rpc update_tablet(UpdateTabletRequest) returns (MetaServiceGenericResponse);
     rpc get_tablet(GetTabletRequest) returns (GetTabletResponse);
     rpc prepare_rowset(CreateRowsetRequest) returns (MetaServiceGenericResponse);
     rpc commit_rowset(CreateRowsetRequest) returns (MetaServiceGenericResponse);

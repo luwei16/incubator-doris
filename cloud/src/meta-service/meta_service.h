@@ -7,6 +7,7 @@
 
 namespace selectdb {
 
+class Transaction;
 class MetaServiceImpl : public selectdb::MetaService {
 public:
     MetaServiceImpl(std::shared_ptr<TxnKv> txn_kv, std::shared_ptr<ResourceManager> resource_mgr);
@@ -56,6 +57,11 @@ public:
 
     void create_tablet(::google::protobuf::RpcController* controller,
                        const ::selectdb::CreateTabletRequest* request,
+                       ::selectdb::MetaServiceGenericResponse* response,
+                       ::google::protobuf::Closure* done) override;
+
+    void update_tablet(::google::protobuf::RpcController* controller,
+                       const ::selectdb::UpdateTabletRequest* request,
                        ::selectdb::MetaServiceGenericResponse* response,
                        ::google::protobuf::Closure* done) override;
 
