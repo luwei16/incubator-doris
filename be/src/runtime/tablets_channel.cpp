@@ -114,21 +114,37 @@ Status TabletsChannel::close(
         // All senders are closed
         // 1. close all delta writers
         std::set<DeltaWriter*> need_wait_writers;
-        for (auto& it : _tablet_writers) {
-            if (_partition_ids.count(it.second->partition_id()) > 0) {
-                auto st = it.second->close();
+        for (auto [tablet_id, writer] : _tablet_writers) {
+            if (_partition_ids.count(writer->partition_id()) > 0) {
+                auto st = writer->close();
                 if (!st.ok()) {
-                    LOG(WARNING) << "close tablet writer failed, tablet_id=" << it.first
+                    LOG(WARNING) << "close tablet writer failed, tablet_id=" << tablet_id
                                  << ", transaction_id=" << _txn_id << ", err=" << st;
+#ifdef CLOUD_MODE
+                    // In NON-CLOUD mode, coordinator BE won't capture such failure, it will send `TLoadTxnCommitRequest` to FE,
+                    // `TLoadTxnCommitRequest` contains success tablets, and then FE will judge whether the load transaction is
+                    // successful or not. One benefit is that FE can ignore the failure(i.e. tablet not found) of some tablets
+                    // dropped by concurrent drop tasks.
+                    // In CLOUD mode, stream load transactions won't be committed through FE, we MUST capture this failure here
+                    // to notify the coordinator BE.
+                    PTabletError* tablet_error = tablet_errors->Add();
+                    tablet_error->set_tablet_id(tablet_id);
+                    tablet_error->set_msg(st.get_error_msg());
+#endif
                     // just skip this tablet(writer) and continue to close others
                     continue;
                 }
-                need_wait_writers.insert(it.second);
+                need_wait_writers.insert(writer);
             } else {
-                auto st = it.second->cancel();
+                auto st = writer->cancel();
                 if (!st.ok()) {
-                    LOG(WARNING) << "cancel tablet writer failed, tablet_id=" << it.first
+                    LOG(WARNING) << "cancel tablet writer failed, tablet_id=" << tablet_id
                                  << ", transaction_id=" << _txn_id;
+#ifdef CLOUD_MODE
+                    PTabletError* tablet_error = tablet_errors->Add();
+                    tablet_error->set_tablet_id(tablet_id);
+                    tablet_error->set_msg(st.get_error_msg());
+#endif
                     // just skip this tablet(writer) and continue to close others
                     continue;
                 }
@@ -182,12 +198,15 @@ void TabletsChannel::_close_wait(DeltaWriter* writer,
                                  const bool write_single_replica) {
     Status st = writer->close_wait(slave_tablet_nodes, write_single_replica);
     if (st.ok()) {
+        VLOG_DEBUG << "DeltaWriter written success. tablet_id=" << writer->tablet_id();
         if (_broken_tablets.find(writer->tablet_id()) == _broken_tablets.end()) {
             PTabletInfo* tablet_info = tablet_vec->Add();
             tablet_info->set_tablet_id(writer->tablet_id());
             tablet_info->set_schema_hash(writer->schema_hash());
         }
     } else {
+        LOG(WARNING) << "failed to close DeltaWriter. tablet_id=" << writer->tablet_id()
+                     << ", err=" << st;
         PTabletError* tablet_error = tablet_errors->Add();
         tablet_error->set_tablet_id(writer->tablet_id());
         tablet_error->set_msg(st.get_error_msg());

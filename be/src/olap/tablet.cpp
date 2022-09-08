@@ -1790,7 +1790,7 @@ void Tablet::_init_context_common_fields(RowsetWriterContext& context) {
 
     context.tablet_id = tablet_id();
     context.table_id = table_id();
-    context.index_id = index_id(); 
+    context.index_id = index_id();
     context.partition_id = partition_id();
     context.tablet_schema_hash = schema_hash();
     context.rowset_type = tablet_meta()->preferred_rowset_type();

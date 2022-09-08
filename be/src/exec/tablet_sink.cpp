@@ -653,6 +653,7 @@ Status IndexChannel::init(RuntimeState* state, const std::vector<TTabletWithPart
 
 void IndexChannel::mark_as_failed(int64_t node_id, const std::string& host, const std::string& err,
                                   int64_t tablet_id) {
+    VLOG_DEBUG << "mark_as_failed begin. tablet_id=" << tablet_id << ", err=" << err;
     const auto& it = _tablets_by_channel.find(node_id);
     if (it == _tablets_by_channel.end()) {
         return;
@@ -678,6 +679,7 @@ void IndexChannel::mark_as_failed(int64_t node_id, const std::string& host, cons
             }
         }
     }
+    VLOG_DEBUG << "mark_as_failed finish. status=" << _intolerable_failure_status;
 }
 
 Status IndexChannel::check_intolerable_failure() {
