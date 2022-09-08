@@ -47,6 +47,8 @@ Status CloudSchemaChangeHandler::process_alter_tablet(const TAlterTabletReqV2& r
     }
 
     std::vector<RowsetReaderSharedPtr> rs_readers;
+    // reader_context is stack variables, it's lifetime MUST keep the same with rs_readers
+    RowsetReaderContext reader_context;
     // delete handlers for new tablet
     DeleteHandler delete_handler;
     // Create a new tablet schema, should merge with dropped columns in light weight schema change
@@ -60,59 +62,35 @@ Status CloudSchemaChangeHandler::process_alter_tablet(const TAlterTabletReqV2& r
     }
     auto& all_del_preds = base_tablet->delete_predicates();
     for (auto& delete_pred : all_del_preds) {
-        if (delete_pred->version().first > end_version) {
+        if (delete_pred->version().first > request.alter_version) {
             continue;
         }
         base_tablet_schema->merge_dropped_columns(
                 base_tablet->tablet_schema(delete_pred->version()));
     }
-    RETURN_IF_ERROR(delete_handler.init(base_tablet_schema, all_del_preds, end_version));
+    RETURN_IF_ERROR(delete_handler.init(base_tablet_schema, all_del_preds, request.alter_version));
 
     std::vector<ColumnId> return_columns;
-    {
-        size_t num_cols = base_tablet_schema->num_columns();
-        return_columns.resize(num_cols);
-        for (int i = 0; i < num_cols; ++i) {
-            return_columns[i] = i;
-        }
+    return_columns.resize(base_tablet_schema->num_columns());
+    std::iota(return_columns.begin(), return_columns.end(), 0);
 
-        // reader_context is stack variables, it's lifetime should keep the same
-        // with rs_readers
-        RowsetReaderContext reader_context;
-        reader_context.reader_type = READER_ALTER_TABLE;
-        reader_context.tablet_schema = base_tablet_schema;
-        reader_context.need_ordered_result = true;
-        reader_context.delete_handler = &delete_handler;
-        // for schema change, seek_columns is the same to return_columns
-        reader_context.return_columns = &return_columns;
-        reader_context.sequence_id_idx = reader_context.tablet_schema->sequence_col_idx();
-        reader_context.is_unique = base_tablet->keys_type() == UNIQUE_KEYS;
-        reader_context.batch_size = ALTER_TABLE_BATCH_SIZE;
-        reader_context.is_vec = config::enable_vectorized_alter_table;
+    reader_context.reader_type = READER_ALTER_TABLE;
+    reader_context.tablet_schema = base_tablet_schema;
+    reader_context.need_ordered_result = true;
+    reader_context.delete_handler = &delete_handler;
+    reader_context.return_columns = &return_columns;
+    reader_context.sequence_id_idx = reader_context.tablet_schema->sequence_col_idx();
+    reader_context.is_unique = base_tablet->keys_type() == UNIQUE_KEYS;
+    reader_context.batch_size = ALTER_TABLE_BATCH_SIZE;
+    reader_context.is_vec = config::enable_vectorized_alter_table;
 
-        RETURN_IF_ERROR(base_tablet->cloud_sync_rowsets(request.alter_version));
-        for (auto& v : missed_versions) {
-            RETURN_IF_ERROR(base_tablet->cloud_capture_rs_readers(v, &rs_readers));
-        }
+    RETURN_IF_ERROR(base_tablet->cloud_sync_rowsets(request.alter_version));
+    for (auto& v : missed_versions) {
+        RETURN_IF_ERROR(base_tablet->cloud_capture_rs_readers(v, &rs_readers));
+    }
 
-        std::shared_lock base_tablet_rlock(base_tablet->get_header_lock());
-
-        vectorized::BlockReader reader;
-        TabletReader::ReaderParams reader_params;
-        reader_params.tablet = base_tablet;
-        reader_params.reader_type = READER_ALTER_TABLE;
-        reader_params.rs_readers = rs_readers;
-        reader_params.tablet_schema = base_tablet_schema;
-        reader_params.return_columns.resize(base_tablet_schema->num_columns());
-        std::iota(reader_params.return_columns.begin(), reader_params.return_columns.end(), 0);
-        reader_params.origin_return_columns = &reader_params.return_columns;
-        reader_params.version = {0, request.alter_version};
-        // BlockReader::init will call base_tablet->get_header_lock(), but this lock we already get at outer layer, so we just call TabletReader::init
-        RETURN_IF_ERROR(reader.init(reader_params));
-
-        for (auto& rs_reader : rs_readers) {
-            RETURN_IF_ERROR(rs_reader->init(&reader_context));
-        }
+    for (auto& rs_reader : rs_readers) {
+        RETURN_IF_ERROR(rs_reader->init(&reader_context));
     }
 
     SchemaChangeParams sc_params;
@@ -161,9 +139,8 @@ Status CloudSchemaChangeHandler::_convert_historical_rowsets(const SchemaChangeP
     bool sc_directly = false;
 
     // 1. Parse the Alter request and convert it into an internal representation
-    RETURN_IF_ERROR(SchemaChangeHandler::_parse_request(
-            sc_params.base_tablet, sc_params.new_tablet, &rb_changer, &sc_sorting, &sc_directly,
-            sc_params.materialized_params_map, *sc_params.desc_tbl, sc_params.base_tablet_schema));
+    RETURN_IF_ERROR(
+            SchemaChangeHandler::_parse_request(sc_params, &rb_changer, &sc_sorting, &sc_directly));
 
     // 2. Generate historical data converter
     auto sc_procedure = get_sc_procedure(rb_changer, sc_sorting, sc_directly);
@@ -202,7 +179,7 @@ Status CloudSchemaChangeHandler::_convert_historical_rowsets(const SchemaChangeP
         }
 
         RETURN_IF_ERROR(sc_procedure->process(rs_reader, rowset_writer.get(), sc_params.new_tablet,
-                                              sc_params.base_tablet));
+                                              sc_params.base_tablet_schema));
 
         auto new_rowset = rowset_writer->build();
         if (!new_rowset) {
