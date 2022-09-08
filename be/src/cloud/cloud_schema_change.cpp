@@ -60,6 +60,7 @@ Status CloudSchemaChangeHandler::process_alter_tablet(const TAlterTabletReqV2& r
             base_tablet_schema->append_column(TabletColumn(column));
         }
     }
+
     auto& all_del_preds = base_tablet->delete_predicates();
     for (auto& delete_pred : all_del_preds) {
         if (delete_pred->version().first > request.alter_version) {
