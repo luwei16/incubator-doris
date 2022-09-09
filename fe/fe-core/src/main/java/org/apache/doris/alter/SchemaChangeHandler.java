@@ -2072,7 +2072,7 @@ public class SchemaChangeHandler extends AlterHandler {
                     for (Replica replica : tablet.getReplicas()) {
                         Set<Pair<Long, Integer>> tabletIdWithHash = beIdToTabletIdWithHash.computeIfAbsent(
                                 replica.getBackendId(), k -> Sets.newHashSet());
-                        tabletIdWithHash.add(new Pair<>(tablet.getId(), schemaHash));
+                        tabletIdWithHash.add(Pair.of(tablet.getId(), schemaHash));
                     }
                 }
             }
