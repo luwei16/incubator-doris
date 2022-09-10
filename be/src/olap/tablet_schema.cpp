@@ -600,6 +600,7 @@ void TabletSchema::build_current_tablet_schema(int64_t index_id, int32_t version
 }
 
 void TabletSchema::merge_dropped_columns(TabletSchemaSPtr src_schema) {
+    DCHECK(src_schema != nullptr);
     // If they are the same tablet schema object, then just return
     if (this == src_schema.get()) {
         return;

@@ -47,10 +47,12 @@ Status CloudSchemaChangeHandler::process_alter_tablet(const TAlterTabletReqV2& r
     }
 
     std::vector<RowsetReaderSharedPtr> rs_readers;
-    // reader_context is stack variables, it's lifetime MUST keep the same with rs_readers
-    RowsetReaderContext reader_context;
-    // delete handlers for new tablet
-    DeleteHandler delete_handler;
+    // MUST sync rowsets before capturing rowset readers and building DeleteHandler
+    RETURN_IF_ERROR(base_tablet->cloud_sync_rowsets(request.alter_version));
+    for (auto& v : missed_versions) {
+        RETURN_IF_ERROR(base_tablet->cloud_capture_rs_readers(v, &rs_readers));
+    }
+
     // Create a new tablet schema, should merge with dropped columns in light weight schema change
     TabletSchemaSPtr base_tablet_schema = std::make_shared<TabletSchema>();
     base_tablet_schema->copy_from(*base_tablet->tablet_schema());
@@ -61,20 +63,28 @@ Status CloudSchemaChangeHandler::process_alter_tablet(const TAlterTabletReqV2& r
         }
     }
 
-    auto& all_del_preds = base_tablet->delete_predicates();
-    for (auto& delete_pred : all_del_preds) {
-        if (delete_pred->version().first > request.alter_version) {
-            continue;
+    // delete handlers for new tablet
+    DeleteHandler delete_handler;
+    {
+        std::shared_lock base_tablet_lock(base_tablet->get_header_lock());
+        auto& all_del_preds = base_tablet->delete_predicates();
+        for (auto& delete_pred : all_del_preds) {
+            if (delete_pred->version().first > request.alter_version) {
+                continue;
+            }
+            base_tablet_schema->merge_dropped_columns(
+                    base_tablet->tablet_schema(delete_pred->version()));
         }
-        base_tablet_schema->merge_dropped_columns(
-                base_tablet->tablet_schema(delete_pred->version()));
+        RETURN_IF_ERROR(
+                delete_handler.init(base_tablet_schema, all_del_preds, request.alter_version));
     }
-    RETURN_IF_ERROR(delete_handler.init(base_tablet_schema, all_del_preds, request.alter_version));
 
     std::vector<ColumnId> return_columns;
     return_columns.resize(base_tablet_schema->num_columns());
     std::iota(return_columns.begin(), return_columns.end(), 0);
 
+    // reader_context is stack variables, it's lifetime MUST keep the same with rs_readers
+    RowsetReaderContext reader_context;
     reader_context.reader_type = READER_ALTER_TABLE;
     reader_context.tablet_schema = base_tablet_schema;
     reader_context.need_ordered_result = true;
@@ -84,11 +94,6 @@ Status CloudSchemaChangeHandler::process_alter_tablet(const TAlterTabletReqV2& r
     reader_context.is_unique = base_tablet->keys_type() == UNIQUE_KEYS;
     reader_context.batch_size = ALTER_TABLE_BATCH_SIZE;
     reader_context.is_vec = config::enable_vectorized_alter_table;
-
-    RETURN_IF_ERROR(base_tablet->cloud_sync_rowsets(request.alter_version));
-    for (auto& v : missed_versions) {
-        RETURN_IF_ERROR(base_tablet->cloud_capture_rs_readers(v, &rs_readers));
-    }
 
     for (auto& rs_reader : rs_readers) {
         RETURN_IF_ERROR(rs_reader->init(&reader_context));
