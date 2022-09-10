@@ -2312,6 +2312,13 @@ public class Coordinator {
                 params.setResourceInfo(tResourceInfo);
                 params.params.setQueryId(queryId);
                 params.params.setFragmentInstanceId(instanceExecParam.instanceId);
+                if (!scanNodes.isEmpty()) {
+                    final StringBuilder sb = new StringBuilder().append("olap_tables: ");
+                    scanNodes.stream().filter(x -> (x instanceof OlapScanNode))
+                        .map(x -> ((OlapScanNode) x).getOlapTable())
+                        .forEach(t -> sb.append(t.getName()).append(":").append(t.getId()).append(" "));
+                    params.setDbName(sb.toString());
+                }
                 Map<Integer, List<TScanRangeParams>> scanRanges = instanceExecParam.perNodeScanRanges;
                 if (scanRanges == null) {
                     scanRanges = Maps.newHashMap();

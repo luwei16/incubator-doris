@@ -126,16 +126,16 @@ public class CloudClusterChecker extends MasterDaemon {
     private void getObserverFes() {
         SelectdbCloud.GetClusterResponse response =
                 Env.getCurrentSystemInfo()
-                    .getCloudCluster(Config.cloud_observer_cluster_name, Config.cloud_observer_cluster_id, "");
+                    .getCloudCluster(Config.cloud_sql_server_cluster_name, Config.cloud_sql_server_cluster_id, "");
         if (!response.hasStatus() || !response.getStatus().hasCode()
                 || response.getStatus().getCode() != SelectdbCloud.MetaServiceCode.OK) {
             LOG.warn("failed to get cloud cluster due to incomplete response, "
                     + "cloud_unique_id={}, clusterId={}, response={}",
-                    Config.cloud_unique_id, Config.cloud_observer_cluster_id, response);
+                    Config.cloud_unique_id, Config.cloud_sql_server_cluster_id, response);
             return;
         }
         LOG.debug("get cloud cluster, clusterId={} nodes={}",
-                Config.cloud_observer_cluster_id, response.getCluster().getNodesList());
+                Config.cloud_sql_server_cluster_id, response.getCluster().getNodesList());
         List<Frontend> currentFes = Env.getCurrentEnv().getFrontends(FrontendNodeType.OBSERVER);
         List<Frontend> toAdd = new ArrayList<>();
         List<Frontend> toDel = new ArrayList<>();

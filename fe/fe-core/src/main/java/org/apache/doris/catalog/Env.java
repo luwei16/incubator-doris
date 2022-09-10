@@ -887,16 +887,17 @@ public class Env {
         // get helperNodes from ms
         SelectdbCloud.GetClusterResponse response =
                 Env.getCurrentSystemInfo()
-                .getCloudCluster(Config.cloud_observer_cluster_name, Config.cloud_observer_cluster_id, "");
+                .getCloudCluster(Config.cloud_sql_server_cluster_name, Config.cloud_sql_server_cluster_id, "");
         if (!response.hasStatus() || !response.getStatus().hasCode()
                 || response.getStatus().getCode() != SelectdbCloud.MetaServiceCode.OK) {
             LOG.warn("failed to get cloud cluster due to incomplete response, "
                     + "cloud_unique_id={}, clusterId={}, response={}",
-                    Config.cloud_unique_id, Config.cloud_observer_cluster_id, response);
+                    Config.cloud_unique_id, Config.cloud_sql_server_cluster_id, response);
             return null;
         }
+        LOG.info("get cluster response from meta service {}", response);
         List<SelectdbCloud.NodeInfoPB> allNodes = response.getCluster().getNodesList()
-                .stream().filter(NodeInfoPB::hasNodeType).collect(Collectors.toList());
+                .stream().filter(i -> i.hasNodeType()).collect(Collectors.toList());
 
         helperNodes.clear();
         helperNodes.addAll(allNodes.stream()
@@ -931,7 +932,7 @@ public class Env {
                 break;
             }
 
-            LOG.debug("current fe's role is {}",
+            LOG.info("current fe's role is {}",
                     type == NodeInfoPB.NodeType.FE_MASTER ? "MASTER" :
                     type == NodeInfoPB.NodeType.FE_OBSERVER ? "OBSERVER" : "UNKNOWN");
             if (type == NodeInfoPB.NodeType.UNKNOWN) {
