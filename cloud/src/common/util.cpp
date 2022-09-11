@@ -189,9 +189,10 @@ std::string prettify_key(std::string_view key_hex, bool unicode) {
     return explain_fields(key_hex, fields_str, fields_pos, unicode);
 }
 
-std::string proto_to_json(const ::google::protobuf::Message& msg) {
+std::string proto_to_json(const ::google::protobuf::Message& msg, bool add_whitespace) {
     std::string json;
     google::protobuf::util::JsonPrintOptions opts;
+    opts.add_whitespace = add_whitespace;
     opts.preserve_proto_field_names = true;
     google::protobuf::util::MessageToJsonString(msg, &json, opts);
     return json;

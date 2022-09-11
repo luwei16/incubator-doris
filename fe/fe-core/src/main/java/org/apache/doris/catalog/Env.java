@@ -925,7 +925,12 @@ public class Env {
         if (!Config.cloud_unique_id.isEmpty()) {
             // cloud mode
             while (true) {
-                SelectdbCloud.NodeInfoPB nodeInfoPB = getLocalTypeFromMetaService();
+                SelectdbCloud.NodeInfoPB nodeInfoPB = null;
+                try {
+                    nodeInfoPB = getLocalTypeFromMetaService();
+                } catch (Exception e) {
+                    LOG.warn("failed to get local fe's type, sleep 5 s, try again. exception: {}", e.getMessage());
+                }
                 if (nodeInfoPB == null) {
                     LOG.warn("failed to get local fe's type, sleep 5 s, try again.");
                     Thread.sleep(5000);

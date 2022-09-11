@@ -40,7 +40,7 @@ std::string prettify_key(std::string_view key_hex, bool unicode = false);
  *
  * @return empty string if conversion failed
  */
-std::string proto_to_json(const ::google::protobuf::Message& msg);
+std::string proto_to_json(const ::google::protobuf::Message& msg, bool add_whitespace = false);
 
 } // namespace selectdb
 

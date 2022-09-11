@@ -11,7 +11,8 @@
 #include "brpc/closure_guard.h"
 #include "brpc/controller.h"
 #include "google/protobuf/util/json_util.h"
-
+#include "rapidjson/prettywriter.h"
+#include "rapidjson/schema.h"
 
 #include <chrono>
 #include <limits>
@@ -2379,6 +2380,71 @@ void MetaServiceImpl::get_tablet_stats(::google::protobuf::RpcController* contro
     msg = ss.str();
 }
 
+std::string static convert_ms_code_to_http_code(const MetaServiceCode& ret) {
+    switch (ret) {
+    case OK:
+        return "OK";
+        break;
+    case INVALID_ARGUMENT:
+        return "INVALID_ARGUMENT";
+        break;
+    case KV_TXN_CREATE_ERR:
+    case KV_TXN_GET_ERR:
+    case KV_TXN_COMMIT_ERR:
+    case PROTOBUF_PARSE_ERR:
+    case PROTOBUF_SERIALIZE_ERR:
+    case TXN_GEN_ID_ERR:
+    case TXN_DUPLICATED_REQ:
+    case TXN_LABEL_ALREADY_USED:
+    case TXN_INVALID_STATUS:
+    case TXN_LABEL_NOT_FOUND:
+    case TXN_ID_NOT_FOUND:
+    case TXN_ALREADY_ABORTED:
+    case TXN_ALREADY_VISIBLE:
+    case TXN_ALREADY_PRECOMMITED:
+    case VERSION_NOT_FOUND:
+    case ROWSET_ALREADY_EXISTED:
+    case INDEX_ALREADY_EXISTED:
+    case PARTITION_ALREADY_EXISTED:
+    case UNDEFINED_ERR:
+        return "INTERANAL_ERROR";
+        break;
+    case CLUSTER_NOT_FOUND:
+        return "NOT_FOUND";
+        break;
+    case INSTANCE_ALREADY_EXISTED:
+        return "ALREADY_EXISTED";
+        break;
+    default:
+        return "INTERANAL_ERROR";
+        break;
+    }
+}
+
+void static format_to_json_resp(std::string& response_body, const MetaServiceCode& ret,
+                                const std::string& c_ret, const std::string& msg) {
+    rapidjson::Document d;
+    d.Parse(response_body.c_str());
+    rapidjson::StringBuffer sb;
+    rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(sb);
+    writer.StartObject();
+    writer.Key("code");
+    writer.String(d.HasParseError() ? c_ret.c_str() : "OK");
+    writer.Key("msg");
+    writer.String(ret == MetaServiceCode::OK ? "" : msg.c_str());
+    writer.EndObject();
+    if (!d.HasParseError()) {
+        // json string, add result obj into it.
+        rapidjson::Document d2;
+        d2.Parse(sb.GetString());
+        d2.AddMember("result", d, d2.GetAllocator());
+        sb.Clear();
+        writer.Reset(sb);
+        d2.Accept(writer);
+    }
+    response_body = sb.GetString();
+}
+
 void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
                            const ::selectdb::MetaServiceHttpRequest* request,
                            ::selectdb::MetaServiceHttpResponse* response,
@@ -2386,7 +2452,7 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
     auto cntl = static_cast<brpc::Controller*>(controller);
     LOG(INFO) << "rpc from " << cntl->remote_side() << " request: " << request->DebugString();
     brpc::ClosureGuard closure_guard(done);
-    int ret = 0;
+    MetaServiceCode ret = MetaServiceCode::OK;
     int status_code = 200;
     std::string msg = "OK";
     std::string req;
@@ -2394,10 +2460,12 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
     std::string request_body;
     std::unique_ptr<int, std::function<void(int*)>> defer_status(
             (int*)0x01, [&ret, &msg, &status_code, &response_body, &cntl, &req](int*) {
+                std::string c_ret = convert_ms_code_to_http_code(ret);
                 LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
                           << cntl->remote_side() << " request=\n"
                           << req << "\n ret=" << ret << " msg=" << msg;
                 cntl->http_response().set_status_code(status_code);
+                format_to_json_resp(response_body, ret, c_ret, msg);
                 cntl->response_attachment().append(response_body);
                 cntl->response_attachment().append("\n");
             });
@@ -2856,6 +2924,13 @@ void MetaServiceImpl::alter_obj_store_info(google::protobuf::RpcController* cont
             msg = "this instance history has greater than 10 objs, please new another instance";
             return;
         }
+        // ATTN: prefix may be empty
+        if (ak.empty() || sk.empty() || bucket.empty() || endpoint.empty() || region.empty()) {
+            code = MetaServiceCode::INVALID_ARGUMENT;
+            msg = "s3 conf info err, please check it";
+            return;
+        }
+
         auto& objs = instance.obj_info();
         for (auto& it : objs) {
             if (bucket == it.bucket() && prefix == it.prefix() && endpoint == it.endpoint() &&
@@ -2936,7 +3011,7 @@ void MetaServiceImpl::create_instance(google::protobuf::RpcController* controlle
     std::string region = obj.has_region() ? obj.region() : "";
 
     // ATTN: prefix may be empty
-    if (ak == "" || sk == "" || bucket == "" || endpoint == "" || region == "") {
+    if (ak.empty() || sk.empty() || bucket.empty() || endpoint.empty() || region.empty()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
         msg = "s3 conf info err, please check it";
         return;
