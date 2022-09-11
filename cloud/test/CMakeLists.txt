@@ -34,6 +34,10 @@ add_executable(mem_txn_kv_test
    mem_txn_kv_test.cpp
 )
 
+add_executable(meta_service_test
+   meta_service_test.cpp
+)
+
 message("Meta-service test dependencies: ${TEST_LINK_LIBS}")
 target_link_libraries(sync_point_test
     ${TEST_LINK_LIBS}
@@ -47,6 +51,9 @@ target_link_libraries(keys_test
     ${TEST_LINK_LIBS} 
 )
 
+target_link_libraries(meta_service_test
+    ${TEST_LINK_LIBS}
+)
 
 # FDB related tests need to be linked with libfdb_c
 set(FDB_LINKER_FLAGS "-lfdb_c -L${THIRDPARTY_DIR}/lib")

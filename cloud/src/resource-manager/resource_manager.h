@@ -37,13 +37,13 @@ struct ClusterInfo {
 class ResourceManager {
 public:
     ResourceManager(std::shared_ptr<TxnKv> txn_kv) : txn_kv_(txn_kv) {};
-
+    virtual ~ResourceManager() = default;
     /**
      * Loads all instance into memory and build an index
      *
      * @return 0 for success, non-zero for failure
      */
-    int init();
+    virtual int init();
 
     /**
      * Gets nodes with given cloud unique id
@@ -53,9 +53,10 @@ public:
      * @param node output param
      * @return empty string for success, otherwise failure reason returned
      */
-    std::string get_node(const std::string& cloud_unique_id, std::vector<NodeInfo>* nodes);
+    virtual std::string get_node(const std::string& cloud_unique_id, std::vector<NodeInfo>* nodes);
 
-    std::string add_cluster(const std::string& instance_id, const ClusterInfo& cluster);
+    virtual std::string add_cluster(const std::string& instance_id, const ClusterInfo& cluster);
+
 
     /**
      * Drops a cluster
@@ -63,7 +64,7 @@ public:
      * @param clsuter cluster to drop, only cluster name and clsuter id are concered
      * @return empty string for success, otherwise failure reason returned
      */
-    std::string drop_cluster(const std::string& instance_id, const ClusterInfo& cluster);
+    virtual std::string drop_cluster(const std::string& instance_id, const ClusterInfo& cluster);
 
     /**
      * Update a cluster
@@ -73,7 +74,7 @@ public:
      * @filter filter condition
      * @return empty string for success, otherwise failure reason returned
      */
-    std::string update_cluster(const std::string& instance_id, const ClusterInfo& cluster,
+    virtual std::string update_cluster(const std::string& instance_id, const ClusterInfo& cluster,
                                std::function<std::string(::selectdb::ClusterPB&)> action,
                                std::function<bool(const ::selectdb::ClusterPB&)> filter);
 
@@ -84,7 +85,7 @@ public:
      *
      * @return a <code, msg> pair, code == 0 for success, otherwise error
      */
-    std::pair<int, std::string> get_instance(std::shared_ptr<Transaction> txn,
+    virtual std::pair<int, std::string> get_instance(std::shared_ptr<Transaction> txn,
                                              const std::string& instance_id,
                                              InstanceInfoPB* inst_pb);
     // return err msg

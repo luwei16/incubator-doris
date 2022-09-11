@@ -236,7 +236,6 @@ void MetaServiceImpl::begin_txn(::google::protobuf::RpcController* controller,
                 msg = ss.str();
                 return;
             }
-
             if (cur_txn_info.status() == TxnStatusPB::TXN_STATUS_ABORTED) {
                 continue;
             }
@@ -2348,6 +2347,8 @@ void MetaServiceImpl::get_tablet_stats(::google::protobuf::RpcController* contro
     for (auto& i : request->tablet_idx()) {
         if (!(/* i.has_db_id() && */ i.has_table_id() && i.has_index_id() && i.has_partition_id() &&
               i.has_tablet_id())) {
+            code = MetaServiceCode::INVALID_ARGUMENT;
+            ss << " incomplete tablet_idx";
             LOG(WARNING) << "incomplete index for tablet stats, tablet_idx=" << i.DebugString();
             continue;
         }
