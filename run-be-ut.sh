@@ -288,8 +288,11 @@ rm -rf "${UT_TMP_DIR}"
 mkdir "${UT_TMP_DIR}"
 touch "${UT_TMP_DIR}/tmp_file"
 
-# find all executable test files
+# set asan and ubsan env to generate core file
+export ASAN_OPTIONS=symbolize=1:abort_on_error=1:disable_coredump=0:unmap_shadow_on_exit=1
+export UBSAN_OPTIONS=print_stacktrace=1
 
+# find all executable test files
 if [ "${CLOUD_MODE}" == "ON" ]; then
     test=${DORIS_TEST_BINARY_DIR}/cloud_be_test
 else

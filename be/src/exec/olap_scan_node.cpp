@@ -1717,7 +1717,7 @@ void OlapScanNode::transfer_thread(RuntimeState* state) {
 
 void OlapScanNode::scanner_thread(OlapScanner* scanner) {
 #if !defined(USE_BTHREAD_SCANNER)
-    SCOPED_ATTACH_TASK(_runtime_state);
+    // SCOPED_ATTACH_TASK(_runtime_state);
     SCOPED_CONSUME_MEM_TRACKER(mem_tracker());
     Thread::set_self_name("olap_scanner");
 #else

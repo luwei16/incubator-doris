@@ -29,7 +29,7 @@ import org.apache.doris.nereids.jobs.batch.RewriteJob;
 import org.apache.doris.nereids.jobs.cascades.DeriveStatsJob;
 import org.apache.doris.nereids.memo.Group;
 import org.apache.doris.nereids.memo.GroupExpression;
-import org.apache.doris.nereids.processor.post.PlanPostprocessors;
+import org.apache.doris.nereids.processor.post.PlanPostProcessors;
 import org.apache.doris.nereids.processor.pre.PlanPreprocessors;
 import org.apache.doris.nereids.properties.PhysicalProperties;
 import org.apache.doris.nereids.trees.expressions.NamedExpression;
@@ -40,6 +40,7 @@ import org.apache.doris.planner.PlanFragment;
 import org.apache.doris.planner.Planner;
 import org.apache.doris.planner.ScanNode;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Lists;
 
 import java.util.ArrayList;
@@ -84,6 +85,15 @@ public class NereidsPlanner extends Planner {
         logicalPlanAdapter.setColLabels(columnLabelList);
     }
 
+    @VisibleForTesting
+    public void plan(StatementBase queryStmt) {
+        try {
+            plan(queryStmt, statementContext.getConnectContext().getSessionVariable().toThrift());
+        } catch (UserException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     /**
      * Do analyze and optimize for query plan.
      *
@@ -111,13 +121,13 @@ public class NereidsPlanner extends Planner {
         // TODO: What is the appropriate time to set physical properties? Maybe before enter.
         // cascades style optimize phase.
 
-        // cost-based optimize and explode plan space
+        // cost-based optimize and explore plan space
         optimize();
 
         PhysicalPlan physicalPlan = chooseBestPlan(getRoot(), PhysicalProperties.ANY);
 
         // post-process physical plan out of memo, just for future use.
-        return postprocess(physicalPlan);
+        return postProcess(physicalPlan);
     }
 
     private LogicalPlan preprocess(LogicalPlan logicalPlan) {
@@ -153,8 +163,8 @@ public class NereidsPlanner extends Planner {
         new OptimizeRulesJob(cascadesContext).execute();
     }
 
-    private PhysicalPlan postprocess(PhysicalPlan physicalPlan) {
-        return new PlanPostprocessors(cascadesContext).process(physicalPlan);
+    private PhysicalPlan postProcess(PhysicalPlan physicalPlan) {
+        return new PlanPostProcessors(cascadesContext).process(physicalPlan);
     }
 
     @Override
@@ -181,11 +191,9 @@ public class NereidsPlanner extends Planner {
         if (!(plan instanceof PhysicalPlan)) {
             throw new AnalysisException("generate logical plan");
         }
-        PhysicalPlan physicalPlan = (PhysicalPlan) plan;
 
         // TODO: set (logical and physical)properties/statistics/... for physicalPlan.
-
-        return physicalPlan;
+        return ((PhysicalPlan) plan).withPhysicalProperties(physicalProperties);
     }
 
     @Override

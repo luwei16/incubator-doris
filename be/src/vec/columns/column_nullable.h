@@ -159,6 +159,8 @@ public:
     ColumnPtr replicate(const Offsets& replicate_offsets) const override;
     void replicate(const uint32_t* counts, size_t target_size, IColumn& column) const override;
     void update_hash_with_value(size_t n, SipHash& hash) const override;
+    void update_hashes_with_value(std::vector<SipHash>& hashes,
+                                  const uint8_t* __restrict null_data) const override;
     void get_extremes(Field& min, Field& max) const override;
 
     MutableColumns scatter(ColumnIndex num_columns, const Selector& selector) const override {
@@ -302,6 +304,9 @@ public:
     void generate_hash_values_for_runtime_filter() override {
         get_nested_column().generate_hash_values_for_runtime_filter();
     }
+
+    void sort_column(const ColumnSorter* sorter, EqualFlags& flags, IColumn::Permutation& perms,
+                     EqualRange& range, bool last_column) const override;
 
 private:
     WrappedPtr nested_column;

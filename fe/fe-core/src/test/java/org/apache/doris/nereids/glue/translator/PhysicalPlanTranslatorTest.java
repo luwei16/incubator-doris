@@ -17,6 +17,7 @@
 
 package org.apache.doris.nereids.glue.translator;
 
+import org.apache.doris.catalog.KeysType;
 import org.apache.doris.catalog.OlapTable;
 import org.apache.doris.nereids.properties.LogicalProperties;
 import org.apache.doris.nereids.trees.expressions.Expression;
@@ -30,12 +31,12 @@ import org.apache.doris.nereids.trees.plans.physical.PhysicalFilter;
 import org.apache.doris.nereids.trees.plans.physical.PhysicalOlapScan;
 import org.apache.doris.nereids.trees.plans.physical.PhysicalProject;
 import org.apache.doris.nereids.types.IntegerType;
+import org.apache.doris.nereids.util.PlanConstructor;
 import org.apache.doris.planner.OlapScanNode;
 import org.apache.doris.planner.PlanFragment;
 import org.apache.doris.planner.PlanNode;
 
 import mockit.Injectable;
-import mockit.Mocked;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
@@ -47,10 +48,10 @@ import java.util.Optional;
 public class PhysicalPlanTranslatorTest {
 
     @Test
-    public void testOlapPrune(@Mocked OlapTable t1, @Injectable LogicalProperties placeHolder) throws Exception {
-        List<String> qualifierList = new ArrayList<>();
-        qualifierList.add("test");
-        qualifierList.add("t1");
+    public void testOlapPrune(@Injectable LogicalProperties placeHolder) throws Exception {
+        OlapTable t1 = PlanConstructor.newOlapTable(0, "t1", 0, KeysType.AGG_KEYS);
+        List<String> qualifier = new ArrayList<>();
+        qualifier.add("test");
         List<Slot> t1Output = new ArrayList<>();
         SlotReference col1 = new SlotReference("col1", IntegerType.INSTANCE);
         SlotReference col2 = new SlotReference("col2", IntegerType.INSTANCE);
@@ -59,17 +60,17 @@ public class PhysicalPlanTranslatorTest {
         t1Output.add(col2);
         t1Output.add(col3);
         LogicalProperties t1Properties = new LogicalProperties(() -> t1Output);
-        PhysicalOlapScan scan = new PhysicalOlapScan(t1, qualifierList, 0L,
+        PhysicalOlapScan scan = new PhysicalOlapScan(t1, qualifier, 0L,
                 Collections.emptyList(), Collections.emptyList(), null,
                 Optional.empty(),
                 t1Properties);
         Literal t1FilterRight = new IntegerLiteral(1);
         Expression t1FilterExpr = new GreaterThan(col1, t1FilterRight);
         PhysicalFilter<PhysicalOlapScan> filter =
-                new PhysicalFilter(t1FilterExpr, placeHolder, scan);
+                new PhysicalFilter<>(t1FilterExpr, placeHolder, scan);
         List<NamedExpression> projList = new ArrayList<>();
         projList.add(col2);
-        PhysicalProject<PhysicalFilter> project = new PhysicalProject(projList,
+        PhysicalProject<PhysicalFilter<PhysicalOlapScan>> project = new PhysicalProject<>(projList,
                 placeHolder, filter);
         PlanTranslatorContext planTranslatorContext = new PlanTranslatorContext();
         PhysicalPlanTranslator translator = new PhysicalPlanTranslator();

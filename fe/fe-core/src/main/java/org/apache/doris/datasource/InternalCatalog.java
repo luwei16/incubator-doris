@@ -79,6 +79,7 @@ import org.apache.doris.catalog.HiveTable;
 import org.apache.doris.catalog.IcebergTable;
 import org.apache.doris.catalog.Index;
 import org.apache.doris.catalog.InfoSchemaDb;
+import org.apache.doris.catalog.JdbcTable;
 import org.apache.doris.catalog.KeysType;
 import org.apache.doris.catalog.ListPartitionItem;
 import org.apache.doris.catalog.MaterializedIndex;
@@ -1068,6 +1069,9 @@ public class InternalCatalog implements CatalogIf<Database> {
             return;
         } else if (engineName.equalsIgnoreCase("hudi")) {
             createHudiTable(db, stmt);
+            return;
+        } else if (engineName.equalsIgnoreCase("jdbc")) {
+            createJdbcTable(db, stmt);
             return;
         } else {
             ErrorReport.reportDdlException(ErrorCode.ERR_UNKNOWN_STORAGE_ENGINE, engineName);
@@ -2317,6 +2321,21 @@ public class InternalCatalog implements CatalogIf<Database> {
         }
         // check hive table if exists in doris database
         if (!db.createTableWithLock(hudiTable, false, stmt.isSetIfNotExists()).first) {
+            ErrorReport.reportDdlException(ErrorCode.ERR_TABLE_EXISTS_ERROR, tableName);
+        }
+        LOG.info("successfully create table[{}-{}]", tableName, tableId);
+    }
+
+    private void createJdbcTable(Database db, CreateTableStmt stmt) throws DdlException {
+        String tableName = stmt.getTableName();
+        List<Column> columns = stmt.getColumns();
+
+        long tableId = Env.getCurrentEnv().getNextId();
+
+        JdbcTable jdbcTable = new JdbcTable(tableId, tableName, columns, stmt.getProperties());
+        jdbcTable.setComment(stmt.getComment());
+        // check table if exists
+        if (!db.createTableWithLock(jdbcTable, false, stmt.isSetIfNotExists()).first) {
             ErrorReport.reportDdlException(ErrorCode.ERR_TABLE_EXISTS_ERROR, tableName);
         }
         LOG.info("successfully create table[{}-{}]", tableName, tableId);

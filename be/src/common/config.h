@@ -53,6 +53,8 @@ CONF_String(priority_networks, "");
 CONF_mInt64(tc_use_memory_min, "10737418240");
 // free memory rate.[0-100]
 CONF_mInt64(tc_free_memory_rate, "20");
+// tcmallc aggressive_memory_decommit
+CONF_mBool(tc_enable_aggressive_memory_decommit, "false");
 
 // Bound on the total amount of bytes allocated to thread caches.
 // This bound is not strict, so it is possible for the cache to go over this bound
@@ -858,6 +860,8 @@ CONF_Int32(doris_remote_scanner_thread_pool_queue_size, "10240");
 // This config should be removed when the new scan node is ready.
 CONF_Bool(enable_new_scan_node, "true");
 
+// limit the queue of pending batches which will be sent by a single nodechannel
+CONF_mInt64(nodechannel_pending_queue_max_bytes, "67108864");
 #if defined(BE_TEST) || defined(CLOUD_MODE)
 // test s3
 CONF_String(test_s3_resource, "resource");

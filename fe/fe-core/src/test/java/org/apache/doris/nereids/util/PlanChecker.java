@@ -18,12 +18,15 @@
 package org.apache.doris.nereids.util;
 
 import org.apache.doris.nereids.CascadesContext;
+import org.apache.doris.nereids.NereidsPlanner;
+import org.apache.doris.nereids.StatementContext;
+import org.apache.doris.nereids.glue.LogicalPlanAdapter;
 import org.apache.doris.nereids.jobs.JobContext;
 import org.apache.doris.nereids.memo.Group;
 import org.apache.doris.nereids.memo.GroupExpression;
 import org.apache.doris.nereids.memo.Memo;
+import org.apache.doris.nereids.parser.NereidsParser;
 import org.apache.doris.nereids.pattern.GroupExpressionMatching;
-import org.apache.doris.nereids.pattern.GroupExpressionMatching.GroupExpressionIterator;
 import org.apache.doris.nereids.pattern.MatchingContext;
 import org.apache.doris.nereids.pattern.PatternDescriptor;
 import org.apache.doris.nereids.pattern.PatternMatcher;
@@ -32,7 +35,9 @@ import org.apache.doris.nereids.rules.RuleFactory;
 import org.apache.doris.nereids.rules.RuleType;
 import org.apache.doris.nereids.rules.rewrite.OneRewriteRuleFactory;
 import org.apache.doris.nereids.trees.plans.Plan;
+import org.apache.doris.nereids.trees.plans.logical.LogicalPlan;
 import org.apache.doris.qe.ConnectContext;
+import org.apache.doris.qe.OriginStatement;
 
 import com.google.common.base.Supplier;
 import com.google.common.collect.Lists;
@@ -145,10 +150,8 @@ public class PlanChecker {
 
     public PlanChecker transform(GroupExpression groupExpression, PatternMatcher patternMatcher) {
         GroupExpressionMatching matchResult = new GroupExpressionMatching(patternMatcher.pattern, groupExpression);
-        GroupExpressionIterator iterator = matchResult.iterator();
 
-        while (iterator.hasNext()) {
-            Plan before = iterator.next();
+        for (Plan before : matchResult) {
             Plan after = patternMatcher.matchedAction.apply(
                     new MatchingContext(before, patternMatcher.pattern, cascadesContext));
             if (before != after) {
@@ -160,6 +163,38 @@ public class PlanChecker {
             transform(childGroup, patternMatcher);
         }
         return this;
+    }
+
+    public PlanChecker transform(Rule rule) {
+        return transform(cascadesContext.getMemo().getRoot(), rule);
+    }
+
+    // Exploration Rule.
+    public PlanChecker transform(Group group, Rule rule) {
+        // copy groupExpressions can prevent ConcurrentModificationException
+        for (GroupExpression logicalExpression : Lists.newArrayList(group.getLogicalExpressions())) {
+            transformApply(logicalExpression, rule);
+        }
+
+        for (GroupExpression physicalExpression : Lists.newArrayList(group.getPhysicalExpressions())) {
+            transformApply(physicalExpression, rule);
+        }
+        return this;
+    }
+
+    private void transformApply(GroupExpression groupExpression, Rule rule) {
+        GroupExpressionMatching matchResult = new GroupExpressionMatching(rule.getPattern(), groupExpression);
+
+        for (Plan before : matchResult) {
+            Plan after = rule.transform(before, cascadesContext).get(0);
+            if (before != after) {
+                cascadesContext.getMemo().copyIn(after, before.getGroupExpression().get().getOwnerGroup(), false);
+            }
+        }
+
+        for (Group childGroup : groupExpression.children()) {
+            transform(childGroup, rule);
+        }
     }
 
     public PlanChecker matchesFromRoot(PatternDescriptor<? extends Plan> patternDesc) {
@@ -229,6 +264,15 @@ public class PlanChecker {
         return this;
     }
 
+    public PlanChecker checkPlannerResult(String sql, Consumer<NereidsPlanner> consumer) {
+        LogicalPlan parsed = new NereidsParser().parseSingle(sql);
+        NereidsPlanner nereidsPlanner = new NereidsPlanner(
+                new StatementContext(connectContext, new OriginStatement(sql, 0)));
+        nereidsPlanner.plan(LogicalPlanAdapter.of(parsed));
+        consumer.accept(nereidsPlanner);
+        return this;
+    }
+
     public static PlanChecker from(ConnectContext connectContext) {
         return new PlanChecker(connectContext);
     }
@@ -240,5 +284,13 @@ public class PlanChecker {
 
     public static PlanChecker from(CascadesContext cascadesContext) {
         return new PlanChecker(cascadesContext);
+    }
+
+    public CascadesContext getCascadesContext() {
+        return cascadesContext;
+    }
+
+    public Plan getPlan() {
+        return cascadesContext.getMemo().copyOut();
     }
 }

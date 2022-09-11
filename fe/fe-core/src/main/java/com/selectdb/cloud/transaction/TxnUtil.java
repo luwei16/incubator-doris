@@ -178,7 +178,7 @@ public class TxnUtil {
         return etlStatus;
     }
 
-    public static TxnCommitAttachmentPB loadJobFinalOperationToPb(LoadJobFinalOperation loadJobFinalOperation)  {
+    public static TxnCommitAttachmentPB loadJobFinalOperationToPb(LoadJobFinalOperation loadJobFinalOperation) {
         LOG.info("loadJobFinalOperation:{}", loadJobFinalOperation);
         TxnCommitAttachmentPB.Builder attachementBuilder = TxnCommitAttachmentPB.newBuilder();
         attachementBuilder.setType(TxnCommitAttachmentPB.Type.LODD_JOB_FINAL_OPERATION);
@@ -201,7 +201,7 @@ public class TxnUtil {
         return attachementBuilder.build();
     }
 
-    public static LoadJobFinalOperation loadJobFinalOperationFromPb(TxnCommitAttachmentPB txnCommitAttachmentPB)  {
+    public static LoadJobFinalOperation loadJobFinalOperationFromPb(TxnCommitAttachmentPB txnCommitAttachmentPB) {
         LoadJobFinalOperationPB loadJobFinalOperationPB = txnCommitAttachmentPB.getLoadJobFinalOperation();
         LOG.debug("loadJobFinalOperationPB={}", loadJobFinalOperationPB);
         FailMsg failMsg = loadJobFinalOperationPB.hasFailMsg()
@@ -228,7 +228,7 @@ public class TxnUtil {
         return txnCoordinator;
     }
 
-    public static TransactionState transactionStateFromPb(TxnInfoPB txnInfo)  {
+    public static TransactionState transactionStateFromPb(TxnInfoPB txnInfo) {
         LOG.debug("txnInfo={}", txnInfo);
         long dbId = txnInfo.getDbId();
         List<Long> tableIdList = txnInfo.getTableIdsList();

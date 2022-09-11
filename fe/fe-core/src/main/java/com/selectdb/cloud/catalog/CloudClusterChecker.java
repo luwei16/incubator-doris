@@ -28,7 +28,6 @@ public class CloudClusterChecker extends MasterDaemon {
         super("cloud cluster check", FeConstants.cloud_cluster_check_interval_second * 1000);
     }
 
-
     /**
      * Diff 2 collections of current and the dest.
      * @param toAdd output param = (expectedState - currentState)

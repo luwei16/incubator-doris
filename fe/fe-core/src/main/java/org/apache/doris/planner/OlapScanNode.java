@@ -238,6 +238,18 @@ public class OlapScanNode extends ScanNode {
     }
 
     /**
+     * Only used for Neredis to set rollup or materialized view selection result.
+     */
+    public void selectSelectIndexInfo(
+            long selectedIndexId,
+            boolean isPreAggregation,
+            String reasonOfPreAggregation) {
+        this.selectedIndexId = selectedIndexId;
+        this.isPreAggregation = isPreAggregation;
+        this.reasonOfPreAggregation = reasonOfPreAggregation;
+    }
+
+    /**
      * The function is used to directly select the index id of the base table as the
      * selectedIndexId.
      * It makes sure that the olap scan node must scan the base data rather than
@@ -816,7 +828,8 @@ public class OlapScanNode extends ScanNode {
         StringBuilder output = new StringBuilder();
 
         String indexName = olapTable.getIndexNameById(selectedIndexId);
-        output.append(prefix).append("TABLE: ").append(olapTable.getName()).append("(").append(indexName).append(")");
+        output.append(prefix).append("TABLE: ").append(olapTable.getQualifiedName())
+                .append("(").append(indexName).append(")");
         if (detailLevel == TExplainLevel.BRIEF) {
             return output.toString();
         }

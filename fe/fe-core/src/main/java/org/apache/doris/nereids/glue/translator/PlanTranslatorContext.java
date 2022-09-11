@@ -38,6 +38,8 @@ import com.google.common.collect.Maps;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.stream.Collectors;
 
 /**
  * Context of physical plan.
@@ -92,6 +94,10 @@ public class PlanTranslatorContext {
         slotIdToExprId.put(slotRef.getDesc().getId(), exprId);
     }
 
+    public void removePlanFragment(PlanFragment planFragment) {
+        this.planFragments.remove(planFragment);
+    }
+
     public SlotRef findSlotRef(ExprId exprId) {
         return exprIdToSlotRef.get(exprId);
     }
@@ -104,7 +110,6 @@ public class PlanTranslatorContext {
         return slotIdToExprId.get(slotId);
     }
 
-
     public List<ScanNode> getScanNodes() {
         return scanNodes;
     }
@@ -114,27 +119,25 @@ public class PlanTranslatorContext {
      */
     public SlotDescriptor createSlotDesc(TupleDescriptor tupleDesc, SlotReference slotReference) {
         SlotDescriptor slotDescriptor = this.addSlotDesc(tupleDesc);
-        Column column = slotReference.getColumn();
+        Optional<Column> column = slotReference.getColumn();
         // Only the SlotDesc that in the tuple generated for scan node would have corresponding column.
-        if (column != null) {
-            slotDescriptor.setColumn(column);
+        if (column.isPresent()) {
+            slotDescriptor.setColumn(column.get());
         }
         slotDescriptor.setType(slotReference.getDataType().toCatalogDataType());
         slotDescriptor.setIsMaterialized(true);
-        this.addExprIdSlotRefPair(slotReference.getExprId(), new SlotRef(slotDescriptor));
+        SlotRef slotRef = new SlotRef(slotDescriptor);
+        slotRef.setLabel(slotReference.getName());
+        this.addExprIdSlotRefPair(slotReference.getExprId(), slotRef);
         slotDescriptor.setIsNullable(slotReference.nullable());
         return slotDescriptor;
     }
 
-    /**
-     * in Nereids, all node only has one TupleDescriptor, so we can use the first one.
-     *
-     * @param planNode the node to get the TupleDescriptor
-     *
-     * @return plan node's tuple descriptor
-     */
-    public TupleDescriptor getTupleDesc(PlanNode planNode) {
-        return descTable.getTupleDesc(planNode.getOutputTupleIds().get(0));
+    public List<TupleDescriptor> getTupleDesc(PlanNode planNode) {
+        if (planNode.getOutputTupleDesc() != null) {
+            return Lists.newArrayList(planNode.getOutputTupleDesc());
+        }
+        return planNode.getOutputTupleIds().stream().map(this::getTupleDesc).collect(Collectors.toList());
     }
 
     public TupleDescriptor getTupleDesc(TupleId tupleId) {

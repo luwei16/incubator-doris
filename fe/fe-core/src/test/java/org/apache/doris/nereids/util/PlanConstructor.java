@@ -22,6 +22,7 @@ import org.apache.doris.catalog.Column;
 import org.apache.doris.catalog.HashDistributionInfo;
 import org.apache.doris.catalog.KeysType;
 import org.apache.doris.catalog.OlapTable;
+import org.apache.doris.catalog.PartitionInfo;
 import org.apache.doris.catalog.Type;
 import org.apache.doris.nereids.trees.plans.logical.LogicalOlapScan;
 import org.apache.doris.thrift.TStorageType;
@@ -41,31 +42,31 @@ public class PlanConstructor {
                         new Column("gender", Type.INT, false, AggregateType.NONE, "0", ""),
                         new Column("name", Type.STRING, true, AggregateType.NONE, "", ""),
                         new Column("age", Type.INT, true, AggregateType.NONE, "", "")),
-                KeysType.PRIMARY_KEYS, null, null);
-        score = new OlapTable(1L, "course",
+                KeysType.PRIMARY_KEYS, new PartitionInfo(), null);
+        score = new OlapTable(1L, "score",
                 ImmutableList.<Column>of(new Column("sid", Type.INT, true, AggregateType.NONE, "0", ""),
                         new Column("cid", Type.INT, true, AggregateType.NONE, "", ""),
                         new Column("grade", Type.DOUBLE, true, AggregateType.NONE, "", "")),
-                KeysType.PRIMARY_KEYS, null, null);
+                KeysType.PRIMARY_KEYS, new PartitionInfo(), null);
         course = new OlapTable(2L, "course",
                 ImmutableList.<Column>of(new Column("cid", Type.INT, true, AggregateType.NONE, "0", ""),
                         new Column("name", Type.STRING, true, AggregateType.NONE, "", ""),
                         new Column("teacher", Type.STRING, true, AggregateType.NONE, "", "")),
-                KeysType.PRIMARY_KEYS, null, null);
+                KeysType.PRIMARY_KEYS, new PartitionInfo(), null);
         student.setIndexMeta(-1,
-                "base",
+                "student",
                 student.getFullSchema(),
                 0, 0, (short) 0,
                 TStorageType.COLUMN,
                 KeysType.PRIMARY_KEYS);
         score.setIndexMeta(-1,
-                "base",
+                "score",
                 score.getFullSchema(),
                 0, 0, (short) 0,
                 TStorageType.COLUMN,
                 KeysType.PRIMARY_KEYS);
         course.setIndexMeta(-1,
-                "base",
+                "course",
                 course.getFullSchema(),
                 0, 0, (short) 0,
                 TStorageType.COLUMN,
@@ -73,6 +74,10 @@ public class PlanConstructor {
     }
 
     public static OlapTable newOlapTable(long tableId, String tableName, int hashColumn) {
+        return newOlapTable(tableId, tableName, hashColumn, KeysType.PRIMARY_KEYS);
+    }
+
+    public static OlapTable newOlapTable(long tableId, String tableName, int hashColumn, KeysType keysType) {
         List<Column> columns = ImmutableList.of(
                 new Column("id", Type.INT, true, AggregateType.NONE, "0", ""),
                 new Column("name", Type.STRING, true, AggregateType.NONE, "", ""));
@@ -81,13 +86,13 @@ public class PlanConstructor {
                 ImmutableList.of(columns.get(hashColumn)));
 
         OlapTable table = new OlapTable(tableId, tableName, columns,
-                KeysType.PRIMARY_KEYS, null, hashDistributionInfo);
+                keysType, new PartitionInfo(), hashDistributionInfo);
         table.setIndexMeta(-1,
-                "base",
+                tableName,
                 table.getFullSchema(),
                 0, 0, (short) 0,
                 TStorageType.COLUMN,
-                KeysType.PRIMARY_KEYS);
+                keysType);
         return table;
     }
 

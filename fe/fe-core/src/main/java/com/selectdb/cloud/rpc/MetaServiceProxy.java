@@ -287,9 +287,8 @@ public class MetaServiceProxy {
         }
     }
 
-
-    public SelectdbCloud.MetaServiceGenericResponse
-            preparePartition(SelectdbCloud.PartitionRequest request) throws RpcException {
+    public SelectdbCloud.MetaServiceGenericResponse preparePartition(SelectdbCloud.PartitionRequest request)
+            throws RpcException {
         if (metaServiceHostPort == null) {
             throw new RpcException("", "cloud mode, please configure cloud_unique_id and meta_service_endpoint");
         }

@@ -30,10 +30,27 @@
 
 class SipHash;
 
+#define SIP_HASHES_FUNCTION_COLUMN_IMPL()                                \
+    auto s = hashes.size();                                              \
+    DCHECK(s == size());                                                 \
+    if (null_data == nullptr) {                                          \
+        for (size_t i = 0; i < s; i++) {                                 \
+            update_hash_with_value(i, hashes[i]);                        \
+        }                                                                \
+    } else {                                                             \
+        for (size_t i = 0; i < s; i++) {                                 \
+            if (null_data[i] == 0) update_hash_with_value(i, hashes[i]); \
+        }                                                                \
+    }
+
 namespace doris::vectorized {
 
 class Arena;
 class Field;
+
+class ColumnSorter;
+using EqualFlags = std::vector<uint8_t>;
+using EqualRange = std::pair<int, int>;
 
 /// Declares interface to store columns in memory.
 class IColumn : public COW<IColumn> {
@@ -46,7 +63,18 @@ private:
     /// If you want to copy column for modification, look at 'mutate' method.
     virtual MutablePtr clone() const = 0;
 
+protected:
+    // 64bit offsets now only Array type used, so we make it protected
+    // to avoid use IColumn::Offset64 directly.
+    // please use ColumnArray::Offset64 instead if we need.
+    using Offset64 = UInt64;
+    using Offsets64 = PaddedPODArray<Offset64>;
+
 public:
+    // 32bit offsets for string
+    using Offset = UInt32;
+    using Offsets = PaddedPODArray<Offset>;
+
     /// Name of a Column. It is used in info messages.
     virtual std::string get_name() const { return get_family_name(); }
 
@@ -287,6 +315,14 @@ public:
     ///  passed bytes to hash must identify sequence of values unambiguously.
     virtual void update_hash_with_value(size_t n, SipHash& hash) const = 0;
 
+    /// Update state of hash function with value of n elements to avoid the virtual function call
+    /// null_data to mark whether need to do hash compute, null_data == nullptr
+    /// means all element need to do hash function, else only *null_data != 0 need to do hash func
+    virtual void update_hashes_with_value(std::vector<SipHash>& hash,
+                                          const uint8_t* __restrict null_data = nullptr) const {
+        LOG(FATAL) << "update_hashes_with_value not supported";
+    };
+
     /** Removes elements that don't match the filter.
       * Is used in WHERE and HAVING operations.
       * If result_size_hint > 0, then makes advance reserve(result_size_hint) for the result column;
@@ -345,8 +381,6 @@ public:
       * (i-th element should be copied offsets[i] - offsets[i - 1] times.)
       * It is necessary in ARRAY JOIN operation.
       */
-    using Offset = UInt64;
-    using Offsets = PaddedPODArray<Offset>;
     virtual Ptr replicate(const Offsets& offsets) const = 0;
 
     virtual void replicate(const uint32_t* counts, size_t target_size, IColumn& column) const {
@@ -499,6 +533,10 @@ public:
     virtual bool can_be_inside_nullable() const { return false; }
 
     virtual bool low_cardinality() const { return false; }
+
+    virtual void sort_column(const ColumnSorter* sorter, EqualFlags& flags,
+                             IColumn::Permutation& perms, EqualRange& range,
+                             bool last_column) const;
 
     virtual ~IColumn() = default;
     IColumn() = default;

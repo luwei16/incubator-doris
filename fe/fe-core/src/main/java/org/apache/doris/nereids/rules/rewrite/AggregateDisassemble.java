@@ -24,16 +24,17 @@ import org.apache.doris.nereids.trees.expressions.Expression;
 import org.apache.doris.nereids.trees.expressions.NamedExpression;
 import org.apache.doris.nereids.trees.expressions.SlotReference;
 import org.apache.doris.nereids.trees.expressions.functions.AggregateFunction;
-import org.apache.doris.nereids.trees.expressions.visitor.ExpressionReplacer;
 import org.apache.doris.nereids.trees.plans.AggPhase;
 import org.apache.doris.nereids.trees.plans.GroupPlan;
 import org.apache.doris.nereids.trees.plans.logical.LogicalAggregate;
+import org.apache.doris.nereids.util.ExpressionUtils;
 
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -95,7 +96,7 @@ public class AggregateDisassemble extends OneRewriteRuleFactory {
                 }
             }
             for (NamedExpression originOutputExpr : originOutputExprs) {
-                List<AggregateFunction> aggregateFunctions
+                Set<AggregateFunction> aggregateFunctions
                         = originOutputExpr.collect(AggregateFunction.class::isInstance);
                 for (AggregateFunction aggregateFunction : aggregateFunctions) {
                     if (inputSubstitutionMap.containsKey(aggregateFunction)) {
@@ -111,11 +112,11 @@ public class AggregateDisassemble extends OneRewriteRuleFactory {
 
             // 3. replace expression in globalOutputExprs and globalGroupByExprs
             List<NamedExpression> globalOutputExprs = aggregate.getOutputExpressions().stream()
-                    .map(e -> ExpressionReplacer.INSTANCE.visit(e, inputSubstitutionMap))
+                    .map(e -> ExpressionUtils.replace(e, inputSubstitutionMap))
                     .map(NamedExpression.class::cast)
                     .collect(Collectors.toList());
             List<Expression> globalGroupByExprs = localGroupByExprs.stream()
-                    .map(e -> ExpressionReplacer.INSTANCE.visit(e, inputSubstitutionMap)).collect(Collectors.toList());
+                    .map(e -> ExpressionUtils.replace(e, inputSubstitutionMap)).collect(Collectors.toList());
 
             // 4. generate new plan
             LogicalAggregate localAggregate = new LogicalAggregate<>(

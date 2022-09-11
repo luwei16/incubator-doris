@@ -383,6 +383,9 @@ public class Env {
     private CatalogRecycleBin recycleBin;
     private FunctionSet functionSet;
 
+    // for nereids
+    private FunctionRegistry functionRegistry;
+
     private MetaReplayState metaReplayState;
 
     private BrokerMgr brokerMgr;
@@ -564,6 +567,8 @@ public class Env {
         this.recycleBin = new CatalogRecycleBin();
         this.functionSet = new FunctionSet();
         this.functionSet.init();
+
+        this.functionRegistry = new FunctionRegistry();
 
         this.metaReplayState = new MetaReplayState();
 
@@ -2827,7 +2832,7 @@ public class Env {
         sb.append("CREATE ");
         if (table.getType() == TableType.ODBC || table.getType() == TableType.MYSQL
                 || table.getType() == TableType.ELASTICSEARCH || table.getType() == TableType.BROKER
-                || table.getType() == TableType.HIVE) {
+                || table.getType() == TableType.HIVE || table.getType() == TableType.JDBC) {
             sb.append("EXTERNAL ");
         }
         sb.append("TABLE ");
@@ -3170,6 +3175,13 @@ public class Env {
             // properties
             sb.append("\nPROPERTIES (\n");
             sb.append(new PrintableMap<>(hudiTable.getTableProperties(), " = ", true, true, false).toString());
+            sb.append("\n)");
+        } else if (table.getType() == TableType.JDBC) {
+            JdbcTable jdbcTable = (JdbcTable) table;
+            addTableComment(jdbcTable, sb);
+            sb.append("\nPROPERTIES (\n");
+            sb.append("\"resource\" = \"").append(jdbcTable.getResourceName()).append("\",\n");
+            sb.append("\"table\" = \"").append(jdbcTable.getJdbcTable()).append("\"");
             sb.append("\n)");
         }
 
@@ -4443,6 +4455,10 @@ public class Env {
             throw new DdlException("Failed to create view[" + tableName + "].");
         }
         LOG.info("successfully create view[" + tableName + "-" + newView.getId() + "]");
+    }
+
+    public FunctionRegistry getFunctionRegistry() {
+        return functionRegistry;
     }
 
     /**

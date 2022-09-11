@@ -39,10 +39,12 @@ import java.util.Optional;
 /**
  * Logical Aggregate plan.
  * <p>
- * eg:select a, sum(b), c from table group by a, c;
- * groupByExprList: Column field after group by. eg: a, c;
- * outputExpressionList: Column field after select. eg: a, sum(b), c;
- * partitionExprList: Column field after partition by.
+ * For example SQL:
+ * <p>
+ * select a, sum(b), c from table group by a, c;
+ * <p>
+ * groupByExpressions: Column field after group by. eg: a, c;
+ * outputExpressions: Column field after select. eg: a, sum(b), c;
  * <p>
  * Each agg node only contains the select statement field of the same layer,
  * and other agg nodes in the subquery contain.
@@ -160,12 +162,14 @@ public class LogicalAggregate<CHILD_TYPE extends Plan> extends LogicalUnary<CHIL
         LogicalAggregate that = (LogicalAggregate) o;
         return Objects.equals(groupByExpressions, that.groupByExpressions)
                 && Objects.equals(outputExpressions, that.outputExpressions)
-                && aggPhase == that.aggPhase;
+                && aggPhase == that.aggPhase
+                && disassembled == that.disassembled
+                && normalized == that.normalized;
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(groupByExpressions, outputExpressions, aggPhase);
+        return Objects.hash(groupByExpressions, outputExpressions, aggPhase, normalized, disassembled);
     }
 
     @Override
@@ -178,7 +182,8 @@ public class LogicalAggregate<CHILD_TYPE extends Plan> extends LogicalUnary<CHIL
     @Override
     public LogicalAggregate<Plan> withGroupExpression(Optional<GroupExpression> groupExpression) {
         return new LogicalAggregate<>(groupByExpressions, outputExpressions,
-                disassembled, normalized, aggPhase, groupExpression, Optional.of(logicalProperties), children.get(0));
+                disassembled, normalized, aggPhase, groupExpression, Optional.of(getLogicalProperties()),
+                children.get(0));
     }
 
     @Override
