@@ -111,6 +111,7 @@ if ! OPTS="$(getopt \
     -l 'hive-udf' \
     -l 'clean' \
     -l 'help' \
+    -l 'no-style-check' \
     -o 'hj:' \
     -- "$@")"; then
     usage
@@ -132,6 +133,7 @@ CLEAN=0
 HELP=0
 PARAMETER_COUNT="$#"
 PARAMETER_FLAG=0
+NO_STYLE_CHECK=0
 if [[ "$#" == 1 ]]; then
     # default
     BUILD_FE=1
@@ -188,6 +190,10 @@ else
             ;;
         --clean)
             CLEAN=1
+            shift
+            ;;
+        --no-style-check)
+            NO_STYLE_CHECK=1
             shift
             ;;
         -h)
@@ -296,6 +302,7 @@ echo "Get params:
     BUILD_HIVE_UDF      -- ${BUILD_HIVE_UDF}
     PARALLEL            -- ${PARALLEL}
     CLEAN               -- ${CLEAN}
+    NO_STYLE_CHECK      -- ${NO_STYLE_CHECK}
     WITH_MYSQL          -- ${WITH_MYSQL}
     WITH_LZO            -- ${WITH_LZO}
     GLIBC_COMPATIBILITY -- ${GLIBC_COMPATIBILITY}
@@ -468,7 +475,10 @@ if [[ "${FE_MODULES}" != '' ]]; then
     if [[ "${CLEAN}" -eq 1 ]]; then
         clean_fe
     fi
-    "${MVN_CMD}" package -pl ${FE_MODULES:+${FE_MODULES}} -DskipTests
+    if [[ "${NO_STYLE_CHECK}" -ne 0 ]]; then
+        SKIP_MVN_CHECK_STYLE="-Dcheckstyle.skip"
+    fi
+    "${MVN_CMD}" package -pl ${FE_MODULES:+${FE_MODULES}} -DskipTests ${SKIP_MVN_CHECK_STYLE}
     cd "${DORIS_HOME}"
 fi
 
