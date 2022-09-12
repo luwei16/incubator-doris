@@ -489,6 +489,12 @@ public class Column implements Writable {
                 }
             }
         }
+
+        if (this.type.isArrayType()) {
+            Column child = this.getChildren().get(0);
+            builder.addChildrenColumns(child.toPb(bfColumns, indexes));
+        }
+
         OlapFile.ColumnPB col = builder.build();
         return col;
     }
