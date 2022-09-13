@@ -38,7 +38,7 @@ import org.apache.doris.thrift.TPrimitiveType;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Strings;
 import com.google.gson.annotations.SerializedName;
-//import com.google.protobuf.ByteString;
+import com.google.protobuf.ByteString;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -461,7 +461,9 @@ public class Column implements Writable {
             builder.setAggregation("NONE");
         }
         builder.setIsNullable(this.isAllowNull);
-        //builder.setDefaultValue(ByteString.copyFrom(this.defaultValue.getBytes()));
+        if (this.defaultValue != null) {
+            builder.setDefaultValue(ByteString.copyFrom(this.defaultValue.getBytes()));
+        }
         builder.setPrecision(this.getPrecision());
         builder.setFrac(this.getScale());
 
