@@ -38,35 +38,38 @@ suite("test_alter_table_column") {
             ADD COLUMN value3 VARCHAR(255) AFTER value2,
             MODIFY COLUMN value2 INT AFTER value3;
         """
-    int max_try_secs = 60
+
+    int max_try_secs = 600
     while (max_try_secs--) {
-        String res = getJobState(tbName1)
-        if (res == "FINISHED") {
+        String result = getJobState(tbName1)
+        if (result == "FINISHED") {
             break
         } else {
-            Thread.sleep(2000)
+            Thread.sleep(1000)
             if (max_try_secs < 1) {
-                println "test timeout," + "state:" + res
-                assertEquals("FINISHED",res)
+                println "test timeout," + "state:" + result
+                assertEquals("FINISHED", result)
             }
         }
     }
+
     Thread.sleep(200)
     sql """
             ALTER TABLE ${tbName1}   
             ORDER BY(k1,k2,value1,value2,value3),
             DROP COLUMN value3;
         """
-    max_try_secs = 60
+
+    max_try_secs = 600
     while (max_try_secs--) {
-        String res = getJobState(tbName1)
-        if (res == "FINISHED") {
+        String result = getJobState(tbName1)
+        if (result == "FINISHED") {
             break
         } else {
-            Thread.sleep(2000)
+            Thread.sleep(1000)
             if (max_try_secs < 1) {
-                println "test timeout," + "state:" + res
-                assertEquals("FINISHED",res)
+                println "test timeout," + "state:" + result
+                assertEquals("FINISHED", result)
             }
         }
     }
@@ -93,16 +96,17 @@ suite("test_alter_table_column") {
             ADD COLUMN k2 INT KEY AFTER k1,
             ADD COLUMN value2 INT SUM AFTER value1;
         """
-    max_try_secs = 60
+
+    max_try_secs = 600
     while (max_try_secs--) {
-        String res = getJobState(tbName2)
-        if (res == "FINISHED") {
+        String result = getJobState(tbName1)
+        if (result == "FINISHED") {
             break
         } else {
-            Thread.sleep(2000)
+            Thread.sleep(1000)
             if (max_try_secs < 1) {
-                println "test timeout," + "state:" + res
-                assertEquals("FINISHED",res)
+                println "test timeout," + "state:" + result
+                assertEquals("FINISHED", result)
             }
         }
     }
@@ -158,19 +162,21 @@ suite("test_alter_table_column") {
     check2_doris(res1, res2)
 
     sql "alter table ${tbName3} add column v2 int sum NULL"
-    max_try_secs = 60
+
+    max_try_secs = 600
     while (max_try_secs--) {
-        String res = getJobState(tbName3)
-        if (res == "FINISHED") {
+        String result = getJobState(tbName1)
+        if (result == "FINISHED") {
             break
         } else {
-            Thread.sleep(2000)
+            Thread.sleep(1000)
             if (max_try_secs < 1) {
-                println "test timeout," + "state:" + res
-                assertEquals("FINISHED",res)
+                println "test timeout," + "state:" + result
+                assertEquals("FINISHED", result)
             }
         }
     }
+
     def res3 = sql "select * from ${tbName3} order by k1"
     def res4 = sql "select k1, k2, k3, null from baseall order by k1"
     check2_doris(res3, res4)
