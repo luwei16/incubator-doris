@@ -158,8 +158,8 @@ Status ColumnReader::read_page(const ColumnIteratorOptions& iter_opts, const Pag
     opts.query_id = iter_opts.query_id;
     opts.verify_checksum = _opts.verify_checksum;
     opts.use_page_cache = iter_opts.use_page_cache;
-    opts.kept_in_memory = _opts.kept_in_memory;
-    opts.is_persistent = _opts.is_persistent;
+    opts.kept_in_memory = iter_opts.kept_in_memory;
+    opts.is_persistent = iter_opts.is_persistent;
     opts.type = iter_opts.type;
     opts.encoding_info = _encoding_info;
 
@@ -180,8 +180,8 @@ Status ColumnReader::read_pages(const ColumnIteratorOptions& iter_opts,
     opts.query_id = iter_opts.query_id;
     opts.verify_checksum = _opts.verify_checksum;
     opts.use_page_cache = iter_opts.use_page_cache;
-    opts.kept_in_memory = _opts.kept_in_memory;
-    opts.is_persistent = _opts.is_persistent;
+    opts.kept_in_memory = iter_opts.kept_in_memory;
+    opts.is_persistent = iter_opts.is_persistent;
     opts.type = iter_opts.type;
     opts.encoding_info = _encoding_info;
 

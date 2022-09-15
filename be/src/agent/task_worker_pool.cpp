@@ -889,8 +889,7 @@ void TaskWorkerPool::_update_tablet_meta_worker_thread_callback() {
                     break;
                 case TTabletMetaType::INMEMORY:
                     if (tablet_meta_info.storage_policy.empty()) {
-                        tablet->tablet_meta()->mutable_tablet_schema()->set_is_in_memory(
-                                tablet_meta_info.is_in_memory);
+                        tablet->tablet_meta()->set_is_in_memory(tablet_meta_info.is_in_memory);
                     } else {
                         LOG(INFO) << "set tablet cooldown resource "
                                   << tablet_meta_info.storage_policy;
@@ -898,8 +897,7 @@ void TaskWorkerPool::_update_tablet_meta_worker_thread_callback() {
                     }
                     break;
                 case TTabletMetaType::PERSISTENT:
-                    tablet->tablet_meta()->mutable_tablet_schema()->set_is_persistent(
-                            tablet_meta_info.is_persistent);
+                    tablet->tablet_meta()->set_is_persistent(tablet_meta_info.is_persistent);
                     break;
                 }
             }

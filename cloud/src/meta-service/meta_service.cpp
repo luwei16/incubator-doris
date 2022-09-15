@@ -1540,9 +1540,9 @@ void MetaServiceImpl::update_tablet(::google::protobuf::RpcController* controlle
             return;
         }
         if (tablet_meta_info.has_is_in_memory()) {
-            tablet_meta.mutable_schema()->set_is_in_memory(tablet_meta_info.is_in_memory());
+            tablet_meta.set_is_in_memory(tablet_meta_info.is_in_memory());
         } else if (tablet_meta_info.has_is_persistent()) {
-            tablet_meta.mutable_schema()->set_is_persistent(tablet_meta_info.is_persistent());
+            tablet_meta.set_is_persistent(tablet_meta_info.is_persistent());
         }
         int64_t table_id = tablet_meta.table_id();
         int64_t index_id = tablet_meta.index_id();
@@ -1559,8 +1559,13 @@ void MetaServiceImpl::update_tablet(::google::protobuf::RpcController* controlle
             return;
         }
         txn->put(key, val);
+        LOG(INFO) << "xxx put tablet_key=" << hex(key);
     }
-    txn->commit();
+    if (txn->commit() != 0) {
+        status.set_code(MetaServiceCode::KV_TXN_COMMIT_ERR);
+        status.set_msg("failed to update tablet meta");
+        return;
+    }
 }
 
 void MetaServiceImpl::get_tablet(::google::protobuf::RpcController* controller,

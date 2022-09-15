@@ -75,11 +75,13 @@ import org.apache.doris.mysql.privilege.PrivPredicate;
 import org.apache.doris.persist.RemoveAlterJobV2OperationLog;
 import org.apache.doris.persist.TableAddOrDropColumnsInfo;
 import org.apache.doris.qe.ConnectContext;
+import org.apache.doris.rpc.RpcException;
 import org.apache.doris.task.AgentBatchTask;
 import org.apache.doris.task.AgentTaskExecutor;
 import org.apache.doris.task.AgentTaskQueue;
 import org.apache.doris.task.ClearAlterTask;
 import org.apache.doris.task.UpdateTabletMetaInfoTask;
+import org.apache.doris.thrift.TNetworkAddress;
 import org.apache.doris.thrift.TStorageFormat;
 import org.apache.doris.thrift.TStorageMedium;
 import org.apache.doris.thrift.TTaskType;
@@ -93,6 +95,8 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import com.selectdb.cloud.catalog.CloudReplica;
+import com.selectdb.cloud.proto.SelectdbCloud;
+import com.selectdb.cloud.rpc.MetaServiceProxy;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -931,8 +935,8 @@ public class SchemaChangeHandler extends AlterHandler {
         /*
          * add new column to indexes.
          * UNIQUE:
-         *      1. If new column is key, it should be added to all indexes.
-         *      2. Else, add the new column to base index and specified rollup index.
+         * 1. If new column is key, it should be added to all indexes.
+         * 2. Else, add the new column to base index and specified rollup index.
          * DUPLICATE:
          *      1. If not specify rollup index, just add it to base index.
          *      2. Else, first add it to specify rollup index. Then if the new column is key, add it to base
@@ -1967,11 +1971,14 @@ public class SchemaChangeHandler extends AlterHandler {
      * This operation may return partial successfully, with a exception to inform user to retry
      */
     public void updatePartitionInMemoryMeta(Database db,
-                                            String tableName,
-                                            String partitionName,
-                                            String storagePolicy,
-                                            boolean isInMemory) throws UserException {
-
+            String tableName,
+            String partitionName,
+            String storagePolicy,
+            boolean isInMemory) throws UserException {
+        if (!Config.cloud_unique_id.isEmpty()) {
+            updateCloudPartitionInMemoryMeta(db, tableName, partitionName, isInMemory);
+            return;
+        }
         // be id -> <tablet id,schemaHash>
         Map<Long, Set<Pair<Long, Integer>>> beIdToTabletIdWithHash = Maps.newHashMap();
         OlapTable olapTable = (OlapTable) db.getTableOrMetaException(tableName, Table.TableType.OLAP);
@@ -2046,15 +2053,115 @@ public class SchemaChangeHandler extends AlterHandler {
         }
     }
 
+    public void updateCloudPartitionInMemoryMeta(Database db,
+            String tableName,
+            String partitionName,
+            boolean isInMemory) throws UserException {
+        UpdatePartitionMetaParam param = new UpdatePartitionMetaParam();
+        param.isInMemory = isInMemory;
+        param.type = UpdatePartitionMetaParam.TabletMetaType.INMEMORY;
+        updateCloudPartitionMeta(db, tableName, partitionName, param);
+    }
+
+    private static class UpdatePartitionMetaParam {
+        public enum TabletMetaType {
+            INMEMORY,
+            PERSISTENT,
+        }
+
+        TabletMetaType type;
+        boolean isPersistent = false;
+        boolean isInMemory = false;
+    }
+
+    public void updateCloudPartitionMeta(Database db,
+            String tableName,
+            String partitionName,
+            UpdatePartitionMetaParam param) throws UserException {
+        List<Long> tabletIds = new ArrayList<>();
+        OlapTable olapTable = (OlapTable) db.getTableOrMetaException(tableName, Table.TableType.OLAP);
+        olapTable.readLock();
+        try {
+            Partition partition = olapTable.getPartition(partitionName);
+            if (partition == null) {
+                throw new DdlException(
+                        "Partition[" + partitionName + "] does not exist in table[" + olapTable.getName() + "]");
+            }
+            for (MaterializedIndex index : partition.getMaterializedIndices(IndexExtState.VISIBLE)) {
+                for (Tablet tablet : index.getTablets()) {
+                    tabletIds.add(tablet.getId());
+                }
+            }
+        } finally {
+            olapTable.readUnlock();
+        }
+        for (int index = 0; index < tabletIds.size();) {
+            int nextIndex = tabletIds.size() - index > Config.cloud_txn_tablet_batch_size
+                    ? index + Config.cloud_txn_tablet_batch_size
+                    : tabletIds.size();
+            SelectdbCloud.UpdateTabletRequest.Builder requestBuilder = SelectdbCloud.UpdateTabletRequest.newBuilder();
+            while (index < nextIndex) {
+                SelectdbCloud.TabletMetaInfoPB.Builder infoBuilder = SelectdbCloud.TabletMetaInfoPB.newBuilder();
+                infoBuilder.setTabletId(tabletIds.get(index));
+                switch (param.type) {
+                    case PERSISTENT:
+                        infoBuilder.setIsPersistent(param.isPersistent);
+                        break;
+                    case INMEMORY:
+                        infoBuilder.setIsInMemory(param.isInMemory);
+                        break;
+                    default:
+                        throw new RuntimeException("Unknown TabletMetaType");
+                }
+                SelectdbCloud.TabletMetaInfoPB tabletMetaInfo = infoBuilder.build();
+                requestBuilder.addTabletMetaInfos(tabletMetaInfo);
+                index++;
+            }
+            requestBuilder.setCloudUniqueId(Config.cloud_unique_id);
+            SelectdbCloud.UpdateTabletRequest updateTabletReq = requestBuilder.build();
+            LOG.info("UpdateTabletRequest: {} ", updateTabletReq);
+
+            String metaEndPoint = Config.meta_service_endpoint;
+            String[] splitMetaEndPoint = metaEndPoint.split(":");
+            TNetworkAddress metaAddress = new TNetworkAddress(splitMetaEndPoint[0],
+                    Integer.parseInt(splitMetaEndPoint[1]));
+
+            SelectdbCloud.MetaServiceGenericResponse response;
+            try {
+                response = MetaServiceProxy.getInstance().updateTablet(metaAddress, updateTabletReq);
+            } catch (RpcException e) {
+                throw new RuntimeException(e);
+            }
+            LOG.info("response: {} ", response);
+
+            if (response.getStatus().getCode() != SelectdbCloud.MetaServiceCode.OK) {
+                throw new DdlException(response.getStatus().getMsg());
+            }
+        }
+    }
+
+    public void updateCloudPartitionPersistentMeta(Database db,
+            String tableName,
+            String partitionName,
+            boolean isPersistent) throws UserException {
+        UpdatePartitionMetaParam param = new UpdatePartitionMetaParam();
+        param.isPersistent = isPersistent;
+        param.type = UpdatePartitionMetaParam.TabletMetaType.PERSISTENT;
+        updateCloudPartitionMeta(db, tableName, partitionName, param);
+    }
+
     /**
      * Update one specified partition's persistent property by partition name of table
      * This operation may return partial successfully, with a exception to inform user to retry
      */
     public void updatePartitionPersistentMeta(Database db,
-                                            String tableName,
-                                            String partitionName,
-                                            boolean isPersistent) throws UserException {
-
+            String tableName,
+            String partitionName,
+            boolean isPersistent) throws UserException {
+        if (!Config.cloud_unique_id.isEmpty()) {
+            updateCloudPartitionPersistentMeta(db, tableName, partitionName, isPersistent);
+            return;
+        }
         // be id -> <tablet id,schemaHash>
         Map<Long, Set<Pair<Long, Integer>>> beIdToTabletIdWithHash = Maps.newHashMap();
         OlapTable olapTable = (OlapTable) db.getTableOrMetaException(tableName, Table.TableType.OLAP);

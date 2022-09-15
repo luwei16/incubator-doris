@@ -23,6 +23,7 @@
 #include "olap/file_helper.h"
 #include "olap/olap_common.h"
 #include "olap/olap_define.h"
+#include "olap/tablet.h"
 #include "olap/tablet_meta_manager.h"
 #include "util/string_util.h"
 #include "util/uid_util.h"
@@ -43,7 +44,8 @@ Status TabletMeta::create(const TCreateTabletReq& request, const TabletUid& tabl
             request.tablet_schema.schema_hash, shard_id, request.tablet_schema, next_unique_id,
             col_ordinal_to_unique_id, tablet_uid,
             request.__isset.tablet_type ? request.tablet_type : TTabletType::TABLET_TYPE_DISK,
-            request.compression_type, request.storage_policy,
+            request.compression_type, request.is_in_memory, request.is_persistent,
+            request.storage_policy,
             request.__isset.enable_unique_key_merge_on_write
                     ? request.enable_unique_key_merge_on_write
                     : false));
@@ -60,7 +62,8 @@ TabletMeta::TabletMeta(int64_t table_id, int64_t partition_id, int64_t tablet_id
                        const TTabletSchema& tablet_schema, uint32_t next_unique_id,
                        const std::unordered_map<uint32_t, uint32_t>& col_ordinal_to_unique_id,
                        TabletUid tablet_uid, TTabletType::type tabletType,
-                       TCompressionType::type compression_type, const std::string& storage_policy,
+                       TCompressionType::type compression_type, bool is_in_memory,
+                       bool is_persistent, const std::string& storage_policy,
                        bool enable_unique_key_merge_on_write)
         : _tablet_uid(0, 0),
           _schema(new TabletSchema),
@@ -82,6 +85,8 @@ TabletMeta::TabletMeta(int64_t table_id, int64_t partition_id, int64_t tablet_id
                                            : TabletTypePB::TABLET_TYPE_MEMORY);
     tablet_meta_pb.set_enable_unique_key_merge_on_write(enable_unique_key_merge_on_write);
     tablet_meta_pb.set_storage_policy(storage_policy);
+    tablet_meta_pb.set_is_in_memory(is_in_memory);
+    tablet_meta_pb.set_is_persistent(is_persistent);
     TabletSchemaPB* schema = tablet_meta_pb.mutable_schema();
     schema->set_num_short_key_columns(tablet_schema.short_key_column_count);
     schema->set_num_rows_per_row_block(config::default_num_rows_per_column_file_block);
@@ -179,15 +184,8 @@ TabletMeta::TabletMeta(int64_t table_id, int64_t partition_id, int64_t tablet_id
         schema->set_bf_fpp(tablet_schema.bloom_filter_fpp);
     }
 
-    if (tablet_schema.__isset.is_in_memory) {
-        schema->set_is_in_memory(tablet_schema.is_in_memory);
-    }
-
     if (tablet_schema.__isset.disable_auto_compaction) {
         schema->set_disable_auto_compaction(tablet_schema.disable_auto_compaction);
-    }
-    if (tablet_schema.__isset.is_persistent) {
-        schema->set_is_persistent(tablet_schema.is_persistent);
     }
 
     if (tablet_schema.__isset.delete_sign_idx) {
@@ -215,7 +213,9 @@ TabletMeta::TabletMeta(const TabletMeta& b)
           _preferred_rowset_type(b._preferred_rowset_type),
           _storage_policy(b._storage_policy),
           _enable_unique_key_merge_on_write(b._enable_unique_key_merge_on_write),
-          _delete_bitmap(b._delete_bitmap) {};
+          _delete_bitmap(b._delete_bitmap),
+          _is_in_memory(b._is_in_memory),
+          _is_persistent(b._is_persistent) {};
 
 void TabletMeta::init_column_from_tcolumn(uint32_t unique_id, const TColumn& tcolumn,
                                           ColumnPB* column) {
@@ -456,6 +456,8 @@ void TabletMeta::init_from_pb(const TabletMetaPB& tablet_meta_pb) {
         LOG(WARNING) << "tablet has no state. tablet=" << tablet_id()
                      << ", schema_hash=" << schema_hash();
     }
+    _is_in_memory = tablet_meta_pb.is_in_memory();
+    _is_persistent = tablet_meta_pb.is_persistent();
 
     // init _schema
     _schema->init_from_pb(tablet_meta_pb.schema());
@@ -535,6 +537,8 @@ void TabletMeta::to_meta_pb(TabletMetaPB* tablet_meta_pb) {
         tablet_meta_pb->set_tablet_state(PB_SHUTDOWN);
         break;
     }
+    tablet_meta_pb->set_is_in_memory(_is_in_memory);
+    tablet_meta_pb->set_is_persistent(_is_persistent);
 
 #ifndef CLOUD_MODE
     for (auto& rs : _rs_metas) {
@@ -833,6 +837,8 @@ bool operator==(const TabletMeta& a, const TabletMeta& b) {
     if (a._in_restore_mode != b._in_restore_mode) return false;
     if (a._preferred_rowset_type != b._preferred_rowset_type) return false;
     if (a._storage_policy != b._storage_policy) return false;
+    if (a._is_in_memory != b._is_in_memory) return false;
+    if (a._is_persistent != b._is_persistent) return false;
     return true;
 }
 

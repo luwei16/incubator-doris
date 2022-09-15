@@ -455,6 +455,8 @@ public class Alter {
                         || properties.containsKey(PropertyAnalyzer.PROPERTIES_STORAGE_POLICY));
                 ((SchemaChangeHandler) schemaChangeHandler).updatePartitionsInMemoryMeta(
                         db, tableName, partitionNames, properties);
+                ((SchemaChangeHandler) schemaChangeHandler).updatePartitionsPersistentMeta(
+                        db, tableName, partitionNames, properties);
                 OlapTable olapTable = (OlapTable) table;
                 olapTable.writeLockOrDdlException();
                 try {
@@ -469,6 +471,7 @@ public class Alter {
                         || properties.containsKey(PropertyAnalyzer.PROPERTIES_PERSISTENT)
                         || properties.containsKey(PropertyAnalyzer.PROPERTIES_STORAGE_POLICY));
                 ((SchemaChangeHandler) schemaChangeHandler).updateTableInMemoryMeta(db, tableName, properties);
+                ((SchemaChangeHandler) schemaChangeHandler).updateTablePersistentMeta(db, tableName, properties);
             } else {
                 throw new DdlException("Invalid alter operation: " + alterClause.getOpType());
             }

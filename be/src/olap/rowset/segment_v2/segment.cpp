@@ -217,8 +217,6 @@ Status Segment::_create_column_readers() {
         }
 
         ColumnReaderOptions opts;
-        opts.kept_in_memory = _tablet_schema->is_in_memory();
-        opts.is_persistent = _tablet_schema->is_persistent();
         std::unique_ptr<ColumnReader> reader;
         RETURN_IF_ERROR(ColumnReader::create(opts, _footer.columns(iter->second),
                                              _footer.num_rows(), _file_reader, &reader));

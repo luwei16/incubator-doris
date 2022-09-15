@@ -378,6 +378,9 @@ public:
 
     void update_max_version_schema(const TabletSchemaSPtr& tablet_schema);
 
+    bool is_in_memory() const { return _tablet_meta->is_in_memory(); }
+    bool is_persistent() const { return _tablet_meta->is_persistent(); }
+
 private:
     Status _init_once_action();
     void _print_missed_versions(const std::vector<Version>& missed_versions) const;
@@ -428,7 +431,7 @@ private:
     std::mutex _cumulative_compaction_lock;
     std::mutex _schema_change_lock;
     std::shared_mutex _migration_lock;
-    
+
     // CLOUD_MODE
     // this mutex MUST ONLY be used in `Tablet::cloud_sync_rowsets`
     std::mutex _sync_rowsets_lock;

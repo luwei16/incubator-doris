@@ -89,6 +89,16 @@ public class MetaServiceClient {
         return blockingStub.createTablet(request);
     }
 
+    public SelectdbCloud.MetaServiceGenericResponse updateTablet(SelectdbCloud.UpdateTabletRequest request) {
+        if (!request.hasCloudUniqueId()) {
+            SelectdbCloud.UpdateTabletRequest.Builder builder =
+                    SelectdbCloud.UpdateTabletRequest.newBuilder();
+            builder.mergeFrom(request);
+            return blockingStub.updateTablet(builder.setCloudUniqueId(Config.cloud_unique_id).build());
+        }
+        return blockingStub.updateTablet(request);
+    }
+
     public SelectdbCloud.BeginTxnResponse
             beginTxn(SelectdbCloud.BeginTxnRequest request) {
         if (!request.hasCloudUniqueId()) {

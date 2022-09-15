@@ -66,6 +66,8 @@ struct RowsetReaderContext {
     bool record_rowids = false;
     std::shared_ptr<RowBlockV2> reuse_block;
     std::shared_ptr<Schema> reuse_input_schema;
+    bool kept_in_memory = false;
+    bool is_persistent = false;
 };
 
 } // namespace doris

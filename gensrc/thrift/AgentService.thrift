@@ -33,13 +33,11 @@ struct TTabletSchema {
     5: required list<Descriptors.TColumn> columns
     6: optional double bloom_filter_fpp
     7: optional list<Descriptors.TOlapTableIndex> indexes
-    8: optional bool is_in_memory
-    9: optional i32 delete_sign_idx = -1
-    10: optional i32 sequence_col_idx = -1
-    11: optional Types.TSortType sort_type
-    12: optional i32 sort_col_num
-    13: optional bool disable_auto_compaction
-    14: optional bool is_persistent
+    8: optional i32 delete_sign_idx = -1
+    9: optional i32 sequence_col_idx = -1
+    10: optional Types.TSortType sort_type
+    11: optional i32 sort_col_num
+    12: optional bool disable_auto_compaction
 }
 
 // this enum stands for different storage format in src_backends
@@ -118,6 +116,8 @@ struct TCreateTabletReq {
     17: optional Types.TReplicaId replica_id = 0
     18: optional string storage_policy
     19: optional bool enable_unique_key_merge_on_write = false
+    20: optional bool is_in_memory = false
+    21: optional bool is_persistent = false
 }
 
 struct TDropTabletReq {

@@ -3459,6 +3459,8 @@ public class InternalCatalog implements CatalogIf<Database> {
         builder.setCreationTime(System.currentTimeMillis() / 1000);
         builder.setCumulativeLayerPoint(-1);
         builder.setTabletState(OlapFile.TabletStatePB.PB_RUNNING);
+        builder.setIsInMemory(isInMemory);
+        builder.setIsPersistent(isPersistent);
 
         UUID uuid = UUID.randomUUID();
         Types.PUniqueId tabletUid = Types.PUniqueId.newBuilder()
@@ -3503,8 +3505,6 @@ public class InternalCatalog implements CatalogIf<Database> {
         }
         schemaBuilder.setDeleteSignIdx(deleteSign);
         schemaBuilder.setSequenceColIdx(sequenceCol);
-        schemaBuilder.setIsInMemory(isInMemory);
-        schemaBuilder.setIsPersistent(isPersistent);
 
         if (dataSortInfo.getSortType() == TSortType.LEXICAL) {
             schemaBuilder.setSortType(OlapFile.SortType.LEXICAL);

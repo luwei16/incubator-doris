@@ -89,7 +89,7 @@ public:
                uint32_t next_unique_id,
                const std::unordered_map<uint32_t, uint32_t>& col_ordinal_to_unique_id,
                TabletUid tablet_uid, TTabletType::type tabletType,
-               TCompressionType::type compression_type,
+               TCompressionType::type compression_type, bool is_in_memory, bool is_persistent,
                const std::string& storage_policy = std::string(),
                bool enable_unique_key_merge_on_write = false);
     // If need add a filed in TableMeta, filed init copy in copy construct function
@@ -214,6 +214,12 @@ public:
     void update_delete_bitmap(const std::vector<RowsetSharedPtr>& input_rowsets,
                               const Version& version, const RowIdConversion& rowid_conversion);
 
+    bool is_in_memory() const { return _is_in_memory; }
+    bool is_persistent() const { return _is_persistent; }
+
+    void set_is_in_memory(bool is_in_memory) { _is_in_memory = is_in_memory; }
+    void set_is_persistent(bool is_persistent) { _is_persistent = is_persistent; }
+
 private:
     Status _save_meta(DataDir* data_dir);
 
@@ -255,6 +261,9 @@ private:
     // query performance significantly.
     bool _enable_unique_key_merge_on_write = false;
     std::shared_ptr<DeleteBitmap> _delete_bitmap;
+
+    bool _is_in_memory = false;
+    bool _is_persistent = false;
 
     mutable std::shared_mutex _meta_lock;
 };

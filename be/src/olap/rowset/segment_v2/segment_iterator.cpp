@@ -351,6 +351,8 @@ Status SegmentIterator::_prepare_seek(const StorageReadOptions::KeyRange& key_ra
             iter_opts.stats = _opts.stats;
             iter_opts.file_reader = _file_reader.get();
             iter_opts.query_id = _opts.query_id;
+            iter_opts.kept_in_memory = _opts.kept_in_memory;
+            iter_opts.is_persistent = _opts.is_persistent;
             RETURN_IF_ERROR(_column_iterators[unique_id]->init(iter_opts));
         }
     }
@@ -464,6 +466,8 @@ Status SegmentIterator::_init_return_column_iterators() {
             iter_opts.use_page_cache = _opts.use_page_cache;
             iter_opts.file_reader = _file_reader.get();
             iter_opts.query_id = _opts.query_id;
+            iter_opts.kept_in_memory = _opts.kept_in_memory;
+            iter_opts.is_persistent = _opts.is_persistent;
             RETURN_IF_ERROR(_column_iterators[unique_id]->init(iter_opts));
         }
     }

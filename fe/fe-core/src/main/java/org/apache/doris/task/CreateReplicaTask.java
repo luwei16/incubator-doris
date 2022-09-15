@@ -233,8 +233,6 @@ public class CreateReplicaTask extends AgentTask {
         if (bfColumns != null) {
             tSchema.setBloomFilterFpp(bfFpp);
         }
-        tSchema.setIsInMemory(isInMemory);
-        tSchema.setIsPersistent(isPersistent);
         tSchema.setDisableAutoCompaction(disableAutoCompaction);
         createTabletReq.setTabletSchema(tSchema);
 
@@ -261,6 +259,8 @@ public class CreateReplicaTask extends AgentTask {
         createTabletReq.setTabletType(tabletType);
         createTabletReq.setCompressionType(compressionType);
         createTabletReq.setEnableUniqueKeyMergeOnWrite(enableUniqueKeyMergeOnWrite);
+        createTabletReq.setIsInMemory(isInMemory);
+        createTabletReq.setIsPersistent(isPersistent);
         return createTabletReq;
     }
 }

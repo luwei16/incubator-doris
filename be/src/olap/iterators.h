@@ -91,6 +91,9 @@ public:
     bool read_orderby_key_reverse = false;
     // columns for orderby keys
     std::vector<uint32_t>* read_orderby_key_columns = nullptr;
+
+    bool kept_in_memory = false;
+    bool is_persistent = false;
 };
 
 // Used to read data in RowBlockV2 one by one
