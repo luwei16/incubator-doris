@@ -580,7 +580,8 @@ instance_id | instance_id | 是 |
 cluster | cluster对象 | 是 | 
 cluster.cluster_name |  将添加mysql user name的cluster name | 是 |
 cluster.cluster_id | 将添加mysql user name的cluster id | 是 |
-cluster.mysql_user_name | mysql user name | 是 | 字符串数组
+cluster.type | cluster类型| 是 | 
+cluster.node | cluster中节点信息 | 是 | 数组
 
 
 * 请求示例

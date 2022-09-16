@@ -2513,6 +2513,7 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
         auto st = google::protobuf::util::JsonStringToMessage(request_body, &req);
         if (!st.ok()) {
             msg = "failed to GetObjStoreInfoRequest, error: " + st.message().ToString();
+            ret = MetaServiceCode::PROTOBUF_PARSE_ERR;
             response_body = msg;
             LOG(WARNING) << msg;
             return;
@@ -2529,6 +2530,7 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
         auto st = google::protobuf::util::JsonStringToMessage(request_body, &req);
         if (!st.ok()) {
             msg = "failed to SetObjStoreInfoRequest, error: " + st.message().ToString();
+            ret = MetaServiceCode::PROTOBUF_PARSE_ERR;
             response_body = msg;
             LOG(WARNING) << msg;
             return;
@@ -2546,6 +2548,7 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
         auto st = google::protobuf::util::JsonStringToMessage(request_body, &req);
         if (!st.ok()) {
             msg = "failed to SetObjStoreInfoRequest, error: " + st.message().ToString();
+            ret = MetaServiceCode::PROTOBUF_PARSE_ERR;
             response_body = msg;
             LOG(WARNING) << msg;
             return;
@@ -2585,6 +2588,7 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
         auto st = google::protobuf::util::JsonStringToMessage(request_body, &req);
         if (!st.ok()) {
             msg = "failed to CreateInstanceRequest, error: " + st.message().ToString();
+            ret = MetaServiceCode::PROTOBUF_PARSE_ERR;
             response_body = msg;
             LOG(WARNING) << msg;
             return;
@@ -2602,6 +2606,7 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
         auto st = google::protobuf::util::JsonStringToMessage(request_body, &req);
         if (!st.ok()) {
             msg = "failed to parse AlterClusterRequest, error: " + st.message().ToString();
+            ret = MetaServiceCode::PROTOBUF_PARSE_ERR;
             response_body = msg;
             LOG(WARNING) << msg;
             return;
@@ -2620,6 +2625,7 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
         auto st = google::protobuf::util::JsonStringToMessage(request_body, &req);
         if (!st.ok()) {
             msg = "failed to parse AlterClusterRequest, error: " + st.message().ToString();
+            ret = MetaServiceCode::PROTOBUF_PARSE_ERR;
             response_body = msg;
             LOG(WARNING) << msg;
             return;
@@ -2638,6 +2644,7 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
         auto st = google::protobuf::util::JsonStringToMessage(request_body, &req);
         if (!st.ok()) {
             msg = "failed to parse AlterClusterRequest, error: " + st.message().ToString();
+            ret = MetaServiceCode::PROTOBUF_PARSE_ERR;
             response_body = msg;
             LOG(WARNING) << msg;
             return;
@@ -2657,6 +2664,7 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
         auto st = google::protobuf::util::JsonStringToMessage(request_body, &req);
         if (!st.ok()) {
             msg = "failed to GetClusterRequest, error: " + st.message().ToString();
+            ret = MetaServiceCode::PROTOBUF_PARSE_ERR;
             response_body = msg;
             LOG(WARNING) << msg;
             return;
@@ -2674,6 +2682,7 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
         auto st = google::protobuf::util::JsonStringToMessage(request_body, &req);
         if (!st.ok()) {
             msg = "failed to parse AlterClusterRequest, error: " + st.message().ToString();
+            ret = MetaServiceCode::PROTOBUF_PARSE_ERR;
             response_body = msg;
             LOG(WARNING) << msg;
             return;
@@ -2692,6 +2701,7 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
         auto st = google::protobuf::util::JsonStringToMessage(request_body, &req);
         if (!st.ok()) {
             msg = "failed to parse AlterClusterRequest, error: " + st.message().ToString();
+            ret = MetaServiceCode::PROTOBUF_PARSE_ERR;
             response_body = msg;
             LOG(WARNING) << msg;
             return;
@@ -2711,6 +2721,7 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
         auto st = google::protobuf::util::JsonStringToMessage(request_body, &req);
         if (!st.ok()) {
             msg = "failed to parse AlterClusterRequest, error: " + st.message().ToString();
+            ret = MetaServiceCode::PROTOBUF_PARSE_ERR;
             response_body = msg;
             LOG(WARNING) << msg;
             return;

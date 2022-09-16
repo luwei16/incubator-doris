@@ -1,40 +1,55 @@
 import groovy.json.JsonOutput
-import org.codehaus.groovy.runtime.IOGroovyMethods
 suite("cloud_cluster_test", "cloud_cluster") {
-    def getMsUrls = { api, token, jsonStr ->
-        StringBuilder sb = new StringBuilder();
-        sb.append("curl -X GET http://")
-        sb.append(context.config.metaServiceHttpAddress)
-        sb.append("/MetaService/http/$api?token=")
-        sb.append(token)
-        sb.append(" -d ")
-        sb.append(jsonStr)
-        return sb.toString()
-    }
-
     def token = "greedisgood9999"
     def instance_id = "instance_id_deadbeef"
     def name = "user_1"
     def user_id = "10000"
 
     // create instance
-    // curl -X GET '127.0.0.1:5000/MetaService/http/create_instance?token=greedisgood9999' -d '{"instance_id":"dx_dnstance_id_deadbeef_1","name":"dengxin","user_id":"999999"}'
+    /*
+        curl -X GET '127.0.0.1:5000/MetaService/http/create_instance?token=greedisgood9999' -d '{
+            "instance_id": "instance_id_deadbeef",
+            "name": "user_1",
+            "user_id": "10000",
+            "obj_info": {
+                "ak": "test-ak1",
+                "sk": "test-sk1",
+                "bucket": "test-bucket",
+                "prefix": "test-prefix",
+                "endpoint": "test-endpoint",
+                "region": "test-region"
+            }
+        }'
+     */
+
     def jsonOutput = new JsonOutput()
-    def map = [instance_id: "${instance_id}", name: "${name}", user_id: "${user_id}"]
+    def s3 = [ak: "test-ak1",
+              sk : "test-sk1",
+              bucket : "test-bucket",
+              prefix: "test-prefix",
+              endpoint: "test-endpoint",
+              region: "test-region"]
+    def map = [instance_id: "${instance_id}", name: "${name}", user_id: "${user_id}", obj_info: s3]
     def js = jsonOutput.toJson(map)
-    
-    String command = getMsUrls.call("create_instance", token, js)
-    logger.info("create instance url : " + command.toString())
-    def process = command.execute()
-    int code = process.waitFor()
-    String err = IOGroovyMethods.getText(new BufferedReader(new InputStreamReader(process.getErrorStream())));
-    String out = process.getText()
-    logger.info("Run create instance : code=" + code + ", out=" + out + ", err=" + err)
-    def s1 = """instance already existed, instance_id=${instance_id}"""
-    assertTrue(out.equalsIgnoreCase("OK") || out.startsWith(s1))
+
+    def create_instance_api = { request_body, check_func ->
+        httpTest {
+            uri "/MetaService/http/create_instance?token=$token"
+            body request_body
+            check check_func
+        }
+    }
+
+    create_instance_api.call(js) {
+        respCode, body ->
+            log.info("http cli result: ${body} ${respCode}".toString())
+            def json = parseJson(body)
+            assertTrue(json.code.equalsIgnoreCase("OK") || json.code.equalsIgnoreCase("ALREADY_EXISTED"))
+    }
+
     def clusterName = "cluster_name1"
     def clusterId = "cluster_id1"
-    def opType = 1
+    def opType = "COMPUTE"
     def cloudUniqueId = "cloud_unique_id_compute_node0"
     def ip = "172.0.0.10"
     def heartbeatPort = 9050
@@ -43,207 +58,559 @@ suite("cloud_cluster_test", "cloud_cluster") {
     def clusterMap = [cluster_name: "${clusterName}", cluster_id:"${clusterId}", nodes:nodeList]
     def instance = [instance_id: "${instance_id}", op:"${opType}", cluster: clusterMap]
 
-    
+
     // add no be cluster
-    // curl -X GET http://127.0.0.1:5000/MetaService/http/add_cluster?token=greedisgood9999 -d '{"instance_id":"instance_id_deadbeef","op":"1","cluster":{"cluster_name":"cluster_name1","cluster_id":"cluster_id1","nodes":[]}}'
+    /*
+        curl -X GET http://127.0.0.1:5000/MetaService/http/add_cluster?token=greedisgood9999 -d '{
+            "instance_id": "instance_id_deadbeef",
+            "cluster": {
+                "cluster_name": "cluster_name1",
+                "cluster_id": "cluster_id1",
+                "type": "COMPUTE",
+                "nodes": []
+            }
+        }'
+     */
     nodeList = []
-    clusterMap = [cluster_name: "${clusterName}", cluster_id:"${clusterId}", nodes:nodeList]
-    instance = [instance_id: "${instance_id}", op:"${opType}", cluster: clusterMap]
-    jsonOutput = new JsonOutput()
-    js = jsonOutput.toJson(instance)
-    command = getMsUrls.call("add_cluster", token, js)
-    logger.info("add cluster url : " + command.toString())
-    process = command.execute()
-    code = process.waitFor()
-    err = IOGroovyMethods.getText(new BufferedReader(new InputStreamReader(process.getErrorStream())));
-    out = process.getText()
-    logger.info("Run add cluster : code=" + code + ", out=" + out + ", err=" + err)
-    assertTrue(out.startsWith("OK") || out.startsWith("try to add a existing cluster"))
-
-    opType = 2
+    clusterMap = [cluster_name: "${clusterName}", cluster_id:"${clusterId}", type:"COMPUTE", nodes:nodeList]
+    instance = [instance_id: "${instance_id}", cluster: clusterMap]
     jsonOutput = new JsonOutput()
     js = jsonOutput.toJson(instance)
 
-    command = getMsUrls.call("drop_cluster", token, js)
-    logger.info("drop cluster no be url : " + command.toString())
-    process = command.execute()
-    code = process.waitFor()
-    err = IOGroovyMethods.getText(new BufferedReader(new InputStreamReader(process.getErrorStream())));
-    out = process.getText()
-    logger.info("Run drop cluster : code=" + code + ", out=" + out + ", err=" + err)
-    assertTrue(out.startsWith("OK") || out.startsWith("cloud_unique_id is already occupied by an instance"))
+    def add_cluster_api = { request_body, check_func ->
+        httpTest {
+            uri "/MetaService/http/add_cluster?token=$token"
+            body request_body
+            check check_func
+        }
+    }
+
+    add_cluster_api.call(js) {
+        respCode, body ->
+            log.info("http cli result: ${body} ${respCode}".toString())
+            def json = parseJson(body)
+            assertTrue(json.code.equalsIgnoreCase("OK") || json.code.equalsIgnoreCase("INTERANAL_ERROR"))
+    }
+
+    jsonOutput = new JsonOutput()
+    js = jsonOutput.toJson(instance)
+
+    // drop cluster
+    /*
+        curl -X GET http://127.0.0.1:5000/MetaService/http/drop_cluster?token=greedisgood9999 -d '{
+            "instance_id": "instance_id_deadbeef",
+            "cluster": {
+                "cluster_name": "cluster_name1",
+                "cluster_id": "cluster_id1"
+            }
+        }'
+     */
+
+    def drop_cluster_api = { request_body, check_func ->
+        httpTest {
+            uri "/MetaService/http/drop_cluster?token=$token"
+            body request_body
+            check check_func
+        }
+    }
+
+    drop_cluster_api.call(js) {
+        respCode, body ->
+            log.info("http cli result: ${body} ${respCode}".toString())
+            def json = parseJson(body)
+            assertTrue(json.code.equalsIgnoreCase("OK") || json.code.equalsIgnoreCase("INTERANAL_ERROR"))
+    }
+
     nodeMap = [cloud_unique_id: "${cloudUniqueId}", ip: "${ip}", heartbeat_port: "${heartbeatPort}"]
     nodeList = [nodeMap]
-    clusterMap = [cluster_name: "${clusterName}", cluster_id:"${clusterId}", nodes:nodeList]
-    instance = [instance_id: "${instance_id}", op:"${opType}", cluster: clusterMap]
-
-    // add_cluster
-    // curl '127.0.0.1:5000/MetaService/http/add_cluster?token=greedisgood9999' -d '{
-    //     "instance_id":"instance_id_deadbeef",
-    //     "type":1,
-    //     "cluster":{
-    //         "cluster_name":"cluster_name1",
-    //         "cluster_id":"cluster_id1",
-    //         "nodes":[
-    //             {
-    //                 "cloud_unique_id":"cloud_unique_id_compute_node0",
-    //                 "ip":"172.0.0.10",
-    //                 "heartbeat_port":9050
-    //             }
-    //         ]
-    //     }
-    // }'
+    clusterMap = [cluster_name: "${clusterName}", cluster_id:"${clusterId}", type:"COMPUTE", nodes:nodeList]
+    instance = [instance_id: "${instance_id}", cluster: clusterMap]
     jsonOutput = new JsonOutput()
     js = jsonOutput.toJson(instance)
+    def js1 = js
+    // add_cluster has one node
+    /*
+         curl '127.0.0.1:5000/MetaService/http/add_cluster?token=greedisgood9999' -d '{
+             "instance_id":"instance_id_deadbeef",
+             "cluster":{
+                 "cluster_name":"cluster_name1",
+                 "cluster_id":"cluster_id1",
+                 "type" : "COMPUTE",
+                 "nodes":[
+                     {
+                         "cloud_unique_id":"cloud_unique_id_compute_node0",
+                         "ip":"172.0.0.10",
+                         "heartbeat_port":9050
+                     }
+                 ]
+             }
+         }'
+     */
 
-    command = getMsUrls.call("add_cluster", token, js)
-    logger.info("add cluster url : " + command.toString())
-    process = command.execute()
-    code = process.waitFor()
-    err = IOGroovyMethods.getText(new BufferedReader(new InputStreamReader(process.getErrorStream())));
-    out = process.getText()
-    logger.info("Run add cluster : code=" + code + ", out=" + out + ", err=" + err)
-    assertTrue(out.startsWith("OK") || out.startsWith("cloud_unique_id is already occupied by an instance"))
+    add_cluster_api.call(js) {
+        respCode, body ->
+            log.info("http cli result: ${body} ${respCode}".toString())
+            def json = parseJson(body)
+            assertTrue(json.code.equalsIgnoreCase("OK") || json.code.equalsIgnoreCase("INTERANAL_ERROR"))
+    }
+
+    // get instance's s3 info
+    /*
+        curl '127.0.0.1:5000/MetaService/http/get_obj_store_info?token=greedisgood9999' -d '{
+             "cloud_unique_id":"cloud_unique_id_compute_node0"
+         }'
+     */
+    def get_obj_store_info_api_body = [cloud_unique_id:"${cloudUniqueId}"]
+    jsonOutput = new JsonOutput()
+    js = jsonOutput.toJson(get_obj_store_info_api_body)
+    def get_obj_store_info_api = { request_body, check_func ->
+        httpTest {
+            uri "/MetaService/http/get_obj_store_info?token=$token"
+            body request_body
+            check check_func
+        }
+    }
+
+    get_obj_store_info_api.call(js) {
+        respCode, body ->
+            log.info("http cli result: ${body} ${respCode}".toString())
+            def json = parseJson(body)
+            assertTrue(json.code.equalsIgnoreCase("OK") || json.code.equalsIgnoreCase("INVALID_ARGUMENT"))
+    }
+
+    // update instance's s3 info
+    /*
+        curl '127.0.0.1:5000/MetaService/http/update_ak_sk?token=greedisgood9999' -d '{
+            "cloud_unique_id": "cloud_unique_id_compute_node0",
+            "obj": {
+                "id": "1",
+                "ak": "test-ak1-updated",
+                "sk": "test-sk1-updated"
+            }
+        }'
+     */
+    def update_ak_sk_api_body = [cloud_unique_id:"${cloudUniqueId}", obj:[id:"1", ak:"test-ak1-updated", sk:"test-sk1-updated"]]
+    jsonOutput = new JsonOutput()
+    js = jsonOutput.toJson(update_ak_sk_api_body)
+    def update_ak_sk_api = { request_body, check_func ->
+        httpTest {
+            uri "/MetaService/http/update_ak_sk?token=$token"
+            body request_body
+            check check_func
+        }
+    }
+
+    update_ak_sk_api.call(js) {
+        respCode, body ->
+            log.info("http cli result: ${body} ${respCode}".toString())
+            def json = parseJson(body)
+            assertTrue(json.code.equalsIgnoreCase("OK") || json.code.equalsIgnoreCase("INVALID_ARGUMENT"))
+    }
+
+    // add s3 info to instance
+    /*
+        curl '127.0.0.1:5000/MetaService/http/add_obj_info?token=greedisgood9999' -d '{
+            "cloud_unique_id": "cloud_unique_id_compute_node0",
+            "obj": {
+                "ak": "test-ak2",
+                "sk": "test-sk2",
+                "bucket": "test-bucket",
+                "prefix": "test-prefix",
+                "endpoint": "test-endpoint",
+                "region": "test-region"
+            }
+        }'
+     */
+
+    def add_obj_info_api_body = [cloud_unique_id:"${cloudUniqueId}",
+                                 obj:[ak:"test-ak2", sk:"test-sk2", bucket:"test-bucket",
+                                      prefix: "test-prefix", endpoint: "test-endpoint", region:"test-region"]]
+    jsonOutput = new JsonOutput()
+    js = jsonOutput.toJson(add_obj_info_api_body)
+    def add_obj_info_api = { request_body, check_func ->
+        httpTest {
+            uri "/MetaService/http/add_obj_info?token=$token"
+            body request_body
+            check check_func
+        }
+    }
+
+    add_obj_info_api.call(js) {
+        respCode, body ->
+            log.info("http cli result: ${body} ${respCode}".toString())
+            def json = parseJson(body)
+            assertTrue(json.code.equalsIgnoreCase("OK") || json.code.equalsIgnoreCase("INVALID_ARGUMENT"))
+    }
 
     // add again, failed
-    command = getMsUrls.call("add_cluster", token, js)
-    logger.info("add cluster again url : " + command.toString())
-    process = command.execute()
-    code = process.waitFor()
-    err = IOGroovyMethods.getText(new BufferedReader(new InputStreamReader(process.getErrorStream())));
-    out = process.getText()
-    logger.info("Run add cluster : code=" + code + ", out=" + out + ", err=" + err)
-    assertTrue(out.startsWith("cloud_unique_id is already occupied by an instance"))
 
-    // change instance_id add same cloud_unique_id node failed
-    // err: cloud_unique_id is already occupied by an instance, instance_id=instance_id_deadbeef cluster_name=cluster_name1 cluster_id=cluster_id1 cloud_unique_id=cloud_unique_id_compute_node0
-    instance_id = "instance_id_deadbeef_1"
-    nodeMap = [cloud_unique_id: "${cloudUniqueId}", ip: "${ip}", heartbeat_port: "${heartbeatPort}"]
+    add_cluster_api.call(js1) {
+        respCode, body ->
+            log.info("http cli result: ${body} ${respCode}".toString())
+            def json = parseJson(body)
+            assertTrue(json.code.equalsIgnoreCase("INTERANAL_ERROR"))
+    }
+
     nodeList = [nodeMap]
-    clusterMap = [cluster_name: "${clusterName}", cluster_id:"${clusterId}", nodes:nodeList]
-    instance = [instance_id: "${instance_id}", op:"${opType}", cluster: clusterMap]
+    instance = [instance_id: "${instance_id}", cluster: clusterMap]
     jsonOutput = new JsonOutput()
     js = jsonOutput.toJson(instance)
 
-    command = getMsUrls.call("add_cluster", token, js)
-    logger.info("add cluster url : " + command.toString())
-    process = command.execute()
-    code = process.waitFor()
-    err = IOGroovyMethods.getText(new BufferedReader(new InputStreamReader(process.getErrorStream())));
-    out = process.getText()
-    logger.info("Run add cluster : code=" + code + ", out=" + out + ", err=" + err)
-    assertTrue(out.startsWith("cloud_unique_id is already occupied by an instance"))
-
+    /*
+        curl '127.0.0.1:5000/MetaService/http/add_cluster?token=greedisgood9999' -d '{
+             "instance_id":"instance_id_deadbeef",
+             "cluster":{
+                 "cluster_name":"cluster_name1",
+                 "cluster_id":"cluster_id1",
+                 "type" : "COMPUTE",
+                 "nodes":[
+                     {
+                         "cloud_unique_id":"cloud_unique_id_compute_node0",
+                         "ip":"172.0.0.10",
+                         "heartbeat_port":9050
+                     }
+                 ]
+             }
+         }'
+     */
+    // use a new instance_id add a cloud_unique_id node has been used, failed
+    // err: cloud_unique_id is already occupied by an instance,
+    // instance_id=instance_id_deadbeef cluster_name=cluster_name1 cluster_id=cluster_id1 cloud_unique_id=cloud_unique_id_compute_node0
+    add_cluster_api.call(js) {
+        respCode, body ->
+            log.info("http cli result: ${body} ${respCode}".toString())
+            def json = parseJson(body)
+            assertTrue(json.code.equalsIgnoreCase("INTERANAL_ERROR"))
+            assertTrue(json.msg.startsWith("cloud_unique_id is already occupied by an instance"))
+    }
 
     // get_cluster by cluster name
-    // curl '127.0.0.1:5000/MetaService/http/get_cluster?token=greedisgood9999' -d '{"cloud_unique_id": "cloud_unique_id_compute_node0", "instance_id":"instance_id_deadbeef", "cluster_name":"cluster_name0"}'
-    instance_id = "instance_id_deadbeef"
-    instance = [cloud_unique_id: "${cloudUniqueId}", instance_id: "${instance_id}", cluster_name: "${clusterName}"]
+    /*
+        curl '127.0.0.1:5000/MetaService/http/get_cluster?token=greedisgood9999' -d '{
+            "cluster_name": "cluster_name1",
+            "cloud_unique_id": "cloud_unique_id_compute_node0"
+        }'
+     */
+    def get_cluster_by_name = [cluster_name: "${clusterName}", cloud_unique_id: "${cloudUniqueId}"]
     jsonOutput = new JsonOutput()
-    js = jsonOutput.toJson(instance)
+    js = jsonOutput.toJson(get_cluster_by_name)
 
-    command = getMsUrls.call("get_cluster", token, js)
-    logger.info("get cluster url by name : " + command.toString())
-    process = command.execute()
-    code = process.waitFor()
-    err = IOGroovyMethods.getText(new BufferedReader(new InputStreamReader(process.getErrorStream())));
-    out = process.getText()
-    logger.info("Run get cluster : code=" + code + ", out=" + out + ", err=" + err)
-    assertTrue(out.startsWith("{\"cluster_id\"") || out.startsWith("fail to get cluster with instance_id"))
-    
+    def get_cluster_api = { request_body, check_func ->
+        httpTest {
+            uri "/MetaService/http/get_cluster?token=$token"
+            body request_body
+            check check_func
+        }
+    }
+
+    get_cluster_api.call(js) {
+        respCode, body ->
+            def json = parseJson(body)
+            log.info("http cli result: ${body} ${respCode} ${json}".toString())
+            assertTrue(json.code.equalsIgnoreCase("OK") || json.code.equalsIgnoreCase("NOT_FOUND"))
+            if (json.code.equalsIgnoreCase("OK")) {
+                assertTrue(json.msg.equalsIgnoreCase(""))
+            }
+    }
 
     // get_cluster by cluster id
-    // curl '127.0.0.1:5000/MetaService/http/get_cluster?token=greedisgood9999' -d '{"cloud_unique_id": "cloud_unique_id_compute_node0", "instance_id":"instance_id_deadbeef", "cluster_id":"cluster_id1"}'
-    instance = [cloud_unique_id: "${cloudUniqueId}", instance_id: "${instance_id}", cluster_id: "${clusterId}"]
+    /*
+        curl '127.0.0.1:5000/MetaService/http/get_cluster?token=greedisgood9999' -d '{
+            "cluster_id": "cluster_id1",
+            "cloud_unique_id": "cloud_unique_id_compute_node0"
+        }'
+    */
+    def get_cluster_by_id = [cluster_id: "${clusterId}", cloud_unique_id: "${cloudUniqueId}"]
+    jsonOutput = new JsonOutput()
+    js = jsonOutput.toJson(get_cluster_by_id)
+
+    get_cluster_api.call(js) {
+        respCode, body ->
+            def json = parseJson(body)
+            log.info("http cli result: ${body} ${respCode} ${json}".toString())
+            assertTrue(json.code.equalsIgnoreCase("OK") || json.code.equalsIgnoreCase("NOT_FOUND"))
+            if (json.code.equalsIgnoreCase("OK")) {
+                assertTrue(json.msg.equalsIgnoreCase(""))
+            }
+    }
+
+    // add default name to cluster
+    /*
+        curl '127.0.0.1:5000/MetaService/http/update_cluster_mysql_user_name?token=greedisgood9999' -d '{
+            "instance_id":"instance_id_deadbeef",
+            "cluster":{
+                "cluster_name":"cluster_name1",
+                "cluster_id":"cluster_id1",
+                "mysql_user_name": [
+                    "jack",
+                    "root"
+                ]
+            }
+        }'
+     */
+    def default_name_cluster = [cluster_name:"$clusterName", cluster_id:"$clusterId", mysql_user_name:["jack", "root"]]
+    def default_name_cluster_body = [instance_id:"$instance_id", cluster: default_name_cluster]
+    jsonOutput = new JsonOutput()
+    js = jsonOutput.toJson(default_name_cluster_body)
+    def set_default_user_to_cluster_api = { request_body, check_func ->
+        httpTest {
+            uri "/MetaService/http/update_cluster_mysql_user_name?token=$token"
+            body request_body
+            check check_func
+        }
+    }
+
+    set_default_user_to_cluster_api.call(js) {
+        respCode, body ->
+            def json = parseJson(body)
+            log.info("http cli result: ${body} ${respCode} ${json}".toString())
+            assertTrue(json.code.equalsIgnoreCase("OK"))
+    }
+
+    // get_cluster by cluster id
+    /*
+        curl '127.0.0.1:5000/MetaService/http/get_cluster?token=greedisgood9999' -d '{
+            "mysql_user_name": "jack",
+            "cloud_unique_id": "cloud_unique_id_compute_node0"
+        }'
+    */
+    def get_cluster_by_mysql_user_id = [mysql_user_name: "jack", cloud_unique_id: "${cloudUniqueId}"]
+    jsonOutput = new JsonOutput()
+    js = jsonOutput.toJson(get_cluster_by_mysql_user_id)
+
+    get_cluster_api.call(js) {
+        respCode, body ->
+            def json = parseJson(body)
+            log.info("http cli result: ${body} ${respCode} ${json}".toString())
+            assertTrue(json.code.equalsIgnoreCase("OK") || json.code.equalsIgnoreCase("NOT_FOUND"))
+            if (json.code.equalsIgnoreCase("OK")) {
+                assertTrue(json.msg.equalsIgnoreCase(""))
+            }
+    }
+
+    // add nodes
+    /*
+        curl '127.0.0.1:5000/MetaService/http/add_node?token=greedisgood9999' -d '{
+            "instance_id": "instance_id_deadbeef",
+            "cluster": {
+                "cluster_name": "cluster_name1",
+                "cluster_id": "cluster_id1",
+                "type": "COMPUTE",
+                "nodes": [
+                    {
+                        "cloud_unique_id": "cloud_unique_id_compute_node1",
+                        "ip": "172.0.0.11",
+                        "heartbeat_port": 9050
+                    },
+                    {
+                        "cloud_unique_id": "cloud_unique_id_compute_node2",
+                        "ip": "172.0.0.12",
+                        "heartbeat_port": 9050
+                    }
+                ]
+            }
+        }'
+     */
+    def node1 = [cloud_unique_id: "cloud_unique_id_compute_node1", ip :"172.0.0.11", heartbeat_port: 9050]
+    def node2 = [cloud_unique_id: "cloud_unique_id_compute_node2", ip :"172.0.0.12", heartbeat_port: 9050]
+    def add_nodes = [node1, node2]
+    def add_nodes_cluster = [cluster_name: "${clusterName}", cluster_id: "${clusterId}", type: "COMPUTE", nodes: add_nodes]
+    def add_nodes_body = [instance_id: "${instance_id}", cluster: add_nodes_cluster]
+    jsonOutput = new JsonOutput()
+    js = jsonOutput.toJson(add_nodes_body)
+
+    def add_node_api = { request_body, check_func ->
+        httpTest {
+            uri "/MetaService/http/add_node?token=$token"
+            body request_body
+            check check_func
+        }
+    }
+
+    add_node_api.call(js) {
+        respCode, body ->
+            def json = parseJson(body)
+            log.info("http cli result: ${body} ${respCode} ${json}".toString())
+            assertTrue(json.code.equalsIgnoreCase("OK") || json.code.equalsIgnoreCase("INTERANAL_ERROR"))
+            if (!json.code.equalsIgnoreCase("OK")) {
+                assertTrue(json.msg.startsWith("cloud_unique_id is already occupied by an instance"))
+            }
+    }
+
+    // get cluster
+    jsonOutput = new JsonOutput()
+    js = jsonOutput.toJson(get_cluster_by_mysql_user_id)
+
+    get_cluster_api.call(js) {
+        respCode, body ->
+            def json = parseJson(body)
+            log.info("http cli result: ${body} ${respCode} ${json}".toString())
+            assertTrue(json.code.equalsIgnoreCase("OK"))
+    }
+
+    // drop nodes
+    /*
+        curl '127.0.0.1:5000/MetaService/http/drop_node?token=greedisgood9999' -d '{
+            "instance_id": "instance_id_deadbeef",
+            "cluster": {
+                "cluster_name": "cluster_name1",
+                "cluster_id": "cluster_id1",
+                "type": "COMPUTE",
+                "nodes": [
+                    {
+                        "cloud_unique_id": "cloud_unique_id_compute_node1",
+                        "ip": "172.0.0.11",
+                        "heartbeat_port": 9050
+                    },
+                    {
+                        "cloud_unique_id": "cloud_unique_id_compute_node2",
+                        "ip": "172.0.0.12",
+                        "heartbeat_port": 9050
+                    }
+                ]
+            }
+        }'
+     */
+    def del_nodes = [node1, node2]
+    def del_nodes_cluster = [cluster_name: "${clusterName}", cluster_id: "${clusterId}", type: "COMPUTE", nodes: del_nodes]
+    def del_nodes_body = [instance_id: "${instance_id}", cluster: del_nodes_cluster]
+    jsonOutput = new JsonOutput()
+    js = jsonOutput.toJson(del_nodes_body)
+    def drop_node_api = { request_body, check_func ->
+        httpTest {
+            uri "/MetaService/http/drop_node?token=$token"
+            body request_body
+            check check_func
+        }
+    }
+
+    drop_node_api.call(js) {
+        respCode, body ->
+            def json = parseJson(body)
+            log.info("http cli result: ${body} ${respCode} ${json}".toString())
+            assertTrue(json.code.equalsIgnoreCase("OK") || json.code.equalsIgnoreCase("INTERANAL_ERROR"))
+            if (!json.code.equalsIgnoreCase("OK")) {
+                assertTrue(json.msg.startsWith("cloud_unique_id is already occupied by an instance"))
+            }
+    }
+
+    // rename cluster
+    /*
+         curl '127.0.0.1:5000/MetaService/http/rename_cluster?token=greedisgood9999' -d '{
+             "instance_id":"instance_id_deadbeef",
+             "cluster":{
+                 "cluster_name":"cluster_name1_renamed",
+                 "cluster_id":"cluster_id1"
+             }
+         }'
+     */
+    def rename_node_api = { request_body, check_func ->
+        httpTest {
+            uri "/MetaService/http/rename_cluster?token=$token"
+            body request_body
+            check check_func
+        }
+    }
+
+    clusterMap = [cluster_name: "cluster_name1_renamed", cluster_id:"${clusterId}"]
+    instance = [instance_id: "${instance_id}", cluster: clusterMap]
     jsonOutput = new JsonOutput()
     js = jsonOutput.toJson(instance)
+    rename_node_api.call(js) {
+        respCode, body ->
+            def json = parseJson(body)
+            log.info("http cli result: ${body} ${respCode} ${json}".toString())
+            assertTrue(json.code.equalsIgnoreCase("OK") || json.code.equalsIgnoreCase("INTERANAL_ERROR"))
+            if (!json.code.equalsIgnoreCase("OK")) {
+                assertTrue(json.msg.startsWith("cloud_unique_id is already occupied by an instance"))
+            }
+    }
 
-    command = getMsUrls.call("get_cluster", token, js)
-    logger.info("get cluster url by id : " + command.toString())
-    process = command.execute()
-    code = process.waitFor()
-    err = IOGroovyMethods.getText(new BufferedReader(new InputStreamReader(process.getErrorStream())));
-    out = process.getText()
-    logger.info("Run get cluster : code=" + code + ", out=" + out + ", err=" + err)
-    assertTrue(out.startsWith("{\"cluster_id\"") || out.startsWith("fail to get cluster with instance_id"))
-    
-
-    // drop cluster    
-    // curl '127.0.0.1:5000/MetaService/http/drop_cluster?token=greedisgood9999' -d '{
-    //     "instance_id":"instance_id_deadbeef",
-    //     "op":2,
-    //     "cluster":{
-    //         "cluster_name":"cluster_name1",
-    //         "cluster_id":"cluster_id1",
-    //         "nodes":[
-    //             {
-    //                 "cloud_unique_id":"cloud_unique_id_compute_node0",
-    //                 "ip":"127.0.0.1",
-    //                 "heartbeat_port":9050
-    //             }
-    //         ]
-    //     }
-    // }'
-
-    opType = 2
-    nodeMap = [cloud_unique_id: "${cloudUniqueId}", ip: "${ip}", heartbeat_port: "${heartbeatPort}"]
-    nodeList = [nodeMap]
-    clusterMap = [cluster_name: "${clusterName}", cluster_id:"${clusterId}", nodes:nodeList]
-    instance = [instance_id: "${instance_id}", op:"${opType}", cluster: clusterMap]
+    clusterMap = [cluster_name: "${clusterName}", cluster_id:"${clusterId}"]
+    instance = [instance_id: "${instance_id}", cluster: clusterMap]
     jsonOutput = new JsonOutput()
     js = jsonOutput.toJson(instance)
+    rename_node_api.call(js) {
+        respCode, body ->
+            def json = parseJson(body)
+            log.info("http cli result: ${body} ${respCode} ${json}".toString())
+            assertTrue(json.code.equalsIgnoreCase("OK") || json.code.equalsIgnoreCase("INTERANAL_ERROR"))
+            if (!json.code.equalsIgnoreCase("OK")) {
+                assertTrue(json.msg.startsWith("cloud_unique_id is already occupied by an instance"))
+            }
+    }
 
-    command = getMsUrls.call("drop_cluster", token, js)
-    logger.info("drop cluster url : " + command.toString())
-    process = command.execute()
-    code = process.waitFor()
-    err = IOGroovyMethods.getText(new BufferedReader(new InputStreamReader(process.getErrorStream())));
-    out = process.getText()
-    logger.info("Run drop cluster : code=" + code + ", out=" + out + ", err=" + err)
-    // ATTN: The multiple conditions here are to prevent abnormal exit, kV data is not cleaned up, and regression cases are always abnormal
-    assertTrue(out.startsWith("OK") || out.startsWith("cloud_unique_id is already occupied by an instance") || out.startsWith("failed to find cluster to drop"))
-
-    // drop again failed
-    command = getMsUrls.call("drop_cluster", token, js)
-    logger.info("drop cluster again url : " + command.toString())
-    process = command.execute()
-    code = process.waitFor()
-    err = IOGroovyMethods.getText(new BufferedReader(new InputStreamReader(process.getErrorStream())));
-    out = process.getText()
-    logger.info("Run drop cluster : code=" + code + ", out=" + out + ", err=" + err)
-    assertTrue(out.startsWith("failed to find cluster to drop"))
+    // drop cluster
+    /*
+         curl '127.0.0.1:5000/MetaService/http/drop_cluster?token=greedisgood9999' -d '{
+             "instance_id":"instance_id_deadbeef",
+             "cluster":{
+                 "cluster_name":"cluster_name1",
+                 "cluster_id":"cluster_id1"
+             }
+         }'
+     */
+    clusterMap = [cluster_name: "${clusterName}", cluster_id:"${clusterId}"]
+    instance = [instance_id: "${instance_id}", cluster: clusterMap]
+    jsonOutput = new JsonOutput()
+    js = jsonOutput.toJson(instance)
+    drop_cluster_api.call(js) {
+        respCode, body ->
+            log.info("http cli result: ${body} ${respCode}".toString())
+            def json = parseJson(body)
+            assertTrue(json.code.equalsIgnoreCase("OK") || json.code.equalsIgnoreCase("INTERANAL_ERROR"))
+    }
 
     // drop not exist cluster, falied
+    /*
+         curl '127.0.0.1:5000/MetaService/http/drop_cluster?token=greedisgood9999' -d '{
+             "instance_id":"instance_id_deadbeef",
+             "cluster":{
+                 "cluster_name":"not_exist_cluster_name",
+                 "cluster_id":"not_exist_cluster_name"
+             }
+         }'
+     */
     clusterMap = [cluster_name: "not_exist_cluster_name", cluster_id:"not_exist_cluster_id", nodes:nodeList]
-    instance = [instance_id: "${instance_id}", op:"${opType}", cluster: clusterMap]
+    instance = [instance_id: "${instance_id}", cluster: clusterMap]
     jsonOutput = new JsonOutput()
     js = jsonOutput.toJson(instance)
-    command = getMsUrls.call("drop_cluster", token, js)
-    logger.info("drop cluster again url : " + command.toString())
-    process = command.execute()
-    code = process.waitFor()
-    err = IOGroovyMethods.getText(new BufferedReader(new InputStreamReader(process.getErrorStream())));
-    out = process.getText()
-    logger.info("Run drop cluster : code=" + code + ", out=" + out + ", err=" + err)
-    assertTrue(out.startsWith("failed to find cluster to drop"))
-    clusterMap = [cluster_name: "${clusterName}", cluster_id:"${clusterId}", nodes:nodeList]
-    instance = [instance_id: "${instance_id}", op:"${opType}", cluster: clusterMap]
+    drop_cluster_api.call(js) {
+        respCode, body ->
+            log.info("http cli result: ${body} ${respCode}".toString())
+            def json = parseJson(body)
+            assertTrue(json.code.equalsIgnoreCase("INTERANAL_ERROR"))
+    }
 
     // after drop, get cluster again, failed
-    instance = [cloud_unique_id: "${cloudUniqueId}", instance_id: "${instance_id}", cluster_id: "${clusterId}"]
+    instance = [cloud_unique_id: "${cloudUniqueId}", cluster_id: "${clusterId}"]
     jsonOutput = new JsonOutput()
     js = jsonOutput.toJson(instance)
-
-    command = getMsUrls.call("get_cluster", token, js)
-    logger.info("get cluster url by id : " + command.toString())
-    process = command.execute()
-    code = process.waitFor()
-    err = IOGroovyMethods.getText(new BufferedReader(new InputStreamReader(process.getErrorStream())));
-    out = process.getText()
-    logger.info("Run get cluster : code=" + code + ", out=" + out + ", err=" + err)
-    assertTrue(out.startsWith("fail to get cluster with instance_id"))
+    get_cluster_api.call(js) {
+        respCode, body ->
+            def json = parseJson(body)
+            log.info("http cli result: ${body} ${respCode} ${json}".toString())
+            assertTrue(json.code.equalsIgnoreCase("INVALID_ARGUMENT"))
+    }
 
     // add node to another cluster
+    /*
+        curl '127.0.0.1:5000/MetaService/http/add_cluster?token=greedisgood9999' -d '{
+             "instance_id":"instance_id_deadbeef",
+             "cluster":{
+                 "cluster_name":"cluster_name2",
+                 "cluster_id":"cluster_name2",
+                 "type" : "COMPUTE",
+                 "nodes":[
+                     {
+                         "cloud_unique_id":"cloud_unique_id_compute_node0",
+                         "ip":"172.0.0.10",
+                         "heartbeat_port":9050
+                     }
+                 ]
+             }
+         }'
+     */
     clusterName = "cluster_name2"
     clusterId = "cluster_id2"
     nodeMap = [cloud_unique_id: "${cloudUniqueId}", ip: "${ip}", heartbeat_port: "${heartbeatPort}"]
@@ -252,26 +619,119 @@ suite("cloud_cluster_test", "cloud_cluster") {
     instance = [instance_id: "${instance_id}", op:"${opType}", cluster: clusterMap]
     jsonOutput = new JsonOutput()
     js = jsonOutput.toJson(instance)
+    add_cluster_api.call(js) {
+        respCode, body ->
+            log.info("http cli result: ${body} ${respCode}".toString())
+            def json = parseJson(body)
+            assertTrue(json.code.equalsIgnoreCase("INTERANAL_ERROR") || json.code.equalsIgnoreCase("OK"))
+    }
 
-    command = getMsUrls.call("add_cluster", token, js)
-    logger.info("add to another cluster url : " + command.toString())
-    process = command.execute()
-    code = process.waitFor()
-    err = IOGroovyMethods.getText(new BufferedReader(new InputStreamReader(process.getErrorStream())));
-    out = process.getText()
-    logger.info("Run add cluster : code=" + code + ", out=" + out + ", err=" + err)
-    assertTrue(out.startsWith("OK") || out.startsWith("cloud_unique_id is already occupied by an instance"))
-
-    opType = 2
-    instance = [instance_id: "${instance_id}", op:"${opType}", cluster: clusterMap]
+    // drop cluster
+    /*
+        curl -X GET http://127.0.0.1:5000/MetaService/http/drop_cluster?token=greedisgood9999 -d '{
+            "instance_id": "instance_id_deadbeef",
+            "cluster": {
+                "cluster_name": "cluster_name2",
+                "cluster_id": "cluster_id2"
+            }
+        }'
+     */
+    clusterMap = [cluster_name: "cluster_name2", cluster_id:"cluster_id2"]
+    instance = [instance_id: "${instance_id}", cluster: clusterMap]
     jsonOutput = new JsonOutput()
     js = jsonOutput.toJson(instance)
-    command = getMsUrls.call("drop_cluster", token, js)
-    logger.info("drop to another cluster url : " + command.toString())
-    process = command.execute()
-    code = process.waitFor()
-    err = IOGroovyMethods.getText(new BufferedReader(new InputStreamReader(process.getErrorStream())));
-    out = process.getText()
-    logger.info("Run drop cluster : code=" + code + ", out=" + out + ", err=" + err)
-    assertTrue(out.startsWith("OK") || out.startsWith("cloud_unique_id is already occupied by an instance"))
+    drop_cluster_api.call(js) {
+        respCode, body ->
+            log.info("http cli result: ${body} ${respCode}".toString())
+            def json = parseJson(body)
+            assertTrue(json.code.equalsIgnoreCase("INTERANAL_ERROR"))
+    }
+
+    // add a fe cluster
+    /*
+        curl '127.0.0.1:5000/MetaService/http/add_cluster?token=greedisgood9999' -d '{
+             "instance_id":"instance_id_deadbeef",
+             "cluster":{
+                 "cluster_name":"RESERVED_CLUSTER_NAME_FOR_SQL_SERVER",
+                 "cluster_id":"RESERVED_CLUSTER_ID_FOR_SQL_SERVER",
+                 "type" : "SQL",
+                 "nodes":[
+                     {
+                         "cloud_unique_id":"cloud_unique_id_sql_node0",
+                         "ip":"172.0.0.10",
+                         "edit_log_port":9030,
+                         "node_type":"FE_MASTER"
+                     },
+                     {
+                         "cloud_unique_id":"cloud_unique_id_sql_node0",
+                         "ip":"172.0.0.11",
+                         "edit_log_port":9030,
+                         "node_type":"FE_OBSERVER"
+                     },
+                     {
+                         "cloud_unique_id":"cloud_unique_id_sql_node0",
+                         "ip":"172.0.0.12",
+                         "edit_log_port":9030,
+                         "node_type":"FE_OBSERVER"
+                     }
+                 ]
+             }
+         }'
+     */
+    def fe_node0 = [cloud_unique_id:"cloud_unique_id_sql_node0",
+                    ip:"172.0.0.10", edit_log_port:9030, node_type:"FE_MASTER"]
+    def fe_node1 = [cloud_unique_id:"cloud_unique_id_sql_node0",
+                    ip:"172.0.0.11", edit_log_port:9030, node_type:"FE_OBSERVER"]
+    def fe_node2 = [cloud_unique_id:"cloud_unique_id_sql_node0",
+                    ip:"172.0.0.12", edit_log_port:9030, node_type:"FE_OBSERVER"]
+    clusterMap = [cluster_name: "RESERVED_CLUSTER_NAME_FOR_SQL_SERVER_TEST",
+                  cluster_id:"RESERVED_CLUSTER_NAME_FOR_SQL_SERVER_TEST",
+                  type:"SQL", nodes: [fe_node0, fe_node1, fe_node2]]
+    instance = [instance_id: "${instance_id}", cluster: clusterMap]
+    jsonOutput = new JsonOutput()
+    js = jsonOutput.toJson(instance)
+
+    add_cluster_api.call(js) {
+        respCode, body ->
+            log.info("http cli result: ${body} ${respCode}".toString())
+            def json = parseJson(body)
+            assertTrue(json.code.equalsIgnoreCase("OK") || json.code.equalsIgnoreCase("INTERANAL_ERROR"))
+    }
+
+    // cluster is SQL type, must have only one master node, now master count: 0
+    clusterMap = [cluster_name: "RESERVED_CLUSTER_NAME_FOR_SQL_SERVER_TEST",
+                  cluster_id:"RESERVED_CLUSTER_ID_FOR_SQL_SERVER_TEST",
+                  type:"SQL", nodes: [fe_node1, fe_node2]]
+    instance = [instance_id: "${instance_id}", cluster: clusterMap]
+    jsonOutput = new JsonOutput()
+    js = jsonOutput.toJson(instance)
+    add_cluster_api.call(js) {
+        respCode, body ->
+            log.info("http cli result: ${body} ${respCode}".toString())
+            def json = parseJson(body)
+            assertTrue(json.code.equalsIgnoreCase("INTERANAL_ERROR"))
+            assertTrue(json.msg.startsWith("cluster is SQL type"))
+    }
+
+    // drop fe cluster
+    /*
+        curl -X GET http://127.0.0.1:5000/MetaService/http/drop_cluster?token=greedisgood9999 -d '{
+            "instance_id": "instance_id_deadbeef",
+            "cluster": {
+                "cluster_name": "RESERVED_CLUSTER_NAME_FOR_SQL_SERVER_TEST",
+                "cluster_id": "RESERVED_CLUSTER_NAME_FOR_SQL_SERVER_TEST"
+            }
+        }'
+     */
+
+    clusterMap = [cluster_name: "RESERVED_CLUSTER_NAME_FOR_SQL_SERVER_TEST", cluster_id:"RESERVED_CLUSTER_NAME_FOR_SQL_SERVER_TEST"]
+    instance = [instance_id: "${instance_id}", cluster: clusterMap]
+    jsonOutput = new JsonOutput()
+    js = jsonOutput.toJson(instance)
+    drop_cluster_api.call(js) {
+        respCode, body ->
+            log.info("http cli result: ${body} ${respCode}".toString())
+            def json = parseJson(body)
+            assertTrue(json.code.equalsIgnoreCase("OK") || json.code.equalsIgnoreCase("INTERANAL_ERROR"))
+    }
 }
