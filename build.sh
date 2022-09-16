@@ -277,7 +277,7 @@ if [[ -z "${USE_JEMALLOC}" ]]; then
     USE_JEMALLOC='OFF'
 fi
 if [[ -z ${USE_BTHREAD_SCANNER} ]]; then
-    USE_BTHREAD_SCANNER=OFF
+    USE_BTHREAD_SCANNER=ON
 fi
 if [[ -z ${STRICT_MEMORY_USE} ]]; then
     STRICT_MEMORY_USE=OFF
