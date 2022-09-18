@@ -1392,6 +1392,13 @@ public class OlapTable extends Table {
             throw new DdlException("Table[" + name + "]'s state is not NORMAL. "
                     + "Do not allow doing materialized view");
         }
+
+        //In cloud mode we just return true, because
+        //we don't need tabletScheduler
+        if (!Config.cloud_unique_id.isEmpty()) {
+            return;
+        }
+
         // check if all tablets are healthy, and no tablet is in tablet scheduler
         boolean isStable = isStable(Env.getCurrentSystemInfo(),
                 Env.getCurrentEnv().getTabletScheduler(),

@@ -465,6 +465,11 @@ public class RollupJobV2 extends AlterJobV2 implements GsonPostProcessable {
 
                     List<Replica> rollupReplicas = rollupTablet.getReplicas();
                     for (Replica rollupReplica : rollupReplicas) {
+                        if (rollupReplica.getBackendId() < 0) {
+                            LOG.warn("replica:{}, backendId: {}", rollupReplica, rollupReplica.getBackendId());
+                            throw new AlterCancelException("rollupReplica:" + rollupReplica.getId()
+                                    + " backendId < 0");
+                        }
                         AlterReplicaTask rollupTask = new AlterReplicaTask(rollupReplica.getBackendId(), dbId, tableId,
                                 partitionId, rollupIndexId, baseIndexId, rollupTabletId, baseTabletId,
                                 rollupReplica.getId(), rollupSchemaHash, baseSchemaHash, visibleVersion, jobId,
