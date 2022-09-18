@@ -182,6 +182,7 @@ import com.google.common.collect.Sets;
 import com.selectdb.cloud.catalog.CloudPartition;
 import com.selectdb.cloud.catalog.CloudReplica;
 import com.selectdb.cloud.proto.SelectdbCloud;
+import com.selectdb.cloud.proto.SelectdbCloud.StagePB;
 import com.selectdb.cloud.rpc.MetaServiceProxy;
 import doris.segment_v2.SegmentV2;
 import lombok.Getter;
@@ -190,7 +191,6 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.hive.metastore.HiveMetaStoreClient;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-//import org.apache.thrift.TException;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.DataInputStream;
@@ -3798,6 +3798,45 @@ public class InternalCatalog implements CatalogIf<Database> {
         if (response.getStatus().getCode() != SelectdbCloud.MetaServiceCode.OK) {
             LOG.warn("dropPartition response: {} ", response);
             throw new DdlException(response.getStatus().getMsg());
+        }
+    }
+
+    public void createStage(StagePB stagePB, boolean ifNotExists) throws DdlException {
+        SelectdbCloud.CreateStageRequest createStageRequest = SelectdbCloud.CreateStageRequest.newBuilder()
+                .setCloudUniqueId(Config.cloud_unique_id).setStage(stagePB).build();
+        SelectdbCloud.CreateStageResponse response;
+        try {
+            response = MetaServiceProxy.getInstance().createStage(createStageRequest);
+            // Now only create external stage
+            if (ifNotExists && response.getStatus().getCode() == SelectdbCloud.MetaServiceCode.STAGE_ALREADY_EXISTED) {
+                LOG.info("stage already exists, stage_name: {}", stagePB.getName());
+                return;
+            }
+        } catch (RpcException e) {
+            throw new RuntimeException(e);
+        }
+        if (response.getStatus().getCode() != SelectdbCloud.MetaServiceCode.OK) {
+            LOG.warn("createStage response: {} ", response);
+            throw new DdlException(response.getStatus().getMsg());
+        }
+    }
+
+    public StagePB getStage(StagePB.StageType stageType, String userName, String stageName) throws DdlException {
+        SelectdbCloud.GetStageRequest.Builder builder = SelectdbCloud.GetStageRequest.newBuilder()
+                .setCloudUniqueId(Config.cloud_unique_id).setType(stageType).setMysqlUserName(userName);
+        if (stageName != null) {
+            builder.setStageName(stageName);
+        }
+        SelectdbCloud.GetStageResponse response;
+        try {
+            response = MetaServiceProxy.getInstance().getStage(builder.build());
+            if (response.getStatus().getCode() != SelectdbCloud.MetaServiceCode.OK) {
+                LOG.warn("getStage response: {} ", response);
+                throw new DdlException(response.getStatus().getMsg());
+            }
+            return response.getStage();
+        } catch (RpcException e) {
+            throw new RuntimeException(e);
         }
     }
 }

@@ -352,4 +352,30 @@ public class MetaServiceProxy {
             throw new RpcException(metaAddress.hostname, e.getMessage(), e);
         }
     }
+
+    public SelectdbCloud.CreateStageResponse createStage(SelectdbCloud.CreateStageRequest request) throws RpcException {
+        if (metaServiceHostPort == null) {
+            throw new RpcException("", "cloud mode, please configure cloud_unique_id and meta_service_endpoint");
+        }
+        TNetworkAddress metaAddress = new TNetworkAddress(metaServiceHostPort.first, metaServiceHostPort.second);
+        try {
+            final MetaServiceClient client = getProxy(metaAddress);
+            return client.createStage(request);
+        } catch (Exception e) {
+            throw new RpcException(metaAddress.hostname, e.getMessage(), e);
+        }
+    }
+
+    public SelectdbCloud.GetStageResponse getStage(SelectdbCloud.GetStageRequest request) throws RpcException {
+        if (metaServiceHostPort == null) {
+            throw new RpcException("", "cloud mode, please configure cloud_unique_id and meta_service_endpoint");
+        }
+        TNetworkAddress metaAddress = new TNetworkAddress(metaServiceHostPort.first, metaServiceHostPort.second);
+        try {
+            final MetaServiceClient client = getProxy(metaAddress);
+            return client.getStage(request);
+        } catch (Exception e) {
+            throw new RpcException(metaAddress.hostname, e.getMessage(), e);
+        }
+    }
 }

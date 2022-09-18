@@ -150,6 +150,15 @@ public:
                      ::selectdb::GetClusterResponse* response,
                      ::google::protobuf::Closure* done) override;
 
+    void create_stage(google::protobuf::RpcController* controller,
+                      const ::selectdb::CreateStageRequest* request,
+                      ::selectdb::CreateStageResponse* response,
+                      ::google::protobuf::Closure* done) override;
+
+    void get_stage(google::protobuf::RpcController* controller,
+                   const ::selectdb::GetStageRequest* request,
+                   ::selectdb::GetStageResponse* response,
+                   ::google::protobuf::Closure* done) override;
 private:
     // returns 0 for index exists, 1 for not exist, negative for error
     int index_exists(const ::selectdb::IndexRequest* request,

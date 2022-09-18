@@ -3375,5 +3375,236 @@ void MetaServiceImpl::get_cluster(google::protobuf::RpcController* controller,
 
 } // get_cluster
 
+void MetaServiceImpl::create_stage(::google::protobuf::RpcController* controller,
+                                   const ::selectdb::CreateStageRequest* request,
+                                   ::selectdb::CreateStageResponse* response,
+                                   ::google::protobuf::Closure* done) {
+    auto ctrl = static_cast<brpc::Controller*>(controller);
+    LOG(INFO) << "rpc from " << ctrl->remote_side() << " request=" << request->DebugString();
+    brpc::ClosureGuard closure_guard(done);
+    int ret = 0;
+    MetaServiceCode code = MetaServiceCode::OK;
+    std::string msg = "OK";
+    std::unique_ptr<int, std::function<void(int*)>> defer_status(
+            (int*)0x01, [&ret, &code, &msg, &response, &ctrl](int*) {
+                response->mutable_status()->set_code(code);
+                response->mutable_status()->set_msg(msg);
+                LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
+                          << ctrl->remote_side() << " " << msg;
+            });
+
+    std::string cloud_unique_id = request->has_cloud_unique_id() ? request->cloud_unique_id() : "";
+    if (cloud_unique_id.empty()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "cloud unique id not set";
+        return;
+    }
+
+    std::string instance_id = get_instance_id(resource_mgr_, cloud_unique_id);
+    if (instance_id.empty()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "empty instance_id";
+        LOG(INFO) << msg << ", cloud_unique_id=" << cloud_unique_id;
+        return;
+    }
+
+    if (!request->has_stage()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "stage not set";
+        return;
+    }
+    auto stage = request->stage();
+
+    if (!stage.has_type()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "stage type not set";
+        return;
+    }
+    if (stage.type() == StagePB::INTERNAL) {
+        code = MetaServiceCode::UNDEFINED_ERR;
+        msg = "create internal stage is unsupported";
+        return;
+    }
+    if (!stage.has_name()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "stage name not set";
+        return;
+    }
+
+    InstanceKeyInfo key_info {instance_id};
+    std::string key;
+    std::string val;
+    instance_key(key_info, &key);
+
+    std::unique_ptr<Transaction> txn;
+    ret = txn_kv_->create_txn(&txn);
+    if (ret != 0) {
+        code = MetaServiceCode::KV_TXN_CREATE_ERR;
+        msg = "failed to create txn";
+        LOG(WARNING) << msg << " ret=" << ret;
+        return;
+    }
+    ret = txn->get(key, &val);
+    LOG(INFO) << "get instance_key=" << hex(key);
+
+    std::stringstream ss;
+    if (ret != 0) {
+        code = MetaServiceCode::KV_TXN_GET_ERR;
+        ss << "failed to get instance, instance_id=" << instance_id << " ret=" << ret;
+        msg = ss.str();
+        return;
+    }
+
+    InstanceInfoPB instance;
+    if (!instance.ParseFromString(val)) {
+        code = MetaServiceCode::PROTOBUF_PARSE_ERR;
+        msg = "failed to parse InstanceInfoPB";
+        return;
+    }
+
+    if (instance.stages_size() >= 20) {
+        code = MetaServiceCode::UNDEFINED_ERR;
+        msg = "this instance has greater than 20 stages";
+        return;
+    }
+
+    // check if the stage exists
+    for (int i = 0; i < instance.stages_size(); ++i) {
+        auto& s = instance.stages(i);
+        if (s.type() == stage.type() && s.name() == stage.name()) {
+            code = MetaServiceCode::STAGE_ALREADY_EXISTED;
+            msg = "stage already exist";
+            return;
+        }
+    }
+
+    instance.add_stages()->CopyFrom(stage);
+    val = instance.SerializeAsString();
+    if (val.empty()) {
+        msg = "failed to serialize";
+        code = MetaServiceCode::PROTOBUF_SERIALIZE_ERR;
+        return;
+    }
+
+    txn->put(key, val);
+    LOG(INFO) << "put instance_id=" << instance_id << " instance_key=" << hex(key);
+    ret = txn->commit();
+    if (ret != 0) {
+        code = MetaServiceCode::KV_TXN_COMMIT_ERR;
+        msg = "failed to commit kv txn";
+        LOG(WARNING) << msg << " ret=" << ret;
+    }
+}
+
+void MetaServiceImpl::get_stage(google::protobuf::RpcController* controller,
+                                const ::selectdb::GetStageRequest* request,
+                                ::selectdb::GetStageResponse* response,
+                                ::google::protobuf::Closure* done) {
+    auto ctrl = static_cast<brpc::Controller*>(controller);
+    LOG(INFO) << "rpc from " << ctrl->remote_side() << " request=" << request->DebugString();
+    brpc::ClosureGuard closure_guard(done);
+    int ret = 0;
+    MetaServiceCode code = MetaServiceCode::OK;
+    std::string msg = "OK";
+    std::unique_ptr<int, std::function<void(int*)>> defer_status(
+            (int*)0x01, [&ret, &code, &msg, &response, &ctrl](int*) {
+                response->mutable_status()->set_code(code);
+                response->mutable_status()->set_msg(msg);
+                LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
+                          << ctrl->remote_side() << " " << msg;
+            });
+
+    std::string cloud_unique_id = request->has_cloud_unique_id() ? request->cloud_unique_id() : "";
+    if (cloud_unique_id.empty()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "cloud unique id not set";
+        return;
+    }
+
+    std::string instance_id = get_instance_id(resource_mgr_, cloud_unique_id);
+    if (instance_id.empty()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "empty instance_id";
+        LOG(INFO) << msg << ", cloud_unique_id=" << cloud_unique_id;
+        return;
+    }
+
+    auto mysql_user_name = request->has_mysql_user_name() ? request->mysql_user_name() : "";
+    if (mysql_user_name.empty()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "mysql user name not set";
+        return;
+    }
+
+    if (!request->has_type()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "stage type not set";
+        return;
+    }
+    auto type = request->type();
+
+    if (type == StagePB::EXTERNAL && !request->has_stage_name()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "stage name not set";
+        return;
+    }
+
+    InstanceKeyInfo key_info {instance_id};
+    std::string key;
+    std::string val;
+    instance_key(key_info, &key);
+
+    std::unique_ptr<Transaction> txn;
+    ret = txn_kv_->create_txn(&txn);
+    if (ret != 0) {
+        code = MetaServiceCode::KV_TXN_CREATE_ERR;
+        msg = "failed to create txn";
+        LOG(WARNING) << msg << " ret=" << ret;
+        return;
+    }
+    ret = txn->get(key, &val);
+    LOG(INFO) << "get instance_key=" << hex(key);
+
+    std::stringstream ss;
+    if (ret != 0) {
+        code = MetaServiceCode::KV_TXN_GET_ERR;
+        ss << "failed to get instance, instance_id=" << instance_id << " ret=" << ret;
+        msg = ss.str();
+        return;
+    }
+
+    InstanceInfoPB instance;
+    if (!instance.ParseFromString(val)) {
+        code = MetaServiceCode::PROTOBUF_PARSE_ERR;
+        msg = "failed to parse InstanceInfoPB";
+        return;
+    }
+
+    auto found = false;
+    for (int i = 0; i < instance.stages_size() && !found; ++i) {
+        auto& s = instance.stages(i);
+        if (s.type() != type) {
+            continue;
+        }
+        if (type == StagePB::EXTERNAL && s.name() != request->stage_name()) {
+            continue;
+        }
+        for (int j = 0; j < s.mysql_user_name_size(); ++j) {
+            if (s.mysql_user_name(j) == mysql_user_name) {
+                response->mutable_stage()->CopyFrom(s);
+                found = true;
+                break;
+            }
+        }
+    }
+
+    if (!response->has_stage()) {
+        ss << "fail to get stage with " << proto_to_json(*request);
+        msg = ss.str();
+        std::replace(msg.begin(), msg.end(), '\n', ' ');
+        code = MetaServiceCode::STAGE_NOT_FOUND;
+        return;
+    }
+}
 } // namespace selectdb
 // vim: et ts=4 sw=4 cc=80:

@@ -563,7 +563,6 @@ message CreateStageRequest {
 
 message CreateStageResponse {
     optional MetaServiceResponseStatus status = 1;
-    optional bool exist = 2;
 }
 
 message GetStageRequest {

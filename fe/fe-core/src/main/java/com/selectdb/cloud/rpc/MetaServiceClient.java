@@ -207,4 +207,12 @@ public class MetaServiceClient {
         }
         return blockingStub.getTabletStats(request);
     }
+
+    public SelectdbCloud.CreateStageResponse createStage(SelectdbCloud.CreateStageRequest request) {
+        return blockingStub.createStage(request);
+    }
+
+    public SelectdbCloud.GetStageResponse getStage(SelectdbCloud.GetStageRequest request) {
+        return blockingStub.getStage(request);
+    }
 }
