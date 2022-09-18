@@ -288,6 +288,8 @@ message TabletCompactionJobPB {
     optional int64 size_output_rowsets = 12;
     optional int64 num_input_rows = 13;
     optional int64 num_output_rows = 14;
+    repeated int64 input_versions = 15;
+    repeated int64 output_versions = 16;
 }
 
 message TabletSchemaChangeJobPB {
@@ -681,7 +683,8 @@ enum MetaServiceCode {
     STAGE_GET_ERR = 32;
 
     // Job
-    EXPIRED_JOB = 1000;
+    JOB_EXPIRED = 1000;
+    JOB_TABLET_BUSY = 1001;
 
     UNDEFINED_ERR = 100000;
 }

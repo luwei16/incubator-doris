@@ -725,7 +725,7 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
                 stat.set_num_rows(0);
                 break;
             }
-            if (!tablet_stats[stat_key].ParseFromString(stat_val)) {
+            if (!stat.ParseFromString(stat_val)) {
                 code = MetaServiceCode::PROTOBUF_PARSE_ERR;
                 msg = "malformed tablet table value";
                 return;
@@ -1443,6 +1443,7 @@ void MetaServiceImpl::create_tablet(::google::protobuf::RpcController* controlle
     tablet_table.set_table_id(table_id);
     tablet_table.set_index_id(index_id);
     tablet_table.set_partition_id(partition_id);
+    tablet_table.set_tablet_id(tablet_id);
     if (!tablet_table.SerializeToString(&val1)) {
         code = MetaServiceCode::PROTOBUF_SERIALIZE_ERR;
         msg = "failed to serialize tablet table value";
@@ -1456,7 +1457,11 @@ void MetaServiceImpl::create_tablet(::google::protobuf::RpcController* controlle
     std::string stats_val;
     TabletStatsPB stats_pb;
     stats_pb.set_num_rowsets(1);
-    stats_pb.set_num_rowsets(0);
+    stats_pb.set_num_segments(0);
+    stats_pb.mutable_idx()->set_table_id(table_id);
+    stats_pb.mutable_idx()->set_index_id(index_id);
+    stats_pb.mutable_idx()->set_partition_id(partition_id);
+    stats_pb.mutable_idx()->set_tablet_id(tablet_id);
     stats_val = stats_pb.SerializeAsString();
     DCHECK(!stats_val.empty());
     txn->put(stats_key, stats_val);
@@ -2479,14 +2484,15 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
     std::string req;
     std::string response_body;
     std::string request_body;
+    bool keep_raw_body = false;
     std::unique_ptr<int, std::function<void(int*)>> defer_status(
-            (int*)0x01, [&ret, &msg, &status_code, &response_body, &cntl, &req](int*) {
+            (int*)0x01, [&ret, &msg, &status_code, &response_body, &cntl, &req, &keep_raw_body](int*) {
                 std::string c_ret = convert_ms_code_to_http_code(ret);
                 LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
                           << cntl->remote_side() << " request=\n"
                           << req << "\n ret=" << ret << " msg=" << msg;
                 cntl->http_response().set_status_code(status_code);
-                format_to_json_resp(response_body, ret, c_ret, msg);
+                if (!keep_raw_body) format_to_json_resp(response_body, ret, c_ret, msg);
                 cntl->response_attachment().append(response_body);
                 cntl->response_attachment().append("\n");
             });
@@ -2595,6 +2601,7 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
             status_code = 400;
             return;
         }
+        keep_raw_body = true;
         return;
     }
 
@@ -2745,6 +2752,25 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
         req.set_op(AlterClusterRequest::UPDATE_CLUSTER_MYSQL_USER_NAME);
         MetaServiceGenericResponse res;
         alter_cluster(cntl, &req, &res, nullptr);
+        ret = res.status().code();
+        msg = res.status().msg();
+        response_body = msg;
+        return;
+    }
+
+    if (unresolved_path == "get_tablet_meta") {
+        GetTabletStatsRequest req;
+        auto st = google::protobuf::util::JsonStringToMessage(request_body, &req);
+        if (!st.ok()) {
+            msg = "failed to parse AlterClusterRequest, error: " + st.message().ToString();
+            ret = MetaServiceCode::PROTOBUF_PARSE_ERR;
+            response_body = msg;
+            LOG(WARNING) << msg;
+            return;
+        }
+
+        GetTabletStatsResponse res;
+        get_tablet_stats(cntl, &req, &res, nullptr);
         ret = res.status().code();
         msg = res.status().msg();
         response_body = msg;
@@ -3616,7 +3642,6 @@ void MetaServiceImpl::get_stage(google::protobuf::RpcController* controller,
     if (!response->has_stage()) {
         ss << "fail to get stage with " << proto_to_json(*request);
         msg = ss.str();
-        std::replace(msg.begin(), msg.end(), '\n', ' ');
         code = MetaServiceCode::STAGE_NOT_FOUND;
         return;
     }

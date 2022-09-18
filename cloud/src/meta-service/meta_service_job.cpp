@@ -128,17 +128,19 @@ void MetaServiceImpl::start_tablet_job(::google::protobuf::RpcController* contro
     std::string job_val;
     TabletJobInfoPB job_pb;
     ret = txn->get(job_key, &job_val);
+    LOG(INFO) << "get tablet job, key=" << hex(job_key);
 
     TEST_SYNC_POINT_CALLBACK("start_tablet_job_get_key_ret", &ret);
 
     if (ret == 0) {
         // TODO(gavin): check expiration
         job_pb.ParseFromString(job_val);
-        job_pb.has_compaction();
         SS << "job already started instance_id=" << instance_id << " tablet_id=" << tablet_id
            << " job=" << proto_to_json(job_pb);
         msg = ss.str();
-        code = MetaServiceCode::UNDEFINED_ERR;
+        // TODO(gavin): more condition to check
+        code = job_pb.id() == request->job().id() ? MetaServiceCode::OK // Idempotency
+                                                  : MetaServiceCode::JOB_TABLET_BUSY;
         return;
     }
 
@@ -264,6 +266,9 @@ void process_compaction_job(MetaServiceCode& code, std::string& msg, std::string
     txn->remove(job_key);
     LOG(INFO) << "remove tablet job tabelt_id=" << tablet_id << " key=" << hex(job_key);
 
+    // Move input rowsets to recycle
+
+    // TODO(gaivn): make it async
     need_commit = true;
 }
 
@@ -361,7 +366,7 @@ void MetaServiceImpl::finish_tablet_job(::google::protobuf::RpcController* contr
     using namespace std::chrono;
     int64_t now = duration_cast<seconds>(system_clock::now().time_since_epoch()).count();
     if (recorded_job.expiration() > 0 && recorded_job.expiration() < now) {
-        code = MetaServiceCode::EXPIRED_JOB;
+        code = MetaServiceCode::JOB_EXPIRED;
         SS << "expired compaction job, tablet_id=" << tablet_id
            << " job=" << proto_to_json(recorded_job);
         msg = ss.str();
