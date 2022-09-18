@@ -261,10 +261,45 @@ message TabletIndexPB {
     optional int64 tablet_id = 5;
 }
 
-message TabletMetaInfoPB {
+message TabletMetaInfoPB { // For update tablet meta
     optional int64 tablet_id = 1;
     optional bool is_in_memory = 2; 
     optional bool is_persistent = 3;
+}
+
+message TabletCompactionJobPB {
+    enum CompactionType {
+        UNKOWN = 0;
+        BASE = 1;
+        CUMULATIVE = 2;
+    }
+    // IP and port of the node which initiates this job
+    optional string initiator = 1;
+    optional int64 ctime = 2;
+    optional int64 mtime = 3;
+    optional CompactionType type = 4;
+    optional int64 input_cumulative_point = 5;
+    optional int64 output_cumulative_point = 6;
+    optional int64 num_input_rowsets = 7;
+    optional int64 num_input_segments = 8;
+    optional int64 num_output_rowsets = 9;
+    optional int64 num_output_segments = 10;
+    optional int64 size_input_rowsets = 11;
+    optional int64 size_output_rowsets = 12;
+    optional int64 num_input_rows = 13;
+    optional int64 num_output_rows = 14;
+}
+
+message TabletSchemaChangeJobPB {
+    // TODO(zhanglei): add as needed
+}
+
+message TabletJobInfoPB {
+    optional TabletIndexPB idx = 1;
+    optional string id = 2;
+    optional int64 expiration = 3; // Expiration time, unix timestamp, -1 for no expiration
+    optional TabletCompactionJobPB compaction = 4;
+    optional TabletSchemaChangeJobPB schema_change = 5;
 }
 
 //==============================================================================
@@ -274,6 +309,12 @@ message TabletStatsPB {
     optional TabletIndexPB idx = 1;
     optional int64 data_size = 2;
     optional int64 num_rows = 3;
+    optional int64 num_rowsets = 4;
+    optional int64 num_segments = 5;
+    optional int64 last_compaction_time = 6;
+    optional int64 base_compaction_cnt = 7;
+    optional int64 cumulative_compaction_cnt = 8;
+    optional int64 cumulative_point = 9;
 }
 
 //==============================================================================
@@ -577,6 +618,30 @@ message GetStageResponse {
     optional StagePB stage = 2;
 }
 
+message StartTabletJobRequest {
+    optional string cloud_unique_id = 1; // For auth
+    optional TabletJobInfoPB job = 2;
+}
+
+message StartTabletJobResponse {
+    optional MetaServiceResponseStatus status = 1;
+}
+
+message FinishTabletJobRequest {
+    enum Action {
+        UNKONWN = 0;
+        COMMIT  = 1;
+        ABORT   = 2;
+    }
+    optional string cloud_unique_id = 1; // For auth
+    optional Action action = 2;
+    optional TabletJobInfoPB job = 3;
+}
+
+message FinishTabletJobResponse {
+    optional MetaServiceResponseStatus status = 1;
+}
+
 enum MetaServiceCode {
     OK = 0;
 
@@ -614,6 +679,9 @@ enum MetaServiceCode {
     STAGE_ALREADY_EXISTED = 30;
     STAGE_NOT_FOUND = 31;
     STAGE_GET_ERR = 32;
+
+    // Job
+    EXPIRED_JOB = 1000;
 
     UNDEFINED_ERR = 100000;
 }
@@ -653,6 +721,9 @@ service MetaService {
     rpc prepare_partition(PartitionRequest) returns (MetaServiceGenericResponse);
     rpc commit_partition(PartitionRequest) returns (MetaServiceGenericResponse);
     rpc drop_partition(PartitionRequest) returns (MetaServiceGenericResponse);
+
+    rpc start_tablet_job(StartTabletJobRequest) returns (StartTabletJobResponse);
+    rpc finish_tablet_job(FinishTabletJobRequest) returns (FinishTabletJobResponse);
 
     rpc http(MetaServiceHttpRequest) returns (MetaServiceHttpResponse);
 

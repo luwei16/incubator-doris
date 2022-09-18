@@ -93,8 +93,10 @@ using RecyclePartKeyInfo   = BasicKeyInfo<12, std::tuple<std::string,  int64_t>>
 using RecycleRowsetKeyInfo = BasicKeyInfo<13, std::tuple<std::string,  int64_t,     std::string>>;
 
 //                                                      0:instance_id  1:table_id  2:index_id  3:part_id  4:tablet_id
-using StatsTabletKeyInfo   = BasicKeyInfo<14 , std::tuple<std::string,  int64_t,    int64_t,    int64_t,   int64_t>>;
-// clang-format on
+using StatsTabletKeyInfo   = BasicKeyInfo<14, std::tuple<std::string,  int64_t,    int64_t,    int64_t,   int64_t>>;
+
+//                                                      0:instance_id  1:table_id  2:index_id  3:part_id  4:tablet_id
+using JobTabletKeyInfo     = BasicKeyInfo<15, std::tuple<std::string,  int64_t,    int64_t,    int64_t,   int64_t>>;
 
 void instance_key(const InstanceKeyInfo& in, std::string* out);
 
@@ -108,13 +110,20 @@ void version_key(const VersionKeyInfo& in, std::string* out);
 void meta_rowset_key(const MetaRowsetKeyInfo& in, std::string* out);
 void meta_rowset_tmp_key(const MetaRowsetTmpKeyInfo& in, std::string* out);
 void meta_tablet_key(const MetaTabletKeyInfo& in, std::string* out);
+static inline std::string meta_tablet_key(const MetaTabletKeyInfo& in) { std::string s; meta_tablet_key(in, &s); return s; }
 void meta_tablet_idx_key(const MetaTabletIdxKeyInfo& in, std::string* out);
+static inline std::string meta_tablet_idx_key(const MetaTabletIdxKeyInfo& in) { std::string s; meta_tablet_idx_key(in, &s); return s; }
 
 void recycle_index_key(const RecycleIndexKeyInfo& in, std::string* out);
 void recycle_partition_key(const RecyclePartKeyInfo& in, std::string* out);
 void recycle_rowset_key(const RecycleRowsetKeyInfo& in, std::string* out);
 
 void stats_tablet_key(const StatsTabletKeyInfo& in, std::string* out);
+static inline std::string stats_tablet_key(const StatsTabletKeyInfo& in) { std::string s; stats_tablet_key(in, &s); return s; }
+
+void job_tablet_key(const JobTabletKeyInfo& in, std::string* out);
+static inline std::string job_tablet_key(const JobTabletKeyInfo& in) { std::string s; job_tablet_key(in, &s); return s; }
+// clang-format on
 // TODO: add a family of decoding functions if needed
 
 /**

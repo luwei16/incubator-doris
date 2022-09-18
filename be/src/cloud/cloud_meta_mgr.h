@@ -35,6 +35,12 @@ public:
 
     Status get_s3_info(std::vector<std::tuple<std::string, S3Conf>>* s3_infos) override;
 
+    Status prepare_tablet_job(const selectdb::TabletJobInfoPB& job) override;
+
+    Status commit_tablet_job(const selectdb::TabletJobInfoPB& job) override;
+
+    Status abort_tablet_job(const selectdb::TabletJobInfoPB& job) override;
+
 private:
     std::unique_ptr<selectdb::MetaService_Stub> _stub;
 };

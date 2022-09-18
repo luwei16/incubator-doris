@@ -253,4 +253,45 @@ Status CloudMetaMgr::get_s3_info(std::vector<std::tuple<std::string, S3Conf>>* s
     return Status::OK();
 }
 
+template <typename Res>
+Status check_rpc_response(const Res& res, const brpc::Controller& cntl, const std::string& msg) {
+    if (cntl.Failed()) {
+        return Status::RpcError("failed to " + msg + " err: {}", cntl.ErrorText());
+    }
+    if (res.status().code() != selectdb::MetaServiceCode::OK) {
+        return Status::InternalError("failed to " + msg + " err: {}", res.status().msg());
+    }
+    return Status::OK();
+}
+
+Status CloudMetaMgr::prepare_tablet_job(const selectdb::TabletJobInfoPB& job) {
+    brpc::Controller cntl;
+    cntl.set_timeout_ms(config::meta_service_brpc_timeout_ms);
+    selectdb::StartTabletJobRequest req;
+    selectdb::StartTabletJobResponse res;
+    req.mutable_job()->CopyFrom(job);
+    req.set_cloud_unique_id(config::cloud_unique_id);
+    _stub->start_tablet_job(&cntl, &req, &res, nullptr);
+    return check_rpc_response(res, cntl, __FUNCTION__);
+}
+
+Status CloudMetaMgr::commit_tablet_job(const selectdb::TabletJobInfoPB& job) {
+    brpc::Controller cntl;
+    cntl.set_timeout_ms(config::meta_service_brpc_timeout_ms);
+    selectdb::FinishTabletJobRequest req;
+    selectdb::FinishTabletJobResponse res;
+    req.mutable_job()->CopyFrom(job);
+    req.set_action(selectdb::FinishTabletJobRequest::COMMIT);
+    req.set_cloud_unique_id(config::cloud_unique_id);
+    _stub->finish_tablet_job(&cntl, &req, &res, nullptr);
+    return check_rpc_response(res, cntl, __FUNCTION__);
+}
+
+Status CloudMetaMgr::abort_tablet_job(const selectdb::TabletJobInfoPB& job) {
+    // TBD(gavin)
+    return Status::OK();
+}
+
 } // namespace doris::cloud
+
+// vim: et tw=100 ts=4 sw=4 cc=80:

@@ -11,30 +11,36 @@
 
 namespace selectdb {
 
+// clang-format off
+// Prefix
 [[maybe_unused]] static const char* INSTANCE_KEY_PREFIX = "instance";
 
-[[maybe_unused]] static const char* TXN_KEY_PREFIX = "txn";
-[[maybe_unused]] static const char* VERSION_KEY_PREFIX = "version";
-[[maybe_unused]] static const char* META_KEY_PREFIX = "meta";
-[[maybe_unused]] static const char* RECYCLE_KEY_PREFIX = "recycle";
-[[maybe_unused]] static const char* STATS_KEY_PREFIX = "stats";
+[[maybe_unused]] static const char* TXN_KEY_PREFIX      = "txn";
+[[maybe_unused]] static const char* VERSION_KEY_PREFIX  = "version";
+[[maybe_unused]] static const char* META_KEY_PREFIX     = "meta";
+[[maybe_unused]] static const char* RECYCLE_KEY_PREFIX  = "recycle";
+[[maybe_unused]] static const char* STATS_KEY_PREFIX    = "stats";
+[[maybe_unused]] static const char* JOB_KEY_PREFIX      = "job";
 
-[[maybe_unused]] static const char* TXN_KEY_INFIX_INDEX = "txn_index";
-[[maybe_unused]] static const char* TXN_KEY_INFIX_INFO = "txn_info";
-[[maybe_unused]] static const char* TXN_KEY_INFIX_DB_TBL = "txn_db_tbl";
-[[maybe_unused]] static const char* TXN_KEY_INFIX_RUNNING = "txn_running";
+// Infix
+[[maybe_unused]] static const char* TXN_KEY_INFIX_INDEX       = "txn_index";
+[[maybe_unused]] static const char* TXN_KEY_INFIX_INFO        = "txn_info";
+[[maybe_unused]] static const char* TXN_KEY_INFIX_DB_TBL      = "txn_db_tbl";
+[[maybe_unused]] static const char* TXN_KEY_INFIX_RUNNING     = "txn_running";
 
-[[maybe_unused]] static const char* VERSION_KEY_INFIX = "version_id";
+[[maybe_unused]] static const char* VERSION_KEY_INFIX         = "version_id";
 
-[[maybe_unused]] static const char* META_KEY_INFIX_ROWSET = "rowset";
+[[maybe_unused]] static const char* META_KEY_INFIX_ROWSET     = "rowset";
 [[maybe_unused]] static const char* META_KEY_INFIX_ROWSET_TMP = "rowset_tmp";
-[[maybe_unused]] static const char* META_KEY_INFIX_TABLET = "tablet";
+[[maybe_unused]] static const char* META_KEY_INFIX_TABLET     = "tablet";
 [[maybe_unused]] static const char* META_KEY_INFIX_TABLET_TBL = "tablet_table";
 
-[[maybe_unused]] static const char* RECYCLE_KEY_INFIX_INDEX = "index";
-[[maybe_unused]] static const char* RECYCLE_KEY_INFIX_PART = "partition";
+[[maybe_unused]] static const char* RECYCLE_KEY_INFIX_INDEX   = "index";
+[[maybe_unused]] static const char* RECYCLE_KEY_INFIX_PART    = "partition";
 
-[[maybe_unused]] static const char* STATS_KEY_INFIX_TABLET = "tablet";
+[[maybe_unused]] static const char* STATS_KEY_INFIX_TABLET    = "tablet";
+
+[[maybe_unused]] static const char* JOB_KEY_INFIX_TABLET      = "tablet";
 // clang-format on
 
 // clang-format off
@@ -52,36 +58,36 @@ constexpr static typename std::enable_if_t<0 < sizeof...(R), bool> is_one_of() {
 }
 
 template <typename T, typename U>
-constexpr static bool all_types_distinct() { return std::is_same_v<T, U>; }
+constexpr static bool not_all_types_distinct() { return std::is_same_v<T, U>; }
 /**
  * Checks if there are 2 types are the same in the given type list
  */
 template <typename T, typename U, typename... R>
 constexpr static typename std::enable_if_t<0 < sizeof...(R), bool> 
-all_types_distinct() {
-    // The last part of this expr is `for` loop
-    return is_one_of<T, U>() || is_one_of<T, R...>() || all_types_distinct<U, R...>();
+not_all_types_distinct() {
+    // The last part of this expr is a `for` loop
+    return is_one_of<T, U>() || is_one_of<T, R...>() || not_all_types_distinct<U, R...>();
 }
+
+template <typename T, typename... R>
+struct check_types {
+    static_assert(is_one_of<T, R...>(), "Invalid key type");
+    static_assert(!not_all_types_distinct<R...>(), "Type conflict, there are at least 2 types that are identical in the list.");
+    static constexpr bool value = is_one_of<T, R...>() && !not_all_types_distinct<R...>();
+};
+template <typename T, typename... R>
+inline constexpr bool check_types_v = check_types<T, R...>::value;
 
 template <typename T>
 static void encode_prefix(const T& t, std::string* key) {
     // Input type T must be one of the following, add if needed
-    static_assert(is_one_of<T,
+    static_assert(check_types_v<T,
         InstanceKeyInfo,
         TxnIndexKeyInfo, TxnInfoKeyInfo, TxnDbTblKeyInfo, TxnRunningKeyInfo,
         MetaRowsetKeyInfo, MetaRowsetTmpKeyInfo, MetaTabletKeyInfo, MetaTabletIdxKeyInfo,
         VersionKeyInfo,
         RecycleIndexKeyInfo, RecyclePartKeyInfo, RecycleRowsetKeyInfo,
-        StatsTabletKeyInfo
-       >(), "Invalid Key Type");
-    static_assert(!all_types_distinct<
-        InstanceKeyInfo,
-        TxnIndexKeyInfo, TxnInfoKeyInfo, TxnDbTblKeyInfo, TxnRunningKeyInfo,
-        MetaRowsetKeyInfo, MetaRowsetTmpKeyInfo, MetaTabletKeyInfo, MetaTabletIdxKeyInfo,
-        VersionKeyInfo,
-        RecycleIndexKeyInfo, RecyclePartKeyInfo, RecycleRowsetKeyInfo,
-        StatsTabletKeyInfo
-        >(), "Type conflict, there are at least 2 types are the same in the list.");
+        StatsTabletKeyInfo, JobTabletKeyInfo>);
 
     key->push_back(CLOUD_KEY_SPACE01);
     // Prefixes for key families
@@ -105,6 +111,8 @@ static void encode_prefix(const T& t, std::string* key) {
         encode_bytes(RECYCLE_KEY_PREFIX, key);
     } else if constexpr (std::is_same_v<T, StatsTabletKeyInfo>) {
         encode_bytes(STATS_KEY_PREFIX, key);
+    } else if constexpr (std::is_same_v<T, JobTabletKeyInfo>) {
+        encode_bytes(JOB_KEY_PREFIX, key);
     } else {
         std::abort(); // Impossible
     }
@@ -226,6 +234,15 @@ void stats_tablet_key(const StatsTabletKeyInfo& in, std::string* out) {
     encode_int64(std::get<2>(in), out);        // index_id
     encode_int64(std::get<3>(in), out);        // partition_id
     encode_int64(std::get<4>(in), out);        // tablet_id
+}
+
+void job_tablet_key(const JobTabletKeyInfo& in, std::string* out) {
+    encode_prefix(in, out);                  // 0x01 "job" ${instance_id}
+    encode_bytes(JOB_KEY_INFIX_TABLET, out); // "tablet"
+    encode_int64(std::get<1>(in), out);      // table_id
+    encode_int64(std::get<2>(in), out);      // index_id
+    encode_int64(std::get<3>(in), out);      // partition_id
+    encode_int64(std::get<4>(in), out);      // tablet_id
 }
 
 //==============================================================================

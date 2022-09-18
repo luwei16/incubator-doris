@@ -78,18 +78,21 @@ CLEAN=0
 RUN=0
 BUILD_BENCHMARK_TOOL=OFF
 FILTER=""
+echo "===================== filter: ${FILTER}"
 if [ $# != 1 ] ; then
     while true; do 
         case "$1" in
             --clean) CLEAN=1 ; shift ;;
             --run) RUN=1 ; shift ;;
-            -f | --filter) FILTER=$2; shift 2;;
+            -f | --filter) FILTER="$2 $4"; shift 2;;
             -j) PARALLEL=$2; shift 2 ;;
             --) shift ;  break ;;
             *) usage ; exit 0 ;;
         esac
     done
 fi
+
+echo "===================== filter: ${FILTER}"
 
 CMAKE_BUILD_TYPE=${BUILD_TYPE:-ASAN}
 CMAKE_BUILD_TYPE="${CMAKE_BUILD_TYPE^^}"
@@ -151,4 +154,4 @@ echo "**********************************"
 
 # test binary output dir
 cd test
-./run_all_tests.sh "${FILTER}"
+./run_all_tests.sh ${FILTER}

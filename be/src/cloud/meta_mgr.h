@@ -7,6 +7,10 @@
 #include "runtime/stream_load/stream_load_context.h"
 #include "util/s3_util.h"
 
+namespace selectdb {
+    class TabletJobInfoPB;
+}
+
 namespace doris::cloud {
 
 class MetaMgr {
@@ -49,6 +53,18 @@ public:
     }
 
     virtual Status get_s3_info(std::vector<std::tuple<std::string, S3Conf>>* s3_infos) {
+        return Status::NotSupported("not supported");
+    }
+
+    virtual Status prepare_tablet_job(const selectdb::TabletJobInfoPB& job) {
+        return Status::NotSupported("not supported");
+    }
+
+    virtual Status commit_tablet_job(const selectdb::TabletJobInfoPB& job) {
+        return Status::NotSupported("not supported");
+    }
+
+    virtual Status abort_tablet_job(const selectdb::TabletJobInfoPB& job) {
         return Status::NotSupported("not supported");
     }
 };

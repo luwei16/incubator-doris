@@ -11,6 +11,7 @@ set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -lfdb_c -L${THIRDPARTY_DIR
 add_library(MetaService
     meta_server.cpp
     meta_service.cpp
+    meta_service_job.cpp
     txn_kv.cpp
     codec.cpp
     keys.cpp

@@ -1,6 +1,8 @@
 // switch on syncpoint macro
 // clang-format off
+#ifndef UNIT_TEST
 #define UNIT_TEST
+#endif
 #include "common/sync_point.h"
 
 #include <cassert>

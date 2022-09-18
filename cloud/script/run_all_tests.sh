@@ -1,5 +1,7 @@
 #!/bin/bash
 
+echo "$@"
+
 for i in `ls *_test`; do
 	if [ "$1" != "" ]; then
 		if [ "$1" != "${i}" ]; then

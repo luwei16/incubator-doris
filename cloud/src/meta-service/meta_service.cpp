@@ -6,7 +6,7 @@
 #include "common/config.h"
 #include "common/logging.h"
 #include "common/util.h"
-#include "common/md5.h"
+#include "common/sync_point.h"
 
 #include "brpc/closure_guard.h"
 #include "brpc/controller.h"
@@ -39,8 +39,13 @@ MetaServiceImpl::MetaServiceImpl(std::shared_ptr<TxnKv> txn_kv,
 MetaServiceImpl::~MetaServiceImpl() {}
 
 // FIXME(gavin): should it be a member function of ResourceManager?
-static std::string get_instance_id(const std::shared_ptr<ResourceManager>& rc_mgr,
-                                   const std::string& cloud_unique_id) {
+std::string get_instance_id(const std::shared_ptr<ResourceManager>& rc_mgr,
+                            const std::string& cloud_unique_id) {
+    {
+        [[maybe_unused]] std::string tmp_ret;
+        TEST_SYNC_POINT_RETURN_WITH_VALUE("get_instance_id", &tmp_ret);
+    }
+
     std::vector<NodeInfo> nodes;
     std::string err = rc_mgr->get_node(cloud_unique_id, &nodes);
     if (!err.empty()) {
@@ -1444,7 +1449,18 @@ void MetaServiceImpl::create_tablet(::google::protobuf::RpcController* controlle
         return;
     }
     txn->put(key1, val1);
-    LOG(INFO) << "xxx put tablet_idx_key=" << hex(key1);
+    LOG(INFO) << "put tablet_idx tablet_id=" << tablet_id << " key=" << hex(key1);
+    
+    // Create stats info for the tablet
+    auto stats_key = stats_tablet_key({instance_id, table_id, index_id, partition_id, tablet_id});
+    std::string stats_val;
+    TabletStatsPB stats_pb;
+    stats_pb.set_num_rowsets(1);
+    stats_pb.set_num_rowsets(0);
+    stats_val = stats_pb.SerializeAsString();
+    DCHECK(!stats_val.empty());
+    txn->put(stats_key, stats_val);
+    LOG(INFO) << "put tablet stats, tablet_id=" << tablet_id << " key=" << hex(stats_key);
 
     ret = txn->commit();
     if (ret != 0) {

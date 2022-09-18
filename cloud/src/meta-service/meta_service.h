@@ -120,6 +120,16 @@ public:
                           ::selectdb::GetTabletStatsResponse* response,
                           ::google::protobuf::Closure* done) override;
 
+    void start_tablet_job(::google::protobuf::RpcController* controller,
+                          const ::selectdb::StartTabletJobRequest* request,
+                          ::selectdb::StartTabletJobResponse* response,
+                          ::google::protobuf::Closure* done) override;
+
+    void finish_tablet_job(::google::protobuf::RpcController* controller,
+                           const ::selectdb::FinishTabletJobRequest* request,
+                           ::selectdb::FinishTabletJobResponse* response,
+                           ::google::protobuf::Closure* done) override;
+
     void http(::google::protobuf::RpcController* controller,
               const ::selectdb::MetaServiceHttpRequest* request,
               ::selectdb::MetaServiceHttpResponse* response,
