@@ -138,7 +138,7 @@ public:
 private:
     std::shared_ptr<MemTxnKv> kv_ {nullptr};
     bool commited_ = false;
-    bool aborted_ = false;
+    //bool aborted_ = false;
     std::map<PutType, std::map<std::string, std::string>> put_kv_;
     std::vector<std::vector<std::string>> remove_keys_;
     std::mutex lock_;

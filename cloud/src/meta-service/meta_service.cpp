@@ -1454,8 +1454,8 @@ void MetaServiceImpl::create_tablet(::google::protobuf::RpcController* controlle
     }
 }
 
-MetaServiceResponseStatus s_get_tablet(const std::string& instance_id, Transaction* txn,
-                                       int64_t tablet_id, doris::TabletMetaPB* tablet_meta) {
+static MetaServiceResponseStatus s_get_tablet(const std::string& instance_id, Transaction* txn,
+                                              int64_t tablet_id, doris::TabletMetaPB* tablet_meta) {
     MetaServiceResponseStatus st;
     int ret = 0;
     // TODO: validate request
@@ -1534,8 +1534,7 @@ void MetaServiceImpl::update_tablet(::google::protobuf::RpcController* controlle
     }
     for (const TabletMetaInfoPB& tablet_meta_info : request->tablet_meta_infos()) {
         doris::TabletMetaPB tablet_meta;
-        status = std::move(
-                s_get_tablet(instance_id, txn.get(), tablet_meta_info.tablet_id(), &tablet_meta));
+        status = s_get_tablet(instance_id, txn.get(), tablet_meta_info.tablet_id(), &tablet_meta);
         if (status.code() != MetaServiceCode::OK) {
             return;
         }
@@ -1597,8 +1596,8 @@ void MetaServiceImpl::get_tablet(::google::protobuf::RpcController* controller,
         status.set_msg("failed to init txn");
         return;
     }
-    status = std::move(s_get_tablet(instance_id, txn.get(), request->tablet_id(),
-                                    response->mutable_tablet_meta()));
+    status = s_get_tablet(instance_id, txn.get(), request->tablet_id(),
+                          response->mutable_tablet_meta());
 }
 
 /**

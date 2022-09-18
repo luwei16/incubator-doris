@@ -3,6 +3,7 @@
 #include "meta_server.h"
 
 #include "common/config.h"
+#include "meta-service/mem_txn_kv.h"
 #include "meta-service/meta_service.h"
 #include "resource-manager/resource_manager.h"
 
@@ -18,7 +19,14 @@ MetaServer::MetaServer() {
 }
 
 int MetaServer::start() {
-    txn_kv_ = std::dynamic_pointer_cast<TxnKv>(std::make_shared<FdbTxnKv>());
+    if (config::use_mem_kv) {
+        // MUST NOT be used in production environment
+        std::cerr << "use volatile mem kv, please make sure it is not a production environment"
+                  << std::endl;
+        txn_kv_ = std::make_shared<MemTxnKv>();
+    } else {
+        txn_kv_ = std::dynamic_pointer_cast<TxnKv>(std::make_shared<FdbTxnKv>());
+    }
     if (txn_kv_ == nullptr) {
         LOG(WARNING) << "failed to create txn kv, invalid txnkv type";
         return 1;

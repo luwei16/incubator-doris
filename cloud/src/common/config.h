@@ -26,6 +26,8 @@ CONF_Int32(brpc_listen_port, "5000");
 CONF_Int32(brpc_num_threads, "-1");
 CONF_String(fdb_cluster_file_path, "./conf/fdb.cluster");
 CONF_String(http_token, "greedisgood9999");
+// use volatile mem kv for test. MUST NOT be `true` in production environment.
+CONF_Bool(use_mem_kv, "false");
 
 // logging
 CONF_String(log_dir, "./log/");
