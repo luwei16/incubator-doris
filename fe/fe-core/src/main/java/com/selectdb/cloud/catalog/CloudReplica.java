@@ -17,6 +17,7 @@
 
 package com.selectdb.cloud.catalog;
 
+import com.google.gson.annotations.SerializedName;
 import org.apache.doris.catalog.Env;
 import org.apache.doris.catalog.Partition;
 import org.apache.doris.catalog.Replica;
@@ -38,11 +39,17 @@ public class CloudReplica extends Replica {
 
     // In the future, a replica may be mapped to multiple BEs in a cluster,
     // so this value is be list
+    @SerializedName(value = "clusterToBackends")
     private Map<String, List<Long>> clusterToBackends = new HashMap<String, List<Long>>();
+    @SerializedName(value = "dbId")
     private long dbId = -1;
+    @SerializedName(value = "tableId")
     private long tableId = -1;
+    @SerializedName(value = "partitionId")
     private long partitionId = -1;
+    @SerializedName(value = "indexId")
     private long indexId = -1;
+    @SerializedName(value = "idx")
     private long idx = -1;
 
     public CloudReplica() {
