@@ -33,7 +33,7 @@ namespace selectdb {
 [[maybe_unused]] static const char* META_KEY_INFIX_ROWSET     = "rowset";
 [[maybe_unused]] static const char* META_KEY_INFIX_ROWSET_TMP = "rowset_tmp";
 [[maybe_unused]] static const char* META_KEY_INFIX_TABLET     = "tablet";
-[[maybe_unused]] static const char* META_KEY_INFIX_TABLET_TBL = "tablet_table";
+[[maybe_unused]] static const char* META_KEY_INFIX_TABLET_IDX = "tablet_index";
 
 [[maybe_unused]] static const char* RECYCLE_KEY_INFIX_INDEX   = "index";
 [[maybe_unused]] static const char* RECYCLE_KEY_INFIX_PART    = "partition";
@@ -200,7 +200,7 @@ void meta_tablet_key(const MetaTabletKeyInfo& in, std::string* out) {
 
 void meta_tablet_idx_key(const MetaTabletIdxKeyInfo& in, std::string* out) {
     encode_prefix(in, out);                       // 0x01 "meta" ${instance_id}
-    encode_bytes(META_KEY_INFIX_TABLET_TBL, out); // "tablet_table"
+    encode_bytes(META_KEY_INFIX_TABLET_IDX, out); // "tablet_index"
     encode_int64(std::get<1>(in), out);           // tablet_id
 }
 

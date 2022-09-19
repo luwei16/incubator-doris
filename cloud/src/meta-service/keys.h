@@ -30,6 +30,8 @@
 // 0x01 "recycle" ${instance_id} "index" ${index_id}                                         -> RecycleIndexPB
 // 0x01 "recycle" ${instance_id} "partition" ${partition_id}                                 -> RecyclePartitionPB
 // 0x01 "recycle" ${instance_id} "rowset" ${tablet_id} ${rowset_id}                          -> RecycleRowsetPB
+//
+// 0x01 "job" ${instance_id} "tablet" ${tablet_id}                                           -> TabletJobInfoPB
 // clang-format on
 
 namespace selectdb {
@@ -109,14 +111,19 @@ void version_key(const VersionKeyInfo& in, std::string* out);
 
 void meta_rowset_key(const MetaRowsetKeyInfo& in, std::string* out);
 void meta_rowset_tmp_key(const MetaRowsetTmpKeyInfo& in, std::string* out);
-void meta_tablet_key(const MetaTabletKeyInfo& in, std::string* out);
-static inline std::string meta_tablet_key(const MetaTabletKeyInfo& in) { std::string s; meta_tablet_key(in, &s); return s; }
 void meta_tablet_idx_key(const MetaTabletIdxKeyInfo& in, std::string* out);
+void meta_tablet_key(const MetaTabletKeyInfo& in, std::string* out);
+static inline std::string meta_rowset_key(const MetaRowsetKeyInfo& in) { std::string s; meta_rowset_key(in, &s); return s; }
+static inline std::string meta_rowset_tmp_key(const MetaRowsetTmpKeyInfo& in) { std::string s; meta_rowset_tmp_key(in, &s); return s; }
 static inline std::string meta_tablet_idx_key(const MetaTabletIdxKeyInfo& in) { std::string s; meta_tablet_idx_key(in, &s); return s; }
+static inline std::string meta_tablet_key(const MetaTabletKeyInfo& in) { std::string s; meta_tablet_key(in, &s); return s; }
 
 void recycle_index_key(const RecycleIndexKeyInfo& in, std::string* out);
 void recycle_partition_key(const RecyclePartKeyInfo& in, std::string* out);
 void recycle_rowset_key(const RecycleRowsetKeyInfo& in, std::string* out);
+static inline std::string recycle_index_key(const RecycleIndexKeyInfo& in) { std::string s; recycle_index_key(in, &s); return s; }
+static inline std::string recycle_partition_key(const RecyclePartKeyInfo& in) { std::string s; recycle_partition_key(in, &s); return s; }
+static inline std::string recycle_rowset_key(const RecycleRowsetKeyInfo& in) { std::string s; recycle_rowset_key(in, &s); return s; }
 
 void stats_tablet_key(const StatsTabletKeyInfo& in, std::string* out);
 static inline std::string stats_tablet_key(const StatsTabletKeyInfo& in) { std::string s; stats_tablet_key(in, &s); return s; }

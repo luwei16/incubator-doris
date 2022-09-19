@@ -274,10 +274,10 @@ message TabletCompactionJobPB {
         CUMULATIVE = 2;
     }
     // IP and port of the node which initiates this job
-    optional string initiator = 1;
+    optional string initiator = 1; // prepare
     optional int64 ctime = 2;
     optional int64 mtime = 3;
-    optional CompactionType type = 4;
+    optional CompactionType type = 4; // prepare
     optional int64 input_cumulative_point = 5;
     optional int64 output_cumulative_point = 6;
     optional int64 num_input_rowsets = 7;
@@ -290,6 +290,8 @@ message TabletCompactionJobPB {
     optional int64 num_output_rows = 14;
     repeated int64 input_versions = 15;
     repeated int64 output_versions = 16;
+    repeated string output_rowset_ids = 17;
+    optional int64 txn_id = 18;
 }
 
 message TabletSchemaChangeJobPB {

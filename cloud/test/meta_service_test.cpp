@@ -487,7 +487,7 @@ TEST(MetaServiceTest, TabletJobTest) {
 
     brpc::Controller cntl;
 
-    // Start compaciton job, normal
+    // Start compaciton job
     {
         StartTabletJobRequest req;
         StartTabletJobResponse res;
@@ -602,7 +602,7 @@ TEST(MetaServiceTest, TabletJobTest) {
         tablet_stats_pb.mutable_idx()->set_tablet_id(tablet_id);
 
         std::mt19937 rng(std::chrono::system_clock::now().time_since_epoch().count());
-        std::uniform_int_distribution<int> dist(1, 10000);
+        std::uniform_int_distribution<int> dist(1, 10000); // Positive numbers
         tablet_stats_pb.set_cumulative_compaction_cnt(dist(rng));
         tablet_stats_pb.set_base_compaction_cnt(dist(rng));
         tablet_stats_pb.set_cumulative_point(tablet_meta_pb.cumulative_layer_point());
@@ -632,10 +632,96 @@ TEST(MetaServiceTest, TabletJobTest) {
         txn->put(tablet_stats_key, tablet_stats_val);
         ASSERT_EQ(txn->commit(), 0);
 
+        // Input rowset not valid
+        meta_service->finish_tablet_job(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
+                                        &req, &res, nullptr);
+        ASSERT_NE(res.status().msg().find("invalid input"), std::string::npos);
+
+        // Provide input and output rowset info
+        int64_t input_version_start = dist(rng);
+        int64_t input_version_end = input_version_start + 100;
+        req.mutable_job()->mutable_compaction()->add_input_versions(input_version_start);
+        req.mutable_job()->mutable_compaction()->add_input_versions(input_version_end);
+        req.mutable_job()->mutable_compaction()->add_output_versions(input_version_end);
+        req.mutable_job()->mutable_compaction()->add_output_rowset_ids("output rowset id");
+
+        // Input rowsets must exist, and more than 1
+        // Check number input rowsets
+        sp->set_call_back("process_compaction_job::loop_input_done", [](void* c) {
+            int& num_input_rowsets = *(int*)c;
+            ASSERT_EQ(num_input_rowsets, 0); // zero existed rowsets
+        });
+        meta_service->finish_tablet_job(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
+                                        &req, &res, nullptr);
+        ASSERT_NE(res.status().msg().find("too few input rowsets"), std::string::npos);
+
+        // Provide input rowset KVs, boundary test, 5 input rowsets
+        ASSERT_EQ(meta_service->txn_kv_->create_txn(&txn), 0);
+        // clang-format off
+        std::vector<std::string> input_rowset_keys = {
+                meta_rowset_key({instance_id, tablet_id, input_version_start - 1}),
+                meta_rowset_key({instance_id, tablet_id, input_version_start}),
+                meta_rowset_key({instance_id, tablet_id, input_version_start + 1}),
+                meta_rowset_key({instance_id, tablet_id, (input_version_start + input_version_end) / 2}),
+                meta_rowset_key({instance_id, tablet_id, input_version_end - 1}),
+                meta_rowset_key({instance_id, tablet_id, input_version_end}),
+                meta_rowset_key({instance_id, tablet_id, input_version_end + 1}),
+        };
+        // clang-format on
+        std::vector<std::unique_ptr<std::string>> input_rowset_vals;
+        for (auto& i : input_rowset_keys) {
+            doris::RowsetMetaPB rs_pb;
+            rs_pb.set_rowset_id(0);
+            rs_pb.set_rowset_id_v2(hex(i));
+            input_rowset_vals.emplace_back(new std::string(rs_pb.SerializeAsString()));
+            txn->put(i, *input_rowset_vals.back());
+        }
+        ASSERT_EQ(txn->commit(), 0);
+
+        // Check number input rowsets
+        sp->set_call_back("process_compaction_job::loop_input_done", [](void* c) {
+            int& num_input_rowsets = *(int*)c;
+            ASSERT_EQ(num_input_rowsets, 5);
+        });
+        // No tmp rowset key (output rowset)
+        meta_service->finish_tablet_job(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
+                                        &req, &res, nullptr);
+        ASSERT_NE(res.status().msg().find("invalid txn_id"), std::string::npos);
+
+        int64_t txn_id = dist(rng);
+        req.mutable_job()->mutable_compaction()->set_txn_id(txn_id);
+
+        meta_service->finish_tablet_job(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
+                                        &req, &res, nullptr);
+        ASSERT_NE(res.status().msg().find("failed to get tmp rowset key"), std::string::npos);
+
+        // Provide invalid output rowset meta
+        auto tmp_rowset_key = meta_rowset_tmp_key({instance_id, txn_id, tablet_id});
+        doris::RowsetMetaPB tmp_rs_pb;
+        tmp_rs_pb.set_rowset_id(0);
+        auto tmp_rowset_val = tmp_rs_pb.SerializeAsString();
+        ASSERT_EQ(meta_service->txn_kv_->create_txn(&txn), 0);
+        txn->put(tmp_rowset_key, tmp_rowset_val);
+        ASSERT_EQ(txn->commit(), 0);
+
+        meta_service->finish_tablet_job(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
+                                        &req, &res, nullptr);
+        ASSERT_NE(res.status().msg().find("invalid txn_id in output tmp rowset meta"), std::string::npos);
+
+        // Provide txn_id in output rowset meta
+        tmp_rs_pb.set_txn_id(10086);
+        tmp_rowset_val = tmp_rs_pb.SerializeAsString();
+        ASSERT_EQ(meta_service->txn_kv_->create_txn(&txn), 0);
+        txn->put(tmp_rowset_key, tmp_rowset_val);
+        ASSERT_EQ(txn->commit(), 0);
+
         meta_service->finish_tablet_job(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
                                         &req, &res, nullptr);
         ASSERT_EQ(res.status().code(), MetaServiceCode::OK);
 
+        //=====================================================================
+        // All branch tests done, we are done commit a compaction job
+        //=====================================================================
         ASSERT_EQ(meta_service->txn_kv_->create_txn(&txn), 0);
         tablet_stats_val.clear();
         ASSERT_EQ(txn->get(tablet_stats_key, &tablet_stats_val), 0);
@@ -661,8 +747,29 @@ TEST(MetaServiceTest, TabletJobTest) {
         ASSERT_EQ(txn->get(tablet_meta_key, &tablet_meta_val), 0);
         ASSERT_TRUE(tablet_meta_pb.ParseFromString(tablet_meta_val));
         LOG(INFO) << tablet_meta_pb.DebugString();
-        ASSERT_EQ(tablet_meta_pb.cumulative_layer_point(), req.job().compaction().output_cumulative_point());
+        ASSERT_EQ(tablet_meta_pb.cumulative_layer_point(),
+                  req.job().compaction().output_cumulative_point());
         ASSERT_EQ(tablet_meta_pb.cumulative_layer_point(), stats.cumulative_point());
+
+        // Check tmp rowset removed
+        ASSERT_EQ(txn->get(tmp_rowset_key, &tmp_rowset_val), 1);
+        // Check input rowsets removed
+        for (int i = 1; i < input_rowset_keys.size() - 1; ++i) {
+            std::string val;
+            ASSERT_EQ(txn->get(input_rowset_keys[i], &val), 1);
+        }
+        // Check recycle rowsets added
+        for (int i = 1; i < input_rowset_vals.size() - 1; ++i) {
+            doris::RowsetMetaPB rs;
+            ASSERT_TRUE(rs.ParseFromString(*input_rowset_vals[i]));
+            auto key = recycle_rowset_key({instance_id, tablet_id, rs.rowset_id_v2()});
+            std::string val;
+            EXPECT_EQ(txn->get(key, &val), 0) << hex(key);
+        }
+        // Check output rowset added
+        auto rowset_key = meta_rowset_key({instance_id, tablet_id, input_version_end});
+        std::string rowset_val;
+        EXPECT_EQ(txn->get(rowset_key, &rowset_val), 0) << hex(rowset_key);
     }
 }
 // vim: et tw=100 ts=4 sw=4 cc=80:

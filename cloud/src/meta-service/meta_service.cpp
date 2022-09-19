@@ -1440,6 +1440,7 @@ void MetaServiceImpl::create_tablet(::google::protobuf::RpcController* controlle
     MetaTabletIdxKeyInfo key_info1 {instance_id, tablet_id};
     meta_tablet_idx_key(key_info1, &key1);
     TabletIndexPB tablet_table;
+    // tablet_table.set_db_id(db_id);
     tablet_table.set_table_id(table_id);
     tablet_table.set_index_id(index_id);
     tablet_table.set_partition_id(partition_id);

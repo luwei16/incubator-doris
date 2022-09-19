@@ -6,6 +6,7 @@
 #include "common/logging.h"
 #include "common/util.h"
 #include "common/sync_point.h"
+#include "common/object_pool.h"
 
 #include "brpc/closure_guard.h"
 #include "brpc/controller.h"
@@ -139,8 +140,9 @@ void MetaServiceImpl::start_tablet_job(::google::protobuf::RpcController* contro
            << " job=" << proto_to_json(job_pb);
         msg = ss.str();
         // TODO(gavin): more condition to check
-        code = job_pb.id() == request->job().id() ? MetaServiceCode::OK // Idempotency
-                                                  : MetaServiceCode::JOB_TABLET_BUSY;
+        code = !request->job().id().empty() && job_pb.id() == request->job().id()
+                       ? MetaServiceCode::OK // Idempotency
+                       : MetaServiceCode::JOB_TABLET_BUSY;
         return;
     }
 
@@ -177,21 +179,27 @@ void MetaServiceImpl::start_tablet_job(::google::protobuf::RpcController* contro
         msg = "failed to commit job info";
         return;
     }
-
-    txn_kv_->create_txn(&txn);
-    job_val.clear();
-    ret = txn->get(job_key, &job_val);
-    LOG(INFO) << "xxx ret=" << ret << " sizeof_job_val=" << job_val.size();
 }
 
+/**
+ * 1. check compaction job
+ * 2. update tablet meta
+ * 3. update tablet meta
+ * 4. update tablet stats
+ * 5. remove job key
+ * 6. move compaction input rowsets to recycle
+ * 7. chagne tmp rowset to formal rowset
+ */
 void process_compaction_job(MetaServiceCode& code, std::string& msg, std::stringstream& ss,
                             int& ret, std::unique_ptr<Transaction>& txn,
                             const ::selectdb::FinishTabletJobRequest* request,
                             TabletJobInfoPB& recorded_job, std::string& instance_id,
                             int64_t& table_id, int64_t& index_id, int64_t& partition_id,
                             int64_t& tablet_id, std::string& job_key, int64_t& now,
-                            bool& need_commit) {
-    // process compaction
+                            bool& need_commit, ObjectPool& obj_pool) {
+    //==========================================================================
+    //                                check
+    //==========================================================================
     if (!recorded_job.has_compaction()) {
         SS << "there is no running compaction, tablet_id=" << tablet_id;
         msg = ss.str();
@@ -210,8 +218,12 @@ void process_compaction_job(MetaServiceCode& code, std::string& msg, std::string
     // TODO(gavin): more check
     auto& compaction = request->job().compaction();
 
-    auto tablet_key = meta_tablet_key({instance_id, table_id, index_id, partition_id, tablet_id});
-    std::string tablet_val;
+    //==========================================================================
+    //                          update talbet meta
+    //==========================================================================
+    auto& tablet_key = *obj_pool.add(new std::string(
+            meta_tablet_key({instance_id, table_id, index_id, partition_id, tablet_id})));
+    auto& tablet_val = *obj_pool.add(new std::string());
     ret = txn->get(tablet_key, &tablet_val);
     LOG(INFO) << "get tablet meta, tablet_id=" << tablet_id << " key=" << hex(tablet_key);
     if (ret != 0) {
@@ -231,8 +243,9 @@ void process_compaction_job(MetaServiceCode& code, std::string& msg, std::string
               << " cumulative_point=" << compaction.output_cumulative_point()
               << " key=" << hex(tablet_key);
 
-    auto stats_key = stats_tablet_key({instance_id, table_id, index_id, partition_id, tablet_id});
-    std::string stats_val;
+    auto& stats_key = *obj_pool.add(new std::string(
+            stats_tablet_key({instance_id, table_id, index_id, partition_id, tablet_id})));
+    auto& stats_val = *obj_pool.add(new std::string());
     ret = txn->get(stats_key, &stats_val);
     LOG(INFO) << "get tablet stats, tablet_id=" << tablet_id << " key=" << hex(stats_key)
               << " ret=" << ret;
@@ -243,7 +256,10 @@ void process_compaction_job(MetaServiceCode& code, std::string& msg, std::string
         msg = ss.str();
         return;
     }
-    // Update tablet stats
+
+    //==========================================================================
+    //                          Update tablet stats
+    //==========================================================================
     TabletStatsPB stats;
     stats.ParseFromString(stats_val);
     // clang-format off
@@ -262,13 +278,138 @@ void process_compaction_job(MetaServiceCode& code, std::string& msg, std::string
     txn->put(stats_key, stats_val);
     LOG(INFO) << "update tablet stats tabelt_id=" << tablet_id << " key=" << hex(stats_key);
 
+    //==========================================================================
+    //                      Remove job key
+    //==========================================================================
     // TODO(gavin): move deleted job info into recycle or history
     txn->remove(job_key);
     LOG(INFO) << "remove tablet job tabelt_id=" << tablet_id << " key=" << hex(job_key);
 
-    // Move input rowsets to recycle
+    //==========================================================================
+    //                    Move input rowsets to recycle
+    //==========================================================================
+    if (request->job().compaction().input_versions_size() != 2 ||
+        request->job().compaction().output_versions_size() != 1 ||
+        request->job().compaction().output_rowset_ids_size() != 1) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        SS << "invalid input or output versions, input_versions="
+           << request->job().compaction().input_versions_size()
+           << " output_versions=" << request->job().compaction().output_versions_size()
+           << " output_rowset_ids=" << request->job().compaction().output_rowset_ids_size();
+        msg = ss.str();
+        return;
+    }
 
-    // TODO(gaivn): make it async
+    auto start = request->job().compaction().input_versions(0);
+    auto end = request->job().compaction().input_versions(1);
+    auto rs_start = meta_rowset_key({instance_id, tablet_id, start});
+    auto rs_end = meta_rowset_key({instance_id, tablet_id, end + 1});
+
+    // FIXME(gaivn): there may be too many rowsets to get, make it async
+    auto& it = *obj_pool.add(new std::unique_ptr<RangeGetIterator>());
+    int num_rowsets = 0;
+    std::unique_ptr<int, std::function<void(int*)>> defer_log_range(
+            (int*)0x01, [rs_start, rs_end, &num_rowsets](int*) {
+                LOG(INFO) << "get rowset meta, num_rowsets=" << num_rowsets << " range=["
+                          << hex(rs_start) << "," << hex(rs_end) << "]";
+            });
+
+    do {
+        ret = txn->get(rs_start, rs_end, &it);
+        if (ret != 0) {
+            code = MetaServiceCode::KV_TXN_GET_ERR;
+            SS << "internal error, failed to get rowset range, ret=" << ret
+               << " tablet_id=" << tablet_id << " range=[" << hex(rs_start) << ", << "
+               << hex(rs_start) << ")";
+            msg = ss.str();
+            return;
+        }
+
+        while (it->has_next()) {
+            auto [k, v] = it->next();
+
+            txn->remove(k);
+            LOG(INFO) << "range get and remove, tablet_id=" << tablet_id
+                      << " rowset_key=" << hex(k);
+            doris::RowsetMetaPB rs;
+            if (!rs.ParseFromArray(v.data(), v.size())) {
+                code = MetaServiceCode::PROTOBUF_PARSE_ERR;
+                SS << "malformed rowset meta, unable to deserialize, tablet_id=" << tablet_id
+                   << " key=" << hex(k);
+                msg = ss.str();
+                return;
+            }
+
+            auto& recycle_key = *obj_pool.add(new std::string(
+                    recycle_rowset_key({instance_id, tablet_id, rs.rowset_id_v2()})));
+            RecycleRowsetPB recycle_rowset;
+            recycle_rowset.set_obj_bucket(rs.s3_bucket());
+            recycle_rowset.set_obj_prefix(rs.s3_prefix());
+            recycle_rowset.set_creation_time(now);
+            auto& recycle_val = *obj_pool.add(new std::string(recycle_rowset.SerializeAsString()));
+            txn->put(recycle_key, recycle_val);
+            LOG(INFO) << "put recycle rowset, tablet_id=" << tablet_id
+                      << " key=" << hex(recycle_key);
+
+            ++num_rowsets;
+            if (!it->has_next()) rs_start = k;
+        }
+        rs_start.push_back('\x00'); // Update to next smallest key for iteration
+    } while (it->more());
+
+    TEST_SYNC_POINT_CALLBACK("process_compaction_job::loop_input_done", &num_rowsets);
+
+    if (num_rowsets < 2) {
+        SS << "too few input rowsets, tablet_id=" << tablet_id << " num_rowsets=" << num_rowsets;
+        code = MetaServiceCode::UNDEFINED_ERR;
+        msg = ss.str();
+        return;
+    }
+
+    //==========================================================================
+    //                Change tmp rowset to formal rowset
+    //==========================================================================
+    int64_t txn_id = request->job().compaction().txn_id();
+    auto& rowset_id = request->job().compaction().output_rowset_ids(0);
+    if (txn_id <= 0 || rowset_id.empty()) {
+        SS << "invalid txn_id or rowset_id, tablet_id=" << tablet_id << " txn_id=" << txn_id
+           << " rowset_id=" << rowset_id;
+        msg = ss.str();
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        return;
+    }
+    auto& tmp_rowset_key =
+            *obj_pool.add(new std::string(meta_rowset_tmp_key({instance_id, txn_id, tablet_id})));
+    auto& tmp_rowset_val = *obj_pool.add(new std::string());
+    ret = txn->get(tmp_rowset_key, &tmp_rowset_val);
+    if (ret != 0) {
+        SS << "failed to get tmp rowset key" << (ret == 1 ? " (not found)" : "")
+           << ", tablet_id=" << tablet_id << " tmp_rowset_key=" << hex(tmp_rowset_key);
+        msg = ss.str();
+        code = ret == 1 ? MetaServiceCode::UNDEFINED_ERR : MetaServiceCode::KV_TXN_GET_ERR;
+        return;
+    }
+
+    // We don't actually need to parse the rowset meta
+    doris::RowsetMetaPB rs_meta;
+    rs_meta.ParseFromString(tmp_rowset_val);
+    if (rs_meta.txn_id() <= 0) {
+        SS << "invalid txn_id in output tmp rowset meta, tablet_id=" << tablet_id
+           << " txn_id=" << rs_meta.txn_id();
+        msg = ss.str();
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        return;
+    }
+
+    txn->remove(tmp_rowset_key);
+    LOG(INFO) << "remove tmp rowset meta, tablet_id=" << tablet_id << " tmp_rowset_key=" << hex(tmp_rowset_key);
+
+    int64_t version = request->job().compaction().output_versions(0);
+    auto& rowset_key =
+            *obj_pool.add(new std::string(meta_rowset_key({instance_id, tablet_id, version})));
+    txn->put(rowset_key, tmp_rowset_val);
+    LOG(INFO) << "put rowset meta, tablet_id=" << tablet_id << " rowset_key=" << hex(rowset_key);
+
     need_commit = true;
 }
 
@@ -397,10 +538,11 @@ void MetaServiceImpl::finish_tablet_job(::google::protobuf::RpcController* contr
                 }
             });
 
+    ObjectPool obj_pool; // To save KVs that txn may use asynchronously in subroutines
     if (request->job().has_compaction()) {
         process_compaction_job(code, msg, ss, ret, txn, request, recorded_job, instance_id,
                                table_id, index_id, partition_id, tablet_id, job_key, now,
-                               need_commit);
+                               need_commit, obj_pool);
         return;
     }
 
