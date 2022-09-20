@@ -39,7 +39,6 @@ public class CloudReplica extends Replica {
 
     // In the future, a replica may be mapped to multiple BEs in a cluster,
     // so this value is be list
-    @SerializedName(value = "clusterToBackends")
     private Map<String, List<Long>> clusterToBackends = new HashMap<String, List<Long>>();
     @SerializedName(value = "dbId")
     private long dbId = -1;
@@ -112,7 +111,7 @@ public class CloudReplica extends Replica {
         if (clusterToBackends.containsKey(cluster)) {
             long backendId = clusterToBackends.get(cluster).get(0);
             Backend be = Env.getCurrentSystemInfo().getBackend(backendId);
-            if (be.isQueryAvailable()) {
+            if (be != null && be.isQueryAvailable()) {
                 LOG.debug("backendId={} ", backendId);
                 return backendId;
             }
