@@ -72,6 +72,12 @@ void MetaServiceImpl::start_tablet_job(::google::protobuf::RpcController* contro
         return;
     }
 
+    if (!request->job().has_id() || request->job().id().empty()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "no job id specified";
+        return;
+    }
+
     std::unique_ptr<Transaction> txn;
     ret = txn_kv_->create_txn(&txn);
     if (ret != 0) {
@@ -123,21 +129,27 @@ void MetaServiceImpl::start_tablet_job(::google::protobuf::RpcController* contro
     }
 
     // Begin to process start tablet job
-
     std::string job_key =
             job_tablet_key({instance_id, table_id, index_id, partition_id, tablet_id});
     std::string job_val;
     TabletJobInfoPB job_pb;
     ret = txn->get(job_key, &job_val);
-    LOG(INFO) << "get tablet job, key=" << hex(job_key);
+    LOG(INFO) << "get tablet job, tablet_id=" << tablet_id << " key=" << hex(job_key);
 
     TEST_SYNC_POINT_CALLBACK("start_tablet_job_get_key_ret", &ret);
 
-    if (ret == 0) {
-        // TODO(gavin): check expiration
+    using namespace std::chrono;
+    int64_t now = duration_cast<seconds>(system_clock::now().time_since_epoch()).count();
+    while (ret == 0) {
+        if (job_pb.expiration() > 0 && job_pb.expiration() < now) {
+            LOG(INFO) << "got an expired job, continue to process, tablet_id=" << tablet_id
+                      << " job=" << proto_to_json(job_pb);
+            break;
+        }
+
         job_pb.ParseFromString(job_val);
-        SS << "job already started instance_id=" << instance_id << " tablet_id=" << tablet_id
-           << " job=" << proto_to_json(job_pb);
+        SS << "a tablet job has already started instance_id=" << instance_id
+           << " tablet_id=" << tablet_id << " job=" << proto_to_json(job_pb);
         msg = ss.str();
         // TODO(gavin): more condition to check
         code = !request->job().id().empty() && job_pb.id() == request->job().id()
@@ -158,7 +170,7 @@ void MetaServiceImpl::start_tablet_job(::google::protobuf::RpcController* contro
 
     // TODO(gavin): check arguments
     LOG(INFO) << (job_pb.has_compaction()      ? "compaction"
-                  : job_pb.has_schema_change() ? "schema_change"
+                  : job_pb.has_schema_change() ? "schema change"
                                                : "")
               << " job to save, instance_id=" << instance_id << " tablet_id=" << tablet_id
               << " job=" << proto_to_json(request->job().compaction());
@@ -181,15 +193,6 @@ void MetaServiceImpl::start_tablet_job(::google::protobuf::RpcController* contro
     }
 }
 
-/**
- * 1. check compaction job
- * 2. update tablet meta
- * 3. update tablet meta
- * 4. update tablet stats
- * 5. remove job key
- * 6. move compaction input rowsets to recycle
- * 7. chagne tmp rowset to formal rowset
- */
 void process_compaction_job(MetaServiceCode& code, std::string& msg, std::stringstream& ss,
                             int& ret, std::unique_ptr<Transaction>& txn,
                             const ::selectdb::FinishTabletJobRequest* request,
@@ -207,8 +210,9 @@ void process_compaction_job(MetaServiceCode& code, std::string& msg, std::string
         return;
     }
 
-    if (request->action() != FinishTabletJobRequest::COMMIT) {
-        SS << "unsupported action, only commit is supported by now, tablet_id=" << tablet_id
+    if (request->action() != FinishTabletJobRequest::COMMIT &&
+        request->action() != FinishTabletJobRequest::ABORT) {
+        SS << "unsupported action, only COMMIT is allowed, tablet_id=" << tablet_id
            << " action=" << request->action();
         msg = ss.str();
         code = MetaServiceCode::INVALID_ARGUMENT;
@@ -218,6 +222,28 @@ void process_compaction_job(MetaServiceCode& code, std::string& msg, std::string
     // TODO(gavin): more check
     auto& compaction = request->job().compaction();
 
+    //==========================================================================
+    //                               Abort
+    //==========================================================================
+    if (request->action() == FinishTabletJobRequest::ABORT) {
+        // TODO(gavin): mv tmp rowsets to recycle or remove them directly
+        txn->remove(job_key);
+        LOG(INFO) << "abort tablet compaction job, tablet_id=" << tablet_id << " key=" << hex(job_key);
+        need_commit = true;
+        return;
+    }
+
+    //==========================================================================
+    //                               Commit
+    //==========================================================================
+    //
+    // 1. check compaction job
+    // 2. update tablet meta
+    // 3. update tablet stats
+    // 4. remove job key
+    // 5. move compaction input rowsets to recycle
+    // 6. change tmp rowset to formal rowset
+    //
     //==========================================================================
     //                          update talbet meta
     //==========================================================================
@@ -305,7 +331,7 @@ void process_compaction_job(MetaServiceCode& code, std::string& msg, std::string
     auto rs_start = meta_rowset_key({instance_id, tablet_id, start});
     auto rs_end = meta_rowset_key({instance_id, tablet_id, end + 1});
 
-    // FIXME(gaivn): there may be too many rowsets to get, make it async
+    // FIXME(gavin): there may be too many rowsets to get, make it async
     auto& it = *obj_pool.add(new std::unique_ptr<RangeGetIterator>());
     int num_rowsets = 0;
     std::unique_ptr<int, std::function<void(int*)>> defer_log_range(
@@ -402,7 +428,8 @@ void process_compaction_job(MetaServiceCode& code, std::string& msg, std::string
     }
 
     txn->remove(tmp_rowset_key);
-    LOG(INFO) << "remove tmp rowset meta, tablet_id=" << tablet_id << " tmp_rowset_key=" << hex(tmp_rowset_key);
+    LOG(INFO) << "remove tmp rowset meta, tablet_id=" << tablet_id
+              << " tmp_rowset_key=" << hex(tmp_rowset_key);
 
     int64_t version = request->job().compaction().output_versions(0);
     auto& rowset_key =
@@ -436,6 +463,8 @@ void MetaServiceImpl::finish_tablet_job(::google::protobuf::RpcController* contr
         return;
     }
 
+    ObjectPool obj_pool; // To save KVs that txn may use asynchronously
+    bool need_commit = false;
     std::unique_ptr<Transaction> txn;
     ret = txn_kv_->create_txn(&txn);
     if (ret != 0) {
@@ -488,12 +517,11 @@ void MetaServiceImpl::finish_tablet_job(::google::protobuf::RpcController* contr
 
     // TODO(gaivn): remove duplicated code with start_tablet_job()
     // Begin to process finish tablet job
-
     std::string job_key =
             job_tablet_key({instance_id, table_id, index_id, partition_id, tablet_id});
     std::string job_val;
     ret = txn->get(job_key, &job_val);
-    LOG(INFO) << "get job ret=" << ret << " key=" << hex(job_key);
+    LOG(INFO) << "get job tablet_id=" << tablet_id << " ret=" << ret << " key=" << hex(job_key);
     if (ret != 0) {
         SS << (ret == 1 ? "job not found," : "internal error,") << " instance_id=" << instance_id
            << " tablet_id=" << tablet_id << " job=" << proto_to_json(request->job());
@@ -503,6 +531,8 @@ void MetaServiceImpl::finish_tablet_job(::google::protobuf::RpcController* contr
     }
     TabletJobInfoPB recorded_job;
     recorded_job.ParseFromString(job_val);
+    LOG(INFO) << "get tablet job, tablet_id=" << tablet_id
+              << " job=" << proto_to_json(recorded_job);
 
     using namespace std::chrono;
     int64_t now = duration_cast<seconds>(system_clock::now().time_since_epoch()).count();
@@ -511,7 +541,7 @@ void MetaServiceImpl::finish_tablet_job(::google::protobuf::RpcController* contr
         SS << "expired compaction job, tablet_id=" << tablet_id
            << " job=" << proto_to_json(recorded_job);
         msg = ss.str();
-        // txn->remove(job_key);
+        // txn->remove(job_key); // FIXME: Just remove or notify to abort?
         // LOG(INFO) << "remove expired job, tablet_id=" << tablet_id << " key=" << hex(job_key);
         return;
     }
@@ -526,7 +556,6 @@ void MetaServiceImpl::finish_tablet_job(::google::protobuf::RpcController* contr
         return;
     }
 
-    bool need_commit = false;
     std::unique_ptr<int, std::function<void(int*)>> defer_commit(
             (int*)0x01, [&ret, &txn, &code, &msg, &need_commit](int*) {
                 if (!need_commit) return;
@@ -538,7 +567,7 @@ void MetaServiceImpl::finish_tablet_job(::google::protobuf::RpcController* contr
                 }
             });
 
-    ObjectPool obj_pool; // To save KVs that txn may use asynchronously in subroutines
+    // Process compaction commit
     if (request->job().has_compaction()) {
         process_compaction_job(code, msg, ss, ret, txn, request, recorded_job, instance_id,
                                table_id, index_id, partition_id, tablet_id, job_key, now,
@@ -546,6 +575,7 @@ void MetaServiceImpl::finish_tablet_job(::google::protobuf::RpcController* contr
         return;
     }
 
+    // Process schema change commit
     if (request->job().has_compaction()) { // process schema change
     }
 }

@@ -288,8 +288,15 @@ Status CloudMetaMgr::commit_tablet_job(const selectdb::TabletJobInfoPB& job) {
 }
 
 Status CloudMetaMgr::abort_tablet_job(const selectdb::TabletJobInfoPB& job) {
-    // TBD(gavin)
-    return Status::OK();
+    brpc::Controller cntl;
+    cntl.set_timeout_ms(config::meta_service_brpc_timeout_ms);
+    selectdb::FinishTabletJobRequest req;
+    selectdb::FinishTabletJobResponse res;
+    req.mutable_job()->CopyFrom(job);
+    req.set_action(selectdb::FinishTabletJobRequest::ABORT);
+    req.set_cloud_unique_id(config::cloud_unique_id);
+    _stub->finish_tablet_job(&cntl, &req, &res, nullptr);
+    return check_rpc_response(res, cntl, __FUNCTION__);
 }
 
 } // namespace doris::cloud

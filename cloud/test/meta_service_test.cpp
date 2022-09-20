@@ -487,29 +487,44 @@ TEST(MetaServiceTest, TabletJobTest) {
 
     brpc::Controller cntl;
 
+    int start_compaction_job_cnt = 0;
+
+    int64_t table_id = 1;
+    int64_t index_id = 2;
+    int64_t partition_id = 3;
+    int64_t tablet_id = 4;
+
     // Start compaciton job
-    {
+    auto start_compaction_job = [&]{
         StartTabletJobRequest req;
         StartTabletJobResponse res;
+        std::string job_id = "job_id123";
 
         req.mutable_job()->mutable_compaction()->set_initiator("ip:port");
+
+        meta_service->start_tablet_job(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
+                                       &req, &res, nullptr);
+        ASSERT_NE(res.status().msg().find("no job id"), std::string::npos);
+
+        req.mutable_job()->set_id(job_id);
         meta_service->start_tablet_job(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
                                        &req, &res, nullptr);
         ASSERT_NE(res.status().msg().find("no valid tablet_id given"), std::string::npos);
 
-        int64_t tablet_id = 4;
         req.mutable_job()->mutable_idx()->set_tablet_id(tablet_id);
         meta_service->start_tablet_job(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
                                        &req, &res, nullptr);
-        ASSERT_NE(res.status().msg().find("failed to get table id with tablet_id"),
-                  std::string::npos);
+        if (start_compaction_job_cnt++ < 1) {
+            ASSERT_NE(res.status().msg().find("failed to get table id with tablet_id"),
+                      std::string::npos);
+        }
 
         auto index_key = meta_tablet_idx_key({instance_id, tablet_id});
         TabletIndexPB idx_pb;
         idx_pb.set_table_id(1);
         idx_pb.set_index_id(2);
         idx_pb.set_partition_id(3);
-        idx_pb.set_tablet_id(tablet_id + 1); // error
+        idx_pb.set_tablet_id(tablet_id + 1); // error, tablet_id not match
         std::string idx_val = idx_pb.SerializeAsString();
         std::unique_ptr<Transaction> txn;
         ASSERT_EQ(meta_service->txn_kv_->create_txn(&txn), 0);
@@ -540,23 +555,22 @@ TEST(MetaServiceTest, TabletJobTest) {
 
         meta_service->start_tablet_job(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
                                        &req, &res, nullptr);
-        ASSERT_NE(res.status().msg().find("job already started"), std::string::npos);
-    }
+        ASSERT_NE(res.status().msg().find("already started"), std::string::npos);
+    };
 
-    // Finish, this unit test relies on the previous (start)
+    // Finish, this unit test relies on the previous (start_job)
+    start_compaction_job();
     {
         FinishTabletJobRequest req;
         FinishTabletJobResponse res;
+        std::string job_id = "job_id123";
 
+        req.mutable_job()->set_id(job_id);
         req.mutable_job()->mutable_compaction()->set_initiator("ip:port");
         meta_service->finish_tablet_job(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
                                         &req, &res, nullptr);
         ASSERT_NE(res.status().msg().find("no valid tablet_id given"), std::string::npos);
 
-        int64_t table_id = 1;
-        int64_t index_id = 2;
-        int64_t partition_id = 3;
-        int64_t tablet_id = 4;
         req.mutable_job()->mutable_idx()->set_table_id(table_id);
         req.mutable_job()->mutable_idx()->set_index_id(index_id);
         req.mutable_job()->mutable_idx()->set_partition_id(partition_id);
@@ -566,6 +580,9 @@ TEST(MetaServiceTest, TabletJobTest) {
                                         &req, &res, nullptr);
         ASSERT_NE(res.status().msg().find("unsupported action"), std::string::npos);
 
+        //======================================================================
+        // Test commit
+        //======================================================================
         req.set_action(FinishTabletJobRequest::COMMIT);
 
         // Tablet meta not found, this is unexpected
@@ -753,10 +770,10 @@ TEST(MetaServiceTest, TabletJobTest) {
 
         // Check tmp rowset removed
         ASSERT_EQ(txn->get(tmp_rowset_key, &tmp_rowset_val), 1);
-        // Check input rowsets removed
-        for (int i = 1; i < input_rowset_keys.size() - 1; ++i) {
+        // Check input rowsets removed, the largest version remains
+        for (int i = 1; i < input_rowset_keys.size() - 2; ++i) {
             std::string val;
-            ASSERT_EQ(txn->get(input_rowset_keys[i], &val), 1);
+            EXPECT_EQ(txn->get(input_rowset_keys[i], &val), 1) << hex(input_rowset_keys[i]);
         }
         // Check recycle rowsets added
         for (int i = 1; i < input_rowset_vals.size() - 1; ++i) {
@@ -770,6 +787,27 @@ TEST(MetaServiceTest, TabletJobTest) {
         auto rowset_key = meta_rowset_key({instance_id, tablet_id, input_version_end});
         std::string rowset_val;
         EXPECT_EQ(txn->get(rowset_key, &rowset_val), 0) << hex(rowset_key);
+    }
+
+    // Test abort compaction
+    start_compaction_job();
+    {
+        FinishTabletJobRequest req;
+        FinishTabletJobResponse res;
+        std::string job_id = "job_id123";
+
+        req.mutable_job()->set_id(job_id);
+        req.mutable_job()->mutable_compaction()->set_initiator("ip:port");
+        req.mutable_job()->mutable_idx()->set_tablet_id(tablet_id);
+        req.set_action(FinishTabletJobRequest::ABORT);
+        meta_service->finish_tablet_job(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
+                                        &req, &res, nullptr);
+
+        std::unique_ptr<Transaction> txn;
+        ASSERT_EQ(meta_service->txn_kv_->create_txn(&txn), 0);
+        auto job_key = job_tablet_key({instance_id, table_id, index_id, partition_id, tablet_id});
+        std::string job_val;
+        ASSERT_EQ(txn->get(job_key, &job_val), 1);
     }
 }
 // vim: et tw=100 ts=4 sw=4 cc=80:

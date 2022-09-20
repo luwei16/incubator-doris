@@ -633,9 +633,10 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
     std::map<int64_t, TabletIndexPB> table_ids; // tablet_id -> {table/index/partition}_id
     rowsets.reserve(tmp_rowsets_meta.size());
     for (auto& [_, i] : tmp_rowsets_meta) {
+        int64_t tablet_id = i.tablet_id();
         // Get version for the rowset
-        if (table_ids.count(i.tablet_id()) == 0) {
-            MetaTabletIdxKeyInfo key_info {instance_id, i.tablet_id()};
+        if (table_ids.count(tablet_id) == 0) {
+            MetaTabletIdxKeyInfo key_info {instance_id, tablet_id};
             auto [key, val] = std::make_tuple(std::string(""), std::string(""));
             meta_tablet_idx_key(key_info, &key);
             ret = txn->get(key, &val);
@@ -643,20 +644,20 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
                 code = MetaServiceCode::KV_TXN_GET_ERR;
                 ss << "failed to get tablet table index ids,"
                    << (ret == 1 ? " not found" : " internal error")
-                   << " tablet_id=" << i.tablet_id() << " key=" << hex(key);
+                   << " tablet_id=" << tablet_id << " key=" << hex(key);
                 msg = ss.str();
                 LOG(INFO) << msg << " ret=" << ret << " txn_id=" << txn_id;
                 return;
             }
-            if (!table_ids[i.tablet_id()].ParseFromString(val)) {
+            if (!table_ids[tablet_id].ParseFromString(val)) {
                 code = MetaServiceCode::PROTOBUF_PARSE_ERR;
-                msg = "malformed tablet table value";
+                msg = "malformed tablet index value";
                 return;
             }
         }
 
-        int64_t table_id = table_ids[i.tablet_id()].table_id();
-        int64_t index_id = table_ids[i.tablet_id()].index_id();
+        int64_t table_id = table_ids[tablet_id].table_id();
+        int64_t index_id = table_ids[tablet_id].index_id();
         int64_t partition_id = i.partition_id();
 
         VersionKeyInfo ver_key_info {instance_id, db_id, table_id, partition_id};
@@ -689,7 +690,7 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
         i.set_end_version(new_version);
 
         std::string key, val;
-        MetaRowsetKeyInfo key_info {instance_id, i.tablet_id(), i.end_version()};
+        MetaRowsetKeyInfo key_info {instance_id, tablet_id, i.end_version()};
         meta_rowset_key(key_info, &key);
         if (!i.SerializeToString(&val)) {
             code = MetaServiceCode::PROTOBUF_SERIALIZE_ERR;
@@ -700,16 +701,16 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
 
         // Accumulate affected rows
         StatsTabletKeyInfo stat_key_info {instance_id, table_id, index_id, partition_id,
-                                          i.tablet_id()};
+                                          tablet_id};
         std::string stat_key, stat_val;
         stats_tablet_key(stat_key_info, &stat_key);
         while (tablet_stats.count(stat_key) == 0) {
-            ret = txn->get(stat_key, &stat_val);
+            ret = txn->get(stat_key, &stat_val); // May be perf. bottle-neck
             LOG(INFO) << "get tablet_stats_key, key=" << hex(stat_key) << " ret=" << ret
                       << " txn_id=" << txn_id;
             if (ret != 1 && ret != 0) {
                 code = MetaServiceCode::KV_TXN_GET_ERR;
-                ss << "failed to get tablet stats, tablet_id=" << i.tablet_id()
+                ss << "failed to get tablet stats, tablet_id=" << tablet_id
                    << " key=" << hex(stat_key);
                 msg = ss.str();
                 LOG(INFO) << msg << " txn_id=" << txn_id;
@@ -720,9 +721,7 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
                 stat.mutable_idx()->set_table_id(table_id);
                 stat.mutable_idx()->set_index_id(index_id);
                 stat.mutable_idx()->set_partition_id(partition_id);
-                stat.mutable_idx()->set_tablet_id(i.tablet_id());
-                stat.set_data_size(0);
-                stat.set_num_rows(0);
+                stat.mutable_idx()->set_tablet_id(tablet_id);
                 break;
             }
             if (!stat.ParseFromString(stat_val)) {
@@ -733,12 +732,14 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
             CHECK_EQ(stat.mutable_idx()->table_id(), table_id);
             CHECK_EQ(stat.mutable_idx()->index_id(), index_id);
             CHECK_EQ(stat.mutable_idx()->partition_id(), partition_id);
-            CHECK_EQ(stat.mutable_idx()->tablet_id(), i.tablet_id());
+            CHECK_EQ(stat.mutable_idx()->tablet_id(), tablet_id);
             break;
         }
         auto& stat = tablet_stats[stat_key];
         stat.set_data_size(stat.data_size() + i.data_disk_size());
         stat.set_num_rows(stat.num_rows() + i.num_rows());
+        stat.set_num_rows(stat.num_rowsets() + 1);
+        stat.set_num_rows(stat.num_segments() + i.num_segments());
     } // for tmp_rowsets_meta
 
     // Save rowset meta
