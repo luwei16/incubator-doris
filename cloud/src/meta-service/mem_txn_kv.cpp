@@ -19,81 +19,71 @@ int MemTxnKv::create_txn(std::unique_ptr<Transaction>* txn) {
     return 0;
 }
 
-int MemTxnKv::update(std::map<selectdb::memkv::PutType, std::map<std::string, std::string>>& put_kv,
-                    std::vector<std::vector<std::string>>& remove_keys, int64_t* committed_version) {
+int MemTxnKv::update(std::vector<std::tuple<memkv::ModifyOpType, std::string, std::string>> &op_list,
+            int64_t* committed_version) {
     std::lock_guard<std::mutex> l(lock_);
 
     // check remove_keys's range
-    for (const auto& vec: remove_keys) {
-        if (vec.size() == 2) {
-            const std::string& begin_key = vec[0];
-            const std::string& end_key = vec[1];
-            if (begin_key >= end_key) {
-                return -1;
-            }
+    for (const auto& vec: op_list) {
+        auto [op_type, begin, end] = vec;
+        if (op_type == memkv::ModifyOpType::REMOVE_RANGE
+                && (begin >= end)) {
+            return -1;
         }
     }
 
     int64_t version = committed_version_ + 1;
     int16_t seq = 0;
-    for (const auto& [put_type, kvs] : put_kv) {
-        switch (put_type) {
-        case selectdb::memkv::PutType::NORMAL: {
-            for (const auto& [key, value] : kvs) {
-                mem_kv_[key] = value;
+    for (const auto& vec: op_list) {
+        auto [op_type, k, v] = vec;
+        switch (op_type) {
+            case memkv::ModifyOpType::PUT: {
+                mem_kv_[k] = v;
+                break;
             }
-            break;
-        }
-        case selectdb::memkv::PutType::ATOMIC_VER_KEY: {
-            for (const auto& [key, value] : kvs) {
-                std::string ver_key(key);
+            case memkv::ModifyOpType::ATOMIC_SET_VER_KEY: {
+                std::string ver_key(k);
                 gen_version_timestamp(version, seq, &ver_key);
-                mem_kv_[ver_key] = value;
+                mem_kv_[ver_key] = v;
+                break;
             }
-            break;
-        }
-        case selectdb::memkv::PutType::ATOMIC_VER_VAL: {
-            for (const auto& [key, value] : kvs) {
-                std::string ver_val(value);
+            case memkv::ModifyOpType::ATOMTC_SET_VER_VAL: {
+                std::string ver_val(v);
                 gen_version_timestamp(version, seq, &ver_val);
-                mem_kv_[key] = ver_val;
+                mem_kv_[k] = ver_val;
+                break;
             }
-            break;
-        }
-        case selectdb::memkv::PutType::ATOMIC_ADD: {
-            for (const auto& [key, value] : kvs) {
-                if (mem_kv_.count(key) == 0) {
-                    mem_kv_[key] = value;
+            case memkv::ModifyOpType::ATOMIC_ADD: {
+                if (mem_kv_.count(k) == 0) {
+                    mem_kv_[k] = v;
                 } else {
-                    std::string org_val = mem_kv_[key];
+                    std::string org_val = mem_kv_[k];
                     if (org_val.size() != 8) {
                         org_val.resize(8, '\0');
                     }
-                    int64_t res = *reinterpret_cast<const int64_t*>(org_val.data()) + std::stoll(value);
+                    int64_t res = *reinterpret_cast<const int64_t*>(org_val.data()) + std::stoll(v);
                     std::string res_str = std::string(sizeof(res), '\0');
                     std::memcpy(res_str.data(), &res, res_str.size());
-                    mem_kv_[key] = res_str;
+                    mem_kv_[k] = res_str;
                 }
+                break;
             }
-            break;
+            case memkv::ModifyOpType::REMOVE: {
+                mem_kv_.erase(k);
+                break;
+            }
+            case memkv::ModifyOpType::REMOVE_RANGE: {
+                auto begin_iter = mem_kv_.lower_bound(k);
+                auto end_iter = mem_kv_.lower_bound(v);
+                mem_kv_.erase(begin_iter, end_iter);
+                break;
+            }
+            default:
+                break;
         }
-        default:
-            break;
 
-        }
     }
 
-    for (const auto& vec: remove_keys) {
-        if (vec.size() == 1) {
-            mem_kv_.erase(vec[0]);
-        } else if (vec.size() == 2) {
-            const std::string& begin_key = vec[0];
-            const std::string& end_key = vec[1];
-            auto begin_iter = mem_kv_.lower_bound(begin_key);
-            auto end_iter = mem_kv_.lower_bound(end_key);
-            mem_kv_.erase(begin_iter, end_iter);
-        }
-    }
     committed_version_++;
     *committed_version = committed_version_;
     return 0;
@@ -201,7 +191,7 @@ void Transaction::put(std::string_view key, std::string_view val) {
     std::lock_guard<std::mutex> l(lock_);
     std::string k(key.data(), key.size());
     std::string v(val.data(), val.size());
-    put_kv_[PutType::NORMAL][k] = v;
+    op_list_.emplace_back(ModifyOpType::PUT, k, v);
 }
 
 int Transaction::get(std::string_view key, std::string* val) {
@@ -217,42 +207,42 @@ void Transaction::atomic_set_ver_key(std::string_view key_prefix, std::string_vi
     std::lock_guard<std::mutex> l(lock_);
     std::string k(key_prefix.data(), key_prefix.size());
     std::string v(val.data(), val.size());
-    put_kv_[PutType::ATOMIC_VER_KEY][k] = v;
+    op_list_.emplace_back(ModifyOpType::ATOMIC_SET_VER_KEY, k, v);
 }
 
 void Transaction::atomic_set_ver_value(std::string_view key, std::string_view value) {
     std::lock_guard<std::mutex> l(lock_);
     std::string k(key.data(), key.size());
     std::string v(value.data(), value.size());
-    put_kv_[PutType::ATOMIC_VER_VAL][k] = v;
+    op_list_.emplace_back(ModifyOpType::ATOMTC_SET_VER_VAL, k, v);
 }
 
 void Transaction::atomic_add(std::string_view key, int64_t to_add) {
     std::lock_guard<std::mutex> l(lock_);
-    put_kv_[PutType::ATOMIC_ADD][std::string(key.data(), key.size())] = std::to_string(to_add);
+    op_list_.emplace_back(ModifyOpType::ATOMIC_ADD, std::string(key.data(), key.size()), std::to_string(to_add));
 }
 
 void Transaction::remove(std::string_view key) {
     std::lock_guard<std::mutex> l(lock_);
-    remove_keys_.push_back({std::string(key.data(), key.size())});
+    std::string k(key.data(), key.size());
+    op_list_.emplace_back(ModifyOpType::REMOVE, k, "");
 }
 
 void Transaction::remove(std::string_view begin, std::string_view end) {
     std::lock_guard<std::mutex> l(lock_);
     std::string begin_k(begin.data(), begin.size());
     std::string end_k(end.data(), end.size());
-    remove_keys_.push_back({begin_k, end_k});
+    op_list_.emplace_back(ModifyOpType::REMOVE_RANGE, begin_k, end_k);
 }
 
 int Transaction::commit() {
     std::lock_guard<std::mutex> l(lock_);
-    int ret = kv_->update(put_kv_, remove_keys_, &committed_version_);
+    int ret = kv_->update(op_list_, &committed_version_);
     if (ret != 0) {
         return -2;
     }
     commited_ = true;
-    put_kv_.clear();
-    remove_keys_.clear();
+    op_list_.clear();
     return 0;
 }
 

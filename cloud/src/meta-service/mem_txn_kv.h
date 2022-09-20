@@ -14,7 +14,7 @@ namespace selectdb {
 
 namespace memkv {
 class Transaction;
-enum class PutType;
+enum class ModifyOpType;
 } // namespace memkv
 
 class MemTxnKv : public TxnKv, public std::enable_shared_from_this<MemTxnKv> {
@@ -29,8 +29,8 @@ public:
     int init() override;
 
 private:
-    int update(std::map<selectdb::memkv::PutType, std::map<std::string, std::string>>& put_kv,
-                    std::vector<std::vector<std::string>>& remove_keys, int64_t* version);
+    int update(std::vector<std::tuple<memkv::ModifyOpType, std::string, std::string>> &op_list,
+                int64_t* version);
 
     int get(std::string_view key, std::string* val, int64_t* version);
 
@@ -51,11 +51,13 @@ private:
 
 namespace memkv {
 
-enum class PutType {
-    NORMAL,
-    ATOMIC_VER_KEY,
-    ATOMIC_VER_VAL,
-    ATOMIC_ADD
+enum class ModifyOpType {
+    PUT,
+    ATOMIC_SET_VER_KEY,
+    ATOMTC_SET_VER_VAL,
+    ATOMIC_ADD,
+    REMOVE,
+    REMOVE_RANGE
 };
 
 class Transaction : public selectdb::Transaction {
@@ -139,9 +141,9 @@ private:
     std::shared_ptr<MemTxnKv> kv_ {nullptr};
     bool commited_ = false;
     //bool aborted_ = false;
-    std::map<PutType, std::map<std::string, std::string>> put_kv_;
-    std::vector<std::vector<std::string>> remove_keys_;
     std::mutex lock_;
+
+    std::vector<std::tuple<ModifyOpType, std::string, std::string>> op_list_;
 
     int64_t committed_version_ = -1;
     int64_t read_version_ = -1;

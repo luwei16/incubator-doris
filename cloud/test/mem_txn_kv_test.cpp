@@ -324,4 +324,47 @@ TEST(TxnMemKvTest, AtomicAddTest) {
 
 }
 
+// modify identical key in one transcation
+static void modify_identical_key_test(std::shared_ptr<selectdb::TxnKv> txn_kv) {
+    using namespace selectdb;
+    std::unique_ptr<Transaction> txn;
+
+    // put after remove
+    {
+        int ret = txn_kv->create_txn(&txn);
+        ASSERT_EQ(ret, 0);
+        txn->put("test", "1");
+        txn->remove("test");
+        txn->put("test", "2");
+        ASSERT_EQ(txn->commit(), 0);
+
+        std::string get_val;
+        txn_kv->create_txn(&txn);
+        ASSERT_EQ(txn->get("test", &get_val), 0);
+        ASSERT_EQ(get_val, "2");
+    }
+
+    // remove after put
+    {
+        int ret = txn_kv->create_txn(&txn);
+        ASSERT_EQ(ret, 0);
+        txn->put("test", "1");
+        txn->remove("test");
+        ASSERT_EQ(txn->commit(), 0);
+
+        std::string get_val;
+        txn_kv->create_txn(&txn);
+        ASSERT_EQ(txn->get("test", &get_val), 1);
+    }
+
+}
+
+TEST(TxnMemKvTest, ModifyIdenticalKeyTest) {
+    using namespace selectdb;
+    auto mem_txn_kv = std::dynamic_pointer_cast<TxnKv>(std::make_shared<MemTxnKv>());
+    ASSERT_NE(mem_txn_kv.get(), nullptr);
+
+    modify_identical_key_test(mem_txn_kv);
+    modify_identical_key_test(fdb_txn_kv);
+}
 // vim: et tw=100 ts=4 sw=4 cc=80:
