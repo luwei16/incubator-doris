@@ -19,6 +19,7 @@
 
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <set>
 #include <shared_mutex>
 #include <string>
@@ -113,7 +114,6 @@ public:
     double bloom_filter_fpp() const;
     size_t next_unique_id() const;
     size_t row_size() const;
-    int32_t field_index(const std::string& field_name) const;
 
     // operation in rowsets
     Status add_rowset(RowsetSharedPtr rowset);
@@ -314,6 +314,8 @@ public:
 
     TabletSchemaSPtr tablet_schema() const override;
 
+    TabletSchemaSPtr get_max_version_schema(std::lock_guard<std::shared_mutex>&);
+
     // Find the related rowset with specified version and return its tablet schema
     TabletSchemaSPtr tablet_schema(Version version) const {
         return _tablet_meta->tablet_schema(version);
@@ -408,9 +410,9 @@ private:
     bool _reconstruct_version_tracker_if_necessary();
     void _init_context_common_fields(RowsetWriterContext& context);
 
-    bool _check_pk_in_pre_segments(const std::vector<segment_v2::SegmentSharedPtr>& pre_segments,
-                                   const Slice& key, const Version& version,
-                                   DeleteBitmapPtr delete_bitmap);
+    Status _check_pk_in_pre_segments(const std::vector<segment_v2::SegmentSharedPtr>& pre_segments,
+                                     const Slice& key, const Version& version,
+                                     DeleteBitmapPtr delete_bitmap, RowLocation* loc);
     void _rowset_ids_difference(const RowsetIdUnorderedSet& cur, const RowsetIdUnorderedSet& pre,
                                 RowsetIdUnorderedSet* to_add, RowsetIdUnorderedSet* to_del);
     Status _load_rowset_segments(const RowsetSharedPtr& rowset,
@@ -624,10 +626,6 @@ inline double Tablet::bloom_filter_fpp() const {
 
 inline size_t Tablet::next_unique_id() const {
     return _schema->next_column_unique_id();
-}
-
-inline int32_t Tablet::field_index(const std::string& field_name) const {
-    return _schema->field_index(field_name);
 }
 
 inline size_t Tablet::row_size() const {

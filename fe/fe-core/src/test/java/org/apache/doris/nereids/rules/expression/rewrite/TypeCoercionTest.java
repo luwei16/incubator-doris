@@ -26,10 +26,10 @@ import org.apache.doris.nereids.trees.expressions.Expression;
 import org.apache.doris.nereids.trees.expressions.InPredicate;
 import org.apache.doris.nereids.trees.expressions.LessThanEqual;
 import org.apache.doris.nereids.trees.expressions.WhenClause;
-import org.apache.doris.nereids.trees.expressions.functions.Avg;
-import org.apache.doris.nereids.trees.expressions.functions.Substring;
-import org.apache.doris.nereids.trees.expressions.functions.Sum;
-import org.apache.doris.nereids.trees.expressions.functions.Year;
+import org.apache.doris.nereids.trees.expressions.functions.agg.Avg;
+import org.apache.doris.nereids.trees.expressions.functions.agg.Sum;
+import org.apache.doris.nereids.trees.expressions.functions.scalar.Substring;
+import org.apache.doris.nereids.trees.expressions.functions.scalar.Year;
 import org.apache.doris.nereids.trees.expressions.literal.BigIntLiteral;
 import org.apache.doris.nereids.trees.expressions.literal.BooleanLiteral;
 import org.apache.doris.nereids.trees.expressions.literal.DateLiteral;
@@ -39,7 +39,6 @@ import org.apache.doris.nereids.trees.expressions.literal.IntegerLiteral;
 import org.apache.doris.nereids.trees.expressions.literal.SmallIntLiteral;
 import org.apache.doris.nereids.trees.expressions.literal.StringLiteral;
 import org.apache.doris.nereids.trees.expressions.literal.TinyIntLiteral;
-import org.apache.doris.nereids.types.BigIntType;
 import org.apache.doris.nereids.types.DecimalType;
 import org.apache.doris.nereids.types.DoubleType;
 import org.apache.doris.nereids.types.IntegerType;
@@ -140,15 +139,15 @@ public class TypeCoercionTest {
 
     @Test
     public void testCaseWhenTypeCoercion() {
-        WhenClause actualWhenClause1 = new WhenClause(new BooleanLiteral(true), new SmallIntLiteral((short) 1));
-        WhenClause actualWhenClause2 = new WhenClause(new BooleanLiteral(true), new DoubleLiteral(1.5));
+        WhenClause actualWhenClause1 = new WhenClause(BooleanLiteral.TRUE, new SmallIntLiteral((short) 1));
+        WhenClause actualWhenClause2 = new WhenClause(BooleanLiteral.TRUE, new DoubleLiteral(1.5));
         List<WhenClause> actualWhenClauses = Lists.newArrayList(actualWhenClause1, actualWhenClause2);
         Expression actualDefaultValue = new IntegerLiteral(1);
         Expression actual = new CaseWhen(actualWhenClauses, actualDefaultValue);
 
-        WhenClause expectedWhenClause1 = new WhenClause(new BooleanLiteral(true),
+        WhenClause expectedWhenClause1 = new WhenClause(BooleanLiteral.TRUE,
                 new Cast(new SmallIntLiteral((short) 1), DoubleType.INSTANCE));
-        WhenClause expectedWhenClause2 = new WhenClause(new BooleanLiteral(true),
+        WhenClause expectedWhenClause2 = new WhenClause(BooleanLiteral.TRUE,
                 new DoubleLiteral(1.5));
         List<WhenClause> expectedWhenClauses = Lists.newArrayList(expectedWhenClause1, expectedWhenClause2);
         Expression expectedDefaultValue = new Cast(new IntegerLiteral(1), DoubleType.INSTANCE);
@@ -177,7 +176,7 @@ public class TypeCoercionTest {
     @Test
     public void testBinaryOperator() {
         Expression actual = new Divide(new SmallIntLiteral((short) 1), new BigIntLiteral(10L));
-        Expression expected = new Divide(new Cast(new SmallIntLiteral((short) 1), BigIntType.INSTANCE),
+        Expression expected = new Divide(new BigIntLiteral(1L),
                 new BigIntLiteral(10L));
         assertRewrite(expected, actual);
     }

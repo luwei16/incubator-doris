@@ -439,7 +439,7 @@ visible_functions = [
         '_ZN5doris18TimestampFunctions14format_prepareEPN9doris_udf'
         '15FunctionContextENS2_18FunctionStateScopeE',
         '_ZN5doris18TimestampFunctions12format_closeEPN9doris_udf'
-        '15FunctionContextENS2_18FunctionStateScopeE', 'vec', ''],
+        '15FunctionContextENS2_18FunctionStateScopeE', 'vec', 'ALWAYS_NULLABLE'],
     [['now', 'current_timestamp', 'localtime', 'localtimestamp'], 'DATETIME', [],
         '_ZN5doris18TimestampFunctions3nowEPN9doris_udf15FunctionContextE',
         '', '', 'vec', 'ALWAYS_NOT_NULLABLE'],
@@ -1715,6 +1715,8 @@ visible_functions = [
 
     [['sqrt', 'dsqrt'], 'DOUBLE', ['DOUBLE'],
             '_ZN5doris13MathFunctions4sqrtEPN9doris_udf15FunctionContextERKNS1_9DoubleValE', '', '', 'vec', ''],
+    [['cbrt'], 'DOUBLE', ['DOUBLE'],
+            '_ZN5doris13MathFunctions4cbrtEPN9doris_udf15FunctionContextERKNS1_9DoubleValE', '', '', 'vec', ''],
     [['pow', 'power', 'dpow', 'fpow'], 'DOUBLE', ['DOUBLE', 'DOUBLE'],
             '_ZN5doris13MathFunctions3powEPN9doris_udf15FunctionContextERKNS1_9DoubleValES6_', '', '', 'vec', ''],
 
@@ -2171,14 +2173,14 @@ visible_functions = [
             '_ZN5doris15StringFunctions17parse_url_prepareEPN9doris_udf'
             '15FunctionContextENS2_18FunctionStateScopeE',
             '_ZN5doris15StringFunctions15parse_url_closeEPN9doris_udf'
-            '15FunctionContextENS2_18FunctionStateScopeE', 'vec', ''],
+            '15FunctionContextENS2_18FunctionStateScopeE', 'vec', 'ALWAYS_NULLABLE'],
     [['parse_url'], 'STRING', ['STRING', 'STRING', 'STRING'],
             '_ZN5doris15StringFunctions13parse_url_keyEPN9doris_udf'
             '15FunctionContextERKNS1_9StringValES6_S6_',
             '_ZN5doris15StringFunctions17parse_url_prepareEPN9doris_udf'
             '15FunctionContextENS2_18FunctionStateScopeE',
             '_ZN5doris15StringFunctions15parse_url_closeEPN9doris_udf'
-            '15FunctionContextENS2_18FunctionStateScopeE', 'vec', ''],
+            '15FunctionContextENS2_18FunctionStateScopeE', 'vec', 'ALWAYS_NULLABLE'],
     [['money_format'], 'STRING', ['BIGINT'],
         '_ZN5doris15StringFunctions12money_formatEPN9doris_udf15FunctionContextERKNS1_9BigIntValE',
         '', '', 'vec', ''],

@@ -32,11 +32,28 @@ namespace doris::vectorized {
 ScannerScheduler::ScannerScheduler() {}
 
 ScannerScheduler::~ScannerScheduler() {
+    if (!_is_init) {
+        return;
+    }
+
+    for (int i = 0; i < QUEUE_NUM; i++) {
+        _pending_queues[i]->shutdown();
+    }
+
     _is_closed = true;
+
     _scheduler_pool->shutdown();
     _local_scan_thread_pool->shutdown();
     _remote_scan_thread_pool->shutdown();
-    // TODO: safely delete all objects and graceful exit
+
+    _scheduler_pool->wait();
+    _local_scan_thread_pool->join();
+    _remote_scan_thread_pool->join();
+
+    for (int i = 0; i < QUEUE_NUM; i++) {
+        delete _pending_queues[i];
+    }
+    delete[] _pending_queues;
 }
 
 Status ScannerScheduler::init(ExecEnv* env) {
@@ -53,14 +70,16 @@ Status ScannerScheduler::init(ExecEnv* env) {
     }
 
     // 2. local scan thread pool
-    _local_scan_thread_pool = new PriorityWorkStealingThreadPool(
+    _local_scan_thread_pool.reset(new PriorityWorkStealingThreadPool(
             config::doris_scanner_thread_pool_thread_num, env->store_paths().size(),
-            config::doris_scanner_thread_pool_queue_size);
+            config::doris_scanner_thread_pool_queue_size));
 
     // 3. remote scan thread pool
-    _remote_scan_thread_pool = new PriorityThreadPool(config::doris_scanner_thread_pool_thread_num,
-                                                      config::doris_scanner_thread_pool_queue_size);
+    _remote_scan_thread_pool.reset(
+            new PriorityThreadPool(config::doris_scanner_thread_pool_thread_num,
+                                   config::doris_scanner_thread_pool_queue_size));
 
+    _is_init = true;
     return Status::OK();
 }
 
@@ -99,17 +118,15 @@ void ScannerScheduler::_schedule_scanners(ScannerContext* ctx) {
     }
 
     std::list<VScanner*> this_run;
-    bool res = ctx->get_next_batch_of_scanners(&this_run);
+    ctx->get_next_batch_of_scanners(&this_run);
     if (this_run.empty()) {
-        if (!res) {
-            // This means we failed to choose scanners this time, and there may be no other scanners running.
-            // So we need to submit this ctx back to queue to be scheduled next time.
-            submit(ctx);
-        } else {
-            // No need to push back this ctx to reschedule
-            // There will be running scanners to push it back.
-            ctx->update_num_running(0, -1);
-        }
+        // There will be 2 cases when this_run is empty:
+        // 1. The blocks queue reaches limit.
+        //      The consumer will continue scheduling the ctx.
+        // 2. All scanners are running.
+        //      There running scanner will schedule the ctx after they are finished.
+        // So here we just return to stop scheduling ctx.
+        ctx->update_num_running(0, -1);
         return;
     }
 
@@ -264,7 +281,7 @@ void ScannerScheduler::_scanner_scan(ScannerScheduler* scheduler, ScannerContext
         scanner->mark_to_need_to_close();
     }
 
-    ctx->push_back_scanner_and_reschedule(scheduler, scanner);
+    ctx->push_back_scanner_and_reschedule(scanner);
 }
 
 } // namespace doris::vectorized

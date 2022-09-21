@@ -50,21 +50,8 @@ protected:
     // Update the counters before closing this scanner
     virtual void _update_counters_before_close();
 
-    // Init the input block if _input_tuple_desc is set.
-    // Otherwise, use output_block directly.
-    void _init_input_block(Block* output_block);
-
-    // Use prefilters to filter input block
-    Status _filter_input_block(Block* block);
-
-    // Convert input block to output block, if needed.
-    Status _convert_to_output_block(Block* output_block);
-
     // Filter the output block finally.
     Status _filter_output_block(Block* block);
-
-    // to filter src tuple directly.
-    std::unique_ptr<vectorized::VExprContext*> _vpre_filter_ctx_ptr;
 
 public:
     VScanNode* get_parent() { return _parent; }
@@ -122,9 +109,9 @@ protected:
     int64_t _limit = -1;
     MemTracker* _mem_tracker;
 
-    const TupleDescriptor* _input_tuple_desc;
-    const TupleDescriptor* _output_tuple_desc;
-    const TupleDescriptor* _real_tuple_desc;
+    const TupleDescriptor* _input_tuple_desc = nullptr;
+    const TupleDescriptor* _output_tuple_desc = nullptr;
+    const TupleDescriptor* _real_tuple_desc = nullptr;
 
     // If _input_tuple_desc is set, the scanner will read data into
     // this _input_block first, then convert to the output block.
@@ -150,6 +137,10 @@ protected:
     // and will be destroyed at the end.
     std::vector<VExprContext*> _stale_vexpr_ctxs;
 
+    // For load scanner
+    std::unique_ptr<doris::vectorized::VExprContext*> _pre_conjunct_ctx_ptr;
+    std::unique_ptr<RowDescriptor> _src_row_desc;
+
     // num of rows read from scanner
     int64_t _num_rows_read = 0;
 
@@ -163,7 +154,7 @@ protected:
     // File formats based push down predicate
     std::vector<ExprContext*> _conjunct_ctxs;
 
-    const std::vector<TExpr> _pre_filter_texprs;
+    bool _is_load = false;
 };
 
 } // namespace doris::vectorized

@@ -46,6 +46,7 @@ import java.util.stream.LongStream
 import static org.apache.doris.regression.util.DataUtils.sortByToString
 
 import java.io.File
+
 @Slf4j
 class Suite implements GroovyInterceptable {
     final SuiteContext context

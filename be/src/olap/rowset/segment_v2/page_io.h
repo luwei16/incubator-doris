@@ -52,7 +52,7 @@ struct PageReadOptions {
     PagePointer page_pointer;
     const std::vector<PagePointer>* page_pointers = nullptr;
     // decompressor for page body (null means page body is not compressed)
-    const BlockCompressionCodec* codec = nullptr;
+    BlockCompressionCodec* codec = nullptr;
     // used to collect IO metrics
     OlapReaderStatistics* stats = nullptr;
     TUniqueId query_id;
@@ -93,7 +93,7 @@ public:
     // Compress `body' using `codec' into `compressed_body'.
     // The size of returned `compressed_body' is 0 when the body is not compressed, this
     // could happen when `codec' is null or space saving is less than `min_space_saving'.
-    static Status compress_page_body(const BlockCompressionCodec* codec, double min_space_saving,
+    static Status compress_page_body(BlockCompressionCodec* codec, double min_space_saving,
                                      const std::vector<Slice>& body, OwnedSlice* compressed_body);
 
     // Encode page from `body' and `footer' and write to `file'.
@@ -103,9 +103,8 @@ public:
                              const PageFooterPB& footer, PagePointer* result);
 
     // Convenient function to compress page body and write page in one go.
-    static Status compress_and_write_page(const BlockCompressionCodec* codec,
-                                          double min_space_saving, io::FileWriter* writer,
-                                          const std::vector<Slice>& body,
+    static Status compress_and_write_page(BlockCompressionCodec* codec, double min_space_saving,
+                                          io::FileWriter* writer, const std::vector<Slice>& body,
                                           const PageFooterPB& footer, PagePointer* result) {
         DCHECK_EQ(footer.uncompressed_size(), Slice::compute_total_size(body));
         OwnedSlice compressed_body;

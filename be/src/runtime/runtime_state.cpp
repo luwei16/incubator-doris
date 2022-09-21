@@ -218,14 +218,13 @@ Status RuntimeState::init(const TUniqueId& fragment_instance_id, const TQueryOpt
 Status RuntimeState::init_mem_trackers(const TUniqueId& query_id) {
     bool has_query_mem_tracker = _query_options.__isset.mem_limit && (_query_options.mem_limit > 0);
     int64_t bytes_limit = has_query_mem_tracker ? _query_options.mem_limit : -1;
-    if (bytes_limit > ExecEnv::GetInstance()->process_mem_tracker_raw()->limit()) {
+    if (bytes_limit > ExecEnv::GetInstance()->process_mem_tracker()->limit()) {
         VLOG_NOTICE << "Query memory limit " << PrettyPrinter::print(bytes_limit, TUnit::BYTES)
                     << " exceeds process memory limit of "
-                    << PrettyPrinter::print(
-                               ExecEnv::GetInstance()->process_mem_tracker_raw()->limit(),
-                               TUnit::BYTES)
+                    << PrettyPrinter::print(ExecEnv::GetInstance()->process_mem_tracker()->limit(),
+                                            TUnit::BYTES)
                     << ". Using process memory limit instead";
-        bytes_limit = ExecEnv::GetInstance()->process_mem_tracker_raw()->limit();
+        bytes_limit = ExecEnv::GetInstance()->process_mem_tracker()->limit();
     }
     auto mem_tracker_counter = ADD_COUNTER(&_profile, "MemoryLimit", TUnit::BYTES);
     mem_tracker_counter->set(bytes_limit);
@@ -241,6 +240,7 @@ Status RuntimeState::init_mem_trackers(const TUniqueId& query_id) {
         DCHECK(false);
         _query_mem_tracker = ExecEnv::GetInstance()->query_pool_mem_tracker();
     }
+    _query_mem_tracker->enable_reset_zero();
 
     _instance_mem_tracker = std::make_shared<MemTrackerLimiter>(
             -1, "RuntimeState:instance:" + print_id(_fragment_instance_id), _query_mem_tracker,
@@ -443,6 +443,7 @@ void RuntimeState::export_load_error(const std::string& err_msg) {
 }
 
 int64_t RuntimeState::get_load_mem_limit() {
+    // TODO: the code is abandoned, it can be deleted after v1.3
     if (_query_options.__isset.load_mem_limit && _query_options.load_mem_limit > 0) {
         return _query_options.load_mem_limit;
     } else {

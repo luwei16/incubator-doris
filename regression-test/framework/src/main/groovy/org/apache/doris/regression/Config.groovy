@@ -22,11 +22,13 @@ import groovy.util.logging.Slf4j
 
 import com.google.common.collect.Maps
 import org.apache.commons.cli.CommandLine
+import org.apache.commons.cli.Option
 import org.apache.doris.regression.util.FileUtils
 import org.apache.doris.regression.util.JdbcUtils
 
 import java.sql.Connection
 import java.sql.DriverManager
+import java.util.concurrent.atomic.AtomicReference
 import java.util.function.Predicate
 
 import static org.apache.doris.regression.ConfigOptions.*
@@ -177,6 +179,7 @@ class Config {
         } catch (Throwable t) {
             throw new IllegalStateException("Can not parse meta service address: ${config.metaServiceHttpAddress}", t)
         }
+        log.info("msAddr : $config.metaServiceHttpAddress, socketAddr : $config.metaServiceHttpInetSocketAddress")
 
         config.defaultDb = cmd.getOptionValue(defaultDbOpt, config.defaultDb)
         config.jdbcUrl = cmd.getOptionValue(jdbcOpt, config.jdbcUrl)
