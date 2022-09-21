@@ -71,7 +71,7 @@ suite ("test_add_and_drop_partition") {
 
     qt_order """ select * from ${tableName} order by user_id"""
     qt_order """ select * from ${tableName} order by date"""
-    qt_order """show partitions from test_add_and_drop_partition order by PartitionId;"""
+    sql """show partitions from test_add_and_drop_partition order by PartitionId;"""
 
     sql """
         ALTER table ${tableName} DROP PARTITION p1
@@ -79,6 +79,6 @@ suite ("test_add_and_drop_partition") {
 
     qt_order """ select * from ${tableName} order by user_id"""
     qt_order """ select * from ${tableName} order by date"""
-    qt_order """show partitions from test_add_and_drop_partition order by PartitionId;"""
+    sql """show partitions from test_add_and_drop_partition order by PartitionId;"""
 
 }
