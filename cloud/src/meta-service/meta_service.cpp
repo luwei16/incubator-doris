@@ -1,6 +1,7 @@
 
 // clang-format off
 #include "meta_service.h"
+#include <gen_cpp/selectdb_cloud.pb.h>
 #include "meta-service/doris_txn.h"
 #include "meta-service/keys.h"
 #include "common/config.h"
@@ -1453,7 +1454,7 @@ void MetaServiceImpl::create_tablet(::google::protobuf::RpcController* controlle
     }
     txn->put(key1, val1);
     LOG(INFO) << "put tablet_idx tablet_id=" << tablet_id << " key=" << hex(key1);
-    
+
     // Create stats info for the tablet
     auto stats_key = stats_tablet_key({instance_id, table_id, index_id, partition_id, tablet_id});
     std::string stats_val;
@@ -1464,6 +1465,9 @@ void MetaServiceImpl::create_tablet(::google::protobuf::RpcController* controlle
     stats_pb.mutable_idx()->set_index_id(index_id);
     stats_pb.mutable_idx()->set_partition_id(partition_id);
     stats_pb.mutable_idx()->set_tablet_id(tablet_id);
+    stats_pb.set_base_compaction_cnt(0);
+    stats_pb.set_cumulative_compaction_cnt(0);
+    stats_pb.set_cumulative_point(-1);
     stats_val = stats_pb.SerializeAsString();
     DCHECK(!stats_val.empty());
     txn->put(stats_key, stats_val);
@@ -1835,41 +1839,11 @@ void MetaServiceImpl::commit_rowset(::google::protobuf::RpcController* controlle
     }
 }
 
-void MetaServiceImpl::get_rowset(::google::protobuf::RpcController* controller,
-                                 const ::selectdb::GetRowsetRequest* request,
-                                 ::selectdb::GetRowsetResponse* response,
-                                 ::google::protobuf::Closure* done) {
-    auto ctrl = static_cast<brpc::Controller*>(controller);
-    LOG(INFO) << "rpc from " << ctrl->remote_side() << " request: " << request->DebugString();
-    brpc::ClosureGuard closure_guard(done);
-    int ret = 0;
-    MetaServiceCode code = MetaServiceCode::OK;
-    std::string msg = "OK";
-    std::stringstream ss;
-    std::unique_ptr<int, std::function<void(int*)>> defer_status(
-            (int*)0x01, [ret, &code, &msg, &response, &ctrl](int*) {
-                response->mutable_status()->set_code(code);
-                response->mutable_status()->set_msg(msg);
-                LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
-                          << ctrl->remote_side() << " " << msg;
-            });
-
-    std::string instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
-    if (instance_id.empty()) {
-        code = MetaServiceCode::INVALID_ARGUMENT;
-        msg = "empty instance_id";
-        LOG(INFO) << msg << ", cloud_unique_id=" << request->cloud_unique_id();
-        return;
-    }
-    int64_t tablet_id = request->tablet_id();
-    int64_t start = request->start_version();
-    int64_t end = request->end_version();
-    end = end < 0 ? std::numeric_limits<int64_t>::max() - 1 : end;
-
-    std::unique_ptr<Transaction> txn;
-    ret = txn_kv_->create_txn(&txn);
-
-    // TODO: validate request
+static void s_get_rowset(Transaction* txn, int64_t start, int64_t end,
+                         const std::string& instance_id, int64_t tablet_id, int& ret,
+                         MetaServiceCode& code, std::string& msg,
+                         ::selectdb::GetRowsetResponse* response) {
+    LOG(INFO) << "s_get_rowset start=" << start << ", end=" << end;
     MetaRowsetKeyInfo key_info0 {instance_id, tablet_id, start};
     MetaRowsetKeyInfo key_info1 {instance_id, tablet_id, end + 1};
     std::string key0;
@@ -1885,6 +1859,7 @@ void MetaServiceImpl::get_rowset(::google::protobuf::RpcController* controller,
                           << hex(key0) << "," << hex(key1) << "]";
             });
 
+    std::stringstream ss;
     do {
         ret = txn->get(key0, key1, &it);
         if (ret != 0) {
@@ -1903,6 +1878,7 @@ void MetaServiceImpl::get_rowset(::google::protobuf::RpcController* controller,
                 code = MetaServiceCode::PROTOBUF_PARSE_ERR;
                 msg = "malformed rowset meta, unable to deserialize";
                 LOG(WARNING) << msg << " key=" << hex(k);
+                ret = -1;
                 return;
             }
             ++num_rowsets;
@@ -1910,6 +1886,223 @@ void MetaServiceImpl::get_rowset(::google::protobuf::RpcController* controller,
         }
         key0.push_back('\x00'); // Update to next smallest key for iteration
     } while (it->more());
+}
+
+std::vector<std::pair<int64_t, int64_t>> calc_sync_versions(int64_t req_bc_cnt, int64_t bc_cnt,
+                                                            int64_t req_cc_cnt, int64_t cc_cnt,
+                                                            int64_t req_cp, int64_t cp,
+                                                            int64_t req_start, int64_t req_end) {
+    using Version = std::pair<int64_t, int64_t>;
+    // combine `v1` `v2`  to `v1`, return true if success
+    static auto combine_if_overlapping = [](Version& v1, Version& v2) -> bool {
+        if (v1.second + 1 < v2.first || v2.second + 1 < v1.first) return false;
+        v1.first = std::min(v1.first, v2.first);
+        v1.second = std::max(v1.second, v2.second);
+        return true;
+    };
+    // [xxx]: compacted versions
+    // ^~~~~: cumulative point
+    // ^___^: related versions
+    std::vector<Version> versions;
+    if (req_bc_cnt < bc_cnt) {
+        // * for any BC happended
+        // BE  [=][=][=][=][=====][=][=]
+        //                  ^~~~~ req_cp
+        // MS  [xxxxxxxxxx][xxxxxxxxxxxxxx][=======][=][=]
+        //                                  ^~~~~~~ ms_cp
+        //     ^_________________________^ versions_return: [0, ms_cp - 1]
+        versions.emplace_back(0, cp - 1);
+    }
+
+    if (req_cc_cnt < cc_cnt) {
+        Version cc_version;
+        if (req_cp < cp) {
+            // * only one CC happened and CP changed
+            // BE  [=][=][=][=][=====][=][=]
+            //                  ^~~~~ req_cp
+            // MS  [=][=][=][=][xxxxxxxxxxxxxx][=======][=][=]
+            //                                  ^~~~~~~ ms_cp
+            //                  ^____________^ related_versions: [req_cp, ms_cp - 1]
+            //
+            // * more than one CC happened and CP changed
+            // BE  [=][=][=][=][=====][=][=]
+            //                  ^~~~~ req_cp
+            // MS  [=][=][=][=][xxxxxxxxxxxxxx][xxxxxxx][=][=]
+            //                                           ^~~~~~~ ms_cp
+            //                  ^_____________________^ related_versions: [req_cp, ms_cp - 1]
+            cc_version = {req_cp, cp - 1};
+        } else {
+            // * more than one CC happened and CP remain unchanged
+            // BE  [=][=][=][=][=====][=][=]
+            //                  ^~~~~ req_cp
+            // MS  [=][=][=][=][xxxxxxxxxxxxxx][xxxxxxx][=][=]
+            //                  ^~~~~~~~~~~~~~ ms_cp
+            //                  ^_____________________^ related_versions: [req_cp, max]
+            //                                           there may be holes if we don't return all version
+            //                                           after ms_cp, however it can be optimized.
+            cc_version = {req_cp, std::numeric_limits<int64_t>::max() - 1};
+        }
+        if (versions.empty() || !combine_if_overlapping(versions.front(), cc_version)) {
+            versions.push_back(cc_version);
+        }
+    }
+
+    Version query_version {req_start, req_end};
+    bool combined = false;
+    for (auto& v : versions) {
+        if ((combined = combine_if_overlapping(v, query_version))) break;
+    }
+    if (!combined) {
+        versions.push_back(query_version);
+    }
+    std::sort(versions.begin(), versions.end(),
+              [](const Version& v1, const Version& v2) { return v1.first < v2.first; });
+    return versions;
+}
+
+void MetaServiceImpl::get_rowset(::google::protobuf::RpcController* controller,
+                                 const ::selectdb::GetRowsetRequest* request,
+                                 ::selectdb::GetRowsetResponse* response,
+                                 ::google::protobuf::Closure* done) {
+    auto ctrl = static_cast<brpc::Controller*>(controller);
+    LOG(INFO) << "rpc from " << ctrl->remote_side() << " request: " << request->DebugString();
+    brpc::ClosureGuard closure_guard(done);
+    int ret = 0;
+    MetaServiceCode code = MetaServiceCode::OK;
+    std::string msg = "OK";
+    std::stringstream ss;
+    std::unique_ptr<int, std::function<void(int*)>> defer_status(
+            (int*)0x01, [&code, &msg, &response, &ctrl](int*) {
+                response->mutable_status()->set_code(code);
+                response->mutable_status()->set_msg(msg);
+                LOG(INFO) << (code == MetaServiceCode::OK ? "succ to " : "failed to ")
+                          << __PRETTY_FUNCTION__ << " " << ctrl->remote_side() << " " << msg;
+            });
+
+    std::string instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
+    if (instance_id.empty()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "empty instance_id";
+        LOG(INFO) << msg << ", cloud_unique_id=" << request->cloud_unique_id();
+        return;
+    }
+
+    int64_t tablet_id = request->idx().has_tablet_id() ? request->idx().tablet_id() : -1;
+    if (tablet_id <= 0) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "no valid tablet_id given";
+        return;
+    }
+
+    if (!request->has_base_compaction_cnt() || !request->has_cumulative_compaction_cnt() ||
+        !request->has_cumulative_point()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "no valid compaction_cnt or cumulative_point given";
+        return;
+    }
+    int64_t req_bc_cnt = request->base_compaction_cnt();
+    int64_t req_cc_cnt = request->cumulative_compaction_cnt();
+    int64_t req_cp = request->cumulative_point();
+
+    std::unique_ptr<Transaction> txn;
+    ret = txn_kv_->create_txn(&txn);
+    if (ret != 0) {
+        code = MetaServiceCode::KV_TXN_CREATE_ERR;
+        msg = "failed to create txn";
+        return;
+    }
+
+    int64_t table_id = request->idx().table_id();
+    int64_t index_id = request->idx().index_id();
+    int64_t partition_id = request->idx().partition_id();
+    // Get tablet id index from kv
+    if (table_id <= 0 || index_id <= 0 || partition_id <= 0) {
+        std::string idx_key = meta_tablet_idx_key({instance_id, tablet_id});
+        std::string idx_val;
+        ret = txn->get(idx_key, &idx_val);
+        LOG(INFO) << "get tablet meta, tablet_id=" << tablet_id << " key=" << hex(idx_key);
+        if (ret != 0) {
+            ss << "failed to get table id from tablet_id, err="
+               << (ret == 1 ? "not found" : "internal error");
+            code = MetaServiceCode::KV_TXN_GET_ERR;
+            msg = ss.str();
+            return;
+        }
+        TabletIndexPB idx_pb;
+        if (!idx_pb.ParseFromString(idx_val)) {
+            code = MetaServiceCode::PROTOBUF_PARSE_ERR;
+            msg = "malformed tablet table value";
+            return;
+        }
+        table_id = idx_pb.table_id();
+        index_id = idx_pb.index_id();
+        partition_id = idx_pb.partition_id();
+        if (tablet_id != idx_pb.tablet_id()) {
+            code = MetaServiceCode::UNDEFINED_ERR;
+            msg = "internal error";
+            LOG(WARNING) << "unexpected error given_tablet_id=" << tablet_id
+                         << " idx_pb_tablet_id=" << idx_pb.tablet_id();
+            return;
+        }
+    }
+
+    std::string tablet_stat_key;
+    std::string tablet_stat_val;
+    StatsTabletKeyInfo key_info {instance_id, table_id, index_id, partition_id, tablet_id};
+    stats_tablet_key(key_info, &tablet_stat_key);
+    ret = txn->get(tablet_stat_key, &tablet_stat_val);
+    if (ret != 0) {
+        code = MetaServiceCode::KV_TXN_GET_ERR;
+        ss << (ret == 1 ? " not_found" : " failed") << "_tablet_id=" << tablet_id;
+        LOG(WARNING) << "failed to get tablet stats, tablet_id=" << tablet_id << " ret=" << ret
+                     << " key=" << hex(tablet_stat_key);
+        return;
+    }
+    TabletStatsPB tablet_stat;
+    if (!tablet_stat.ParseFromString(tablet_stat_val)) {
+        code = MetaServiceCode::PROTOBUF_PARSE_ERR;
+        msg = "malformed tablet stat value";
+        return;
+    }
+    int64_t bc_cnt = tablet_stat.base_compaction_cnt();
+    int64_t cc_cnt = tablet_stat.cumulative_compaction_cnt();
+    int64_t cp = tablet_stat.cumulative_point();
+
+    response->set_base_compaction_cnt(bc_cnt);
+    response->set_cumulative_compaction_cnt(cc_cnt);
+    response->set_cumulative_point(cp);
+
+    int64_t req_start = request->start_version();
+    int64_t req_end = request->end_version();
+    req_end = req_end < 0 ? std::numeric_limits<int64_t>::max() - 1 : req_end;
+    if (cp < 0) {
+        DCHECK(cc_cnt == 0);
+        s_get_rowset(txn.get(), req_start, req_end, instance_id, tablet_id, ret, code, msg,
+                     response);
+        return;
+    }
+    LOG(INFO) << "req_bc_cnt=" << req_bc_cnt << ", bc_cnt=" << bc_cnt
+              << ", req_cc_cnt=" << req_cc_cnt << ", cc_cnt=" << cc_cnt << ", req_cp=" << req_cp
+              << ", cp=" << cp;
+    //==========================================================================
+    //      Find version ranges to be synchronized due to compaction
+    //==========================================================================
+    if (req_bc_cnt > bc_cnt || req_cc_cnt > cc_cnt || req_cp > cp) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        ss << "no valid compaction_cnt or cumulative_point given. req_bc_cnt=" << req_bc_cnt
+           << ", bc_cnt=" << bc_cnt << ", req_cc_cnt=" << req_cc_cnt << ", cc_cnt=" << cc_cnt
+           << ", req_cp=" << req_cp << ", cp=" << cp;
+        msg = ss.str();
+        return;
+    }
+    auto versions = calc_sync_versions(req_bc_cnt, bc_cnt, req_cc_cnt, cc_cnt, req_cp, cp,
+                                       req_start, req_end);
+    for (auto [start, end] : versions) {
+        s_get_rowset(txn.get(), start, end, instance_id, tablet_id, ret, code, msg, response);
+        if (ret != 0) {
+            return;
+        }
+    }
 }
 
 void MetaServiceImpl::prepare_index(::google::protobuf::RpcController* controller,
@@ -2488,7 +2681,8 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
     std::string request_body;
     bool keep_raw_body = false;
     std::unique_ptr<int, std::function<void(int*)>> defer_status(
-            (int*)0x01, [&ret, &msg, &status_code, &response_body, &cntl, &req, &keep_raw_body](int*) {
+            (int*)0x01,
+            [&ret, &msg, &status_code, &response_body, &cntl, &req, &keep_raw_body](int*) {
                 std::string c_ret = convert_ms_code_to_http_code(ret);
                 LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
                           << cntl->remote_side() << " request=\n"

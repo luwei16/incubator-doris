@@ -87,6 +87,14 @@ public:
     const int64_t cumulative_layer_point() const;
     void set_cumulative_layer_point(int64_t new_point);
 
+    // CLOUD_MODE
+    int64_t base_compaction_cnt() const { return _base_compaction_cnt; }
+    void set_base_compaction_cnt(int64_t cnt) { _base_compaction_cnt = cnt; }
+    int64_t cumulative_compaction_cnt() const { return _cumulative_compaction_cnt; }
+    void set_cumulative_compaction_cnt(int64_t cnt) { _cumulative_compaction_cnt = cnt; }
+    int64_t local_max_version() const { return _max_version; }
+    bool version_exists(const Version& v) const { return _rs_version_map.count(v) != 0; }
+
     // Disk space occupied by tablet, contain local and remote.
     size_t tablet_footprint();
     // Local disk space occupied by tablet.
@@ -135,27 +143,28 @@ public:
     Status add_inc_rowset(const RowsetSharedPtr& rowset);
 
     // CLOUD_MODE
-    // Add a rowset required for query to tablet in cloud mode.
-    void add_rowset_by_meta(const RowsetMetaSharedPtr& rs_meta);
-
-    // CLOUD_MODE
-    // Add a new created rowset to tablet in cloud mode.
-    void add_new_rowset(const RowsetSharedPtr& rowset);
-
-    // CLOUD_MODE
     // for example:
     //     [0-4][5-5][8-8][9-9][13-13]
     // if spec_version = 12, it will return [6-7],[10-12]
     Versions cloud_calc_missed_versions(int64_t spec_version);
 
     // CLOUD_MODE
-    Status cloud_capture_rs_readers(Version version_range,
+    Status cloud_capture_rs_readers(const Version& version_range,
                                     std::vector<RowsetReaderSharedPtr>* rs_readers);
 
     // CLOUD_MODE
     // Synchronize the rowsets from meta service.
-    // If `spec_version` > 0 and local max_version of the tablet >= `spec_version`, do nothing.
-    Status cloud_sync_rowsets(int64_t spec_version = -1);
+    // If `query_version` > 0 and local max_version of the tablet >= `query_version`, do nothing.
+    Status cloud_sync_rowsets(int64_t query_version = -1);
+
+    // CLOUD_MODE
+    // If `version_overlap` is true, function will delete rowsets with overlapped version in this tablet.
+    // MUST hold EXCLUSIVE `_meta_lock`.
+    void cloud_add_rowsets(std::vector<RowsetSharedPtr> to_add, bool version_overlap);
+
+    // CLOUD_MODE
+    // MUST hold EXCLUSIVE `_meta_lock`.
+    void cloud_delete_rowsets(const std::vector<RowsetSharedPtr>& to_delete);
 
     /// Delete stale rowset by timing. This delete policy uses now() minutes
     /// config::tablet_rowset_expired_stale_sweep_time_sec to compute the deadline of expired rowset
@@ -472,6 +481,11 @@ private:
     std::atomic<int64_t> _cumulative_point;
     std::atomic<int32_t> _newly_created_rowset_num;
     std::atomic<int64_t> _last_checkpoint_time;
+
+    // CLOUD_MODE
+    int64_t _base_compaction_cnt = 0;
+    int64_t _cumulative_compaction_cnt = 0;
+    int64_t _max_version = -1;
 
     // cumulative compaction policy
     std::shared_ptr<CumulativeCompactionPolicy> _cumulative_compaction_policy;

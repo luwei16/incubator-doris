@@ -25,12 +25,8 @@ Status CloudTabletMgr::get_tablet(int64_t tablet_id, TabletSharedPtr* tablet) {
         TabletMetaSharedPtr tablet_meta;
         RETURN_IF_ERROR(meta_mgr()->get_tablet_meta(tablet_id, &tablet_meta));
         std::vector<RowsetMetaSharedPtr> rs_metas;
-        RETURN_IF_ERROR(meta_mgr()->get_rowset_meta(tablet_meta, {0, -1}, &rs_metas));
-        tablet_meta->init_rs_metas(std::move(rs_metas));
-        // init version tracker
         tablet1 = new Tablet(std::move(tablet_meta), cloud::cloud_data_dir());
-        // init rs version map
-        tablet1->init();
+        RETURN_IF_ERROR(meta_mgr()->sync_tablet_rowsets(tablet1));
         static auto deleter = [](const CacheKey& key, void* value) {
             delete (Tablet*)value; // Just delete to reclaim
         };

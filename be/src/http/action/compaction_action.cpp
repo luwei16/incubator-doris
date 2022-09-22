@@ -23,6 +23,9 @@
 #include <sstream>
 #include <string>
 
+#include "cloud/cloud_base_compaction.h"
+#include "cloud/cloud_cumulative_compaction.h"
+#include "cloud/utils.h"
 #include "common/logging.h"
 #include "gutil/strings/substitute.h"
 #include "http/http_channel.h"
@@ -61,10 +64,15 @@ Status CompactionAction::_handle_show_compaction(HttpRequest* req, std::string* 
     uint64_t tablet_id = 0;
     RETURN_NOT_OK_STATUS_WITH_WARN(_check_param(req, &tablet_id), "check param failed");
 
+#ifdef CLOUD_MODE
+    TabletSharedPtr tablet;
+    RETURN_IF_ERROR(cloud::tablet_mgr()->get_tablet(tablet_id, &tablet));
+#else
     TabletSharedPtr tablet = StorageEngine::instance()->tablet_manager()->get_tablet(tablet_id);
     if (tablet == nullptr) {
         return Status::NotFound("Tablet not found. tablet_id={}", tablet_id);
     }
+#endif
 
     tablet->get_compaction_status(json_result);
     return Status::OK();
@@ -84,10 +92,15 @@ Status CompactionAction::_handle_run_compaction(HttpRequest* req, std::string* j
     }
 
     // 2. fetch the tablet by tablet_id
+#ifdef CLOUD_MODE
+    TabletSharedPtr tablet;
+    RETURN_IF_ERROR(cloud::tablet_mgr()->get_tablet(tablet_id, &tablet));
+#else
     TabletSharedPtr tablet = StorageEngine::instance()->tablet_manager()->get_tablet(tablet_id);
     if (tablet == nullptr) {
         return Status::NotFound("Tablet not found. tablet_id={}", tablet_id);
     }
+#endif
 
     // 3. execute compaction task
     std::packaged_task<Status()> task([this, tablet, compaction_type]() {
@@ -139,11 +152,16 @@ Status CompactionAction::_handle_run_status_compaction(HttpRequest* req, std::st
         return Status::OK();
     } else {
         // fetch the tablet by tablet_id
+#ifdef CLOUD_MODE
+        TabletSharedPtr tablet;
+        RETURN_IF_ERROR(cloud::tablet_mgr()->get_tablet(tablet_id, &tablet));
+#else
         TabletSharedPtr tablet = StorageEngine::instance()->tablet_manager()->get_tablet(tablet_id);
         if (tablet == nullptr) {
             LOG(WARNING) << "invalid argument.tablet_id:" << tablet_id;
             return Status::InternalError("fail to get {}", tablet_id);
         }
+#endif
 
         std::string json_template = R"({
             "status" : "Success",
@@ -206,7 +224,11 @@ Status CompactionAction::_execute_compaction_callback(TabletSharedPtr tablet,
 
     Status res = Status::OK();
     if (compaction_type == PARAM_COMPACTION_BASE) {
+#ifdef CLOUD_MODE
+        CloudBaseCompaction base_compaction(tablet);
+#else
         BaseCompaction base_compaction(tablet);
+#endif
         res = base_compaction.compact();
         if (!res) {
             if (res.precise_code() == OLAP_ERR_BE_NO_SUITABLE_VERSION) {
@@ -220,7 +242,11 @@ Status CompactionAction::_execute_compaction_callback(TabletSharedPtr tablet,
             }
         }
     } else if (compaction_type == PARAM_COMPACTION_CUMULATIVE) {
+#ifdef CLOUD_MODE
+        CloudCumulativeCompaction cumulative_compaction(tablet);
+#else
         CumulativeCompaction cumulative_compaction(tablet);
+#endif
         res = cumulative_compaction.compact();
         if (!res) {
             if (res.precise_code() == OLAP_ERR_CUMULATIVE_NO_SUITABLE_VERSION) {

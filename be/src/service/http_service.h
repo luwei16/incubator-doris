@@ -35,6 +35,9 @@ public:
     ~HttpService();
 
     Status start();
+    // CLOUD_MODE
+    Status cloud_start();
+
     void stop();
 
 private:

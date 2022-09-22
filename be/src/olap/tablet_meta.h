@@ -114,7 +114,13 @@ public:
     void init_rs_metas_fs(const io::FileSystemPtr& fs);
 
     // CLOUD_MODE
-    void init_rs_metas(std::vector<RowsetMetaSharedPtr>&& rs_metas);
+    // `to_add` MUST NOT have overlapped version with `_rs_metas` in tablet meta.
+    // MUST hold EXCLUSIVE `_meta_lock` in belonged Tablet.(WTF?)
+    void cloud_add_rs_metas(const std::vector<RowsetSharedPtr>& to_add);
+
+    // CLOUD_MODE
+    // MUST hold EXCLUSIVE `_meta_lock` in belonged Tablet.
+    void cloud_delete_rs_metas(const std::vector<RowsetSharedPtr>& to_delete);
 
     void to_meta_pb(TabletMetaPB* tablet_meta_pb);
     void to_json(std::string* json_string, json2pb::Pb2JsonOptions& options);

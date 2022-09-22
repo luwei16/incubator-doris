@@ -62,10 +62,10 @@ protected:
     Status do_compaction(int64_t permits);
     Status do_compaction_impl(int64_t permits);
 
-    Status modify_rowsets();
-    void gc_output_rowset();
+    // update and persistent tablet meta
+    virtual Status update_tablet_meta();
+    virtual void garbage_collection();
 
-    Status construct_output_rowset_writer(TabletSchemaSPtr schema);
     Status construct_input_rowset_readers();
 
     Status check_version_continuity(const std::vector<RowsetSharedPtr>& rowsets);

@@ -177,6 +177,62 @@ Status HttpService::start() {
     return Status::OK();
 }
 
+Status HttpService::cloud_start() {
+    add_default_path_handlers(_web_page_handler.get());
+
+    // register load
+    StreamLoadAction* streamload_action = _pool.add(new StreamLoadAction(_env));
+    _ev_http_server->register_handler(HttpMethod::PUT, "/api/{db}/{table}/_load",
+                                      streamload_action);
+    _ev_http_server->register_handler(HttpMethod::PUT, "/api/{db}/{table}/_stream_load",
+                                      streamload_action);
+    StreamLoad2PCAction* streamload_2pc_action = _pool.add(new StreamLoad2PCAction(_env));
+    _ev_http_server->register_handler(HttpMethod::PUT, "/api/{db}/_stream_load_2pc",
+                                      streamload_2pc_action);
+
+    HealthAction* health_action = _pool.add(new HealthAction());
+    _ev_http_server->register_handler(HttpMethod::GET, "/api/health", health_action);
+
+    MetricsAction* metrics_action =
+            _pool.add(new MetricsAction(DorisMetrics::instance()->metric_registry()));
+    _ev_http_server->register_handler(HttpMethod::GET, "/metrics", metrics_action);
+
+    // compaction actions
+    CompactionAction* show_compaction_action =
+            _pool.add(new CompactionAction(CompactionActionType::SHOW_INFO));
+    _ev_http_server->register_handler(HttpMethod::GET, "/api/compaction/show",
+                                      show_compaction_action);
+    CompactionAction* run_compaction_action =
+            _pool.add(new CompactionAction(CompactionActionType::RUN_COMPACTION));
+    _ev_http_server->register_handler(HttpMethod::POST, "/api/compaction/run",
+                                      run_compaction_action);
+    CompactionAction* run_status_compaction_action =
+            _pool.add(new CompactionAction(CompactionActionType::RUN_COMPACTION_STATUS));
+    _ev_http_server->register_handler(HttpMethod::GET, "/api/compaction/run_status",
+                                      run_status_compaction_action);
+
+    // config actions
+    ConfigAction* update_config_action =
+            _pool.add(new ConfigAction(ConfigActionType::UPDATE_CONFIG));
+    _ev_http_server->register_handler(HttpMethod::POST, "/api/update_config", update_config_action);
+
+    ConfigAction* show_config_action = _pool.add(new ConfigAction(ConfigActionType::SHOW_CONFIG));
+    _ev_http_server->register_handler(HttpMethod::GET, "/api/show_config", show_config_action);
+
+    // check actions
+    CheckRPCChannelAction* check_rpc_channel_action = _pool.add(new CheckRPCChannelAction(_env));
+    _ev_http_server->register_handler(HttpMethod::GET,
+                                      "/api/check_rpc_channel/{ip}/{port}/{payload_size}",
+                                      check_rpc_channel_action);
+
+    ResetRPCChannelAction* reset_rpc_channel_action = _pool.add(new ResetRPCChannelAction(_env));
+    _ev_http_server->register_handler(HttpMethod::GET, "/api/reset_rpc_channel/{endpoints}",
+                                      reset_rpc_channel_action);
+
+    _ev_http_server->start();
+    return Status::OK();
+}
+
 void HttpService::stop() {
     _ev_http_server->stop();
     _pool.clear();

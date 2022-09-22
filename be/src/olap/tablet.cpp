@@ -180,6 +180,9 @@ void Tablet::save_meta() {
 
 Status Tablet::revise_tablet_meta(const std::vector<RowsetMetaSharedPtr>& rowsets_to_clone,
                                   const std::vector<Version>& versions_to_delete) {
+#ifdef CLOUD_MODE
+    LOG(FATAL) << "MUST NOT call revise_tablet_meta in CLOUD_MODE";
+#endif
     LOG(INFO) << "begin to revise tablet. tablet=" << full_name()
               << ", rowsets_to_clone=" << rowsets_to_clone.size()
               << ", versions_to_delete=" << versions_to_delete.size();
@@ -256,6 +259,9 @@ Status Tablet::revise_tablet_meta(const std::vector<RowsetMetaSharedPtr>& rowset
 }
 
 Status Tablet::add_rowset(RowsetSharedPtr rowset) {
+#ifdef CLOUD_MODE
+    LOG(FATAL) << "MUST NOT call add_rowset in CLOUD_MODE";
+#endif
     DCHECK(rowset != nullptr);
     std::lock_guard<std::shared_mutex> wrlock(_meta_lock);
     // If the rowset already exist, just return directly.  The rowset_id is an unique-id,
@@ -297,6 +303,9 @@ Status Tablet::add_rowset(RowsetSharedPtr rowset) {
 
 Status Tablet::modify_rowsets(std::vector<RowsetSharedPtr>& to_add,
                               std::vector<RowsetSharedPtr>& to_delete, bool check_delete) {
+#ifdef CLOUD_MODE
+    LOG(FATAL) << "MUST NOT call modify_rowsets in CLOUD_MODE";
+#endif
     // the compaction process allow to compact the single version, eg: version[4-4].
     // this kind of "single version compaction" has same "input version" and "output version".
     // which means "to_add->version()" equals to "to_delete->version()".
@@ -453,6 +462,9 @@ RowsetSharedPtr Tablet::_rowset_with_largest_size() {
 
 // add inc rowset should not persist tablet meta, because it will be persisted when publish txn.
 Status Tablet::add_inc_rowset(const RowsetSharedPtr& rowset) {
+#ifdef CLOUD_MODE
+    LOG(FATAL) << "MUST NOT call add_inc_rowset in CLOUD_MODE";
+#endif
     DCHECK(rowset != nullptr);
     std::lock_guard<std::shared_mutex> wrlock(_meta_lock);
     if (_contains_rowset(rowset->rowset_id())) {
@@ -474,33 +486,6 @@ Status Tablet::add_inc_rowset(const RowsetSharedPtr& rowset) {
 
     ++_newly_created_rowset_num;
     return Status::OK();
-}
-
-void Tablet::add_rowset_by_meta(const RowsetMetaSharedPtr& rs_meta) {
-    DCHECK(rs_meta != nullptr);
-    RowsetSharedPtr rowset;
-    // nullptr implies using tablet schema in `rs_meta`
-    RowsetFactory::create_rowset(nullptr, tablet_path(), rs_meta, &rowset);
-    std::lock_guard<std::shared_mutex> wrlock(_meta_lock);
-    if (_contains_rowset(rowset->rowset_id())) {
-        // rowset is already in tablet
-        return;
-    }
-    // check should not contain same version
-    CHECK(_contains_version(rowset->version()).ok());
-    CHECK(_tablet_meta->add_rs_meta(rs_meta));
-    _rs_version_map[rs_meta->version()] = std::move(rowset);
-    _timestamped_version_tracker.add_version(rs_meta->version());
-}
-
-void Tablet::add_new_rowset(const RowsetSharedPtr& rowset) {
-    DCHECK(rowset != nullptr);
-    std::lock_guard<std::shared_mutex> wrlock(_meta_lock);
-    // check should not contain same version
-    CHECK(_contains_version(rowset->version()).ok());
-    CHECK(_tablet_meta->add_rs_meta(rowset->rowset_meta()));
-    _rs_version_map[rowset->version()] = rowset;
-    _timestamped_version_tracker.add_version(rowset->version());
 }
 
 Versions Tablet::cloud_calc_missed_versions(int64_t spec_version) {
@@ -549,35 +534,93 @@ Versions Tablet::cloud_calc_missed_versions(int64_t spec_version) {
     return missed_versions;
 }
 
-Status Tablet::cloud_capture_rs_readers(Version version_range,
+Status Tablet::cloud_capture_rs_readers(const Version& version_range,
                                         std::vector<RowsetReaderSharedPtr>* rs_readers) {
     Versions version_path;
     std::shared_lock rlock(_meta_lock);
     RETURN_IF_ERROR(
             _timestamped_version_tracker.capture_consistent_versions(version_range, &version_path));
+    VLOG_DEBUG << "capture consitent versions: " << version_path;
     return capture_rs_readers(version_path, rs_readers);
 }
 
-Status Tablet::cloud_sync_rowsets(int64_t spec_version) {
+Status Tablet::cloud_sync_rowsets(int64_t query_version) {
+    if (query_version > 0) {
+        std::shared_lock rlock(_meta_lock);
+        if (_max_version >= query_version) {
+            return Status::OK();
+        }
+    }
     // serially execute sync to reduce unnecessary network overhead
     std::lock_guard lock(_sync_rowsets_lock);
-
-    int64_t max_version = 0;
-    {
+    if (query_version > 0) {
         std::shared_lock rlock(_meta_lock);
-        max_version = max_version_unlocked().second;
+        if (_max_version >= query_version) {
+            return Status::OK();
+        }
     }
-    if (spec_version > 0 && max_version >= spec_version) {
-        return Status::OK();
+    return cloud::meta_mgr()->sync_tablet_rowsets(this);
+}
+
+void Tablet::cloud_add_rowsets(std::vector<RowsetSharedPtr> to_add, bool version_overlap) {
+    if (to_add.empty()) {
+        return;
+    }
+    if (version_overlap) {
+        // filter existed rowset
+        auto it = to_add.begin();
+        size_t num_filtered = 0;
+        while (it != to_add.end() - num_filtered) {
+            if (version_exists((*it)->version())) {
+                // TODO(cyx): should check rowset_id?
+                std::swap(*it, *(to_add.end() - num_filtered - 1));
+                ++num_filtered;
+            } else {
+                ++it;
+            }
+        }
+        to_add.resize(to_add.size() - num_filtered);
+
+        // delete rowsets with overlapped version
+        std::vector<RowsetSharedPtr> to_delete;
+        for (auto& to_add_rs : to_add) {
+            Version to_add_v = to_add_rs->version();
+            // if start_version  > max_version, we can skip checking overlap here.
+            if (to_add_v.first > _max_version) {
+                continue;
+            }
+            for (auto& [v, rs] : _rs_version_map) {
+                if (to_add_v.contains(v)) {
+                    to_delete.push_back(rs);
+                }
+            }
+            cloud_delete_rowsets(to_delete);
+            to_delete.clear();
+        }
+    }
+    for (auto& rs : to_add) {
+        _rs_version_map.emplace(rs->version(), rs);
+        _timestamped_version_tracker.add_version(rs->version());
+        _max_version = std::max(rs->end_version(), _max_version);
+    }
+    _tablet_meta->cloud_add_rs_metas(to_add);
+}
+
+void Tablet::cloud_delete_rowsets(const std::vector<RowsetSharedPtr>& to_delete) {
+    if (to_delete.empty()) {
+        return;
     }
     std::vector<RowsetMetaSharedPtr> rs_metas;
-    RETURN_IF_ERROR(
-            cloud::meta_mgr()->get_rowset_meta(_tablet_meta, {max_version + 1, -1}, &rs_metas));
-    for (const auto& rs_meta : rs_metas) {
-        // acquire tablet exclusive header_lock in add_rowset_by_meta
-        add_rowset_by_meta(rs_meta);
+    rs_metas.reserve(to_delete.size());
+    for (auto& rs : to_delete) {
+        rs_metas.push_back(rs->rowset_meta());
+        _stale_rs_version_map[rs->version()] = rs;
     }
-    return Status::OK();
+    _timestamped_version_tracker.add_stale_path_version(rs_metas);
+    for (auto& rs : to_delete) {
+        _rs_version_map.erase(rs->version());
+    }
+    _tablet_meta->cloud_delete_rs_metas(to_delete);
 }
 
 void Tablet::_delete_stale_rowset_by_version(const Version& version) {
@@ -1267,12 +1310,20 @@ void Tablet::pick_candidate_rowsets_to_cumulative_compaction(
 void Tablet::pick_candidate_rowsets_to_base_compaction(
         vector<RowsetSharedPtr>* candidate_rowsets,
         std::shared_lock<std::shared_mutex>& /* meta lock*/) {
+#ifdef CLOUD_MODE
+    for (auto& [v, rs] : _rs_version_map) {
+        if (v.first < _cumulative_point) {
+            candidate_rowsets->push_back(rs);
+        }
+    }
+#else
     for (auto& it : _rs_version_map) {
         // Do compaction on local rowsets only.
         if (it.first.first < _cumulative_point && it.second->is_local()) {
             candidate_rowsets->push_back(it.second);
         }
     }
+#endif
 }
 
 // For http compaction action
@@ -1765,7 +1816,6 @@ Status Tablet::create_rowset_writer(const Version& version, const RowsetStatePB&
     context.oldest_write_timestamp = oldest_write_timestamp;
     context.newest_write_timestamp = newest_write_timestamp;
     context.tablet_schema = tablet_schema;
-    context.enable_unique_key_merge_on_write = enable_unique_key_merge_on_write();
     _init_context_common_fields(context);
     return RowsetFactory::create_rowset_writer(context, rowset_writer);
 }
@@ -1783,7 +1833,6 @@ Status Tablet::create_rowset_writer(const int64_t& txn_id, const PUniqueId& load
     context.oldest_write_timestamp = -1;
     context.newest_write_timestamp = -1;
     context.tablet_schema = tablet_schema;
-    context.enable_unique_key_merge_on_write = enable_unique_key_merge_on_write();
     _init_context_common_fields(context);
     return RowsetFactory::create_rowset_writer(context, rowset_writer);
 }
@@ -1811,6 +1860,7 @@ void Tablet::_init_context_common_fields(RowsetWriterContext& context) {
     }
     context.tablet_path = tablet_path();
     context.data_dir = data_dir();
+    context.enable_unique_key_merge_on_write = enable_unique_key_merge_on_write();
 }
 
 Status Tablet::create_rowset(RowsetMetaSharedPtr rowset_meta, RowsetSharedPtr* rowset) {

@@ -18,8 +18,7 @@ public:
 
     Status get_tablet_meta(int64_t tablet_id, TabletMetaSharedPtr* tablet_meta) override;
 
-    Status get_rowset_meta(const TabletMetaSharedPtr& tablet_meta, Version version_range,
-                           std::vector<RowsetMetaSharedPtr>* rs_metas) override;
+    Status sync_tablet_rowsets(Tablet* tablet) override;
 
     Status write_tablet_meta(const TabletMetaSharedPtr& tablet_meta) override;
 

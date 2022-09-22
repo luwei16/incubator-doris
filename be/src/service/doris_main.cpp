@@ -461,7 +461,11 @@ int main(int argc, char** argv) {
     // 3. http service
     doris::HttpService http_service(exec_env, doris::config::webserver_port,
                                     doris::config::webserver_num_workers);
+#ifdef CLOUD_MODE
+    status = http_service.cloud_start();
+#else
     status = http_service.start();
+#endif
     if (!status.ok()) {
         LOG(ERROR) << "Doris Be http service did not start correctly, exiting";
         doris::shutdown_logging();

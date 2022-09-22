@@ -581,8 +581,28 @@ void TabletMeta::to_meta_pb(TabletMetaPB* tablet_meta_pb) {
     }
 }
 
-void TabletMeta::init_rs_metas(std::vector<RowsetMetaSharedPtr>&& rs_metas) {
-    _rs_metas = std::move(rs_metas);
+void TabletMeta::cloud_add_rs_metas(const std::vector<RowsetSharedPtr>& to_add) {
+    for (auto& rs : to_add) {
+        _rs_metas.push_back(rs->rowset_meta());
+    }
+}
+
+void TabletMeta::cloud_delete_rs_metas(const std::vector<RowsetSharedPtr>& to_delete) {
+    for (auto& rs : to_delete) {
+        auto it = _rs_metas.begin();
+        while (it != _rs_metas.end()) {
+            if (rs->version() == (*it)->version()) {
+                _rs_metas.erase(it);
+                // there should be only one rowset match the version
+                break;
+            } else {
+                ++it;
+            }
+        }
+    }
+    for (auto& rs : to_delete) {
+        _stale_rs_metas.push_back(rs->rowset_meta());
+    }
 }
 
 uint32_t TabletMeta::mem_size() const {

@@ -3,12 +3,13 @@
 #include <vector>
 
 #include "common/status.h"
+#include "olap/tablet.h"
 #include "olap/tablet_meta.h"
 #include "runtime/stream_load/stream_load_context.h"
 #include "util/s3_util.h"
 
 namespace selectdb {
-    class TabletJobInfoPB;
+class TabletJobInfoPB;
 }
 
 namespace doris::cloud {
@@ -23,8 +24,7 @@ public:
         return Status::NotSupported("not supported");
     }
 
-    virtual Status get_rowset_meta(const TabletMetaSharedPtr& tablet_meta, Version version_range,
-                                   std::vector<RowsetMetaSharedPtr>* rs_metas) {
+    virtual Status sync_tablet_rowsets(Tablet* tablet) {
         return Status::NotSupported("not supported");
     }
 

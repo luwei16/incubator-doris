@@ -232,6 +232,11 @@ inline std::ostream& operator<<(std::ostream& os, const Version& version) {
     return os << version.to_string();
 }
 
+inline std::ostream& operator<<(std::ostream& os, const Versions& versions) {
+    for (auto& v : versions) os << v;
+    return os;
+}
+
 // used for hash-struct of hash_map<Version, Rowset*>.
 struct HashOfVersion {
     size_t operator()(const Version& version) const {

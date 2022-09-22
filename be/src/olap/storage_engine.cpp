@@ -37,6 +37,8 @@
 
 #include "agent/cgroups_mgr.h"
 #include "agent/task_worker_pool.h"
+#include "cloud/cloud_base_compaction.h"
+#include "cloud/cloud_cumulative_compaction.h"
 #include "cloud/cloud_meta_mgr.h"
 #include "cloud/utils.h"
 #include "common/config.h"
@@ -1110,12 +1112,20 @@ bool StorageEngine::check_rowset_id_in_unused_rowsets(const RowsetId& rowset_id)
 
 void StorageEngine::create_cumulative_compaction(
         TabletSharedPtr best_tablet, std::shared_ptr<CumulativeCompaction>& cumulative_compaction) {
+#ifdef CLOUD_MODE
+    cumulative_compaction.reset(new CloudCumulativeCompaction(best_tablet));
+#else
     cumulative_compaction.reset(new CumulativeCompaction(best_tablet));
+#endif
 }
 
 void StorageEngine::create_base_compaction(TabletSharedPtr best_tablet,
                                            std::shared_ptr<BaseCompaction>& base_compaction) {
+#ifdef CLOUD_MODE
+    base_compaction.reset(new CloudBaseCompaction(best_tablet));
+#else
     base_compaction.reset(new BaseCompaction(best_tablet));
+#endif
 }
 
 // Return json:

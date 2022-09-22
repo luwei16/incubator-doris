@@ -17,6 +17,9 @@
 
 #include "olap/compaction.h"
 
+#include <gen_cpp/olap_file.pb.h>
+
+#include "cloud/utils.h"
 #include "common/status.h"
 #include "gutil/strings/substitute.h"
 #include "olap/rowset/rowset.h"
@@ -54,7 +57,7 @@ Status Compaction::compact() {
 Status Compaction::execute_compact() {
     Status st = execute_compact_impl();
     if (!st.ok()) {
-        gc_output_rowset();
+        garbage_collection();
     }
     return st;
 }
@@ -95,7 +98,7 @@ Status Compaction::quick_rowsets_compact() {
         }
         st = do_compaction(permits);
         if (!st.ok()) {
-            gc_output_rowset();
+            garbage_collection();
             LOG(WARNING) << "quick_rowsets_compaction failed";
         } else {
             LOG(INFO) << "quick_compaction succ"
@@ -152,7 +155,23 @@ Status Compaction::do_compaction_impl(int64_t permits) {
     TabletSchemaSPtr cur_tablet_schema =
             _tablet->rowset_meta_with_max_schema_version(rowset_metas)->tablet_schema();
 
-    RETURN_NOT_OK(construct_output_rowset_writer(cur_tablet_schema));
+    // construct output rowset writer
+    RowsetWriterContext context;
+    context.txn_id = _input_rowsets.back()->txn_id();
+    context.version = _output_version;
+    context.rowset_state = VISIBLE;
+    context.segments_overlap = NONOVERLAPPING;
+    context.tablet_schema = cur_tablet_schema;
+    context.oldest_write_timestamp = _oldest_write_timestamp;
+    context.newest_write_timestamp = _newest_write_timestamp;
+#ifdef CLOUD_MODE
+    context.fs = cloud::latest_fs();
+#endif
+    RETURN_IF_ERROR(_tablet->create_rowset_writer(&context, &_output_rs_writer));
+#ifdef CLOUD_MODE
+    RETURN_IF_ERROR(cloud::meta_mgr()->prepare_rowset(_output_rs_writer->rowset_meta(), true));
+#endif
+
     RETURN_NOT_OK(construct_input_rowset_readers());
     TRACE("prepare finished");
 
@@ -189,6 +208,9 @@ Status Compaction::do_compaction_impl(int64_t permits) {
                      << ", output_version=" << _output_version;
         return Status::OLAPInternalError(OLAP_ERR_MALLOC_ERROR);
     }
+#ifdef CLOUD_MODE
+    RETURN_IF_ERROR(cloud::meta_mgr()->commit_rowset(_output_rowset->rowset_meta(), true));
+#endif
     TRACE_COUNTER_INCREMENT("output_rowset_data_size", _output_rowset->data_disk_size());
     TRACE_COUNTER_INCREMENT("output_row_num", _output_rowset->num_rows());
     TRACE_COUNTER_INCREMENT("output_segments_num", _output_rowset->num_segments());
@@ -198,9 +220,9 @@ Status Compaction::do_compaction_impl(int64_t permits) {
     RETURN_NOT_OK(check_correctness(stats));
     TRACE("check correctness finished");
 
-    // 4. modify rowsets in memory
-    RETURN_NOT_OK(modify_rowsets());
-    TRACE("modify rowsets finished");
+    // 4. update and persistent tablet meta
+    RETURN_NOT_OK(update_tablet_meta());
+    TRACE("update tablet finished");
 
     // 5. update last success compaction time
     int64_t now = UnixMillis();
@@ -236,12 +258,6 @@ Status Compaction::do_compaction_impl(int64_t permits) {
     return Status::OK();
 }
 
-Status Compaction::construct_output_rowset_writer(TabletSchemaSPtr schema) {
-    return _tablet->create_rowset_writer(_output_version, VISIBLE, NONOVERLAPPING, schema,
-                                         _oldest_write_timestamp, _newest_write_timestamp,
-                                         &_output_rs_writer);
-}
-
 Status Compaction::construct_input_rowset_readers() {
     for (auto& rowset : _input_rowsets) {
         RowsetReaderSharedPtr rs_reader;
@@ -251,7 +267,7 @@ Status Compaction::construct_input_rowset_readers() {
     return Status::OK();
 }
 
-Status Compaction::modify_rowsets() {
+Status Compaction::update_tablet_meta() {
     std::vector<RowsetSharedPtr> output_rowsets;
     output_rowsets.push_back(_output_rowset);
     {
@@ -274,7 +290,7 @@ Status Compaction::modify_rowsets() {
     return Status::OK();
 }
 
-void Compaction::gc_output_rowset() {
+void Compaction::garbage_collection() {
     if (_state != CompactionState::SUCCESS && _output_rowset != nullptr) {
         StorageEngine::instance()->add_unused_rowset(_output_rowset);
     }

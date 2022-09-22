@@ -159,6 +159,7 @@ Status CloudSchemaChangeHandler::_convert_historical_rowsets(const SchemaChangeP
 
         std::unique_ptr<RowsetWriter> rowset_writer;
         RowsetWriterContext context;
+        context.txn_id = rs_reader->rowset()->txn_id();
         context.version = rs_reader->version();
         context.rowset_state = VISIBLE;
         context.segments_overlap = rs_reader->rowset()->rowset_meta()->segments_overlap();
@@ -195,7 +196,8 @@ Status CloudSchemaChangeHandler::_convert_historical_rowsets(const SchemaChangeP
 
         st = meta_mgr()->commit_rowset(rowset_writer->rowset_meta(), false);
         if (st.ok()) {
-            sc_params.new_tablet->add_new_rowset(new_rowset);
+            std::lock_guard wlock(sc_params.new_tablet->get_header_lock());
+            sc_params.new_tablet->cloud_add_rowsets({new_rowset}, false);
         } else {
             if (st.is_already_exist()) {
                 // This should only occur when:
