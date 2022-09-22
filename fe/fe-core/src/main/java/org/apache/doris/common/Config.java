@@ -339,6 +339,7 @@ public class Config extends ConfigBase {
      */
     @ConfField public static int http_port = 8030;
 
+    @ConfField public static int cloud_http_port = 8035;
     /**
      * Jetty container default configuration
      * Jetty's thread architecture model is very simple, divided into three thread pools:

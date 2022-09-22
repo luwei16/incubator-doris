@@ -144,6 +144,9 @@ public class PaloFe {
             if (options.enableHttpServer) {
                 HttpServer httpServer = new HttpServer();
                 httpServer.setPort(Config.http_port);
+                if (!Config.cloud_unique_id.isEmpty()) {
+                    httpServer.setCloudPort(Config.cloud_http_port);
+                }
                 httpServer.setMaxHttpPostSize(Config.jetty_server_max_http_post_size);
                 httpServer.setAcceptors(Config.jetty_server_acceptors);
                 httpServer.setSelectors(Config.jetty_server_selectors);
@@ -178,6 +181,10 @@ public class PaloFe {
         if (!NetUtils.isPortAvailable(FrontendOptions.getLocalHostAddress(), Config.http_port,
                 "Http port", NetUtils.HTTP_PORT_SUGGESTION)) {
             throw new IOException("port " + Config.http_port + " already in use");
+        }
+        if (!Config.cloud_unique_id.isEmpty() && !NetUtils.isPortAvailable(FrontendOptions.getLocalHostAddress(),
+                Config.cloud_http_port, "Http cloud port", NetUtils.CLOUD_HTTP_PORT_SUGGESTION)) {
+            throw new IOException("port " + Config.cloud_http_port + " already in use");
         }
         if (!NetUtils.isPortAvailable(FrontendOptions.getLocalHostAddress(), Config.query_port,
                 "Query port", NetUtils.QUERY_PORT_SUGGESTION)) {

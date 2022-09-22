@@ -2764,15 +2764,33 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
         GetTabletStatsRequest req;
         auto st = google::protobuf::util::JsonStringToMessage(request_body, &req);
         if (!st.ok()) {
-            msg = "failed to parse AlterClusterRequest, error: " + st.message().ToString();
+            msg = "failed to parse GetTabletStatsRequest, error: " + st.message().ToString();
+            ret = MetaServiceCode::PROTOBUF_PARSE_ERR;
+            response_body = msg;
+            LOG(WARNING) << msg;
+            return;
+        }
+        GetTabletStatsResponse res;
+        get_tablet_stats(cntl, &req, &res, nullptr);
+        ret = res.status().code();
+        msg = res.status().msg();
+        response_body = msg;
+        return;
+    }
+    
+    if (unresolved_path == "get_stage") {
+        GetStageRequest req;
+        auto st = google::protobuf::util::JsonStringToMessage(request_body, &req);
+        if (!st.ok()) {
+            msg = "failed to parse GetStageRequest, error: " + st.message().ToString();
             ret = MetaServiceCode::PROTOBUF_PARSE_ERR;
             response_body = msg;
             LOG(WARNING) << msg;
             return;
         }
 
-        GetTabletStatsResponse res;
-        get_tablet_stats(cntl, &req, &res, nullptr);
+        GetStageResponse res;
+        get_stage(cntl, &req, &res, nullptr);
         ret = res.status().code();
         msg = res.status().msg();
         response_body = msg;
@@ -2979,6 +2997,11 @@ void MetaServiceImpl::alter_obj_store_info(google::protobuf::RpcController* cont
         }
     } break;
     case AlterObjStoreInfoRequest::ADD_OBJ_INFO: {
+        if (!obj.has_provider()) {
+            code = MetaServiceCode::INVALID_ARGUMENT;
+            msg = "s3 conf lease provider info";
+            return;
+        }
         if (instance.obj_info().size() >= 10) {
             code = MetaServiceCode::UNDEFINED_ERR;
             msg = "this instance history has greater than 10 objs, please new another instance";
@@ -2994,7 +3017,8 @@ void MetaServiceImpl::alter_obj_store_info(google::protobuf::RpcController* cont
         auto& objs = instance.obj_info();
         for (auto& it : objs) {
             if (bucket == it.bucket() && prefix == it.prefix() && endpoint == it.endpoint() &&
-                region == it.region() && ak == it.ak() && sk == it.sk()) {
+                region == it.region() && ak == it.ak() && sk == it.sk() &&
+                obj.provider() == it.provider()) {
                 // err, anything not changed
                 code = MetaServiceCode::INVALID_ARGUMENT;
                 msg = "original obj infos has a same conf, please check it";
@@ -3012,6 +3036,7 @@ void MetaServiceImpl::alter_obj_store_info(google::protobuf::RpcController* cont
         last_item.set_prefix(prefix);
         last_item.set_endpoint(endpoint);
         last_item.set_region(region);
+        last_item.set_provider(obj.provider());
         instance.add_obj_info()->CopyFrom(last_item);
     } break;
     default: {
@@ -3071,7 +3096,8 @@ void MetaServiceImpl::create_instance(google::protobuf::RpcController* controlle
     std::string region = obj.has_region() ? obj.region() : "";
 
     // ATTN: prefix may be empty
-    if (ak.empty() || sk.empty() || bucket.empty() || endpoint.empty() || region.empty()) {
+    if (ak.empty() || sk.empty() || bucket.empty() || endpoint.empty() || region.empty() ||
+        !obj.has_provider()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
         msg = "s3 conf info err, please check it";
         return;
@@ -3088,6 +3114,7 @@ void MetaServiceImpl::create_instance(google::protobuf::RpcController* controlle
     obj_info->set_prefix(prefix);
     obj_info->set_endpoint(endpoint);
     obj_info->set_region(region);
+    obj_info->set_provider(obj.provider());
     std::ostringstream oss;
     // create instance's s3 conf, id = 1
     obj_info->set_id(std::to_string(1));
@@ -3586,12 +3613,6 @@ void MetaServiceImpl::get_stage(google::protobuf::RpcController* controller,
     }
     auto type = request->type();
 
-    if (type == StagePB::EXTERNAL && !request->has_stage_name()) {
-        code = MetaServiceCode::INVALID_ARGUMENT;
-        msg = "stage name not set";
-        return;
-    }
-
     InstanceKeyInfo key_info {instance_id};
     std::string key;
     std::string val;
@@ -3620,6 +3641,92 @@ void MetaServiceImpl::get_stage(google::protobuf::RpcController* controller,
     if (!instance.ParseFromString(val)) {
         code = MetaServiceCode::PROTOBUF_PARSE_ERR;
         msg = "failed to parse InstanceInfoPB";
+        return;
+    }
+
+    if (type == StagePB::INTERNAL) {
+        // check mysql user_name has been created internal stage
+        auto& stage = instance.stages();
+        bool found = false;
+        if (instance.obj_info_size() == 0) {
+            LOG(WARNING) << "impossible, instance must have at least one obj_info.";
+            code = MetaServiceCode::UNDEFINED_ERR;
+            msg = "impossible, instance must have at least one obj_info.";
+            return;
+        }
+        auto& lastest_obj = instance.obj_info()[instance.obj_info_size() - 1];
+
+        for (auto s : stage) {
+            if (s.type() != StagePB::INTERNAL || s.mysql_user_name().size() == 0) {
+                continue;
+            }
+            if (s.mysql_user_name()[0] == mysql_user_name) {
+                // find, use it stage prefix and id
+                found = true;
+                // get from internal stage
+                int idx = stoi(s.obj_info().id());
+                if (idx > 10 || idx < 1) {
+                    LOG(WARNING) << "invalid idx: " << idx;
+                    code = MetaServiceCode::UNDEFINED_ERR;
+                    msg = "impossible, id invalid";
+                    return;
+                }
+                auto& old_obj = instance.obj_info()[idx - 1];
+
+                response->mutable_stage()->mutable_obj_info()->set_ak(old_obj.ak());
+                response->mutable_stage()->mutable_obj_info()->set_sk(old_obj.sk());
+                response->mutable_stage()->mutable_obj_info()->set_bucket(old_obj.bucket());
+                response->mutable_stage()->mutable_obj_info()->set_endpoint(old_obj.endpoint());
+                response->mutable_stage()->mutable_obj_info()->set_region(old_obj.region());
+                response->mutable_stage()->mutable_obj_info()->set_provider(old_obj.provider());
+                response->mutable_stage()->mutable_obj_info()->set_prefix(s.obj_info().prefix());
+                msg = proto_to_json(response->stage());
+                return;
+            }
+        }
+        // if not, create it
+        if (!found) {
+            if (stage.size() >= 20) {
+                LOG(WARNING) << "can't create more than 20 stages, and instance has "
+                             << std::to_string(stage.size());
+                msg = "can't create more than 20 stages";
+                code = MetaServiceCode::STAGE_ALREADY_EXISTED;
+                return;
+            }
+            // ${prefix}/stage/user/username
+            std::string prefix =
+                    fmt::format("{}/stage/user/{}/", lastest_obj.prefix(), mysql_user_name);
+            auto as = instance.add_stages();
+            as->mutable_obj_info()->set_prefix(prefix);
+            as->mutable_obj_info()->set_id(lastest_obj.id());
+            as->add_mysql_user_name(mysql_user_name);
+
+            txn->put(key, instance.SerializeAsString());
+            LOG(INFO) << "put instance_id=" << instance_id << " instance_key=" << hex(key)
+                      << " json=" << proto_to_json(instance);
+            ret = txn->commit();
+            if (ret != 0) {
+                code = MetaServiceCode::KV_TXN_COMMIT_ERR;
+                msg = "failed to commit kv txn";
+                LOG(WARNING) << msg << " ret=" << ret;
+                return;
+            }
+            response->mutable_stage()->mutable_obj_info()->set_prefix(prefix);
+            response->mutable_stage()->mutable_obj_info()->set_ak(lastest_obj.ak());
+            response->mutable_stage()->mutable_obj_info()->set_sk(lastest_obj.sk());
+            response->mutable_stage()->mutable_obj_info()->set_bucket(lastest_obj.bucket());
+            response->mutable_stage()->mutable_obj_info()->set_endpoint(lastest_obj.endpoint());
+            response->mutable_stage()->mutable_obj_info()->set_region(lastest_obj.region());
+            response->mutable_stage()->mutable_obj_info()->set_provider(lastest_obj.provider());
+            msg = proto_to_json(response->stage());
+            return;
+        }
+    }
+
+    // external
+    if (type == StagePB::EXTERNAL && !request->has_stage_name()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "stage name not set";
         return;
     }
 

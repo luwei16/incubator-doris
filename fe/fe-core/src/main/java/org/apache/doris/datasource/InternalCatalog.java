@@ -3804,7 +3804,7 @@ public class InternalCatalog implements CatalogIf<Database> {
     public void createStage(StagePB stagePB, boolean ifNotExists) throws DdlException {
         SelectdbCloud.CreateStageRequest createStageRequest = SelectdbCloud.CreateStageRequest.newBuilder()
                 .setCloudUniqueId(Config.cloud_unique_id).setStage(stagePB).build();
-        SelectdbCloud.CreateStageResponse response;
+        SelectdbCloud.CreateStageResponse response = null;
         try {
             response = MetaServiceProxy.getInstance().createStage(createStageRequest);
             // Now only create external stage
@@ -3813,7 +3813,8 @@ public class InternalCatalog implements CatalogIf<Database> {
                 return;
             }
         } catch (RpcException e) {
-            throw new RuntimeException(e);
+            LOG.warn("createStage response: {} ", response);
+            throw new DdlException(e.getMessage());
         }
         if (response.getStatus().getCode() != SelectdbCloud.MetaServiceCode.OK) {
             LOG.warn("createStage response: {} ", response);
@@ -3827,7 +3828,7 @@ public class InternalCatalog implements CatalogIf<Database> {
         if (stageName != null) {
             builder.setStageName(stageName);
         }
-        SelectdbCloud.GetStageResponse response;
+        SelectdbCloud.GetStageResponse response = null;
         try {
             response = MetaServiceProxy.getInstance().getStage(builder.build());
             if (response.getStatus().getCode() != SelectdbCloud.MetaServiceCode.OK) {
@@ -3836,7 +3837,8 @@ public class InternalCatalog implements CatalogIf<Database> {
             }
             return response.getStage();
         } catch (RpcException e) {
-            throw new RuntimeException(e);
+            LOG.warn("createStage response: {} ", response);
+            throw new DdlException(e.getMessage());
         }
     }
 }
