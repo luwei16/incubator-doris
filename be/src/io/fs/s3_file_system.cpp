@@ -158,8 +158,7 @@ Status S3FileSystem::open_file(const Path& path, FileReaderSPtr* reader) {
     return s;
 }
 
-Status S3FileSystem::open_file_impl(const Path& path,
-                                    std::function<void(OlapReaderStatistics*)> count,
+Status S3FileSystem::open_file_impl(const Path& path, metrics_hook metrics,
                                     FileReaderSPtr* reader) {
     size_t fsize = 0;
     RETURN_IF_ERROR(file_size(path, &fsize));
@@ -168,18 +167,17 @@ Status S3FileSystem::open_file_impl(const Path& path,
     *reader = std::make_shared<S3FileReader>(std::move(fs_path), fsize, std::move(key),
                                              _s3_conf.bucket, this);
     if (config::enable_file_cache) {
-        *reader = std::make_shared<CachedRemoteFileReader>(std::move(*reader), std::move(count));
+        *reader = std::make_shared<CachedRemoteFileReader>(std::move(*reader), std::move(metrics));
     }
     return Status::OK();
 }
 
-Status S3FileSystem::open_file(const Path& path, std::function<void(OlapReaderStatistics*)> count,
-                               FileReaderSPtr* reader) {
+Status S3FileSystem::open_file(const Path& path, metrics_hook metrics, FileReaderSPtr* reader) {
     if (bthread_self() == 0) {
-        return open_file_impl(path, count, reader);
+        return open_file_impl(path, metrics, reader);
     }
     Status s;
-    auto task = [&] { s = open_file_impl(path, count, reader); };
+    auto task = [&] { s = open_file_impl(path, metrics, reader); };
     AsyncIO::run_task(task, io::FileSystemType::S3);
     return s;
 }

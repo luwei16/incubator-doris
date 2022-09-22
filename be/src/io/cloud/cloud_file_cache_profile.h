@@ -27,7 +27,7 @@ struct FileCacheProfile {
     }
 
     // avoid performance impact, use https to control
-    inline static bool enable_profile = true;
+    inline static std::atomic<bool> enable_profile = true;
 
     static void set_enable_profile(bool flag) {
         // if enable_profile = false originally, set true, it will clear the count
@@ -35,11 +35,11 @@ struct FileCacheProfile {
             std::lock_guard lock(instance().mtx);
             instance().profile.clear();
         }
-        enable_profile = flag;
+        enable_profile.store(flag, std::memory_order_release);
     }
 
     void update(int64_t table_id, int64_t partition_id, OlapReaderStatistics* stats) {
-        if (!enable_profile) {
+        if (!enable_profile.load(std::memory_order_acquire)) {
             return;
         }
         std::shared_ptr<AtomicStatistics> count;
@@ -50,17 +50,22 @@ struct FileCacheProfile {
             }
             count = profile[table_id][partition_id];
         }
-        count->num_io_total.fetch_add(stats->file_cache_stats.num_io_total);
-        count->num_io_hit_cache.fetch_add(stats->file_cache_stats.num_io_hit_cache);
-        count->num_io_bytes_read_total.fetch_add(stats->file_cache_stats.num_io_bytes_read_total);
+        count->num_io_total.fetch_add(stats->file_cache_stats.num_io_total, std::memory_order_relaxed);
+        count->num_io_hit_cache.fetch_add(stats->file_cache_stats.num_io_hit_cache,
+                                          std::memory_order_relaxed);
+        count->num_io_bytes_read_total.fetch_add(stats->file_cache_stats.num_io_bytes_read_total,
+                                                 std::memory_order_relaxed);
         count->num_io_bytes_read_from_file_cache.fetch_add(
-                stats->file_cache_stats.num_io_bytes_read_from_file_cache);
+                stats->file_cache_stats.num_io_bytes_read_from_file_cache,
+                std::memory_order_relaxed);
         count->num_io_bytes_read_from_write_cache.fetch_add(
-                stats->file_cache_stats.num_io_bytes_read_from_write_cache);
+                stats->file_cache_stats.num_io_bytes_read_from_write_cache,
+                std::memory_order_relaxed);
         count->num_io_written_in_file_cache.fetch_add(
-                stats->file_cache_stats.num_io_written_in_file_cache);
+                stats->file_cache_stats.num_io_written_in_file_cache, std::memory_order_relaxed);
         count->num_io_bytes_written_in_file_cache.fetch_add(
-                stats->file_cache_stats.num_io_bytes_written_in_file_cache);
+                stats->file_cache_stats.num_io_bytes_written_in_file_cache,
+                std::memory_order_relaxed);
     }
     std::mutex mtx;
     // use shared_ptr for concurrent
@@ -73,16 +78,22 @@ struct FileCacheProfile {
             std::lock_guard lock(mtx);
             auto& partition_map = profile[table_id];
             for (auto& [partition_id, atomic_stats] : partition_map) {
-                stats.num_io_total += atomic_stats->num_io_total;
-                stats.num_io_hit_cache += atomic_stats->num_io_hit_cache;
-                stats.num_io_bytes_read_total += atomic_stats->num_io_bytes_read_total;
+                stats.num_io_total += atomic_stats->num_io_total.load(std::memory_order_relaxed);
+                stats.num_io_hit_cache +=
+                        atomic_stats->num_io_hit_cache.load(std::memory_order_relaxed);
+                stats.num_io_bytes_read_total +=
+                        atomic_stats->num_io_bytes_read_total.load(std::memory_order_relaxed);
                 stats.num_io_bytes_read_from_file_cache +=
-                        atomic_stats->num_io_bytes_read_from_file_cache;
+                        atomic_stats->num_io_bytes_read_from_file_cache.load(
+                                std::memory_order_relaxed);
                 stats.num_io_bytes_read_from_write_cache +=
-                        atomic_stats->num_io_bytes_read_from_write_cache;
-                stats.num_io_written_in_file_cache += atomic_stats->num_io_written_in_file_cache;
+                        atomic_stats->num_io_bytes_read_from_write_cache.load(
+                                std::memory_order_relaxed);
+                stats.num_io_written_in_file_cache +=
+                        atomic_stats->num_io_written_in_file_cache.load(std::memory_order_relaxed);
                 stats.num_io_bytes_written_in_file_cache +=
-                        atomic_stats->num_io_bytes_written_in_file_cache;
+                        atomic_stats->num_io_bytes_written_in_file_cache.load(
+                                std::memory_order_relaxed);
             }
         }
         return stats;
@@ -96,13 +107,18 @@ struct FileCacheProfile {
                 std::lock_guard lock(mtx);
                 count = profile[table_id][partition_id];
             }
-            stats.num_io_total = count->num_io_total;
-            stats.num_io_hit_cache = count->num_io_hit_cache;
-            stats.num_io_bytes_read_total = count->num_io_bytes_read_total;
-            stats.num_io_bytes_read_from_file_cache = count->num_io_bytes_read_from_file_cache;
-            stats.num_io_bytes_read_from_write_cache = count->num_io_bytes_read_from_write_cache;
-            stats.num_io_written_in_file_cache = count->num_io_written_in_file_cache;
-            stats.num_io_bytes_written_in_file_cache = count->num_io_bytes_written_in_file_cache;
+            stats.num_io_total = count->num_io_total.load(std::memory_order_relaxed);
+            stats.num_io_hit_cache = count->num_io_hit_cache.load(std::memory_order_relaxed);
+            stats.num_io_bytes_read_total =
+                    count->num_io_bytes_read_total.load(std::memory_order_relaxed);
+            stats.num_io_bytes_read_from_file_cache =
+                    count->num_io_bytes_read_from_file_cache.load(std::memory_order_relaxed);
+            stats.num_io_bytes_read_from_write_cache =
+                    count->num_io_bytes_read_from_write_cache.load(std::memory_order_relaxed);
+            stats.num_io_written_in_file_cache =
+                    count->num_io_written_in_file_cache.load(std::memory_order_relaxed);
+            stats.num_io_bytes_written_in_file_cache =
+                    count->num_io_bytes_written_in_file_cache.load(std::memory_order_relaxed);
         }
         return stats;
     }

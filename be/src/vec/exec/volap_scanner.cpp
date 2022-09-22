@@ -487,7 +487,8 @@ void VOlapScanner::update_counter() {
                    stats.file_cache_stats.num_io_written_in_file_cache);
     COUNTER_UPDATE(_parent->_num_io_bytes_written_in_file_cache,
                    stats.file_cache_stats.num_io_bytes_written_in_file_cache);
-
+    COUNTER_UPDATE(_parent->_num_io_bytes_skip_cache,
+                   stats.file_cache_stats.num_io_bytes_skip_cache);
     DorisMetrics::instance()->query_scan_bytes->increment(_compressed_bytes_read);
     DorisMetrics::instance()->query_scan_rows->increment(_raw_rows_read);
 

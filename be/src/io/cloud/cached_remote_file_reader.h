@@ -31,8 +31,7 @@ namespace io {
 
 class CachedRemoteFileReader final : public FileReader {
 public:
-    CachedRemoteFileReader(FileReaderSPtr remote_file_reader,
-                           std::function<void(OlapReaderStatistics* stats)>);
+    CachedRemoteFileReader(FileReaderSPtr remote_file_reader, metrics_hook);
 
     ~CachedRemoteFileReader() override;
 
@@ -56,18 +55,19 @@ private:
 
     FileReaderSPtr _remote_file_reader;
     IFileCache::Key _cache_key;
-    FileCachePtr _cache;
+    CloudFileCachePtr _cache;
 
 private:
     struct ReadStatistics {
         bool hit_cache = false;
-        size_t bytes_read = 0;
-        size_t bytes_read_from_file_cache = 0;
-        size_t bytes_write_in_file_cache = 0;
-        size_t write_in_file_cache = 0;
+        int64_t bytes_read = 0;
+        int64_t bytes_read_from_file_cache = 0;
+        int64_t bytes_write_in_file_cache = 0;
+        int64_t write_in_file_cache = 0;
+        int64_t bytes_skip_cache = 0;
     };
     void _update_state(const ReadStatistics& stats, IOState* state) const;
-    std::function<void(OlapReaderStatistics* stats)> _count;
+    metrics_hook _metrics;
 };
 
 } // namespace io

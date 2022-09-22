@@ -1,9 +1,11 @@
+#include "io/cloud/cloud_file_segment.h"
+
 #include <filesystem>
 #include <sstream>
 #include <string>
 #include <thread>
 
-#include "io/cloud/cloud_file_segment.h"
+#include "common/status.h"
 #include "io/fs/file_writer.h"
 #include "io/fs/local_file_system.h"
 #include "vec/common/hex.h"
@@ -22,23 +24,24 @@ FileSegment::FileSegment(size_t offset_, size_t size_, const Key& key_, IFileCac
     switch (_download_state) {
     /// EMPTY is used when file segment is not in cache and
     /// someone will _potentially_ want to download it (after calling getOrSetDownloader()).
-    case (State::EMPTY): {
+    case State::EMPTY:
+    case State::SKIP_CACHE: {
         break;
     }
     /// DOWNLOADED is used either on initial cache metadata load into memory on server startup
     /// or on reduceSizeToDownloaded() -- when file segment object is updated.
-    case (State::DOWNLOADED): {
+    case State::DOWNLOADED: {
         _downloaded_size = size_;
         break;
     }
     /// DOWNLOADING is used only for write-through caching (e.g. getOrSetDownloader() is not
     /// needed, downloader is set on file segment creation).
-    case (State::DOWNLOADING): {
+    case State::DOWNLOADING: {
         _downloader_id = get_caller_id();
         break;
     }
     default: {
-        DCHECK(false) << "Can create cell with either EMPTY, DOWNLOADED, DOWNLOADING ";
+        DCHECK(false) << "Can create cell with either EMPTY, DOWNLOADED, DOWNLOADING, SKIP_CACHE ";
     }
     }
 }
@@ -89,9 +92,7 @@ std::string FileSegment::get_or_set_downloader() {
     return _downloader_id;
 }
 
-void FileSegment::reset_downloader() {
-    std::lock_guard segment_lock(_mutex);
-
+void FileSegment::reset_downloader(std::lock_guard<std::mutex>& segment_lock) {
     DCHECK(!_downloader_id.empty()) << "There is no downloader";
 
     DCHECK(get_caller_id() == _downloader_id) << "Downloader can be reset only by downloader";
@@ -102,9 +103,11 @@ void FileSegment::reset_downloader() {
 void FileSegment::reset_downloader_impl(std::lock_guard<std::mutex>& segment_lock) {
     if (_downloaded_size == range().size()) {
         set_downloaded(segment_lock);
+    } else {
+        _downloaded_size = 0;
+        _download_state = State::EMPTY;
+        _downloader_id.clear();
     }
-
-    _downloader_id.clear();
 }
 
 std::string FileSegment::get_downloader() const {
@@ -121,43 +124,46 @@ bool FileSegment::is_downloader_impl(std::lock_guard<std::mutex>& /* segment_loc
     return get_caller_id() == _downloader_id;
 }
 
-void FileSegment::append(Slice data) {
+Status FileSegment::append(Slice data) {
     DCHECK(data.size != 0) << "Writing zero size is not allowed";
 
     if (!_cache_writer) {
         auto download_path = get_path_in_local_cache();
-        global_local_filesystem()->create_file(download_path, &_cache_writer);
+        RETURN_IF_ERROR(global_local_filesystem()->create_file(download_path, &_cache_writer));
     }
 
-    _cache_writer->append(data);
+    RETURN_IF_ERROR(_cache_writer->append(data));
 
     std::lock_guard download_lock(_download_mutex);
 
     _downloaded_size += data.size;
+    return Status::OK();
 }
 
 std::string FileSegment::get_path_in_local_cache() const {
     return _cache->get_path_in_local_cache(key(), offset(), _is_persistent);
 }
 
-void FileSegment::read_at(Slice buffer, size_t offset) {
-    std::lock_guard segment_lock(_mutex);
-
+Status FileSegment::read_at(Slice buffer, size_t offset) {
     if (!_cache_reader) {
-        auto download_path = get_path_in_local_cache();
-        global_local_filesystem()->open_file(download_path, &_cache_reader);
+        std::lock_guard segment_lock(_mutex);
+        if (!_cache_reader) {
+            auto download_path = get_path_in_local_cache();
+            RETURN_IF_ERROR(global_local_filesystem()->open_file(download_path, &_cache_reader));
+        }
     }
     size_t bytes_reads = buffer.size;
-    _cache_reader->read_at(offset, buffer, &bytes_reads);
+    RETURN_IF_ERROR(_cache_reader->read_at(offset, buffer, &bytes_reads));
     DCHECK(bytes_reads == buffer.size);
+    return Status::OK();
 }
 
-size_t FileSegment::finalize_write() {
+Status FileSegment::finalize_write() {
     std::lock_guard segment_lock(_mutex);
 
-    set_downloaded(segment_lock);
+    RETURN_IF_ERROR(set_downloaded(segment_lock));
     _cv.notify_all();
-    return _downloaded_size;
+    return Status::OK();
 }
 
 FileSegment::State FileSegment::wait() {
@@ -177,35 +183,21 @@ FileSegment::State FileSegment::wait() {
     return _download_state;
 }
 
-void FileSegment::set_downloaded(std::lock_guard<std::mutex>& /* segment_lock */) {
+Status FileSegment::set_downloaded(std::lock_guard<std::mutex>& /* segment_lock */) {
     if (_is_downloaded) {
-        return;
+        return Status::OK();
     }
 
     if (_cache_writer) {
-        _cache_writer->finalize();
-        _cache_writer->close();
+        RETURN_IF_ERROR(_cache_writer->finalize());
+        RETURN_IF_ERROR(_cache_writer->close());
         _cache_writer.reset();
     }
 
     _download_state = State::DOWNLOADED;
     _is_downloaded = true;
     _downloader_id.clear();
-}
-
-void FileSegment::complete(State state) {
-    std::lock_guard cache_lock(_cache->_mutex);
-    std::lock_guard segment_lock(_mutex);
-
-    if (state == State::DOWNLOADED) {
-        set_downloaded(segment_lock);
-    }
-
-    _download_state = state;
-
-    complete_impl(cache_lock, segment_lock);
-
-    _cv.notify_all();
+    return Status::OK();
 }
 
 void FileSegment::complete(std::lock_guard<std::mutex>& cache_lock) {
@@ -216,20 +208,9 @@ void FileSegment::complete(std::lock_guard<std::mutex>& cache_lock) {
 
 void FileSegment::complete_unlocked(std::lock_guard<std::mutex>& cache_lock,
                                     std::lock_guard<std::mutex>& segment_lock) {
-    if (is_downloader_impl(segment_lock) && _download_state != State::DOWNLOADED &&
-        get_downloaded_size(segment_lock) == range().size()) {
-        set_downloaded(segment_lock);
-    }
-
-    complete_impl(cache_lock, segment_lock);
-
-    _cv.notify_all();
-}
-
-void FileSegment::complete_impl(std::lock_guard<std::mutex>& cache_lock,
-                                std::lock_guard<std::mutex>& segment_lock) {
-    if (!_downloader_id.empty() && is_downloader_impl(segment_lock)) {
-        _downloader_id.clear();
+    if (is_downloader_impl(segment_lock)) {
+        reset_downloader(segment_lock);
+        _cv.notify_all();
     }
 }
 
@@ -257,6 +238,8 @@ std::string FileSegment::state_to_string(FileSegment::State state) {
         return "EMPTY";
     case FileSegment::State::DOWNLOADING:
         return "DOWNLOADING";
+    case FileSegment::State::SKIP_CACHE:
+        return "SKIP_CACHE";
     default:
         DCHECK(false);
         return "";

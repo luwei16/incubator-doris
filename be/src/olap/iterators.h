@@ -81,7 +81,7 @@ public:
 
     // REQUIRED (null is not allowed)
     OlapReaderStatistics* stats = nullptr;
-    TUniqueId query_id;
+    const TUniqueId* query_id = nullptr;
     bool use_page_cache = false;
     int block_row_max = 4096;
 

@@ -33,6 +33,7 @@
 #include "common/object_pool.h"
 #include "gen_cpp/PaloInternalService_types.h" // for TQueryOptions
 #include "gen_cpp/Types_types.h"               // for TUniqueId
+#include "io/cloud/cloud_file_cache.h"
 #include "runtime/mem_pool.h"
 #include "runtime/query_fragments_ctx.h"
 #include "runtime/thread_resource_mgr.h"
@@ -443,6 +444,7 @@ private:
     cctz::time_zone _timezone_obj;
 
     TUniqueId _query_id;
+    std::vector<io::IFileCache::QueryContextHolderPtr> _query_contexts;
     TUniqueId _fragment_instance_id;
     TQueryOptions _query_options;
     ExecEnv* _exec_env = nullptr;

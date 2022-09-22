@@ -269,6 +269,7 @@ struct FileCacheStatistics {
     int64_t num_io_bytes_read_from_write_cache = 0;
     int64_t num_io_written_in_file_cache = 0;
     int64_t num_io_bytes_written_in_file_cache = 0;
+    int64_t num_io_bytes_skip_cache = 0;
 };
 
 // ReaderStatistics used to collect statistics when scan data from storage
@@ -355,6 +356,8 @@ struct OlapReaderStatistics {
 
     FileCacheStatistics file_cache_stats;
 };
+
+using metrics_hook = std::function<void(OlapReaderStatistics*)>;
 
 using ColumnId = uint32_t;
 // Column unique id set

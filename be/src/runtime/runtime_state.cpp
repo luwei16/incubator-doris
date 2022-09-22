@@ -30,6 +30,7 @@
 #include "common/object_pool.h"
 #include "common/status.h"
 #include "exec/exec_node.h"
+#include "io/cloud/cloud_file_cache_factory.h"
 #include "runtime/buffered_block_mgr2.h"
 #include "runtime/exec_env.h"
 #include "runtime/load_path_mgr.h"
@@ -97,6 +98,7 @@ RuntimeState::RuntimeState(const TPlanFragmentExecParams& fragment_exec_params,
     Status status =
             init(fragment_exec_params.fragment_instance_id, query_options, query_globals, exec_env);
     DCHECK(status.ok());
+    _query_contexts = io::FileCacheFactory::instance().get_query_context_holders(_query_id);
 }
 
 RuntimeState::RuntimeState(const TQueryGlobals& query_globals)

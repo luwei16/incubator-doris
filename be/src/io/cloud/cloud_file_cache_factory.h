@@ -18,8 +18,9 @@ public:
     void create_file_cache(const std::string& cache_base_path,
                            const FileCacheSettings& file_cache_settings);
 
-    FileCachePtr getByPath(const IFileCache::Key& key);
-
+    CloudFileCachePtr getByPath(const IFileCache::Key& key);
+    std::vector<IFileCache::QueryContextHolderPtr> get_query_context_holders(
+            const TUniqueId& query_id);
     FileCacheFactory() = default;
     FileCacheFactory& operator=(const FileCacheFactory&) = delete;
     FileCacheFactory(const FileCacheFactory&) = delete;

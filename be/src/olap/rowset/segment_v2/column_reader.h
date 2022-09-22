@@ -69,7 +69,7 @@ struct ColumnIteratorOptions {
     io::FileReader* file_reader = nullptr;
     // reader statistics
     OlapReaderStatistics* stats = nullptr;
-    TUniqueId query_id;
+    const TUniqueId* query_id = nullptr;
     bool use_page_cache = false;
     // for page cache allocation
     // page types are divided into DATA_PAGE & INDEX_PAGE

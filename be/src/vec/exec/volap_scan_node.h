@@ -333,6 +333,7 @@ private:
     RuntimeProfile::Counter* _num_io_bytes_read_from_write_cache = nullptr;
     RuntimeProfile::Counter* _num_io_written_in_file_cache = nullptr;
     RuntimeProfile::Counter* _num_io_bytes_written_in_file_cache = nullptr;
+    RuntimeProfile::Counter* _num_io_bytes_skip_cache = nullptr;
 
     std::vector<Block*> _scan_blocks;
     std::vector<Block*> _materialized_blocks;

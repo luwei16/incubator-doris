@@ -32,9 +32,9 @@ namespace io {
 class FileSystem;
 
 struct IOState {
-    IOState(const TUniqueId& query_id, OlapReaderStatistics* stats, bool is_presistent)
+    IOState(const TUniqueId* query_id, OlapReaderStatistics* stats, bool is_presistent)
             : query_id(query_id), stats(stats), is_persistent(is_presistent) {}
-    TUniqueId query_id;
+    const TUniqueId* query_id = nullptr;
     OlapReaderStatistics* stats = nullptr;
     bool is_persistent = false;
 };

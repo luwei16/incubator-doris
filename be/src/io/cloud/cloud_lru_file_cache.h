@@ -27,8 +27,8 @@ public:
     /**
      * get the files which range contain [offset, offset+size-1]
      */
-    FileSegmentsHolder get_or_set(const Key& key, size_t offset, size_t size,
-                                  bool is_persistent) override;
+    FileSegmentsHolder get_or_set(const Key& key, size_t offset, size_t size, bool is_persistent,
+                                  const TUniqueId& query_id) override;
 
     // init file cache
     void initialize() override;
@@ -83,8 +83,8 @@ private:
     LRUQueue _queue;
     LRUQueue _persistent_queue;
 
-    FileSegments get_impl(const Key& key, bool is_persistent, const FileSegment::Range& range,
-                          std::lock_guard<std::mutex>& cache_lock);
+    FileSegments get_impl(const Key& key, const TUniqueId& query_id, bool is_persistent,
+                          const FileSegment::Range& range, std::lock_guard<std::mutex>& cache_lock);
 
     FileSegmentCell* get_cell(const Key& key, bool is_persistent, size_t offset,
                               std::lock_guard<std::mutex>& cache_lock);
@@ -92,13 +92,14 @@ private:
     FileSegmentCell* add_cell(const Key& key, bool is_persistent, size_t offset, size_t size,
                               FileSegment::State state, std::lock_guard<std::mutex>& cache_lock);
 
-    void use_cell(const FileSegmentCell& cell, bool is_persistent, FileSegments& result,
-                  std::lock_guard<std::mutex>& cache_lock);
+    void use_cell(const FileSegmentCell& cell, const TUniqueId& query_id, bool is_persistent,
+                  FileSegments& result, std::lock_guard<std::mutex>& cache_lock);
 
-    bool try_reserve(const Key& key, bool is_persistent, size_t offset, size_t size,
-                     std::lock_guard<std::mutex>& cache_lock) override;
+    bool try_reserve(const Key& key, const TUniqueId& query_id, bool is_persistent, size_t offset,
+                     size_t size, std::lock_guard<std::mutex>& cache_lock) override;
 
-    bool try_reserve_for_main_list(const Key& key, bool is_persistent, size_t offset, size_t size,
+    bool try_reserve_for_main_list(const Key& key, QueryContextPtr query_context,
+                                   bool is_persistent, size_t offset, size_t size,
                                    std::lock_guard<std::mutex>& cache_lock);
 
     void remove(const Key& key, bool is_persistent, size_t offset,
@@ -109,15 +110,17 @@ private:
 
     void load_cache_info_into_memory(std::lock_guard<std::mutex>& cache_lock);
 
-    FileSegments split_range_into_cells(const Key& key, bool is_persistent, size_t offset,
-                                        size_t size, FileSegment::State state,
+    FileSegments split_range_into_cells(const Key& key, const TUniqueId& query_id,
+                                        bool is_persistent, size_t offset, size_t size,
+                                        FileSegment::State state,
                                         std::lock_guard<std::mutex>& cache_lock);
 
     std::string dump_structure_unlocked(const Key& key, bool is_persistent,
                                         std::lock_guard<std::mutex>& cache_lock);
 
     void fill_holes_with_empty_file_segments(FileSegments& file_segments, const Key& key,
-                                             bool is_persistent, const FileSegment::Range& range,
+                                             const TUniqueId& query_id, bool is_persistent,
+                                             const FileSegment::Range& range,
                                              std::lock_guard<std::mutex>& cache_lock);
 
     size_t get_used_cache_size_unlocked(bool is_persistent,

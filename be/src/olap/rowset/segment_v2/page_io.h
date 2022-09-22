@@ -55,7 +55,7 @@ struct PageReadOptions {
     BlockCompressionCodec* codec = nullptr;
     // used to collect IO metrics
     OlapReaderStatistics* stats = nullptr;
-    TUniqueId query_id;
+    const TUniqueId* query_id = nullptr;
     // whether to verify page checksum
     bool verify_checksum = true;
     // whether to use page cache in read path

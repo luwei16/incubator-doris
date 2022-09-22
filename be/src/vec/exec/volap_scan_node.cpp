@@ -29,6 +29,7 @@
 #include "util/async_io.h"
 #include "util/lock.h"
 #include "util/priority_thread_pool.hpp"
+#include "util/runtime_profile.h"
 #include "util/to_string.h"
 #include "vec/core/block.h"
 #include "vec/data_types/data_type_decimal.h"
@@ -201,6 +202,7 @@ void VOlapScanNode::_init_counter(RuntimeState* state) {
             ADD_COUNTER(_scanner_profile, "NumIOWrittenInFileCache", TUnit::UNIT);
     _num_io_bytes_written_in_file_cache =
             ADD_COUNTER(_scanner_profile, "NumIOBytesWrittenInFileCache", TUnit::UNIT);
+    _num_io_bytes_skip_cache = ADD_COUNTER(_scanner_profile, "NumIOBytesSkipCache", TUnit::UNIT);
 
     // for the purpose of debugging or profiling
     for (int i = 0; i < GENERAL_DEBUG_COUNT; ++i) {

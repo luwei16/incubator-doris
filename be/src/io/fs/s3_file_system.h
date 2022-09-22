@@ -42,11 +42,9 @@ public:
 
     Status open_file(const Path& path, FileReaderSPtr* reader) override;
 
-    Status open_file_impl(const Path& path, std::function<void(OlapReaderStatistics*)>,
-                          FileReaderSPtr* reader);
+    Status open_file_impl(const Path& path, metrics_hook, FileReaderSPtr* reader);
 
-    Status open_file(const Path& path, std::function<void(OlapReaderStatistics*)>,
-                     FileReaderSPtr* reader) override;
+    Status open_file(const Path& path, metrics_hook, FileReaderSPtr* reader) override;
 
     Status delete_file(const Path& path) override;
 

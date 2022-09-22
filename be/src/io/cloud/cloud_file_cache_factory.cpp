@@ -28,8 +28,17 @@ void FileCacheFactory::create_file_cache(const std::string& cache_base_path,
     _caches.push_back(std::move(cache));
 }
 
-FileCachePtr FileCacheFactory::getByPath(const IFileCache::Key& key) {
+CloudFileCachePtr FileCacheFactory::getByPath(const IFileCache::Key& key) {
     return _caches[KeyHash()(key) % _caches.size()].get();
+}
+
+std::vector<IFileCache::QueryContextHolderPtr> FileCacheFactory::get_query_context_holders(
+        const TUniqueId& query_id) {
+    std::vector<IFileCache::QueryContextHolderPtr> holders;
+    for (const auto& cache : _caches) {
+        holders.push_back(cache->get_query_context_holder(query_id));
+    }
+    return holders;
 }
 
 } // namespace io

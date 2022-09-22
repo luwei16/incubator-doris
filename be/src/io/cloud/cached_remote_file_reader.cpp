@@ -27,6 +27,7 @@
 #include "io/cloud/cloud_file_cache_factory.h"
 #include "io/cloud/cloud_file_cache_fwd.h"
 #include "io/fs/s3_common.h"
+#include "olap/olap_common.h"
 #include "util/async_io.h"
 #include "util/doris_metrics.h"
 #include "vec/common/sip_hash.h"
@@ -34,9 +35,9 @@
 namespace doris {
 namespace io {
 
-CachedRemoteFileReader::CachedRemoteFileReader(
-        FileReaderSPtr remote_file_reader, std::function<void(OlapReaderStatistics* stats)> count)
-        : _remote_file_reader(std::move(remote_file_reader)), _count(count) {
+CachedRemoteFileReader::CachedRemoteFileReader(FileReaderSPtr remote_file_reader,
+                                               metrics_hook metrics)
+        : _remote_file_reader(std::move(remote_file_reader)), _metrics(metrics) {
     _cache_key = IFileCache::hash(path().filename().native());
     _cache = FileCacheFactory::instance().getByPath(_cache_key);
 }
@@ -93,8 +94,9 @@ Status CachedRemoteFileReader::read_at_impl(size_t offset, Slice result, size_t*
     DCHECK((align_left % REMOTE_FS_OBJECTS_CACHE_DEFAULT_MAX_FILE_SEGMENT_SIZE) == 0);
     // if state == nullptr, the method is called for read footer/index
     bool is_persistent = state != nullptr ? state->is_persistent : true;
+    TUniqueId query_id = state != nullptr ? *state->query_id : TUniqueId();
     FileSegmentsHolder holder =
-            _cache->get_or_set(_cache_key, align_left, align_size, is_persistent);
+            _cache->get_or_set(_cache_key, align_left, align_size, is_persistent, query_id);
     std::vector<FileSegmentSPtr> empty_segments;
     for (auto& segment : holder.file_segments) {
         if (segment->state() == FileSegment::State::EMPTY) {
@@ -104,6 +106,7 @@ Status CachedRemoteFileReader::read_at_impl(size_t offset, Slice result, size_t*
             }
         } else if (segment->state() == FileSegment::State::SKIP_CACHE) {
             empty_segments.push_back(segment);
+            stats.bytes_skip_cache += segment->range().size();
         }
     }
 
@@ -122,19 +125,21 @@ Status CachedRemoteFileReader::read_at_impl(size_t offset, Slice result, size_t*
             }
             char* cur_ptr = buffer.get() + segment->range().left - empty_start;
             size_t segment_size = segment->range().size();
-            segment->append(Slice(cur_ptr, segment_size));
-            segment->finalize_write();
+            RETURN_IF_ERROR(segment->append(Slice(cur_ptr, segment_size)));
+            RETURN_IF_ERROR(segment->finalize_write());
             stats.write_in_file_cache++;
             stats.bytes_write_in_file_cache += segment_size;
         }
         // copy from memory directly
-        size_t copy_left_offset = offset < empty_start ? empty_start : offset;
-        char* dst = result.data + (copy_left_offset - offset);
-        char* src = buffer.get() + (copy_left_offset - empty_start);
         size_t right_offset = offset + result.size - 1;
-        size_t copy_right_offset = right_offset < empty_end ? right_offset : empty_end;
-        size_t copy_size = copy_right_offset - copy_left_offset + 1;
-        memcpy(dst, src, copy_size);
+        if (empty_start <= right_offset && empty_end >= offset) {
+            size_t copy_left_offset = offset < empty_start ? empty_start : offset;
+            size_t copy_right_offset = right_offset < empty_end ? right_offset : empty_end;
+            char* dst = result.data + (copy_left_offset - offset);
+            char* src = buffer.get() + (copy_left_offset - empty_start);
+            size_t copy_size = copy_right_offset - copy_left_offset + 1;
+            memcpy(dst, src, copy_size);
+        }
     } else {
         stats.hit_cache = true;
     }
@@ -152,19 +157,37 @@ Status CachedRemoteFileReader::read_at_impl(size_t offset, Slice result, size_t*
             current_offset = right + 1;
             continue;
         }
-        while (segment->wait() != FileSegment::State::DOWNLOADED) {
+        FileSegment::State state;
+        int64_t wait_time = 0;
+        static int64_t MAX_WAIT_TIME = 10;
+        do {
+            state = segment->wait();
+            if (state == FileSegment::State::DOWNLOADED) {
+                break;
+            }
+            if (state != FileSegment::State::DOWNLOADING) {
+                return Status::IOError(
+                        "State is {}, the downloader encounters an error, please retry it", state);
+            }
+        } while (++wait_time < MAX_WAIT_TIME);
+        if (UNLIKELY(wait_time) == MAX_WAIT_TIME) {
+            return Status::IOError("Waiting too long for the download to complete");
         }
         size_t file_offset = current_offset - left;
-        segment->read_at(Slice(result.data + (current_offset - offset), read_size), file_offset);
+        RETURN_IF_ERROR(segment->read_at(Slice(result.data + (current_offset - offset), read_size),
+                                         file_offset));
         stats.bytes_read_from_file_cache = read_size;
         *bytes_read += read_size;
         current_offset = right + 1;
+        if (current_offset > end_offset) {
+            break;
+        }
     }
     DCHECK(*bytes_read == bytes_req);
     _update_state(stats, state);
     DorisMetrics::instance()->s3_bytes_read_total->increment(*bytes_read);
-    if (state != nullptr && _count != nullptr) {
-        _count(state->stats);
+    if (state != nullptr && _metrics != nullptr) {
+        _metrics(state->stats);
     }
     return Status::OK();
 }
@@ -184,6 +207,7 @@ void CachedRemoteFileReader::_update_state(const ReadStatistics& read_stats, IOS
     stats->file_cache_stats.num_io_bytes_read_from_file_cache +=
             read_stats.bytes_read_from_file_cache;
     stats->file_cache_stats.num_io_written_in_file_cache += read_stats.write_in_file_cache;
+    stats->file_cache_stats.num_io_bytes_skip_cache += read_stats.bytes_skip_cache;
 }
 
 } // namespace io

@@ -52,7 +52,7 @@ public:
 
     virtual Status open_file(const Path& path, FileReaderSPtr* reader) = 0;
 
-    virtual Status open_file(const Path& path, std::function<void(OlapReaderStatistics*)>, FileReaderSPtr* reader) {
+    virtual Status open_file(const Path& path, metrics_hook, FileReaderSPtr* reader) {
         return open_file(path, reader);
     }
 

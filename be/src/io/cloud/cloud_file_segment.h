@@ -5,6 +5,7 @@
 #include <memory>
 #include <mutex>
 
+#include "common/status.h"
 #include "io/cloud/cloud_file_cache.h"
 #include "io/fs/file_reader.h"
 #include "io/fs/file_writer.h"
@@ -78,32 +79,32 @@ public:
     State wait();
 
     // append data to cache file
-    void append(Slice data);
+    Status append(Slice data);
 
     // read data from cache file
-    void read_at(Slice buffer, size_t offset_);
+    Status read_at(Slice buffer, size_t offset_);
 
     // finish write, release the file writer
-    size_t finalize_write();
+    Status finalize_write();
 
     // set downloader if state == EMPTY
     std::string get_or_set_downloader();
 
     std::string get_downloader() const;
 
-    void reset_downloader();
+    void reset_downloader(std::lock_guard<std::mutex>& segment_lock);
 
     bool is_downloader() const;
 
     bool is_downloaded() const { return _is_downloaded.load(); }
+
+    bool is_persistent() const { return _is_persistent; }
 
     static std::string get_caller_id();
 
     size_t get_download_offset() const;
 
     size_t get_downloaded_size() const;
-
-    void complete(State state);
 
     std::string get_info_for_log() const;
 
@@ -117,7 +118,7 @@ private:
     std::string get_info_for_log_impl(std::lock_guard<std::mutex>& segment_lock) const;
     bool has_finalized_state() const;
 
-    void set_downloaded(std::lock_guard<std::mutex>& segment_lock);
+    Status set_downloaded(std::lock_guard<std::mutex>& segment_lock);
     bool is_downloader_impl(std::lock_guard<std::mutex>& segment_lock) const;
 
     /// complete() without any completion state is called from destructor of
@@ -127,9 +128,6 @@ private:
     void complete(std::lock_guard<std::mutex>& cache_lock);
     void complete_unlocked(std::lock_guard<std::mutex>& cache_lock,
                            std::lock_guard<std::mutex>& segment_lock);
-
-    void complete_impl(std::lock_guard<std::mutex>& cache_lock,
-                       std::lock_guard<std::mutex>& segment_lock);
 
     void reset_downloader_impl(std::lock_guard<std::mutex>& segment_lock);
 

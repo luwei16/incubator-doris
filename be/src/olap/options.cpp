@@ -44,6 +44,7 @@ static std::string REMOTE_CACHE_UC = "REMOTE_CACHE";
 static std::string CACHE_PATH = "path";
 static std::string CACHE_NORMAL_SIZE = "normal";
 static std::string CACHE_PERSISTENT_SIZE = "persistent";
+static std::string CACHE_QUERY_LIMIT_SIZE = "query_limit";
 
 // TODO: should be a general util method
 static std::string to_upper(const std::string& str) {
@@ -162,7 +163,7 @@ Status parse_conf_store_paths(const string& config_path, std::vector<StorePath>*
 
 /** format:   
  *  [
- *    {"path": "storage1", "normal":50,"persistent":20},
+ *    {"path": "storage1", "normal":50,"persistent":20,"query_limit": "10"},
  *    {"path": "storage2", "normal":50,"persistent":20},
  *    {"path": "storage3", "normal":50,"persistent":20},
  *  ]
@@ -183,7 +184,15 @@ Status parse_conf_cache_paths(const std::string& config_path, std::vector<CacheP
                 map.HasMember(CACHE_PERSISTENT_SIZE.c_str())
                         ? map.FindMember(CACHE_PERSISTENT_SIZE.c_str())->value.GetInt64()
                         : 0;
-        paths.emplace_back(std::move(path), normal_size * GB, persistent_size * GB);
+        int query_limit_bytes = 0;
+        if (config::enable_query_cache_limit) {
+            query_limit_bytes =
+                    map.HasMember(CACHE_QUERY_LIMIT_SIZE.c_str())
+                            ? map.FindMember(CACHE_QUERY_LIMIT_SIZE.c_str())->value.GetInt64()
+                            : normal_size / 2;
+        }
+        paths.emplace_back(std::move(path), normal_size * GB, persistent_size * GB,
+                           query_limit_bytes * GB);
     }
     if (paths.empty()) {
         LOG(WARNING) << "fail to parse storage_root_path config. value=[" << config_path << "]";
@@ -199,6 +208,7 @@ io::FileCacheSettings CachePath::init_settings() const {
     settings.max_elements =
             config::max_elements == 0 ? settings.max_elements : config::max_elements;
     settings.persistent_max_elements = settings.max_elements;
+    settings.max_query_cache_size = query_limit_bytes;
     settings.max_file_segment_size = config::max_file_segment_size == 0
                                              ? settings.max_file_segment_size
                                              : config::max_file_segment_size * KB;
