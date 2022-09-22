@@ -60,6 +60,12 @@ public:
      */
     int recycle_tablet(const std::string& instance_id, int64_t tablet_id);
 
+    // scan and abort timeout txn label
+    void abort_timeout_txn(const std::string& instance_id);
+
+    //scan and recycle expire txn label
+    void recycle_expired_txn_label(const std::string& instance_id);
+
 private:
     /**
      * Scan key-value pairs between [`begin`, `end`), and perform `recycle_func` on each key-value pair.

@@ -655,4 +655,393 @@ int RecyclerImpl::scan_and_recycle(
     return ret;
 }
 
+void RecyclerImpl::abort_timeout_txn(const std::string& instance_id) {
+    int ret = 0;
+    int num_scanned = 0;
+    int num_timeout = 0;
+    int num_abort = 0;
+
+    TxnRunningKeyInfo txn_running_key_info0 {instance_id, 0, 0};
+    TxnRunningKeyInfo txn_running_key_info1 {instance_id, std::numeric_limits<int64_t>::max(), 0};
+    std::string begin_txn_running_key;
+    std::string end_txn_running_key;
+    txn_running_key(txn_running_key_info0, &begin_txn_running_key);
+    txn_running_key(txn_running_key_info1, &end_txn_running_key);
+
+    LOG_INFO("begin to abort timeout txn").tag("instance_id", instance_id);
+
+    using namespace std::chrono;
+    auto start_time = steady_clock::now();
+
+    std::unique_ptr<int, std::function<void(int*)>> defer_log_statistics((int*)0x01, [&](int*) {
+        auto cost = duration<float>(steady_clock::now() - start_time).count();
+        LOG_INFO("end to abort timeout txn, cost={}s", cost)
+                .tag("instance_id", instance_id)
+                .tag("num_scanned", num_scanned)
+                .tag("num_timeout", num_timeout)
+                .tag("num_abort", num_abort);
+    });
+
+    int64_t current_time = duration_cast<seconds>(system_clock::now().time_since_epoch()).count();
+    VLOG_DEBUG << "current_time=" << current_time;
+
+    std::unique_ptr<RangeGetIterator> it;
+    std::vector<std::string_view> timeout_txn_running_keys;
+    do {
+        timeout_txn_running_keys.clear();
+        {
+            std::unique_ptr<Transaction> txn;
+            ret = txn_kv_->create_txn(&txn);
+            if (ret != 0) {
+                LOG(ERROR) << "failed to create txn ret=" << ret;
+                return;
+            }
+            ret = txn->get(begin_txn_running_key, end_txn_running_key, &it,
+                           config::expired_txn_scan_key_nums);
+            if (ret != 0) {
+                LOG_WARNING("failed to get kv range ret={}", ret)
+                        .tag("begin", hex(begin_txn_running_key))
+                        .tag("end", hex(end_txn_running_key));
+                return;
+            }
+            VLOG_DEBUG << "fetch " << it->size() << " kv, begin=" << hex(begin_txn_running_key)
+                       << " end=" << hex(end_txn_running_key);
+        }
+
+        while (it->has_next()) {
+            auto [k, v] = it->next();
+            VLOG_DEBUG << "k=" << hex(k);
+
+            if (!it->has_next()) {
+                begin_txn_running_key = k;
+                LOG_INFO("iterator has no more kvs")
+                        .tag("last_key", hex(k))
+                        .tag("last_val_size", v.size());
+            }
+
+            ++num_scanned;
+            TxnRunningPB txn_running_pb;
+            if (!txn_running_pb.ParseFromArray(v.data(), v.size())) {
+                LOG_WARNING("malformed txn_running_pb").tag("key", hex(k)).tag("val", hex(v));
+                continue;
+            }
+            if (txn_running_pb.timeout_time() < current_time) {
+                LOG_INFO("found timeout txn").tag("key", hex(k));
+                timeout_txn_running_keys.push_back(k);
+                num_timeout++;
+            }
+        }
+
+        begin_txn_running_key.push_back('\x00');
+        {
+            for (auto& k : timeout_txn_running_keys) {
+                //abort timeout txn
+                std::unique_ptr<Transaction> txn;
+                ret = txn_kv_->create_txn(&txn);
+                if (ret != 0) {
+                    LOG_ERROR("failed to create txn ret={}", ret).tag("key", hex(k));
+                    return;
+                }
+
+                //TxnRunningKeyInfo 0:instance_id  1:db_id  2:txn_id
+                k.remove_prefix(1); // Remove key space
+                std::vector<std::tuple<std::variant<int64_t, std::string>, int, int>> out;
+                ret = decode_key(&k, &out);
+                if (ret != 0) {
+                    LOG_ERROR("failed to decode key, ret={}", ret).tag("key", hex(k));
+                    continue;
+                }
+
+                std::string instance_id = std::get<std::string>(std::get<0>(out[1]));
+                int64_t db_id = std::get<int64_t>(std::get<0>(out[2]));
+                int64_t txn_id = std::get<int64_t>(std::get<0>(out[3]));
+                VLOG_DEBUG << "xxx instance_id=" << instance_id << " db_id=" << db_id
+                           << " txn_id=" << txn_id;
+
+                std::string txn_inf_key;
+                std::string txn_inf_val;
+                // Get txn info with db_id and txn_id
+                TxnInfoKeyInfo txn_inf_key_info {instance_id, db_id, txn_id};
+                txn_info_key(txn_inf_key_info, &txn_inf_key);
+                ret = txn->get(txn_inf_key, &txn_inf_val);
+                if (ret != 0) {
+                    LOG_WARNING("failed to get txn info ret={}, txn_inf_key={}", ret,
+                                hex(txn_inf_key))
+                            .tag("key", hex(k))
+                            .tag("db_id", db_id)
+                            .tag("txn_id", txn_id);
+                    continue;
+                }
+
+                TxnInfoPB txn_info;
+                if (!txn_info.ParseFromString(txn_inf_val)) {
+                    LOG_WARNING("failed to parse txn info")
+                            .tag("key", hex(k))
+                            .tag("db_id", db_id)
+                            .tag("txn_id", txn_id);
+                    continue;
+                }
+
+                // Update txn_info
+                txn_info.set_status(TxnStatusPB::TXN_STATUS_ABORTED);
+                txn_info.set_finish_time(current_time);
+                txn_info.set_reason("timeout");
+                VLOG_DEBUG << "txn_info=" << txn_info.DebugString();
+
+                txn_inf_val.clear();
+                if (!txn_info.SerializeToString(&txn_inf_val)) {
+                    LOG_WARNING("failed to serialize txn info")
+                            .tag("key", hex(k))
+                            .tag("db_id", db_id)
+                            .tag("txn_id", txn_id);
+                    continue;
+                }
+                txn->put(txn_inf_key, txn_inf_val);
+                VLOG_DEBUG << "txn->put, txn_inf_key=" << hex(txn_inf_key);
+
+                std::string txn_run_key;
+                TxnRunningKeyInfo txn_run_key_info {instance_id, db_id, txn_id};
+                txn_running_key(txn_run_key_info, &txn_run_key);
+                txn->remove(txn_run_key);
+                VLOG_DEBUG << "txn->remove, txn_run_key=" << hex(txn_run_key);
+
+                std::string recycle_txn_key_;
+                std::string recycle_txn_val;
+                RecycleTxnKeyInfo recycle_txn_key_info {instance_id, db_id, txn_id};
+
+                recycle_txn_key(recycle_txn_key_info, &recycle_txn_key_);
+                RecycleTxnPB recycle_txn_pb;
+                recycle_txn_pb.set_creation_time(current_time);
+                recycle_txn_pb.set_label(txn_info.label());
+
+                if (!recycle_txn_pb.SerializeToString(&recycle_txn_val)) {
+                    LOG_WARNING("failed to serialize txn recycle info")
+                            .tag("key", hex(k))
+                            .tag("db_id", db_id)
+                            .tag("txn_id", txn_id);
+                    continue;
+                }
+                txn->put(recycle_txn_key_, recycle_txn_val);
+                VLOG_DEBUG << "txn->put, recycle_txn_key_=" << hex(recycle_txn_key_);
+
+                ret = txn->commit();
+                if (ret != 0) {
+                    LOG_WARNING("failed to commit txn ret={}", ret)
+                            .tag("key", hex(k))
+                            .tag("db_id", db_id)
+                            .tag("txn_id", txn_id);
+                    continue;
+                }
+                num_abort++;
+                LOG_INFO("abort timeout txn")
+                        .tag("key", hex(k))
+                        .tag("db_id", db_id)
+                        .tag("txn_id", txn_id);
+            }
+        }
+    } while (it->more());
+
+    return;
+}
+
+void RecyclerImpl::recycle_expired_txn_label(const std::string& instance_id) {
+    int ret = 0;
+    int num_scanned = 0;
+    int num_expired = 0;
+    int num_recycle = 0;
+
+    RecycleTxnKeyInfo recycle_txn_key_info0 {instance_id, 0, 0};
+    RecycleTxnKeyInfo recycle_txn_key_info1 {instance_id, std::numeric_limits<int64_t>::max(), 0};
+    std::string begin_recycle_txn_key;
+    std::string end_recycle_txn_key;
+    recycle_txn_key(recycle_txn_key_info0, &begin_recycle_txn_key);
+    recycle_txn_key(recycle_txn_key_info1, &end_recycle_txn_key);
+
+    LOG_INFO("begin to recycle expire txn").tag("instance_id", instance_id);
+
+    using namespace std::chrono;
+    auto start_time = steady_clock::now();
+
+    std::unique_ptr<int, std::function<void(int*)>> defer_log_statistics((int*)0x01, [&](int*) {
+        auto cost = duration<float>(steady_clock::now() - start_time).count();
+        LOG_INFO("end to recycle expire txn, cost={}s", cost)
+                .tag("instance_id", instance_id)
+                .tag("num_scanned", num_scanned)
+                .tag("num_expired", num_expired)
+                .tag("num_recycle", num_recycle);
+    });
+
+    int64_t current_time = duration_cast<seconds>(system_clock::now().time_since_epoch()).count();
+    VLOG_DEBUG << "current_time=" << current_time;
+
+    std::unique_ptr<RangeGetIterator> it;
+    std::vector<std::string_view> expire_recycle_txn_keys;
+    do {
+        expire_recycle_txn_keys.clear();
+        {
+            std::unique_ptr<Transaction> txn;
+            ret = txn_kv_->create_txn(&txn);
+            if (ret != 0) {
+                LOG(ERROR) << "failed to create txn"
+                           << " ret=" << ret;
+                return;
+            }
+            ret = txn->get(begin_recycle_txn_key, end_recycle_txn_key, &it,
+                           config::expired_txn_scan_key_nums);
+            if (ret != 0) {
+                LOG_WARNING("failed to get kv range ret={}", ret)
+                        .tag("begin", hex(begin_recycle_txn_key))
+                        .tag("end", hex(end_recycle_txn_key));
+                return;
+            }
+            VLOG_DEBUG << "fetch " << it->size() << " kv, begin=" << hex(begin_recycle_txn_key)
+                       << " end=" << hex(end_recycle_txn_key);
+        }
+
+        while (it->has_next()) {
+            auto [k, v] = it->next();
+            VLOG_DEBUG << "k=" << hex(k) << " v=" << v;
+
+            if (!it->has_next()) {
+                begin_recycle_txn_key = k;
+                LOG_INFO("iterator has no more kvs")
+                        .tag("last_key", hex(k))
+                        .tag("last_val_size", v.size());
+            }
+
+            ++num_scanned;
+            RecycleTxnPB recycle_txn_pb;
+            if (!recycle_txn_pb.ParseFromArray(v.data(), v.size())) {
+                LOG_WARNING("malformed txn_running_pb").tag("key", hex(k)).tag("val", hex(v));
+                continue;
+            }
+            if ((recycle_txn_pb.has_immediate() && recycle_txn_pb.immediate()) ||
+                (recycle_txn_pb.creation_time() + config::label_keep_max_second < current_time)) {
+                LOG_INFO("found recycle txn").tag("key", hex(k));
+                expire_recycle_txn_keys.push_back(k);
+                num_expired++;
+            }
+        }
+
+        begin_recycle_txn_key.push_back('\x00');
+
+        {
+            for (auto& k : expire_recycle_txn_keys) {
+                //recycle expired txn
+                std::unique_ptr<Transaction> txn;
+                ret = txn_kv_->create_txn(&txn);
+                if (ret != 0) {
+                    LOG_ERROR("failed to create txn ret={}", ret).tag("key", hex(k));
+                    return;
+                }
+                //RecycleTxnKeyInfo 0:instance_id  1:db_id  2:txn_id
+                k.remove_prefix(1); // Remove key space
+                std::vector<std::tuple<std::variant<int64_t, std::string>, int, int>> out;
+                ret = decode_key(&k, &out);
+                if (ret != 0) {
+                    LOG_ERROR("failed to decode key, ret={}", ret).tag("key", hex(k));
+                    continue;
+                }
+                std::string instance_id = std::get<std::string>(std::get<0>(out[1]));
+                int64_t db_id = std::get<int64_t>(std::get<0>(out[2]));
+                int64_t txn_id = std::get<int64_t>(std::get<0>(out[3]));
+                VLOG_DEBUG << "xxx instance_id=" << instance_id << " db_id=" << db_id
+                           << " txn_id=" << txn_id;
+
+                std::string txn_inf_key;
+                std::string txn_inf_val;
+                // Get txn info with db_id and txn_id
+                TxnInfoKeyInfo txn_inf_key_info {instance_id, db_id, txn_id};
+                txn_info_key(txn_inf_key_info, &txn_inf_key);
+                ret = txn->get(txn_inf_key, &txn_inf_val);
+                if (ret != 0) {
+                    LOG_WARNING("failed to get txn info ret={}, txn_inf_key={}", ret,
+                                hex(txn_inf_key))
+                            .tag("key", hex(k))
+                            .tag("db_id", db_id)
+                            .tag("txn_id", txn_id);
+                    continue;
+                }
+
+                TxnInfoPB txn_info;
+                if (!txn_info.ParseFromString(txn_inf_val)) {
+                    LOG_WARNING("failed to parse txn info")
+                            .tag("key", hex(k))
+                            .tag("db_id", db_id)
+                            .tag("txn_id", txn_id);
+                    continue;
+                }
+
+                std::string txn_idx_key;
+                std::string txn_idx_val;
+                TxnIndexKeyInfo txn_idx_key_info {instance_id, db_id, txn_info.label()};
+                txn_index_key(txn_idx_key_info, &txn_idx_key);
+
+                ret = txn->get(txn_idx_key, &txn_idx_val);
+                if (ret != 0) {
+                    continue;
+                }
+
+                VLOG_DEBUG << "txn->get txn_idx_key=" << hex(txn_idx_key)
+                           << " txn_idx_val=" << hex(txn_idx_val);
+                std::string label_to_ids_str =
+                        txn_idx_val.substr(0, txn_idx_val.size() - VERSION_STAMP_LEN);
+                TxnLabelToIdsPB label_to_ids;
+                if (!label_to_ids.ParseFromString(label_to_ids_str)) {
+                    LOG_WARNING("failed to parse txn index")
+                            .tag("key", hex(k))
+                            .tag("db_id", db_id)
+                            .tag("txn_id", txn_id);
+                    continue;
+                }
+
+                VLOG_DEBUG << "label_to_ids:" << label_to_ids.DebugString();
+
+                auto iter = label_to_ids.txn_ids().begin();
+                for (int64_t cur_txn_id : label_to_ids.txn_ids()) {
+                    if (cur_txn_id == txn_id) {
+                        break;
+                    }
+                    iter++;
+                }
+                label_to_ids.mutable_txn_ids()->erase(iter);
+
+                if (label_to_ids.txn_ids().empty()) {
+                    txn->remove(k);
+                    VLOG_DEBUG << "txn->remove, k=" << hex(k);
+                } else {
+                    if (!label_to_ids.SerializeToString(&txn_idx_val)) {
+                        LOG_WARNING("failed to serialize txn index label={}", txn_info.label())
+                                .tag("key", hex(k))
+                                .tag("db_id", db_id)
+                                .tag("txn_id", txn_id);
+                    }
+
+                    txn->atomic_set_ver_value(txn_idx_key, txn_idx_val);
+                    VLOG_DEBUG << "update label_to_ids:" << label_to_ids.DebugString();
+                }
+                txn->remove(txn_inf_key);
+                VLOG_DEBUG << "txn->remove, txn_inf_key=" << hex(txn_inf_key);
+                txn->remove(txn_idx_key);
+                VLOG_DEBUG << "txn->remove, txn_idx_key=" << hex(txn_idx_key);
+
+                ret = txn->commit();
+                if (ret != 0) {
+                    LOG_WARNING("failed to commit txn ret={}", ret)
+                            .tag("key", hex(k))
+                            .tag("db_id", db_id)
+                            .tag("txn_id", txn_id);
+                    continue;
+                }
+                num_recycle++;
+                LOG_INFO("recycle expired txn")
+                        .tag("key", hex(k))
+                        .tag("db_id", db_id)
+                        .tag("txn_id", txn_id);
+            }
+        }
+    } while (it->more());
+
+    return;
+}
 } // namespace selectdb

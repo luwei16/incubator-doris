@@ -341,6 +341,41 @@ TEST(KeysTest, TxnKeysTest) {
 
         ASSERT_GT(encoded_txn_running_key1, encoded_txn_running_key0);
     }
+
+    // 0x01 "txn" ${instance_id} "recycle_txn" ${db_id} ${version_timestamp} -> ${table_id_list}
+    {
+        int64_t db_id = 98712345;
+        int64_t txn_id = 12343212453;
+        RecycleTxnKeyInfo recycle_key {instance_id, db_id, txn_id};
+        std::string encoded_recycle_txn_key0;
+        txn_running_key(recycle_key, &encoded_recycle_txn_key0);
+        std::cout << hex(encoded_recycle_txn_key0) << std::endl;
+
+        std::string dec_instance_id;
+        int64_t dec_db_id = 0;
+        int64_t dec_txn_id = 0;
+
+        std::string_view key_sv(encoded_recycle_txn_key0);
+        std::string dec_txn_prefix;
+        std::string dec_txn_infix;
+        key_sv.remove_prefix(1); // Remove CLOUD_KEY_SPACE01
+        ASSERT_EQ(decode_bytes(&key_sv, &dec_txn_prefix), 0);
+        ASSERT_EQ(decode_bytes(&key_sv, &dec_instance_id), 0);
+        ASSERT_EQ(decode_bytes(&key_sv, &dec_txn_infix), 0);
+        ASSERT_EQ(decode_int64(&key_sv, &dec_db_id), 0);
+        ASSERT_EQ(decode_int64(&key_sv, &dec_txn_id), 0);
+
+        EXPECT_EQ(instance_id, dec_instance_id);
+        EXPECT_EQ(db_id, dec_db_id);
+        EXPECT_EQ(txn_id, dec_txn_id);
+
+        std::get<2>(recycle_key) = txn_id + 1;
+        std::string encoded_recycle_txn_key1;
+        txn_running_key(recycle_key, &encoded_recycle_txn_key1);
+        std::cout << hex(encoded_recycle_txn_key1) << std::endl;
+
+        ASSERT_GT(encoded_recycle_txn_key1, encoded_recycle_txn_key0);
+    }
 }
 
 TEST(KeysTest, DecodeKeysTest) {

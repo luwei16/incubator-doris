@@ -202,6 +202,8 @@ public class CloudGlobalTransactionMgr implements GlobalTransactionMgrInterface 
             }
         }
 
+        builder.setPrecommitTimeoutMs(timeoutMillis);
+
         final PrecommitTxnRequest precommitTxnRequest = builder.build();
         PrecommitTxnResponse precommitTxnResponse = null;
         try {

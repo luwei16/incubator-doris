@@ -37,6 +37,7 @@ namespace selectdb {
 
 [[maybe_unused]] static const char* RECYCLE_KEY_INFIX_INDEX   = "index";
 [[maybe_unused]] static const char* RECYCLE_KEY_INFIX_PART    = "partition";
+[[maybe_unused]] static const char* RECYCLE_KEY_TXN           = "txn";
 
 [[maybe_unused]] static const char* STATS_KEY_INFIX_TABLET    = "tablet";
 
@@ -86,7 +87,7 @@ static void encode_prefix(const T& t, std::string* key) {
         TxnIndexKeyInfo, TxnInfoKeyInfo, TxnDbTblKeyInfo, TxnRunningKeyInfo,
         MetaRowsetKeyInfo, MetaRowsetTmpKeyInfo, MetaTabletKeyInfo, MetaTabletIdxKeyInfo,
         VersionKeyInfo,
-        RecycleIndexKeyInfo, RecyclePartKeyInfo, RecycleRowsetKeyInfo,
+        RecycleIndexKeyInfo, RecyclePartKeyInfo, RecycleRowsetKeyInfo, RecycleTxnKeyInfo,
         StatsTabletKeyInfo, JobTabletKeyInfo>);
 
     key->push_back(CLOUD_KEY_SPACE01);
@@ -107,7 +108,8 @@ static void encode_prefix(const T& t, std::string* key) {
         encode_bytes(VERSION_KEY_PREFIX, key);
     } else if constexpr (std::is_same_v<T, RecycleIndexKeyInfo>
                       || std::is_same_v<T, RecyclePartKeyInfo>
-                      || std::is_same_v<T, RecycleRowsetKeyInfo>) {
+                      || std::is_same_v<T, RecycleRowsetKeyInfo>
+                      || std::is_same_v<T, RecycleTxnKeyInfo>) {
         encode_bytes(RECYCLE_KEY_PREFIX, key);
     } else if constexpr (std::is_same_v<T, StatsTabletKeyInfo>) {
         encode_bytes(STATS_KEY_PREFIX, key);
@@ -225,6 +227,13 @@ void recycle_rowset_key(const RecycleRowsetKeyInfo& in, std::string* out) {
     encode_bytes(META_KEY_INFIX_ROWSET, out); // "rowset"
     encode_int64(std::get<1>(in), out);       // tablet_id
     encode_bytes(std::get<2>(in), out);       // rowset_id
+}
+
+void recycle_txn_key(const RecycleTxnKeyInfo& in, std::string* out) {
+    encode_prefix(in, out);             // 0x01 "txn" ${instance_id}
+    encode_bytes(RECYCLE_KEY_TXN, out); // "recycle_txn"
+    encode_int64(std::get<1>(in), out); // db_id
+    encode_int64(std::get<2>(in), out); // txn_id
 }
 
 void stats_tablet_key(const StatsTabletKeyInfo& in, std::string* out) {

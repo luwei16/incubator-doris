@@ -30,6 +30,7 @@
 // 0x01 "recycle" ${instance_id} "index" ${index_id}                                         -> RecycleIndexPB
 // 0x01 "recycle" ${instance_id} "partition" ${partition_id}                                 -> RecyclePartitionPB
 // 0x01 "recycle" ${instance_id} "rowset" ${tablet_id} ${rowset_id}                          -> RecycleRowsetPB
+// 0x01 "recycle" ${instance_id} "txn" ${tablet_id} ${txn_id}                                -> RecycleTxnKeyInfo
 //
 // 0x01 "job" ${instance_id} "tablet" ${tablet_id}                                           -> TabletJobInfoPB
 // clang-format on
@@ -37,6 +38,7 @@
 namespace selectdb {
 
 static const constexpr unsigned char CLOUD_KEY_SPACE01 = 0x01;
+static constexpr uint32_t VERSION_STAMP_LEN = 10;
 
 // clang-format off
 /**
@@ -94,11 +96,14 @@ using RecyclePartKeyInfo   = BasicKeyInfo<12, std::tuple<std::string,  int64_t>>
 //                                                      0:instance_id  1:tablet_id  2:rowset_id
 using RecycleRowsetKeyInfo = BasicKeyInfo<13, std::tuple<std::string,  int64_t,     std::string>>;
 
-//                                                      0:instance_id  1:table_id  2:index_id  3:part_id  4:tablet_id
-using StatsTabletKeyInfo   = BasicKeyInfo<14, std::tuple<std::string,  int64_t,    int64_t,    int64_t,   int64_t>>;
+//                                                      0:instance_id  1:db_id  2:txn_id
+using RecycleTxnKeyInfo    = BasicKeyInfo<14, std::tuple<std::string,  int64_t, int64_t>>;
 
 //                                                      0:instance_id  1:table_id  2:index_id  3:part_id  4:tablet_id
-using JobTabletKeyInfo     = BasicKeyInfo<15, std::tuple<std::string,  int64_t,    int64_t,    int64_t,   int64_t>>;
+using StatsTabletKeyInfo   = BasicKeyInfo<15, std::tuple<std::string,  int64_t,    int64_t,    int64_t,   int64_t>>;
+
+//                                                      0:instance_id  1:table_id  2:index_id  3:part_id  4:tablet_id
+using JobTabletKeyInfo     = BasicKeyInfo<16, std::tuple<std::string,  int64_t,    int64_t,    int64_t,   int64_t>>;
 
 void instance_key(const InstanceKeyInfo& in, std::string* out);
 
@@ -121,9 +126,11 @@ static inline std::string meta_tablet_key(const MetaTabletKeyInfo& in) { std::st
 void recycle_index_key(const RecycleIndexKeyInfo& in, std::string* out);
 void recycle_partition_key(const RecyclePartKeyInfo& in, std::string* out);
 void recycle_rowset_key(const RecycleRowsetKeyInfo& in, std::string* out);
+void recycle_txn_key(const RecycleTxnKeyInfo& in, std::string* out);
 static inline std::string recycle_index_key(const RecycleIndexKeyInfo& in) { std::string s; recycle_index_key(in, &s); return s; }
 static inline std::string recycle_partition_key(const RecyclePartKeyInfo& in) { std::string s; recycle_partition_key(in, &s); return s; }
 static inline std::string recycle_rowset_key(const RecycleRowsetKeyInfo& in) { std::string s; recycle_rowset_key(in, &s); return s; }
+static inline std::string recycle_txn_key(const RecycleTxnKeyInfo& in) { std::string s; recycle_txn_key(in, &s); return s; }
 
 void stats_tablet_key(const StatsTabletKeyInfo& in, std::string* out);
 static inline std::string stats_tablet_key(const StatsTabletKeyInfo& in) { std::string s; stats_tablet_key(in, &s); return s; }

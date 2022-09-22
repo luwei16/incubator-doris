@@ -150,10 +150,16 @@ message TxnHistoryPB {
     repeated int64 txn_ids = 3;
 }
 
-// For storing running info
-message TxnRunningInfoPB {
-    optional int64 db_id = 1;
-    repeated int64 table_ids = 2;
+// For expire and check txn conflict
+message TxnRunningPB {
+    repeated int64 table_ids = 1;
+    optional int64 timeout_time = 2;
+}
+
+message RecycleTxnPB {
+    optional int64 creation_time = 1;
+    optional string label = 2;
+    optional bool immediate = 3; //recycle immediately
 }
 
 message TxnCommitAttachmentPB {
@@ -225,14 +231,15 @@ message TxnInfoPB {
     optional TxnCoordinatorPB coordinator = 6;
     optional LoadJobSourceTypePB load_job_source_type = 7;
     optional int64 timeout_ms = 8;
-    optional int64 prepare_time = 9;
-    optional int64 precommit_time = 10;
-    optional int64 commit_time = 11;
-    optional int64 finish_time = 12;
-    optional string reason = 13;
-    optional TxnStatusPB status = 14;
-    optional TxnCommitAttachmentPB commit_attachment = 15;
-    optional int64 listener_id = 16; //callback id
+    optional int64 precommit_timeout_ms = 9;
+    optional int64 prepare_time = 10;
+    optional int64 precommit_time = 11;
+    optional int64 commit_time = 12;
+    optional int64 finish_time = 13;
+    optional string reason = 14;
+    optional TxnStatusPB status = 15;
+    optional TxnCommitAttachmentPB commit_attachment = 16;
+    optional int64 listener_id = 17; //callback id
     // TODO: There are more fields TBD
 }
 
@@ -383,6 +390,7 @@ message PrecommitTxnRequest {
     optional int64 db_id = 2;
     optional int64 txn_id = 3;
     optional TxnCommitAttachmentPB commit_attachment = 4;
+    optional int64 precommit_timeout_ms = 5;
 }
 
 message PrecommitTxnResponse {

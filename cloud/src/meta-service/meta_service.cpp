@@ -29,8 +29,6 @@ using namespace std::chrono;
 
 namespace selectdb {
 
-static constexpr uint32_t VERSION_STAMP_LEN = 10;
-
 MetaServiceImpl::MetaServiceImpl(std::shared_ptr<TxnKv> txn_kv,
                                  std::shared_ptr<ResourceManager> resource_mgr) {
     txn_kv_ = txn_kv;
@@ -200,8 +198,9 @@ void MetaServiceImpl::begin_txn(::google::protobuf::RpcController* controller,
     if (txn_idx_val.size() > VERSION_STAMP_LEN) {
         //3. Check label
         //txn_idx_val.size() > VERSION_STAMP_LEN means label has previous txn ids.
-        ;
-        std::string label_to_ids_str = txn_idx_val.substr(0, txn_idx_val.size() - 10);
+
+        std::string label_to_ids_str =
+                txn_idx_val.substr(0, txn_idx_val.size() - VERSION_STAMP_LEN);
         if (!label_to_ids.ParseFromString(label_to_ids_str)) {
             code = MetaServiceCode::PROTOBUF_PARSE_ERR;
             msg = "label_to_ids->ParseFromString() failed.";
@@ -301,9 +300,20 @@ void MetaServiceImpl::begin_txn(::google::protobuf::RpcController* controller,
     std::string txn_run_val;
     TxnRunningKeyInfo txn_run_key_info {instance_id, db_id, txn_id};
     txn_running_key(txn_run_key_info, &txn_run_key);
-    TxnRunningInfoPB running_val_pb;
-    running_val_pb.set_db_id(db_id);
-    for (auto i : txn_info.table_ids()) running_val_pb.add_table_ids(i);
+
+    TxnRunningPB running_val_pb;
+    uint64_t txn_timeout_ms = txn_info.has_timeout_ms()
+                                      ? txn_info.timeout_ms()
+                                      : config::stream_load_default_timeout_second * 1000;
+    running_val_pb.set_timeout_time(prepare_time + txn_timeout_ms);
+    for (auto i : txn_info.table_ids()) {
+        running_val_pb.add_table_ids(i);
+    }
+    if (!running_val_pb.SerializeToString(&txn_run_val)) {
+        code = MetaServiceCode::PROTOBUF_SERIALIZE_ERR;
+        msg = "failed to serialize running_val_pb";
+        return;
+    }
 
     label_to_ids.add_txn_ids(txn_id);
     if (!label_to_ids.SerializeToString(&txn_idx_val)) {
@@ -452,6 +462,24 @@ void MetaServiceImpl::precommit_txn(::google::protobuf::RpcController* controlle
     }
     txn->put(txn_inf_key, txn_inf_val);
     LOG(INFO) << "xxx put txn_inf_key=" << hex(txn_inf_key);
+
+    std::string txn_run_key;
+    std::string txn_run_val;
+    TxnRunningKeyInfo txn_run_key_info {instance_id, db_id, txn_id};
+    txn_running_key(txn_run_key_info, &txn_run_key);
+
+    TxnRunningPB running_val_pb;
+    uint64_t txn_timeout_ms = request->has_precommit_timeout_ms()
+                                      ? txn_info.precommit_timeout_ms()
+                                      : config::stream_load_default_precommit_timeout_second * 1000;
+    running_val_pb.set_timeout_time(precommit_time + txn_timeout_ms);
+    if (!running_val_pb.SerializeToString(&txn_run_val)) {
+        code = MetaServiceCode::PROTOBUF_SERIALIZE_ERR;
+        msg = "failed to serialize running_val_pb";
+        return;
+    }
+
+    txn->put(txn_run_key, txn_run_val);
 
     ret = txn->commit();
     if (ret != 0) {
@@ -795,6 +823,27 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
         LOG(INFO) << "xxx remove tmp_rowset_key=" << hex(k) << " txn_id=" << txn_id;
     }
 
+    std::string txn_run_key;
+    TxnRunningKeyInfo txn_run_key_info {instance_id, db_id, txn_id};
+    txn_running_key(txn_run_key_info, &txn_run_key);
+    txn->remove(txn_run_key);
+
+    std::string recycle_txn_key_;
+    std::string recycle_txn_val;
+    RecycleTxnKeyInfo recycle_txn_key_info {instance_id, db_id, txn_id};
+
+    recycle_txn_key(recycle_txn_key_info, &recycle_txn_key_);
+    RecycleTxnPB recycle_txn_pb;
+    recycle_txn_pb.set_creation_time(commit_time);
+    recycle_txn_pb.set_label(txn_info.label());
+
+    if (!recycle_txn_pb.SerializeToString(&recycle_txn_val)) {
+        code = MetaServiceCode::PROTOBUF_SERIALIZE_ERR;
+        msg = "failed to serialize running_val_pb";
+        return;
+    }
+    txn->put(recycle_txn_key_, recycle_txn_val);
+
     // Finally we are done...
     ret = txn->commit();
     if (ret != 0) {
@@ -1018,6 +1067,26 @@ void MetaServiceImpl::abort_txn(::google::protobuf::RpcController* controller,
     txn->put(txn_inf_key, txn_inf_val);
     LOG(INFO) << "xxx put txn_inf_key=" << hex(txn_inf_key);
     return;
+
+    std::string txn_run_key;
+    TxnRunningKeyInfo txn_run_key_info {instance_id, db_id, txn_id};
+    txn_running_key(txn_run_key_info, &txn_run_key);
+    txn->remove(txn_run_key);
+
+    std::string recycle_txn_key_;
+    std::string recycle_txn_val;
+    RecycleTxnKeyInfo recycle_txn_key_info {instance_id, db_id, txn_id};
+    recycle_txn_key(recycle_txn_key_info, &recycle_txn_key_);
+    RecycleTxnPB recycle_txn_pb;
+    recycle_txn_pb.set_creation_time(finish_time);
+    recycle_txn_pb.set_label(txn_info.label());
+
+    if (!recycle_txn_pb.SerializeToString(&recycle_txn_val)) {
+        code = MetaServiceCode::PROTOBUF_SERIALIZE_ERR;
+        msg = "failed to serialize running_val_pb";
+        return;
+    }
+    txn->put(recycle_txn_key_, recycle_txn_val);
 
     ret = txn->commit();
     if (ret != 0) {
@@ -1252,7 +1321,7 @@ void MetaServiceImpl::check_txn_conflict(::google::protobuf::RpcController* cont
         while (it->has_next()) {
             auto [k, v] = it->next();
             LOG(INFO) << "xxx range_get txn_run_key=" << hex(k);
-            TxnRunningInfoPB running_val_pb;
+            TxnRunningPB running_val_pb;
             if (!running_val_pb.ParseFromArray(v.data(), v.size())) {
                 code = MetaServiceCode::PROTOBUF_PARSE_ERR;
                 ss << "malformed txn running info";
