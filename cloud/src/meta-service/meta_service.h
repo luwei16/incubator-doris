@@ -169,6 +169,21 @@ public:
                    const ::selectdb::GetStageRequest* request,
                    ::selectdb::GetStageResponse* response,
                    ::google::protobuf::Closure* done) override;
+
+    void begin_copy(google::protobuf::RpcController* controller,
+                    const ::selectdb::BeginCopyRequest* request,
+                    ::selectdb::BeginCopyResponse* response,
+                    ::google::protobuf::Closure* done) override;
+
+    void finish_copy(google::protobuf::RpcController* controller,
+                     const ::selectdb::FinishCopyRequest* request,
+                     ::selectdb::FinishCopyResponse* response,
+                     ::google::protobuf::Closure* done) override;
+
+    void get_copy_files(google::protobuf::RpcController* controller,
+                        const ::selectdb::GetCopyFilesRequest* request,
+                        ::selectdb::GetCopyFilesResponse* response,
+                        ::google::protobuf::Closure* done) override;
 private:
     // returns 0 for index exists, 1 for not exist, negative for error
     int index_exists(const ::selectdb::IndexRequest* request,

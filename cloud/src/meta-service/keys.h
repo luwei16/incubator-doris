@@ -105,6 +105,12 @@ using StatsTabletKeyInfo   = BasicKeyInfo<15, std::tuple<std::string,  int64_t, 
 //                                                      0:instance_id  1:table_id  2:index_id  3:part_id  4:tablet_id
 using JobTabletKeyInfo     = BasicKeyInfo<16, std::tuple<std::string,  int64_t,    int64_t,    int64_t,   int64_t>>;
 
+//                                                      0:instance_id  1:stage_id   2:table_id  3:copy_id     4:group_id
+using CopyJobKeyInfo       = BasicKeyInfo<17, std::tuple<std::string,  std::string,  int64_t,   std::string,  int64_t>>;
+
+//                                                      0:instance_id  1:stage_id   2:table_id  3:obj_key     4:obj_etag
+using CopyFileKeyInfo      = BasicKeyInfo<18, std::tuple<std::string,  std::string,  int64_t,   std::string,  std::string>>;
+
 void instance_key(const InstanceKeyInfo& in, std::string* out);
 
 void txn_index_key(const TxnIndexKeyInfo& in, std::string* out);
@@ -137,6 +143,9 @@ static inline std::string stats_tablet_key(const StatsTabletKeyInfo& in) { std::
 
 void job_tablet_key(const JobTabletKeyInfo& in, std::string* out);
 static inline std::string job_tablet_key(const JobTabletKeyInfo& in) { std::string s; job_tablet_key(in, &s); return s; }
+
+void copy_job_key(const CopyJobKeyInfo& in, std::string* out);
+void copy_file_key(const CopyFileKeyInfo& in, std::string* out);
 // clang-format on
 // TODO: add a family of decoding functions if needed
 

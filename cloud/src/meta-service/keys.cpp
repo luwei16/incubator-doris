@@ -21,6 +21,7 @@ namespace selectdb {
 [[maybe_unused]] static const char* RECYCLE_KEY_PREFIX  = "recycle";
 [[maybe_unused]] static const char* STATS_KEY_PREFIX    = "stats";
 [[maybe_unused]] static const char* JOB_KEY_PREFIX      = "job";
+[[maybe_unused]] static const char* COPY_KEY_PREFIX     = "copy";
 
 // Infix
 [[maybe_unused]] static const char* TXN_KEY_INFIX_INDEX       = "txn_index";
@@ -42,6 +43,9 @@ namespace selectdb {
 [[maybe_unused]] static const char* STATS_KEY_INFIX_TABLET    = "tablet";
 
 [[maybe_unused]] static const char* JOB_KEY_INFIX_TABLET      = "tablet";
+
+[[maybe_unused]] static const char* COPY_JOB_KEY_INFIX        = "job";
+[[maybe_unused]] static const char* COPY_FILE_KEY_INFIX       = "loading_file";
 // clang-format on
 
 // clang-format off
@@ -88,7 +92,7 @@ static void encode_prefix(const T& t, std::string* key) {
         MetaRowsetKeyInfo, MetaRowsetTmpKeyInfo, MetaTabletKeyInfo, MetaTabletIdxKeyInfo,
         VersionKeyInfo,
         RecycleIndexKeyInfo, RecyclePartKeyInfo, RecycleRowsetKeyInfo, RecycleTxnKeyInfo,
-        StatsTabletKeyInfo, JobTabletKeyInfo>);
+        StatsTabletKeyInfo, JobTabletKeyInfo, CopyJobKeyInfo, CopyFileKeyInfo>);
 
     key->push_back(CLOUD_KEY_SPACE01);
     // Prefixes for key families
@@ -115,6 +119,9 @@ static void encode_prefix(const T& t, std::string* key) {
         encode_bytes(STATS_KEY_PREFIX, key);
     } else if constexpr (std::is_same_v<T, JobTabletKeyInfo>) {
         encode_bytes(JOB_KEY_PREFIX, key);
+    } else if constexpr (std::is_same_v<T, CopyJobKeyInfo>
+                      || std::is_same_v<T, CopyFileKeyInfo>) {
+        encode_bytes(COPY_KEY_PREFIX, key);
     } else {
         std::abort(); // Impossible
     }
@@ -252,6 +259,24 @@ void job_tablet_key(const JobTabletKeyInfo& in, std::string* out) {
     encode_int64(std::get<2>(in), out);      // index_id
     encode_int64(std::get<3>(in), out);      // partition_id
     encode_int64(std::get<4>(in), out);      // tablet_id
+}
+
+void copy_job_key(const CopyJobKeyInfo& in, std::string* out) {
+    encode_prefix(in, out);                // 0x01 "copy" ${instance_id}
+    encode_bytes(COPY_JOB_KEY_INFIX, out); // "job"
+    encode_bytes(std::get<1>(in), out);    // stage_id
+    encode_int64(std::get<2>(in), out);    // table_id
+    encode_bytes(std::get<3>(in), out);    // copy_id
+    encode_int64(std::get<4>(in), out);    // group_id
+}
+
+void copy_file_key(const CopyFileKeyInfo& in, std::string* out) {
+    encode_prefix(in, out);                 // 0x01 "copy" ${instance_id}
+    encode_bytes(COPY_FILE_KEY_INFIX, out); // "loading_file"
+    encode_bytes(std::get<1>(in), out);     // stage_id
+    encode_int64(std::get<2>(in), out);     // table_id
+    encode_bytes(std::get<3>(in), out);     // obj_key
+    encode_bytes(std::get<4>(in), out);     // obj_etag
 }
 
 //==============================================================================

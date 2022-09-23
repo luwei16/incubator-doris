@@ -3758,9 +3758,14 @@ void MetaServiceImpl::create_stage(::google::protobuf::RpcController* controller
         msg = "create internal stage is unsupported";
         return;
     }
-    if (!stage.has_name()) {
+    if (stage.name().empty()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
         msg = "stage name not set";
+        return;
+    }
+    if (stage.stage_id().empty()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "stage id not set";
         return;
     }
 
@@ -3807,6 +3812,11 @@ void MetaServiceImpl::create_stage(::google::protobuf::RpcController* controller
         if (s.type() == stage.type() && s.name() == stage.name()) {
             code = MetaServiceCode::STAGE_ALREADY_EXISTED;
             msg = "stage already exist";
+            return;
+        }
+        if (s.stage_id() == stage.stage_id()) {
+            code = MetaServiceCode::INVALID_ARGUMENT;
+            msg = "stage id is duplicated";
             return;
         }
     }
@@ -4018,5 +4028,334 @@ void MetaServiceImpl::get_stage(google::protobuf::RpcController* controller,
         return;
     }
 }
+
+void MetaServiceImpl::begin_copy(google::protobuf::RpcController* controller,
+                                 const ::selectdb::BeginCopyRequest* request,
+                                 ::selectdb::BeginCopyResponse* response,
+                                 ::google::protobuf::Closure* done) {
+    auto ctrl = static_cast<brpc::Controller*>(controller);
+    LOG(INFO) << "rpc from " << ctrl->remote_side() << " request=" << request->DebugString();
+    brpc::ClosureGuard closure_guard(done);
+    int ret = 0;
+    MetaServiceCode code = MetaServiceCode::OK;
+    std::string msg = "OK";
+    std::unique_ptr<int, std::function<void(int*)>> defer_status(
+            (int*)0x01, [&ret, &code, &msg, &response, &ctrl](int*) {
+                response->mutable_status()->set_code(code);
+                response->mutable_status()->set_msg(msg);
+                LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
+                          << ctrl->remote_side() << " " << msg;
+            });
+
+    std::string cloud_unique_id = request->has_cloud_unique_id() ? request->cloud_unique_id() : "";
+    if (cloud_unique_id.empty()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "cloud unique id not set";
+        return;
+    }
+
+    std::string instance_id = get_instance_id(resource_mgr_, cloud_unique_id);
+    if (instance_id.empty()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "empty instance_id";
+        LOG(INFO) << msg << ", cloud_unique_id=" << cloud_unique_id;
+        return;
+    }
+
+    std::unique_ptr<Transaction> txn;
+    ret = txn_kv_->create_txn(&txn);
+    if (ret != 0) {
+        code = MetaServiceCode::KV_TXN_CREATE_ERR;
+        msg = "failed to create txn";
+        LOG(WARNING) << msg << " ret=" << ret;
+        return;
+    }
+
+    // scan loading or loaded files in copy jobs
+    auto object_files = request->object_files();
+    std::set<int> remove_index;
+    CopyJobKeyInfo key_info0 {instance_id, request->stage_id(), request->table_id(), "", 0};
+    CopyJobKeyInfo key_info1 {instance_id, request->stage_id(), request->table_id() + 1, "", 0};
+    std::string key0;
+    std::string key1;
+    copy_job_key(key_info0, &key0);
+    copy_job_key(key_info1, &key1);
+    std::unique_ptr<RangeGetIterator> it;
+    do {
+        ret = txn->get(key0, key1, &it);
+        if (ret != 0) {
+            code = MetaServiceCode::KV_TXN_GET_ERR;
+            msg = "failed to get copy jobs";
+            LOG(WARNING) << msg << " ret=" << ret;
+            return;
+        }
+
+        while (it->has_next()) {
+            auto [k, v] = it->next();
+            CopyJobPB copy_job;
+            if (!copy_job.ParseFromArray(v.data(), v.size())) {
+                code = MetaServiceCode::PROTOBUF_PARSE_ERR;
+                msg = "failed to parse CopyJobPB";
+                return;
+            }
+            // TODO check if job is timeout
+            for (const auto& file : copy_job.object_files()) {
+                for (auto i = 0; i < object_files.size(); ++i) {
+                    if (!remove_index.count(i) && object_files.at(i).key() == file.key() &&
+                        object_files.at(i).etag() == file.etag()) {
+                        remove_index.insert(i);
+                    }
+                }
+            }
+        }
+        key0.push_back('\x00');
+    } while (it->more());
+
+    // copy job key
+    CopyJobKeyInfo key_info {instance_id, request->stage_id(), request->table_id(),
+                             request->copy_id(), request->group_id()};
+    std::string key;
+    std::string val;
+    copy_job_key(key_info, &key);
+    // copy job value
+    CopyJobPB copy_job;
+    copy_job.set_stage_type(request->stage_type());
+    copy_job.set_job_status(CopyJobPB::LOADING);
+    copy_job.set_start_time(request->start_time());
+    copy_job.set_timeout_time(request->timeout_time());
+
+    std::vector<std::pair<std::string, std::string>> copy_files;
+    for (auto i = 0; i < object_files.size(); ++i) {
+        if (remove_index.count(i)) {
+            continue;
+        }
+        auto& file = object_files.at(i);
+        copy_job.add_object_files()->CopyFrom(file);
+        // copy file key
+        CopyFileKeyInfo file_key_info {instance_id, request->stage_id(), request->table_id(),
+                                       file.key(), file.etag()};
+        std::string file_key;
+        copy_file_key(file_key_info, &file_key);
+        // copy file value
+        CopyFilePB copy_file;
+        copy_file.set_copy_id(request->copy_id());
+        copy_file.set_group_id(request->group_id());
+        std::string file_val = copy_file.SerializeAsString();
+        if (file_val.empty()) {
+            msg = "failed to serialize";
+            code = MetaServiceCode::PROTOBUF_SERIALIZE_ERR;
+            return;
+        }
+        copy_files.emplace_back(std::move(file_key), std::move(file_val));
+        response->add_filtered_object_files()->CopyFrom(file);
+    }
+
+    val = copy_job.SerializeAsString();
+    if (val.empty()) {
+        msg = "failed to serialize";
+        code = MetaServiceCode::PROTOBUF_SERIALIZE_ERR;
+        return;
+    }
+    // put copy job
+    txn->put(key, val);
+    LOG(INFO) << "put copy_job_key=" << hex(key);
+    // put copy file
+    for (const auto& [k, v] : copy_files) {
+        txn->put(k, v);
+        LOG(INFO) << "put copy_file_key=" << hex(k);
+    }
+
+    ret = txn->commit();
+    if (ret != 0) {
+        code = MetaServiceCode::KV_TXN_COMMIT_ERR;
+        msg = "failed to commit kv txn";
+        LOG(WARNING) << msg << " ret=" << ret;
+    }
+}
+
+void MetaServiceImpl::finish_copy(google::protobuf::RpcController* controller,
+                                  const ::selectdb::FinishCopyRequest* request,
+                                  ::selectdb::FinishCopyResponse* response,
+                                  ::google::protobuf::Closure* done) {
+    auto ctrl = static_cast<brpc::Controller*>(controller);
+    LOG(INFO) << "rpc from " << ctrl->remote_side() << " request=" << request->DebugString();
+    brpc::ClosureGuard closure_guard(done);
+    int ret = 0;
+    MetaServiceCode code = MetaServiceCode::OK;
+    std::string msg = "OK";
+    std::unique_ptr<int, std::function<void(int*)>> defer_status(
+            (int*)0x01, [&ret, &code, &msg, &response, &ctrl](int*) {
+                response->mutable_status()->set_code(code);
+                response->mutable_status()->set_msg(msg);
+                LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
+                          << ctrl->remote_side() << " " << msg;
+            });
+
+    std::string cloud_unique_id = request->has_cloud_unique_id() ? request->cloud_unique_id() : "";
+    if (cloud_unique_id.empty()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "cloud unique id not set";
+        return;
+    }
+
+    std::string instance_id = get_instance_id(resource_mgr_, cloud_unique_id);
+    if (instance_id.empty()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "empty instance_id";
+        LOG(INFO) << msg << ", cloud_unique_id=" << cloud_unique_id;
+        return;
+    }
+
+    std::unique_ptr<Transaction> txn;
+    ret = txn_kv_->create_txn(&txn);
+    if (ret != 0) {
+        code = MetaServiceCode::KV_TXN_CREATE_ERR;
+        msg = "failed to create txn";
+        LOG(WARNING) << msg << " ret=" << ret;
+        return;
+    }
+
+    // copy job key
+    CopyJobKeyInfo key_info {instance_id, request->stage_id(), request->table_id(),
+                             request->copy_id(), request->group_id()};
+    std::string key;
+    std::string val;
+    copy_job_key(key_info, &key);
+    ret = txn->get(key, &val);
+
+    std::stringstream ss;
+    if (ret != 0) {
+        code = MetaServiceCode::KV_TXN_GET_ERR;
+        ss << "failed to get instance, instance_id=" << instance_id << " ret=" << ret;
+        msg = ss.str();
+        return;
+    }
+
+    CopyJobPB copy_job;
+    if (!copy_job.ParseFromString(val)) {
+        code = MetaServiceCode::PROTOBUF_PARSE_ERR;
+        msg = "failed to parse CopyJobPB";
+        return;
+    }
+
+    std::vector<std::string> copy_files;
+    for (const auto& file : copy_job.object_files()) {
+        // copy file key
+        CopyFileKeyInfo file_key_info {instance_id, request->stage_id(), request->table_id(),
+                                       file.key(), file.etag()};
+        std::string file_key;
+        copy_file_key(file_key_info, &file_key);
+        copy_files.emplace_back(std::move(file_key));
+    }
+
+    if (request->action() == FinishCopyRequest::COMMIT) {
+        // update copy job status from Loading to Finish
+        copy_job.set_job_status(CopyJobPB::FINISH);
+        val = copy_job.SerializeAsString();
+        if (val.empty()) {
+            msg = "failed to serialize";
+            code = MetaServiceCode::PROTOBUF_SERIALIZE_ERR;
+            return;
+        }
+        txn->put(key, val);
+        LOG(INFO) << "put finished copy_job_key=" << hex(key);
+    } else if (request->action() == FinishCopyRequest::ABORT) {
+        // remove copy job
+        txn->remove(key);
+        LOG(INFO) << "remove aborted copy_job_key=" << hex(key);
+    } else {
+        msg = "Unhandled action";
+        code = MetaServiceCode::UNDEFINED_ERR;
+        return;
+    }
+    // remove copy file
+    for (const auto& k : copy_files) {
+        txn->remove(k);
+        LOG(INFO) << "remove copy_file_key=" << hex(k);
+    }
+
+    ret = txn->commit();
+    if (ret != 0) {
+        code = MetaServiceCode::KV_TXN_COMMIT_ERR;
+        msg = "failed to commit kv txn";
+        LOG(WARNING) << msg << " ret=" << ret;
+    }
+}
+
+void MetaServiceImpl::get_copy_files(google::protobuf::RpcController* controller,
+                                     const ::selectdb::GetCopyFilesRequest* request,
+                                     ::selectdb::GetCopyFilesResponse* response,
+                                     ::google::protobuf::Closure* done) {
+    auto ctrl = static_cast<brpc::Controller*>(controller);
+    LOG(INFO) << "rpc from " << ctrl->remote_side() << " request=" << request->DebugString();
+    brpc::ClosureGuard closure_guard(done);
+    int ret = 0;
+    MetaServiceCode code = MetaServiceCode::OK;
+    std::string msg = "OK";
+    std::unique_ptr<int, std::function<void(int*)>> defer_status(
+            (int*)0x01, [&ret, &code, &msg, &response, &ctrl](int*) {
+                response->mutable_status()->set_code(code);
+                response->mutable_status()->set_msg(msg);
+                LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
+                          << ctrl->remote_side() << " " << msg;
+            });
+
+    std::string cloud_unique_id = request->has_cloud_unique_id() ? request->cloud_unique_id() : "";
+    if (cloud_unique_id.empty()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "cloud unique id not set";
+        return;
+    }
+
+    std::string instance_id = get_instance_id(resource_mgr_, cloud_unique_id);
+    if (instance_id.empty()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "empty instance_id";
+        LOG(INFO) << msg << ", cloud_unique_id=" << cloud_unique_id;
+        return;
+    }
+
+    std::unique_ptr<Transaction> txn;
+    ret = txn_kv_->create_txn(&txn);
+    if (ret != 0) {
+        code = MetaServiceCode::KV_TXN_CREATE_ERR;
+        msg = "failed to create txn";
+        LOG(WARNING) << msg << " ret=" << ret;
+        return;
+    }
+
+    CopyJobKeyInfo key_info0 {instance_id, request->stage_id(), request->table_id(), "", 0};
+    CopyJobKeyInfo key_info1 {instance_id, request->stage_id(), request->table_id() + 1, "", 0};
+    std::string key0;
+    std::string key1;
+    copy_job_key(key_info0, &key0);
+    copy_job_key(key_info1, &key1);
+    std::unique_ptr<RangeGetIterator> it;
+    do {
+        ret = txn->get(key0, key1, &it);
+        if (ret != 0) {
+            code = MetaServiceCode::KV_TXN_GET_ERR;
+            msg = "failed to get copy jobs";
+            LOG(WARNING) << msg << " ret=" << ret;
+            return;
+        }
+
+        while (it->has_next()) {
+            auto [k, v] = it->next();
+            CopyJobPB copy_job;
+            if (!copy_job.ParseFromArray(v.data(), v.size())) {
+                code = MetaServiceCode::PROTOBUF_PARSE_ERR;
+                msg = "failed to parse CopyJobPB";
+                return;
+            }
+            // TODO check if job is timeout
+            for (const auto& file : copy_job.object_files()) {
+                response->add_object_files()->CopyFrom(file);
+            }
+        }
+        key0.push_back('\x00');
+    } while (it->more());
+}
+
 } // namespace selectdb
 // vim: et ts=4 sw=4 cc=80:

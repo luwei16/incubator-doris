@@ -810,4 +810,166 @@ TEST(MetaServiceTest, TabletJobTest) {
         ASSERT_EQ(txn->get(job_key, &job_val), 1);
     }
 }
+
+TEST(MetaServiceTest, CopyJobTest) {
+    auto meta_service = get_meta_service();
+    brpc::Controller cntl;
+    auto cloud_unique_id = "test_cloud_unique_id";
+    auto stage_id = "test_stage_id";
+    int64_t table_id = 100;
+
+    // generate a begin copy request
+    BeginCopyRequest begin_copy_request;
+    begin_copy_request.set_cloud_unique_id(cloud_unique_id);
+    begin_copy_request.set_stage_id(stage_id);
+    begin_copy_request.set_stage_type(StagePB::EXTERNAL);
+    begin_copy_request.set_table_id(table_id);
+    begin_copy_request.set_copy_id("test_copy_id");
+    begin_copy_request.set_group_id(0);
+    begin_copy_request.set_start_time(200);
+    begin_copy_request.set_timeout_time(300);
+    for (int i = 0; i < 20; ++i) {
+        ObjectFilePB object_file_pb;
+        object_file_pb.set_key("obj_" + std::to_string(i));
+        object_file_pb.set_etag("obj_" + std::to_string(i) + "_etag");
+        begin_copy_request.add_object_files()->CopyFrom(object_file_pb);
+    }
+
+    // generate a finish copy request
+    FinishCopyRequest finish_copy_request;
+    finish_copy_request.set_cloud_unique_id(cloud_unique_id);
+    finish_copy_request.set_stage_id(stage_id);
+    finish_copy_request.set_stage_type(StagePB::EXTERNAL);
+    finish_copy_request.set_table_id(table_id);
+    finish_copy_request.set_copy_id("test_copy_id");
+    finish_copy_request.set_group_id(0);
+    finish_copy_request.set_action(FinishCopyRequest::COMMIT);
+
+    // generate a get copy files request
+    GetCopyFilesRequest get_copy_file_req;
+    get_copy_file_req.set_cloud_unique_id(cloud_unique_id);
+    get_copy_file_req.set_stage_id(stage_id);
+    get_copy_file_req.set_table_id(table_id);
+
+    // begin copy
+    {
+        BeginCopyResponse res;
+        meta_service->begin_copy(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
+                                 &begin_copy_request, &res, nullptr);
+        ASSERT_EQ(res.status().code(), MetaServiceCode::OK);
+        ASSERT_EQ(res.filtered_object_files_size(), 20);
+    }
+    // get copy files
+    {
+        GetCopyFilesResponse res;
+        meta_service->get_copy_files(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
+                                     &get_copy_file_req, &res, nullptr);
+        ASSERT_EQ(res.status().code(), MetaServiceCode::OK);
+        ASSERT_EQ(res.object_files_size(), 20);
+    }
+    // begin copy with duplicate files
+    {
+        begin_copy_request.set_copy_id("test_copy_id_1");
+        begin_copy_request.clear_object_files();
+        for (int i = 15; i < 30; ++i) {
+            ObjectFilePB object_file_pb;
+            object_file_pb.set_key("obj_" + std::to_string(i));
+            object_file_pb.set_etag("obj_" + std::to_string(i) + "_etag");
+            begin_copy_request.add_object_files()->CopyFrom(object_file_pb);
+        }
+
+        BeginCopyResponse res;
+        meta_service->begin_copy(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
+                                 &begin_copy_request, &res, nullptr);
+        ASSERT_EQ(res.status().code(), MetaServiceCode::OK);
+        ASSERT_EQ(res.filtered_object_files_size(), 10);
+    }
+    // get copy files
+    {
+        GetCopyFilesResponse res;
+        meta_service->get_copy_files(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
+                                     &get_copy_file_req, &res, nullptr);
+        ASSERT_EQ(res.status().code(), MetaServiceCode::OK);
+        ASSERT_EQ(res.object_files_size(), 30);
+    }
+    // finish the first copy job
+    {
+        FinishCopyResponse res;
+        meta_service->finish_copy(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
+                                  &finish_copy_request, &res, nullptr);
+        ASSERT_EQ(res.status().code(), MetaServiceCode::OK);
+    }
+    // get copy files
+    {
+        GetCopyFilesResponse res;
+        meta_service->get_copy_files(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
+                                     &get_copy_file_req, &res, nullptr);
+        ASSERT_EQ(res.status().code(), MetaServiceCode::OK);
+        ASSERT_EQ(res.object_files_size(), 30);
+    }
+    // abort the second copy job
+    {
+        finish_copy_request.set_copy_id("test_copy_id_1");
+        finish_copy_request.set_action(FinishCopyRequest::ABORT);
+
+        FinishCopyResponse res;
+        meta_service->finish_copy(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
+                                  &finish_copy_request, &res, nullptr);
+        ASSERT_EQ(res.status().code(), MetaServiceCode::OK);
+    }
+    // get copy files
+    {
+        GetCopyFilesResponse res;
+        meta_service->get_copy_files(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
+                                     &get_copy_file_req, &res, nullptr);
+        ASSERT_EQ(res.status().code(), MetaServiceCode::OK);
+        ASSERT_EQ(res.object_files_size(), 20);
+    }
+    // scan fdb
+    {
+        std::unique_ptr<Transaction> txn;
+        std::string get_val;
+        int ret = meta_service->txn_kv_->create_txn(&txn);
+        ASSERT_EQ(ret, 0);
+        // 0 copy files
+        {
+            CopyFileKeyInfo key_info0 {mock_instance, stage_id, table_id, "", ""};
+            CopyFileKeyInfo key_info1 {mock_instance, stage_id, table_id + 1, "", ""};
+            std::string key0;
+            std::string key1;
+            copy_file_key(key_info0, &key0);
+            copy_file_key(key_info1, &key1);
+            std::unique_ptr<RangeGetIterator> it;
+            ret = txn->get(key0, key1, &it);
+            ASSERT_EQ(ret, 0);
+            ASSERT_EQ(it->has_next(), false);
+            ASSERT_EQ(it->more(), false);
+        }
+        // 1 copy job with finish status
+        {
+            CopyJobKeyInfo key_info0 {mock_instance, stage_id, table_id, "", 0};
+            CopyJobKeyInfo key_info1 {mock_instance, stage_id, table_id + 1, "", 0};
+            std::string key0;
+            std::string key1;
+            copy_job_key(key_info0, &key0);
+            copy_job_key(key_info1, &key1);
+            std::unique_ptr<RangeGetIterator> it;
+            int job_cnt = 0;
+            do {
+                ret = txn->get(key0, key1, &it);
+                ASSERT_EQ(ret, 0);
+                while (it->has_next()) {
+                    auto [k, v] = it->next();
+                    CopyJobPB copy_job;
+                    ASSERT_EQ(copy_job.ParseFromArray(v.data(), v.size()), true);
+                    ASSERT_EQ(copy_job.object_files_size(), 20);
+                    ASSERT_EQ(copy_job.job_status(), CopyJobPB::FINISH);
+                    ++job_cnt;
+                }
+                key0.push_back('\x00');
+            } while (it->more());
+            ASSERT_EQ(job_cnt, 1);
+        }
+    }
+}
 // vim: et tw=100 ts=4 sw=4 cc=80:

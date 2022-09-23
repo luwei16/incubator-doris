@@ -215,4 +215,16 @@ public class MetaServiceClient {
     public SelectdbCloud.GetStageResponse getStage(SelectdbCloud.GetStageRequest request) {
         return blockingStub.getStage(request);
     }
+
+    public SelectdbCloud.BeginCopyResponse beginCopy(SelectdbCloud.BeginCopyRequest request) {
+        return blockingStub.beginCopy(request);
+    }
+
+    public SelectdbCloud.FinishCopyResponse finishCopy(SelectdbCloud.FinishCopyRequest request) {
+        return blockingStub.finishCopy(request);
+    }
+
+    public SelectdbCloud.GetCopyFilesResponse getCopyFiles(SelectdbCloud.GetCopyFilesRequest request) {
+        return blockingStub.getCopyFiles(request);
+    }
 }

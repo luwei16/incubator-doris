@@ -37,6 +37,7 @@ message StagePB {
     // copy option
     optional CopyOptionPB copy_option = 5;
     optional ObjectStoreInfoPB obj_info = 6;
+    optional string stage_id = 7;
 }
 
 message ClusterPB {
@@ -326,6 +327,29 @@ message TabletStatsPB {
     optional int64 base_compaction_cnt = 7;
     optional int64 cumulative_compaction_cnt = 8;
     optional int64 cumulative_point = 9;
+}
+
+message ObjectFilePB {
+    optional string key = 1;
+    optional string etag = 2;
+}
+
+message CopyJobPB {
+    enum JobStatus {
+        UNKNOWN = 0;
+        LOADING = 1;
+        FINISH  = 2;
+    }
+    optional StagePB.StageType stage_type = 1;
+    repeated ObjectFilePB object_files = 2;
+    optional JobStatus job_status = 3;
+    optional int64 start_time = 4;
+    optional int64 timeout_time = 5;
+}
+
+message CopyFilePB {
+    optional string copy_id = 1;
+    optional int32 group_id = 2;
 }
 
 //==============================================================================
@@ -660,6 +684,53 @@ message FinishTabletJobResponse {
     optional MetaServiceResponseStatus status = 1;
 }
 
+message BeginCopyRequest {
+    optional string cloud_unique_id = 1;
+    optional string stage_id = 2;
+    optional StagePB.StageType stage_type = 3;
+    optional int64 table_id = 4;
+    optional string copy_id = 5;
+    optional int32 group_id = 6;
+    optional int64 start_time = 7;
+    optional int64 timeout_time = 8;
+    repeated ObjectFilePB object_files = 9;
+}
+
+message BeginCopyResponse {
+    optional MetaServiceResponseStatus status = 1;
+    repeated ObjectFilePB filtered_object_files = 2;
+}
+
+message FinishCopyRequest {
+    enum Action {
+        UNKNOWN = 0;
+        COMMIT  = 1;
+        ABORT   = 2;
+    }
+    optional string cloud_unique_id = 1;
+    optional string stage_id = 2;
+    optional StagePB.StageType stage_type = 3;
+    optional int64 table_id = 4;
+    optional string copy_id = 5;
+    optional int32 group_id = 6;
+    optional Action action = 7;
+}
+
+message FinishCopyResponse {
+    optional MetaServiceResponseStatus status = 1;
+}
+
+message GetCopyFilesRequest {
+    optional string cloud_unique_id = 1;
+    optional string stage_id = 2;
+    optional int64 table_id = 3;
+}
+
+message GetCopyFilesResponse {
+    optional MetaServiceResponseStatus status = 1;
+    repeated ObjectFilePB object_files = 2;
+}
+
 enum MetaServiceCode {
     OK = 0;
 
@@ -757,6 +828,10 @@ service MetaService {
     // stage
     rpc create_stage(CreateStageRequest) returns (CreateStageResponse);
     rpc get_stage(GetStageRequest) returns (GetStageResponse);
+    // copy into
+    rpc begin_copy(BeginCopyRequest) returns (BeginCopyResponse);
+    rpc finish_copy(FinishCopyRequest) returns (FinishCopyResponse);
+    rpc get_copy_files(GetCopyFilesRequest) returns (GetCopyFilesResponse);
 };
 
 // vim: et ts=4 sw=4:
