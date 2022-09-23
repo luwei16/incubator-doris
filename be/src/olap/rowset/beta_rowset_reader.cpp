@@ -52,6 +52,10 @@ Status BetaRowsetReader::init(RowsetReaderContext* read_context) {
         read_options.query_id = &read_context->runtime_state->query_id();
     }
 
+    if (read_context->reader_type != ReaderType::READER_QUERY) {
+        read_options.use_disposable_cache = true;
+    }
+
     read_options.stats = _stats;
     if (read_context->lower_bound_keys != nullptr) {
         for (int i = 0; i < read_context->lower_bound_keys->size(); ++i) {

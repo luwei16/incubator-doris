@@ -17,7 +17,6 @@
 
 #pragma once
 
-#include <gen_cpp/Types_types.h>
 #include <vector>
 
 #include "common/logging.h"
@@ -64,6 +63,7 @@ struct PageReadOptions {
     // currently used for in memory olap table
     bool kept_in_memory = false;
     bool is_persistent = false;
+    bool use_disposable_cache = false;
     // for page cache allocation
     // page types are divided into DATA_PAGE & INDEX_PAGE
     // INDEX_PAGE including index_page, dict_page and short_key_page
@@ -123,8 +123,10 @@ public:
     static Status read_and_decompress_page(const PageReadOptions& opts, PageHandle* handle,
                                            Slice* body, PageFooterPB* footer);
 
-    static Status read_and_decompress_pages(const PageReadOptions& opts, std::vector<PageHandle>& handles,
-                                           std::vector<Slice>& bodys, std::vector<PageFooterPB>& footers);
+    static Status read_and_decompress_pages(const PageReadOptions& opts,
+                                            std::vector<PageHandle>& handles,
+                                            std::vector<Slice>& bodys,
+                                            std::vector<PageFooterPB>& footers);
 };
 
 } // namespace segment_v2

@@ -203,6 +203,7 @@ void VOlapScanNode::_init_counter(RuntimeState* state) {
     _num_io_bytes_written_in_file_cache =
             ADD_COUNTER(_scanner_profile, "NumIOBytesWrittenInFileCache", TUnit::UNIT);
     _num_io_bytes_skip_cache = ADD_COUNTER(_scanner_profile, "NumIOBytesSkipCache", TUnit::UNIT);
+    _cloud_get_rowset_version_timer = ADD_TIMER(_scanner_profile, "CloudGetVersionTime");
 
     // for the purpose of debugging or profiling
     for (int i = 0; i < GENERAL_DEBUG_COUNT; ++i) {

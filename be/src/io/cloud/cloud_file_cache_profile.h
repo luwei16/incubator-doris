@@ -3,10 +3,16 @@
 #include <atomic>
 #include <cstdint>
 #include <cstdlib>
+#include <functional>
+#include <memory>
 #include <mutex>
+#include <string>
 #include <unordered_map>
 
 #include "olap/olap_common.h"
+#include "util/doris_metrics.h"
+#include "util/metrics.h"
+
 namespace doris {
 namespace io {
 
@@ -20,108 +26,76 @@ struct AtomicStatistics {
     std::atomic<int64_t> num_io_bytes_written_in_file_cache = 0;
 };
 
+struct FileCacheProfile;
+
+struct FileCacheMetric {
+    FileCacheMetric(int64_t table_id, FileCacheProfile* profile)
+            : profile(profile), table_id(table_id) {
+        std::string name = "table_" + std::to_string(table_id);
+        register_entity(name);
+        entity->register_hook(name, std::bind(&FileCacheMetric::update_table_metrics, this));
+    }
+
+    FileCacheMetric(int64_t table_id, int64_t partition_id, FileCacheProfile* profile)
+            : profile(profile), table_id(table_id), partition_id(partition_id) {
+        std::string name =
+                "table_" + std::to_string(table_id) + "_partition_" + std::to_string(partition_id);
+        register_entity(name);
+        entity->register_hook(name, std::bind(&FileCacheMetric::update_partition_metrics, this));
+    }
+
+    void register_entity(const std::string& name);
+    void update_table_metrics() const;
+    void update_partition_metrics() const;
+
+    ~FileCacheMetric() { DorisMetrics::instance()->metric_registry()->deregister_entity(entity); }
+    FileCacheMetric& operator=(const FileCacheMetric&) = delete;
+    FileCacheMetric(const FileCacheMetric&) = delete;
+    FileCacheProfile* profile = nullptr;
+    int64_t table_id;
+    int64_t partition_id;
+    std::shared_ptr<MetricEntity> entity;
+    IntAtomicCounter* num_io_total = nullptr;
+    IntAtomicCounter* num_io_hit_cache = nullptr;
+    IntAtomicCounter* num_io_bytes_read_total = nullptr;
+    IntAtomicCounter* num_io_bytes_read_from_file_cache = nullptr;
+    IntAtomicCounter* num_io_bytes_read_from_write_cache = nullptr;
+    IntAtomicCounter* num_io_written_in_file_cache = nullptr;
+    IntAtomicCounter* num_io_bytes_written_in_file_cache = nullptr;
+};
+
 struct FileCacheProfile {
     static FileCacheProfile& instance() {
         static FileCacheProfile s_profile;
         return s_profile;
     }
 
+    FileCacheProfile() = default;
+
     // avoid performance impact, use https to control
-    inline static std::atomic<bool> enable_profile = true;
+    inline static std::atomic<bool> s_enable_profile = true;
 
     static void set_enable_profile(bool flag) {
         // if enable_profile = false originally, set true, it will clear the count
-        if (!enable_profile && flag) {
-            std::lock_guard lock(instance().mtx);
-            instance().profile.clear();
+        if (!s_enable_profile && flag) {
+            std::lock_guard lock(instance()._mtx);
+            instance()._profile.clear();
         }
-        enable_profile.store(flag, std::memory_order_release);
+        s_enable_profile.store(flag, std::memory_order_release);
     }
 
-    void update(int64_t table_id, int64_t partition_id, OlapReaderStatistics* stats) {
-        if (!enable_profile.load(std::memory_order_acquire)) {
-            return;
-        }
-        std::shared_ptr<AtomicStatistics> count;
-        std::lock_guard lock(mtx);
-        {
-            if (profile.count(table_id) < 1 || profile[table_id].count(partition_id) < 1) {
-                profile[table_id][partition_id] = std::make_shared<AtomicStatistics>();
-            }
-            count = profile[table_id][partition_id];
-        }
-        count->num_io_total.fetch_add(stats->file_cache_stats.num_io_total, std::memory_order_relaxed);
-        count->num_io_hit_cache.fetch_add(stats->file_cache_stats.num_io_hit_cache,
-                                          std::memory_order_relaxed);
-        count->num_io_bytes_read_total.fetch_add(stats->file_cache_stats.num_io_bytes_read_total,
-                                                 std::memory_order_relaxed);
-        count->num_io_bytes_read_from_file_cache.fetch_add(
-                stats->file_cache_stats.num_io_bytes_read_from_file_cache,
-                std::memory_order_relaxed);
-        count->num_io_bytes_read_from_write_cache.fetch_add(
-                stats->file_cache_stats.num_io_bytes_read_from_write_cache,
-                std::memory_order_relaxed);
-        count->num_io_written_in_file_cache.fetch_add(
-                stats->file_cache_stats.num_io_written_in_file_cache, std::memory_order_relaxed);
-        count->num_io_bytes_written_in_file_cache.fetch_add(
-                stats->file_cache_stats.num_io_bytes_written_in_file_cache,
-                std::memory_order_relaxed);
-    }
-    std::mutex mtx;
+    void update(int64_t table_id, int64_t partition_id, OlapReaderStatistics* stats);
+
+    void deregister_metric(int64_t table_id, int64_t partition_id);
+    std::mutex _mtx;
     // use shared_ptr for concurrent
     std::unordered_map<int64_t, std::unordered_map<int64_t, std::shared_ptr<AtomicStatistics>>>
-            profile;
-
-    FileCacheStatistics report(int64_t table_id) {
-        FileCacheStatistics stats;
-        if (profile.count(table_id) == 1) {
-            std::lock_guard lock(mtx);
-            auto& partition_map = profile[table_id];
-            for (auto& [partition_id, atomic_stats] : partition_map) {
-                stats.num_io_total += atomic_stats->num_io_total.load(std::memory_order_relaxed);
-                stats.num_io_hit_cache +=
-                        atomic_stats->num_io_hit_cache.load(std::memory_order_relaxed);
-                stats.num_io_bytes_read_total +=
-                        atomic_stats->num_io_bytes_read_total.load(std::memory_order_relaxed);
-                stats.num_io_bytes_read_from_file_cache +=
-                        atomic_stats->num_io_bytes_read_from_file_cache.load(
-                                std::memory_order_relaxed);
-                stats.num_io_bytes_read_from_write_cache +=
-                        atomic_stats->num_io_bytes_read_from_write_cache.load(
-                                std::memory_order_relaxed);
-                stats.num_io_written_in_file_cache +=
-                        atomic_stats->num_io_written_in_file_cache.load(std::memory_order_relaxed);
-                stats.num_io_bytes_written_in_file_cache +=
-                        atomic_stats->num_io_bytes_written_in_file_cache.load(
-                                std::memory_order_relaxed);
-            }
-        }
-        return stats;
-    }
-
-    FileCacheStatistics report(int64_t table_id, int64_t partition_id) {
-        FileCacheStatistics stats;
-        if (profile.count(table_id) == 1 && profile[table_id].count(partition_id) == 1) {
-            std::shared_ptr<AtomicStatistics> count;
-            {
-                std::lock_guard lock(mtx);
-                count = profile[table_id][partition_id];
-            }
-            stats.num_io_total = count->num_io_total.load(std::memory_order_relaxed);
-            stats.num_io_hit_cache = count->num_io_hit_cache.load(std::memory_order_relaxed);
-            stats.num_io_bytes_read_total =
-                    count->num_io_bytes_read_total.load(std::memory_order_relaxed);
-            stats.num_io_bytes_read_from_file_cache =
-                    count->num_io_bytes_read_from_file_cache.load(std::memory_order_relaxed);
-            stats.num_io_bytes_read_from_write_cache =
-                    count->num_io_bytes_read_from_write_cache.load(std::memory_order_relaxed);
-            stats.num_io_written_in_file_cache =
-                    count->num_io_written_in_file_cache.load(std::memory_order_relaxed);
-            stats.num_io_bytes_written_in_file_cache =
-                    count->num_io_bytes_written_in_file_cache.load(std::memory_order_relaxed);
-        }
-        return stats;
-    }
+            _profile;
+    std::unordered_map<int64_t, std::shared_ptr<FileCacheMetric>> _table_metrics;
+    std::unordered_map<int64_t, std::unordered_map<int64_t, std::shared_ptr<FileCacheMetric>>>
+            _partition_metrics;
+    FileCacheStatistics report(int64_t table_id);
+    FileCacheStatistics report(int64_t table_id, int64_t partition_id);
 };
 
 } // namespace io

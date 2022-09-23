@@ -91,6 +91,9 @@ public class CloudReplica extends Replica {
             try {
                 cluster = Env.getCurrentSystemInfo().getCloudClusterNames().stream()
                                                     .filter(i -> !i.isEmpty()).findFirst().get();
+                if (ConnectContext.get() != null) {
+                    ConnectContext.get().setCloudCluster(cluster);
+                }
             } catch (Exception e) {
                 LOG.warn("failed to get cluster, clusterNames={}",
                          Env.getCurrentSystemInfo().getCloudClusterNames(), e);

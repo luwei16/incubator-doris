@@ -60,9 +60,16 @@ Status VOlapScanner::prepare(
     // Get olap table
     TTabletId tablet_id = scan_range.tablet_id;
     _version = strtoul(scan_range.version.c_str(), nullptr, 10);
+    VLOG_DEBUG << "VOlapScanner version: " << _version;
     {
 #ifdef CLOUD_MODE
-        RETURN_IF_ERROR(cloud::tablet_mgr()->get_tablet(tablet_id, &_tablet));
+        {
+            SCOPED_TIMER(_parent->_cloud_get_rowset_version_timer);
+            RETURN_IF_ERROR(cloud::tablet_mgr()->get_tablet(tablet_id, &_tablet));
+            RETURN_IF_ERROR(_tablet->cloud_sync_rowsets(_version));
+        }
+        RETURN_IF_ERROR(_tablet->cloud_capture_rs_readers({0, _version},
+                                                          &_tablet_reader_params.rs_readers));
 #else
         std::string err;
         _tablet = StorageEngine::instance()->tablet_manager()->get_tablet(tablet_id, true, &err);
@@ -74,25 +81,6 @@ Status VOlapScanner::prepare(
             LOG(WARNING) << ss.str();
             return Status::InternalError(ss.str());
         }
-#endif
-        _tablet_schema->copy_from(*_tablet->tablet_schema());
-        if (!_parent->_olap_scan_node.columns_desc.empty() &&
-            _parent->_olap_scan_node.columns_desc[0].col_unique_id >= 0) {
-            // Originally scanner get TabletSchema from tablet object in BE.
-            // To support lightweight schema change for adding / dropping columns,
-            // tabletschema is bounded to rowset and tablet's schema maybe outdated,
-            //  so we have to use schema from a query plan witch FE puts it in query plans.
-            _tablet_schema->clear_columns();
-            for (const auto& column_desc : _parent->_olap_scan_node.columns_desc) {
-                _tablet_schema->append_column(TabletColumn(column_desc));
-            }
-        }
-        VLOG_DEBUG << "VOlapScanner version: " << _version;
-#ifdef CLOUD_MODE
-        RETURN_IF_ERROR(_tablet->cloud_sync_rowsets(_version));
-        RETURN_IF_ERROR(_tablet->cloud_capture_rs_readers({0, _version},
-                                                          &_tablet_reader_params.rs_readers));
-#else
         {
             std::shared_lock rdlock(_tablet->get_header_lock());
             const RowsetSharedPtr rowset = _tablet->rowset_with_max_version();
@@ -119,6 +107,18 @@ Status VOlapScanner::prepare(
             }
         }
 #endif
+        _tablet_schema->copy_from(*_tablet->tablet_schema());
+        if (!_parent->_olap_scan_node.columns_desc.empty() &&
+            _parent->_olap_scan_node.columns_desc[0].col_unique_id >= 0) {
+            // Originally scanner get TabletSchema from tablet object in BE.
+            // To support lightweight schema change for adding / dropping columns,
+            // tabletschema is bounded to rowset and tablet's schema maybe outdated,
+            //  so we have to use schema from a query plan witch FE puts it in query plans.
+            _tablet_schema->clear_columns();
+            for (const auto& column_desc : _parent->_olap_scan_node.columns_desc) {
+                _tablet_schema->append_column(TabletColumn(column_desc));
+            }
+        }
     }
     return _init_tablet_reader_params(key_ranges, filters, bloom_filters, function_filters);
 }

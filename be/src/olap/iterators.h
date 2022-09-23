@@ -94,6 +94,7 @@ public:
 
     bool kept_in_memory = false;
     bool is_persistent = false;
+    bool use_disposable_cache = false;
 };
 
 // Used to read data in RowBlockV2 one by one

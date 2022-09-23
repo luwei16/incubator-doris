@@ -188,6 +188,10 @@ public class Backend implements Writable {
         return id;
     }
 
+    public String getAddress() {
+        return host + ":" + heartbeatPort;
+    }
+
     public String getHost() {
         return host;
     }

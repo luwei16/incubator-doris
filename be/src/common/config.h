@@ -891,14 +891,14 @@ CONF_String(test_s3_prefix, "prefix");
 #endif
 
 // reader prefetch
-CONF_Bool(enable_column_reader_prefetch, "false");
-CONF_Int32(max_column_reader_prefetch_size, "5");
+CONF_Int32(max_column_reader_prefetch_size, "0");
 
 // file cache
 CONF_Bool(enable_file_cache, "false");
 // format: [{"path":"/mnt/disk3/selectdb_cloud/file_cache","normal":20,"persistent":10}]
 CONF_String(file_cache_path, "");
-CONF_Int64(max_file_segment_size, "0"); // kb
+CONF_String(disposable_file_cache_path, "");
+CONF_Int64(max_file_segment_size, "1024"); // kb
 CONF_Int64(max_elements, "0");
 CONF_Bool(clear_file_cache, "false");
 CONF_Bool(enable_query_cache_limit, "false");

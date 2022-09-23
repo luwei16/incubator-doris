@@ -371,8 +371,24 @@ int main(int argc, char** argv) {
             exit(-1);
         }
         for (auto& cache_path : cache_paths) {
-            doris::io::FileCacheFactory::instance().create_file_cache(cache_path.path,
-                                                                      cache_path.init_settings());
+            doris::io::FileCacheFactory::instance().create_file_cache(
+                    cache_path.path, cache_path.init_settings(), doris::io::FileCacheType::NORMAL);
+        }
+
+        if (!doris::config::disposable_file_cache_path.empty()) {
+            cache_paths.clear();
+            olap_res = doris::parse_conf_cache_paths(doris::config::disposable_file_cache_path,
+                                                     cache_paths);
+            if (!olap_res) {
+                LOG(FATAL) << "parse config disposable file cache path failed, path="
+                           << doris::config::disposable_file_cache_path;
+                exit(-1);
+            }
+            for (auto& cache_path : cache_paths) {
+                doris::io::FileCacheFactory::instance().create_file_cache(
+                        cache_path.path, cache_path.init_settings(),
+                        doris::io::FileCacheType::DISPOSABLE);
+            }
         }
     }
 

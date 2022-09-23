@@ -56,6 +56,7 @@ private:
     FileReaderSPtr _remote_file_reader;
     IFileCache::Key _cache_key;
     CloudFileCachePtr _cache;
+    CloudFileCachePtr _disposable_cache;
 
 private:
     struct ReadStatistics {

@@ -8,6 +8,10 @@ import org.apache.doris.common.DdlException;
 import org.apache.doris.common.FeConstants;
 import org.apache.doris.common.util.MasterDaemon;
 import org.apache.doris.ha.FrontendNodeType;
+import org.apache.doris.metric.GaugeMetricImpl;
+import org.apache.doris.metric.Metric.MetricUnit;
+import org.apache.doris.metric.MetricLabel;
+import org.apache.doris.metric.MetricRepo;
 import org.apache.doris.resource.Tag;
 import org.apache.doris.system.Backend;
 import org.apache.doris.system.Frontend;
@@ -117,6 +121,19 @@ public class CloudClusterChecker extends MasterDaemon {
             Env.getCurrentSystemInfo().updateCloudBackends(toAdd, toDel);
         }
 
+        clusterIdToBackend = Env.getCurrentSystemInfo().getCloudClusterIdToBackend();
+        for (Map.Entry<String, List<Backend>> entry : clusterIdToBackend.entrySet()) {
+            entry.getValue().forEach(backend -> {
+                MetricRepo.CLOUD_CLUSTER_BACKEND_ALIVE.computeIfAbsent(backend.getAddress(), key -> {
+                    GaugeMetricImpl<Boolean> backendAlive = new GaugeMetricImpl<>("backend_alive", MetricUnit.NOUNIT,
+                            "backend alive or not");
+                    backendAlive.addLabel(new MetricLabel("cluster", entry.getKey()));
+                    backendAlive.addLabel(new MetricLabel("address", key));
+                    MetricRepo.DORIS_METRIC_REGISTER.addMetrics(backendAlive);
+                    return backendAlive;
+                }).setValue(backend.isAlive());
+            });
+        }
         LOG.debug("daemon cluster get cluster info succ, current cloudClusterIdToBackendMap: {}",
                 Env.getCurrentSystemInfo().getCloudClusterIdToBackend());
         getObserverFes();

@@ -77,6 +77,7 @@ struct ColumnIteratorOptions {
     PageTypePB type;
     bool kept_in_memory = false;
     bool is_persistent = false;
+    bool use_disposable_cache = false;
 
     void sanity_check() const {
         CHECK_NOTNULL(file_reader);
@@ -154,8 +155,8 @@ public:
     void set_dict_encoding_type(DictEncodingType type) {
         // std::call_once(_set_dict_encoding_type_flag, [&] { _dict_encoding_type = type; });
         _set_dict_encoding_type_once.call([&] {
-                _dict_encoding_type = type;
-                return Status::OK();
+            _dict_encoding_type = type;
+            return Status::OK();
         });
     }
 

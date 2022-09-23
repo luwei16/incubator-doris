@@ -335,6 +335,8 @@ private:
     RuntimeProfile::Counter* _num_io_bytes_written_in_file_cache = nullptr;
     RuntimeProfile::Counter* _num_io_bytes_skip_cache = nullptr;
 
+    RuntimeProfile::Counter* _cloud_get_rowset_version_timer = nullptr;
+
     std::vector<Block*> _scan_blocks;
     std::vector<Block*> _materialized_blocks;
     std::mutex _blocks_lock;

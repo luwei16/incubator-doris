@@ -160,6 +160,7 @@ Status ColumnReader::read_page(const ColumnIteratorOptions& iter_opts, const Pag
     opts.use_page_cache = iter_opts.use_page_cache;
     opts.kept_in_memory = iter_opts.kept_in_memory;
     opts.is_persistent = iter_opts.is_persistent;
+    opts.use_disposable_cache = iter_opts.use_disposable_cache;
     opts.type = iter_opts.type;
     opts.encoding_info = _encoding_info;
 
@@ -182,6 +183,7 @@ Status ColumnReader::read_pages(const ColumnIteratorOptions& iter_opts,
     opts.use_page_cache = iter_opts.use_page_cache;
     opts.kept_in_memory = iter_opts.kept_in_memory;
     opts.is_persistent = iter_opts.is_persistent;
+    opts.use_disposable_cache = iter_opts.use_disposable_cache;
     opts.type = iter_opts.type;
     opts.encoding_info = _encoding_info;
 

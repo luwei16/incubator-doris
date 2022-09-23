@@ -42,6 +42,9 @@ import org.apache.doris.common.telemetry.Telemetry;
 import org.apache.doris.common.util.DebugUtil;
 import org.apache.doris.common.util.SqlParserUtils;
 import org.apache.doris.datasource.CatalogIf;
+import org.apache.doris.metric.LongCounterMetric;
+import org.apache.doris.metric.Metric.MetricUnit;
+import org.apache.doris.metric.MetricLabel;
 import org.apache.doris.metric.MetricRepo;
 import org.apache.doris.mysql.MysqlChannel;
 import org.apache.doris.mysql.MysqlCommand;
@@ -59,6 +62,8 @@ import org.apache.doris.thrift.TMasterOpRequest;
 import org.apache.doris.thrift.TMasterOpResult;
 import org.apache.doris.thrift.TUniqueId;
 
+import com.codahale.metrics.Histogram;
+import com.codahale.metrics.MetricRegistry;
 import com.google.common.base.Strings;
 import com.google.common.collect.Lists;
 import io.opentelemetry.api.trace.Span;
@@ -185,13 +190,38 @@ public class ConnectProcessor {
 
         if (ctx.getState().isQuery()) {
             MetricRepo.COUNTER_QUERY_ALL.increase(1L);
+            if (!Config.cloud_unique_id.isEmpty() && ctx.cloudCluster != null) {
+                MetricRepo.CLOUD_CLUSTER_COUNTER_QUERY_ALL.computeIfAbsent(ctx.cloudCluster, key -> {
+                    LongCounterMetric counterQueryAll = new LongCounterMetric("query_total", MetricUnit.REQUESTS,
+                            "total query");
+                    counterQueryAll.addLabel(new MetricLabel("cluster", key));
+                    MetricRepo.DORIS_METRIC_REGISTER.addMetrics(counterQueryAll);
+                    return counterQueryAll;
+                }).increase(1L);
+            }
             if (ctx.getState().getStateType() == MysqlStateType.ERR
                     && ctx.getState().getErrType() != QueryState.ErrType.ANALYSIS_ERR) {
                 // err query
                 MetricRepo.COUNTER_QUERY_ERR.increase(1L);
+                if (!Config.cloud_unique_id.isEmpty() && ctx.cloudCluster != null) {
+                    MetricRepo.CLOUD_CLUSTER_COUNTER_QUERY_ERR.computeIfAbsent(ctx.cloudCluster, key -> {
+                        LongCounterMetric counterQueryErr = new LongCounterMetric("query_err", MetricUnit.REQUESTS,
+                                "total error query");
+                        counterQueryErr.addLabel(new MetricLabel("cluster", key));
+                        MetricRepo.DORIS_METRIC_REGISTER.addMetrics(counterQueryErr);
+                        return counterQueryErr;
+                    }).increase(1L);
+                }
             } else if (ctx.getState().getStateType() == MysqlStateType.OK) {
                 // ok query
                 MetricRepo.HISTO_QUERY_LATENCY.update(elapseMs);
+                if (!Config.cloud_unique_id.isEmpty() && ctx.cloudCluster != null) {
+                    MetricRepo.CLOUD_CLUSTER_HISTO_QUERY_LATENCY.computeIfAbsent(ctx.cloudCluster, key -> {
+                        Histogram histoQueryLatency = MetricRepo.METRIC_REGISTER.histogram(
+                                MetricRegistry.name("query", "latency", "ms", key));
+                        return histoQueryLatency;
+                    }).update(elapseMs);
+                }
                 if (elapseMs > Config.qe_slow_log_ms) {
                     String sqlDigest = DigestUtils.md5Hex(((Queriable) parsedStmt).toDigest());
                     ctx.getAuditEventBuilder().setSqlDigest(sqlDigest);
@@ -229,6 +259,15 @@ public class ConnectProcessor {
     // only throw an exception when there is a problem interacting with the requesting client
     private void handleQuery() {
         MetricRepo.COUNTER_REQUEST_ALL.increase(1L);
+        if (!Config.cloud_unique_id.isEmpty() && ctx.cloudCluster != null) {
+            MetricRepo.CLOUD_CLUSTER_COUNTER_REQUEST_ALL.computeIfAbsent(ctx.cloudCluster, key -> {
+                LongCounterMetric counterRequestAll = new LongCounterMetric("request_total", MetricUnit.REQUESTS,
+                        "total request");
+                counterRequestAll.addLabel(new MetricLabel("cluster", key));
+                MetricRepo.DORIS_METRIC_REGISTER.addMetrics(counterRequestAll);
+                return counterRequestAll;
+            }).increase(1L);
+        }
         // convert statement to Java string
         byte[] bytes = packetBuf.array();
         int ending = packetBuf.limit() - 1;

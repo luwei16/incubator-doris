@@ -106,8 +106,6 @@ Status PageIO::read_and_decompress_pages(const PageReadOptions& opts,
                                          std::vector<PageHandle>& handles,
                                          std::vector<Slice>& bodys,
                                          std::vector<PageFooterPB>& footers) {
-    opts.stats->total_pages_num += opts.page_pointers->size();
-    // TODO(Lchangliang): use cache
     for (auto& pp : *opts.page_pointers) {
         // every page contains 4 bytes footer length and 4 bytes checksum
         const uint32_t page_size = pp.size;
@@ -116,21 +114,82 @@ Status PageIO::read_and_decompress_pages(const PageReadOptions& opts,
                                       page_size);
         }
     }
-    uint64_t start_offset = opts.page_pointers->begin()->offset;
-    uint32_t pages_size =
-            (opts.page_pointers->back().offset - start_offset) + opts.page_pointers->back().size;
+
+    opts.stats->total_pages_num += opts.page_pointers->size();
+    auto cache = StoragePageCache::instance();
+    size_t left = 0, right = opts.page_pointers->size() - 1;
+    std::string file_name = opts.file_reader->path().native();
+    // if get pages [1, 2, 3, 4, 5], and pages [1, 3, 5] in cache,
+    // then get pages [1, 5] from cache, read pages [2, 3, 4].
+    if (opts.use_page_cache && cache->is_cache_available(opts.type)) {
+        while (left <= right) {
+            PageCacheHandle cache_handle;
+            StoragePageCache::CacheKey cache_key(file_name, opts.page_pointers->at(left).offset);
+            if (cache->lookup(cache_key, &cache_handle, opts.type)) {
+                // we find page in cache, use it
+                handles[left] = PageHandle(std::move(cache_handle));
+                opts.stats->cached_pages_num++;
+                // parse body and footer
+                Slice page_slice = handles[left].data();
+                uint32_t footer_size =
+                        decode_fixed32_le((uint8_t*)page_slice.data + page_slice.size - 4);
+                std::string footer_buf(page_slice.data + page_slice.size - 4 - footer_size,
+                                       footer_size);
+                if (!footers[left].ParseFromString(footer_buf)) {
+                    return Status::Corruption("Bad page: invalid footer");
+                }
+                bodys[left] = Slice(page_slice.data, page_slice.size - 4 - footer_size);
+                left++;
+            } else {
+                break;
+            }
+        }
+
+        if (left > right) {
+            return Status::OK();
+        }
+
+        while (right > left) {
+            PageCacheHandle cache_handle;
+            StoragePageCache::CacheKey cache_key(file_name, opts.page_pointers->at(right).offset);
+            if (cache->lookup(cache_key, &cache_handle, opts.type)) {
+                // we find page in cache, use it
+                handles[right] = PageHandle(std::move(cache_handle));
+                opts.stats->cached_pages_num++;
+                // parse body and footer
+                Slice page_slice = handles[right].data();
+                uint32_t footer_size =
+                        decode_fixed32_le((uint8_t*)page_slice.data + page_slice.size - 4);
+                std::string footer_buf(page_slice.data + page_slice.size - 4 - footer_size,
+                                       footer_size);
+                if (!footers[right].ParseFromString(footer_buf)) {
+                    return Status::Corruption("Bad page: invalid footer");
+                }
+                bodys[right] = Slice(page_slice.data, page_slice.size - 4 - footer_size);
+                right--;
+            } else {
+                break;
+            }
+        }
+
+        DCHECK(right >= left);
+    }
+
+    uint64_t start_offset = opts.page_pointers->at(left).offset;
+    uint32_t pages_size = (opts.page_pointers->at(right).offset - start_offset) +
+                          opts.page_pointers->at(right).size;
     // hold compressed page at first, reset to decompressed page later
     std::unique_ptr<char[]> pages(new char[pages_size]);
     Slice pages_slice(pages.get(), pages_size);
     {
         SCOPED_RAW_TIMER(&opts.stats->io_ns);
         size_t bytes_read = 0;
-        io::IOState state(opts.query_id, opts.stats, opts.is_persistent);
+        io::IOState state(opts.query_id, opts.stats, opts.is_persistent, opts.use_disposable_cache);
         RETURN_IF_ERROR(opts.file_reader->read_at(start_offset, pages_slice, &bytes_read, &state));
         DCHECK_EQ(bytes_read, pages_size);
         opts.stats->compressed_bytes_read += pages_size;
     }
-    for (size_t i = 0; i < opts.page_pointers->size(); i++) {
+    for (size_t i = left; i <= right; i++) {
         std::unique_ptr<char[]> page;
         Slice page_slice;
         auto& pp = opts.page_pointers->at(i);
@@ -197,8 +256,16 @@ Status PageIO::read_and_decompress_pages(const PageReadOptions& opts,
             }
         }
 
-        handles[i] = PageHandle(page_slice);
         bodys[i] = Slice(page_slice.data, page_slice.size - 4 - footer_size);
+        if (opts.use_page_cache && cache->is_cache_available(opts.type)) {
+            // insert this page into cache and return the cache handle
+            PageCacheHandle cache_handle;
+            StoragePageCache::CacheKey cache_key(file_name, opts.page_pointers->at(i).offset);
+            cache->insert(cache_key, page_slice, &cache_handle, opts.type, opts.kept_in_memory);
+            handles[i] = PageHandle(std::move(cache_handle));
+        } else {
+            handles[i] = PageHandle(page_slice);
+        }
         page.release(); // memory now managed by handle
     }
     return Status::OK();
@@ -241,7 +308,7 @@ Status PageIO::read_and_decompress_page(const PageReadOptions& opts, PageHandle*
     {
         SCOPED_RAW_TIMER(&opts.stats->io_ns);
         size_t bytes_read = 0;
-        io::IOState state(opts.query_id, opts.stats, opts.is_persistent);
+        io::IOState state(opts.query_id, opts.stats, opts.is_persistent, opts.use_disposable_cache);
         RETURN_IF_ERROR(opts.file_reader->read_at(opts.page_pointer.offset, page_slice, &bytes_read,
                                                   &state));
         DCHECK_EQ(bytes_read, page_size);

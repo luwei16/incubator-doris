@@ -17,7 +17,6 @@
 
 package org.apache.doris.metric;
 
-
 import org.apache.doris.alter.Alter;
 import org.apache.doris.alter.AlterJobV2.JobType;
 import org.apache.doris.catalog.Env;
@@ -45,10 +44,12 @@ import com.google.common.collect.Sets;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.SortedMap;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BinaryOperator;
@@ -57,7 +58,7 @@ public final class MetricRepo {
     private static final Logger LOG = LogManager.getLogger(MetricRepo.class);
 
     // METRIC_REGISTER is only used for histogram metrics
-    private static final MetricRegistry METRIC_REGISTER = new MetricRegistry();
+    public static final MetricRegistry METRIC_REGISTER = new MetricRegistry();
     public static final DorisMetricRegistry DORIS_METRIC_REGISTER = new DorisMetricRegistry();
 
     public static volatile boolean isInit = false;
@@ -107,6 +108,27 @@ public final class MetricRepo {
     public static GaugeMetricImpl<Double> GAUGE_REQUEST_PER_SECOND;
     public static GaugeMetricImpl<Double> GAUGE_QUERY_ERR_RATE;
     public static GaugeMetricImpl<Long> GAUGE_MAX_TABLET_COMPACTION_SCORE;
+
+    // cloud metrics
+    public static ConcurrentHashMap<String, LongCounterMetric>
+                    CLOUD_CLUSTER_COUNTER_REQUEST_ALL = new ConcurrentHashMap<>();
+    public static ConcurrentHashMap<String, LongCounterMetric>
+                    CLOUD_CLUSTER_COUNTER_QUERY_ALL = new ConcurrentHashMap<>();
+    public static ConcurrentHashMap<String, LongCounterMetric>
+                    CLOUD_CLUSTER_COUNTER_QUERY_ERR = new ConcurrentHashMap<>();
+
+    public static ConcurrentHashMap<String, GaugeMetricImpl<Double>>
+                    CLOUD_CLUSTER_GAUGE_QUERY_PER_SECOND = new ConcurrentHashMap<>();
+    public static ConcurrentHashMap<String, GaugeMetricImpl<Double>>
+                    CLOUD_CLUSTER_GAUGE_REQUEST_PER_SECOND = new ConcurrentHashMap<>();
+    public static ConcurrentHashMap<String, GaugeMetricImpl<Double>>
+                    CLOUD_CLUSTER_GAUGE_QUERY_ERR_RATE = new ConcurrentHashMap<>();
+
+    public static ConcurrentHashMap<String, Histogram>
+                    CLOUD_CLUSTER_HISTO_QUERY_LATENCY = new ConcurrentHashMap<>();
+
+    public static Map<String, GaugeMetricImpl<Boolean>>
+                    CLOUD_CLUSTER_BACKEND_ALIVE = new HashMap<>();
 
     private static ScheduledThreadPoolExecutor metricTimer = ThreadPoolManager.newDaemonScheduledThreadPool(1,
             "metric-timer-pool", true);

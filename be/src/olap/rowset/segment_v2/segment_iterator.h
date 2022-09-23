@@ -141,19 +141,36 @@ private:
     void _convert_dict_code_for_predicate_if_necessary_impl(ColumnPredicate* predicate);
 
     void _update_max_row(const vectorized::Block* block);
-    bool next_range(const uint32_t max_range_size, rowid_t _cur_rowid, uint32_t* from,
-                    uint32_t* to) {
-        if (_cur_index == _ranges.size() ||
-            (_cur_index == (_ranges.size() - 1) && _cur_rowid >= _ranges[_cur_index].second)) {
-            return false;
+    bool next_range(const uint32_t max_range_size, uint32_t* from, uint32_t* to) {
+        if (!_opts.read_orderby_key_reverse) {
+            if (_range_idx == _ranges.size() || (_range_idx == (_ranges.size() - 1) &&
+                                                 _range_rowid == _ranges[_range_idx].second)) {
+                return false;
+            }
+            if (_range_rowid == _ranges[_range_idx].second) {
+                _range_idx++;
+                _range_rowid = _ranges[_range_idx].first;
+            }
+            *from = _range_rowid;
+            uint32_t limit = _range_rowid + max_range_size;
+            _range_rowid = limit < _ranges[_range_idx].second ? limit : _ranges[_range_idx].second;
+            *to = _range_rowid;
+            return true;
+        } else {
+            if (_range_idx == _ranges.size() ||
+                (_range_idx == (_ranges.size() - 1) && _range_rowid == _ranges[_range_idx].first)) {
+                return false;
+            }
+            if (_range_rowid == _ranges[_range_idx].first) {
+                _range_idx++;
+                _range_rowid = _ranges[_range_idx].second;
+            }
+            *to = _range_rowid;
+            uint32_t limit = _range_rowid - max_range_size;
+            _range_rowid = limit > _ranges[_range_idx].first ? limit : _ranges[_range_idx].first;
+            *from = _range_rowid;
+            return true;
         }
-        if (_cur_rowid >= _ranges[_cur_index].second) {
-            _cur_index++;
-        }
-        *from = _cur_rowid < _ranges[_cur_index].first ? _ranges[_cur_index].first : _cur_rowid;
-        uint32_t limit = *from + max_range_size;
-        *to = limit < _ranges[_cur_index].second ? limit : _ranges[_cur_index].second;
-        return true;
     }
 
 private:
@@ -169,10 +186,9 @@ private:
     std::map<int32_t, BitmapIndexIterator*> _bitmap_index_iterators;
     // after init(), `_row_bitmap` contains all rowid to scan
     roaring::Roaring _row_bitmap;
-    // an iterator for `_row_bitmap` that can be used to extract row range to scan
-    std::unique_ptr<BitmapRangeIterator> _range_iter;
     std::vector<std::pair<uint32_t, uint32_t>> _ranges;
-    size_t _cur_index = 0;
+    size_t _range_idx = 0;
+    size_t _range_rowid = 0;
     // the next rowid to read
     rowid_t _cur_rowid;
     // members related to lazy materialization read

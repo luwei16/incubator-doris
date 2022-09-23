@@ -8,6 +8,10 @@
 namespace doris {
 namespace io {
 
+enum FileCacheType {
+    NORMAL,
+    DISPOSABLE,
+};
 /**
  * Creates a FileCache object for cache_base_path.
  */
@@ -16,9 +20,10 @@ public:
     static FileCacheFactory& instance();
 
     void create_file_cache(const std::string& cache_base_path,
-                           const FileCacheSettings& file_cache_settings);
+                           const FileCacheSettings& file_cache_settings, FileCacheType type);
 
     CloudFileCachePtr getByPath(const IFileCache::Key& key);
+    CloudFileCachePtr getDisposableCache(const IFileCache::Key& key);
     std::vector<IFileCache::QueryContextHolderPtr> get_query_context_holders(
             const TUniqueId& query_id);
     FileCacheFactory() = default;
@@ -27,6 +32,7 @@ public:
 
 private:
     std::vector<std::unique_ptr<IFileCache>> _caches;
+    std::vector<std::unique_ptr<IFileCache>> _disposable_cache;
 };
 
 } // namespace io

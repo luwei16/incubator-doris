@@ -4,6 +4,7 @@
 #include "io/cloud/cloud_file_cache.h"
 #include "io/cloud/cloud_lru_file_cache.h"
 #include "common/config.h"
+#include "io/fs/local_file_system.h"
 
 #include <cstddef>
 
@@ -17,19 +18,40 @@ FileCacheFactory& FileCacheFactory::instance() {
 }
 
 void FileCacheFactory::create_file_cache(const std::string& cache_base_path,
-                                         const FileCacheSettings& file_cache_settings) {
-    std::unique_ptr<IFileCache> cache =
-            std::make_unique<LRUFileCache>(cache_base_path, file_cache_settings);
+                                         const FileCacheSettings& file_cache_settings,
+                                         FileCacheType type) {
     if (config::clear_file_cache) {
-        cache->remove_if_releasable(true);
-        cache->remove_if_releasable(false);
+        auto fs = global_local_filesystem();
+        bool res = false;
+        fs->exists(cache_base_path, &res);
+        if (res) {
+            fs->delete_directory(cache_base_path);
+            fs->create_directory(cache_base_path);
+        }
     }
 
-    _caches.push_back(std::move(cache));
+    std::unique_ptr<IFileCache> cache =
+            std::make_unique<LRUFileCache>(cache_base_path, file_cache_settings);
+
+    switch (type) {
+    case NORMAL:
+        _caches.push_back(std::move(cache));
+        break;
+    case DISPOSABLE:
+        _disposable_cache.push_back(std::move(cache));
+        break;
+    }
 }
 
 CloudFileCachePtr FileCacheFactory::getByPath(const IFileCache::Key& key) {
     return _caches[KeyHash()(key) % _caches.size()].get();
+}
+
+CloudFileCachePtr FileCacheFactory::getDisposableCache(const IFileCache::Key& key) {
+    if (_disposable_cache.empty()) {
+        return nullptr;
+    }
+    return _disposable_cache[KeyHash()(key) % _caches.size()].get();
 }
 
 std::vector<IFileCache::QueryContextHolderPtr> FileCacheFactory::get_query_context_holders(

@@ -24,19 +24,24 @@
 #include "common/status.h"
 #include "gutil/macros.h"
 #include "io/fs/path.h"
-#include "util/slice.h"
 #include "olap/olap_common.h"
+#include "util/slice.h"
 namespace doris {
 namespace io {
 
 class FileSystem;
 
 struct IOState {
-    IOState(const TUniqueId* query_id, OlapReaderStatistics* stats, bool is_presistent)
-            : query_id(query_id), stats(stats), is_persistent(is_presistent) {}
+    IOState(const TUniqueId* query_id, OlapReaderStatistics* stats, bool is_presistent,
+            bool use_disposable_cache)
+            : query_id(query_id),
+              stats(stats),
+              is_persistent(is_presistent),
+              use_disposable_cache(use_disposable_cache) {}
     const TUniqueId* query_id = nullptr;
     OlapReaderStatistics* stats = nullptr;
     bool is_persistent = false;
+    bool use_disposable_cache = false;
 };
 class FileReader {
 public:

@@ -66,7 +66,7 @@ public:
         return ranges;
     }
 
-    bool next_contiguous_range(uint32_t* from, uint32_t* to) {
+    virtual bool next_contiguous_range(uint32_t* from, uint32_t* to) {
         if (_eof) {
             return false;
         }
@@ -167,6 +167,21 @@ public:
 
     bool has_more_range() const { return !_riter.has_value; }
 
+    bool next_contiguous_range(uint32_t* from, uint32_t* to) override {
+        if (!_riter.has_value) {
+            return false;
+        }
+
+        *to = _riter.current_value + 1;
+
+        do {
+            *from = _riter.current_value;
+            roaring_previous_uint32_iterator(&_riter);
+        } while (_riter.has_value && _riter.current_value + 1 == *from);
+
+        return true;
+    }
+
     // read next range into [*from, *to) whose size <= max_range_size.
     // return false when there is no more range.
     bool next_range(const uint32_t max_range_size, uint32_t* from, uint32_t* to) override {
@@ -242,13 +257,15 @@ Status SegmentIterator::_init(bool is_vec) {
                    << _opts.delete_bitmap[segment_id()]->cardinality() << ", "
                    << _opts.stats->rows_del_by_bitmap << " rows deleted by bitmap";
     }
+    // an iterator for `_row_bitmap` that can be used to extract row range to scan
+    std::unique_ptr<BitmapRangeIterator> range_iter;
     if (_opts.read_orderby_key_reverse) {
-        _range_iter.reset(new BackwardBitmapRangeIterator(_row_bitmap));
+        range_iter.reset(new BackwardBitmapRangeIterator(_row_bitmap));
     } else {
-        _range_iter.reset(new BitmapRangeIterator(_row_bitmap));
+        range_iter.reset(new BitmapRangeIterator(_row_bitmap));
     }
-    BitmapRangeIterator iter(_row_bitmap);
-    _ranges = iter.get_all_contiguous_ranges();
+    _ranges = range_iter->get_all_contiguous_ranges();
+    _range_rowid = _opts.read_orderby_key_reverse ? _ranges[0].second : _ranges[0].first;
     if (is_vec) {
         _vec_init_lazy_materialization();
         _vec_init_char_column_id();
@@ -261,7 +278,7 @@ Status SegmentIterator::_init(bool is_vec) {
 }
 
 void SegmentIterator::_vec_init_prefetch_column_pages() {
-    if (!config::enable_column_reader_prefetch ||
+    if (config::max_column_reader_prefetch_size == 0 || _opts.read_orderby_key_reverse ||
         _file_reader->fs()->type() == io::FileSystemType::LOCAL) {
         return;
     }
@@ -276,7 +293,7 @@ void SegmentIterator::_vec_init_prefetch_column_pages() {
 }
 
 void SegmentIterator::_init_prefetch_column_pages() {
-    if (!config::enable_column_reader_prefetch ||
+    if (config::max_column_reader_prefetch_size == 0 || _opts.read_orderby_key_reverse ||
         _file_reader->fs()->type() == io::FileSystemType::LOCAL) {
         return;
     }
@@ -353,6 +370,7 @@ Status SegmentIterator::_prepare_seek(const StorageReadOptions::KeyRange& key_ra
             iter_opts.query_id = _opts.query_id;
             iter_opts.kept_in_memory = _opts.kept_in_memory;
             iter_opts.is_persistent = _opts.is_persistent;
+            iter_opts.use_disposable_cache = _opts.use_disposable_cache;
             RETURN_IF_ERROR(_column_iterators[unique_id]->init(iter_opts));
         }
     }
@@ -468,6 +486,7 @@ Status SegmentIterator::_init_return_column_iterators() {
             iter_opts.query_id = _opts.query_id;
             iter_opts.kept_in_memory = _opts.kept_in_memory;
             iter_opts.is_persistent = _opts.is_persistent;
+            iter_opts.use_disposable_cache = _opts.use_disposable_cache;
             RETURN_IF_ERROR(_column_iterators[unique_id]->init(iter_opts));
         }
     }
@@ -696,8 +715,7 @@ Status SegmentIterator::next_batch(RowBlockV2* block) {
         do {
             uint32_t range_from;
             uint32_t range_to;
-            bool has_next_range =
-                    next_range(nrows_read_limit - nrows_read, _cur_rowid, &range_from, &range_to);
+            bool has_next_range = next_range(nrows_read_limit - nrows_read, &range_from, &range_to);
             if (!has_next_range) {
                 break;
             }
@@ -1023,8 +1041,7 @@ Status SegmentIterator::_read_columns_by_index(uint32_t nrows_read_limit, uint32
     do {
         uint32_t range_from;
         uint32_t range_to;
-        bool has_next_range =
-                next_range(nrows_read_limit - nrows_read, _cur_rowid, &range_from, &range_to);
+        bool has_next_range = next_range(nrows_read_limit - nrows_read, &range_from, &range_to);
         if (!has_next_range) {
             break;
         }
