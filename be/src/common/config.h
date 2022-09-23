@@ -879,7 +879,7 @@ CONF_Bool(enable_new_load_scan_node, "false");
 // Temp config. True to use new file scanner. Will remove after fully test.
 CONF_Bool(enable_new_file_scanner, "false");
 
-#if defined(BE_TEST) || defined(CLOUD_MODE)
+#if defined(BE_TEST)
 // test s3
 CONF_String(test_s3_resource, "resource");
 CONF_String(test_s3_ak, "ak");
@@ -910,7 +910,7 @@ CONF_Bool(enable_write_as_cache, "false"); // use for test
 // cloud
 CONF_String(cloud_unique_id, "");
 CONF_String(meta_service_endpoint, "");
-CONF_Bool(meta_service_use_load_balancer, "true");
+CONF_Bool(meta_service_use_load_balancer, "false");
 CONF_mInt32(meta_service_rpc_timeout_ms, "10000");
 CONF_String(tmp_file_dir, "${DORIS_HOME}/storage/tmp");
 CONF_Int64(tablet_cache_capacity, "10000");

@@ -255,19 +255,6 @@ Status CloudMetaMgr::precommit_txn(StreamLoadContext* ctx) {
 }
 
 Status CloudMetaMgr::get_s3_info(std::vector<std::tuple<std::string, S3Conf>>* s3_infos) {
-    if (config::test_s3_ak != "ak") {
-        // For compatibility reason, will be removed soon.
-        S3Conf s3_conf;
-        s3_conf.ak = config::test_s3_ak;
-        s3_conf.sk = config::test_s3_sk;
-        s3_conf.endpoint = config::test_s3_endpoint;
-        s3_conf.region = config::test_s3_region;
-        s3_conf.bucket = config::test_s3_bucket;
-        s3_conf.prefix = config::test_s3_prefix;
-        s3_infos->emplace_back(config::test_s3_resource, std::move(s3_conf));
-        return Status::OK();
-    }
-
     brpc::Controller cntl;
     cntl.set_timeout_ms(config::meta_service_brpc_timeout_ms);
     selectdb::GetObjStoreInfoRequest req;

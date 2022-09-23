@@ -208,19 +208,14 @@ Status StorageEngine::_open() {
     RETURN_IF_ERROR(_meta_mgr->open());
     std::vector<std::tuple<std::string, S3Conf>> s3_infos;
 
-    Status st;
-    int retry = 3;
-    while (retry--) {
-        st = _meta_mgr->get_s3_info(&s3_infos);
+    do {
+        auto st = _meta_mgr->get_s3_info(&s3_infos);
         if (st.ok()) {
             break;
         }
-        LOG(WARNING) << "failed to get s3 info, retry after 5s. retry=" << retry << ", err=" << st;
+        LOG(WARNING) << "failed to get s3 info, retry after 5s, err=" << st;
         std::this_thread::sleep_for(std::chrono::seconds(5));
-    }
-    if (!st.ok()) {
-        return st;
-    }
+    } while (true);
 
     CHECK(!s3_infos.empty()) << "no s3 infos";
     for (auto& [id, s3_conf] : s3_infos) {
