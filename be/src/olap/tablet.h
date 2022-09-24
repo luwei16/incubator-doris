@@ -166,6 +166,13 @@ public:
     // MUST hold EXCLUSIVE `_meta_lock`.
     void cloud_delete_rowsets(const std::vector<RowsetSharedPtr>& to_delete);
 
+    // CLOUD_MODE
+    // return number of deleted stale rowsets
+    int cloud_delete_expired_stale_rowsets();
+
+    // CLOUD_MODE
+    bool has_stale_rowsets() const { return !_stale_rs_version_map.empty(); }
+
     /// Delete stale rowset by timing. This delete policy uses now() minutes
     /// config::tablet_rowset_expired_stale_sweep_time_sec to compute the deadline of expired rowset
     /// to delete.  When rowset is deleted, it will be added to StorageEngine unused map and record

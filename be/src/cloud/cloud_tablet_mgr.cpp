@@ -4,6 +4,7 @@
 #include "common/config.h"
 #include "common/sync_point.h"
 #include "olap/lru_cache.h"
+#include "util/defer_op.h"
 
 namespace doris::cloud {
 
@@ -41,6 +42,39 @@ void CloudTabletMgr::erase_tablet(int64_t tablet_id) {
     auto tablet_id_str = std::to_string(tablet_id);
     CacheKey key(tablet_id_str.data(), tablet_id_str.size());
     _cache->erase(key);
+}
+
+void CloudTabletMgr::vacuum_stale_rowsets() {
+    std::vector<int64_t> tablets_to_vacuum;
+    {
+        std::lock_guard lock(_vacuum_set_mtx);
+        tablets_to_vacuum = std::vector<int64_t>(_vacuum_set.begin(), _vacuum_set.end());
+    }
+    int num_vacuumed = 0;
+    for (int64_t tablet_id : tablets_to_vacuum) {
+        auto tablet_id_str = std::to_string(tablet_id);
+        CacheKey key(tablet_id_str);
+        auto handle = _cache->lookup(key);
+        if (handle == nullptr) {
+            continue;
+        }
+        Defer release_handle {[this, handle] { _cache->release(handle); }};
+        Tablet* tablet = reinterpret_cast<Tablet*>(_cache->value(handle));
+        num_vacuumed += tablet->cloud_delete_expired_stale_rowsets();
+        {
+            std::shared_lock tablet_rlock(tablet->get_header_lock());
+            if (!tablet->has_stale_rowsets()) {
+                std::lock_guard lock(_vacuum_set_mtx);
+                _vacuum_set.erase(tablet_id);
+            }
+        }
+    }
+    LOG_INFO("finish vacuum stale rowsets").tag("num_vacuumed", num_vacuumed);
+}
+
+void CloudTabletMgr::add_to_vacuum_set(int64_t tablet_id) {
+    std::lock_guard lock(_vacuum_set_mtx);
+    _vacuum_set.insert(tablet_id);
 }
 
 } // namespace doris::cloud

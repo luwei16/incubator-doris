@@ -242,6 +242,9 @@ private:
     // CLOUD_MODE
     void _refresh_s3_info_thread_callback();
 
+    // CLOUD_MODE
+    void _vacuum_stale_rowsets_thread_callback();
+
     // All these xxx_callback() functions are for Background threads
     // unused rowset monitor thread
     void _unused_rowset_monitor_thread_callback();
@@ -383,6 +386,7 @@ private:
 
     // CLOUD_MODE
     scoped_refptr<Thread> _refresh_s3_info_thread;
+    scoped_refptr<Thread> _vacuum_stale_rowsets_thread;
 
     // For tablet and disk-stat report
     std::mutex _report_mtx;

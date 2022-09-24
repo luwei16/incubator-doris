@@ -22,6 +22,7 @@
 #include <memory>
 #include <queue>
 
+#include "common/config.h"
 #include "common/logging.h"
 #include "util/time.h"
 
@@ -324,18 +325,13 @@ Status TimestampedVersionTracker::capture_consistent_versions(
     return _version_graph.capture_consistent_versions(spec_version, version_path);
 }
 
-void TimestampedVersionTracker::capture_expired_paths(
-        int64_t stale_sweep_endtime, std::vector<int64_t>* path_version_vec) const {
-    std::map<int64_t, PathVersionListSharedPtr>::const_iterator iter =
-            _stale_version_path_map.begin();
-
-    while (iter != _stale_version_path_map.end()) {
-        int64_t max_create_time = iter->second->max_create_time();
-        if (max_create_time <= stale_sweep_endtime) {
-            int64_t path_version = iter->first;
-            path_version_vec->push_back(path_version);
+void TimestampedVersionTracker::capture_expired_paths(std::vector<int64_t>* path_ids) const {
+    using namespace std::chrono;
+    int64_t now = duration_cast<seconds>(system_clock::now().time_since_epoch()).count();
+    for (auto& [id, version_path] : _stale_version_path_map) {
+        if (version_path->max_create_time() + config::tablet_rowset_stale_sweep_time_sec <= now) {
+            path_ids->push_back(id);
         }
-        ++iter;
     }
 }
 

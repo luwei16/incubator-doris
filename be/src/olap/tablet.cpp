@@ -621,6 +621,32 @@ void Tablet::cloud_delete_rowsets(const std::vector<RowsetSharedPtr>& to_delete)
         _rs_version_map.erase(rs->version());
     }
     _tablet_meta->cloud_delete_rs_metas(to_delete);
+    cloud::tablet_mgr()->add_to_vacuum_set(tablet_id());
+}
+
+int Tablet::cloud_delete_expired_stale_rowsets() {
+    std::lock_guard wlock(_meta_lock);
+
+    std::vector<int64_t> path_ids;
+    // capture the path version to delete
+    _timestamped_version_tracker.capture_expired_paths(&path_ids);
+
+    if (path_ids.empty()) {
+        return 0;
+    }
+
+    int num_deleted = 0;
+    for (int64_t path_id : path_ids) {
+        // delete stale versions in version graph
+        auto version_path = _timestamped_version_tracker.fetch_and_delete_path_by_id(path_id);
+        for (auto& v_ts : version_path->timestamped_versions()) {
+            _stale_rs_version_map.erase(v_ts->version());
+            _tablet_meta->delete_stale_rs_meta_by_version(v_ts->version());
+            VLOG_DEBUG << "delete stale rowset " << v_ts->version();
+        }
+        num_deleted += version_path->timestamped_versions().size();
+    }
+    return num_deleted;
 }
 
 void Tablet::_delete_stale_rowset_by_version(const Version& version) {
@@ -633,16 +659,12 @@ void Tablet::_delete_stale_rowset_by_version(const Version& version) {
 }
 
 void Tablet::delete_expired_stale_rowset() {
-    int64_t now = UnixSeconds();
     std::lock_guard<std::shared_mutex> wrlock(_meta_lock);
     // Compute the end time to delete rowsets, when a expired rowset createtime less then this time, it will be deleted.
-    double expired_stale_sweep_endtime =
-            ::difftime(now, config::tablet_rowset_stale_sweep_time_sec);
 
     std::vector<int64_t> path_id_vec;
     // capture the path version to delete
-    _timestamped_version_tracker.capture_expired_paths(
-            static_cast<int64_t>(expired_stale_sweep_endtime), &path_id_vec);
+    _timestamped_version_tracker.capture_expired_paths(&path_id_vec);
 
     if (path_id_vec.empty()) {
         return;
@@ -754,8 +776,7 @@ void Tablet::delete_expired_stale_rowset() {
                 VLOG_NOTICE << "delete stale rowset tablet=" << full_name() << " version["
                             << timestampedVersion->version().first << ","
                             << timestampedVersion->version().second
-                            << "] move to unused_rowset success " << std::fixed
-                            << expired_stale_sweep_endtime;
+                            << "] move to unused_rowset success";
             } else {
                 LOG(WARNING) << "delete stale rowset tablet=" << full_name() << " version["
                              << timestampedVersion->version().first << ","
@@ -772,8 +793,7 @@ void Tablet::delete_expired_stale_rowset() {
     VLOG_NOTICE << "delete stale rowset _stale_rs_version_map tablet=" << full_name()
                 << " current_size=" << _stale_rs_version_map.size() << " old_size=" << old_size
                 << " current_meta_size=" << _tablet_meta->all_stale_rs_metas().size()
-                << " old_meta_size=" << old_meta_size << " sweep endtime " << std::fixed
-                << expired_stale_sweep_endtime << ", reconstructed=" << reconstructed;
+                << " old_meta_size=" << old_meta_size << ", reconstructed=" << reconstructed;
 
 #ifndef BE_TEST
     save_meta();

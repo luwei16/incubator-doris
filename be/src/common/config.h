@@ -923,6 +923,7 @@ CONF_String(tmp_file_dir, "${DORIS_HOME}/storage/tmp");
 CONF_Int64(tablet_cache_capacity, "10000");
 CONF_Int64(tablet_cache_shards, "16");
 CONF_mInt32(refresh_s3_info_interval_seconds, "60");
+CONF_mInt32(vacuum_stale_rowsets_interval_seconds, "1800");
 
 } // namespace config
 

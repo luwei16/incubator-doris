@@ -159,12 +159,8 @@ public:
     Status capture_consistent_versions(const Version& spec_version,
                                        std::vector<Version>* version_path) const;
 
-    /// Capture all expired path version.
-    /// When the last rowset create time of a path greater than expired time  which can be expressed
-    /// "now() - tablet_rowset_stale_sweep_time_sec" , this path will be remained.
-    /// Otherwise, this path will be added to path_version.
-    void capture_expired_paths(int64_t stale_sweep_endtime,
-                               std::vector<int64_t>* path_version) const;
+    /// Capture all expired path ids.
+    void capture_expired_paths(std::vector<int64_t>* path_ids) const;
 
     /// Fetch all versions with a path_version.
     PathVersionListSharedPtr fetch_path_version_by_id(int64_t path_id);

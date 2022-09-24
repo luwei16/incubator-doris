@@ -26,6 +26,8 @@
 #include <string>
 
 #include "agent/cgroups_mgr.h"
+#include "cloud/utils.h"
+#include "common/config.h"
 #include "common/status.h"
 #include "gutil/strings/substitute.h"
 #include "io/cache/file_cache_manager.h"
@@ -171,6 +173,12 @@ Status StorageEngine::cloud_start_bg_threads() {
             [this]() { this->_refresh_s3_info_thread_callback(); }, &_refresh_s3_info_thread));
     LOG(INFO) << "refresh s3 info thread started";
 
+    RETURN_IF_ERROR(Thread::create(
+            "StorageEngine", "vacuum_stale_rowsets_thread",
+            [this]() { this->_vacuum_stale_rowsets_thread_callback(); },
+            &_vacuum_stale_rowsets_thread));
+    LOG(INFO) << "vacuum stale rowsets thread started";
+
     // fd cache clean thread
     RETURN_IF_ERROR(Thread::create(
             "StorageEngine", "fd_cache_clean_thread",
@@ -217,6 +225,13 @@ void StorageEngine::_refresh_s3_info_thread_callback() {
         if (auto& id = std::get<0>(s3_infos.back()); latest_fs()->resource_id() != id) {
             set_latest_fs(fs_map->get(id));
         }
+    }
+}
+
+void StorageEngine::_vacuum_stale_rowsets_thread_callback() {
+    while (!_stop_background_threads_latch.wait_for(
+            std::chrono::seconds(config::vacuum_stale_rowsets_interval_seconds))) {
+        cloud::tablet_mgr()->vacuum_stale_rowsets();
     }
 }
 
