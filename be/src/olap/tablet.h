@@ -44,6 +44,7 @@
 #include "olap/tuple.h"
 #include "olap/utils.h"
 #include "olap/version_graph.h"
+#include "util/lock.h"
 #include "util/once.h"
 
 namespace doris {
@@ -452,7 +453,7 @@ private:
 
     // CLOUD_MODE
     // this mutex MUST ONLY be used in `Tablet::cloud_sync_rowsets`
-    std::mutex _sync_rowsets_lock;
+    doris::Mutex _sync_rowsets_lock;
 
     // TODO(lingbin): There is a _meta_lock TabletMeta too, there should be a comment to
     // explain how these two locks work together.

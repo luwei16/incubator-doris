@@ -25,12 +25,6 @@ Status CloudCumulativeCompaction::prepare_compact() {
 
     RETURN_IF_ERROR(_tablet->cloud_sync_rowsets());
 
-    // calculate cumulative point while it is -1
-    _tablet->calculate_cumulative_point();
-    TRACE("calculated cumulative point");
-    VLOG_CRITICAL << "after calculate, current cumulative point is "
-                  << _tablet->cumulative_layer_point() << ", tablet=" << _tablet->tablet_id();
-
     // pick rowsets to compact
     RETURN_NOT_OK(pick_rowsets_to_compact());
     TRACE("rowsets picked");

@@ -1,5 +1,5 @@
 
-//clang-format off
+// clang-format off
 #include "meta-service/meta_service.h"
 
 #include "common/config.h"
@@ -723,7 +723,8 @@ TEST(MetaServiceTest, TabletJobTest) {
 
         meta_service->finish_tablet_job(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
                                         &req, &res, nullptr);
-        ASSERT_NE(res.status().msg().find("invalid txn_id in output tmp rowset meta"), std::string::npos);
+        ASSERT_NE(res.status().msg().find("invalid txn_id in output tmp rowset meta"),
+                  std::string::npos);
 
         // Provide txn_id in output rowset meta
         tmp_rs_pb.set_txn_id(10086);
@@ -972,4 +973,154 @@ TEST(MetaServiceTest, CopyJobTest) {
         }
     }
 }
+
+TEST(MetaServiceTest, CalcSyncVersionsTest) {
+    using Versions = std::vector<std::pair<int64_t, int64_t>>;
+    // * no compaction happened
+    // req_cc_cnt == ms_cc_cnt && req_bc_cnt == ms_bc_cnt && req_cp == ms_cp
+    // BE  [=][=][=][=][=====][=][=]<.......>
+    //                  ^~~~~ req_cp
+    // BE  [=][=][=][=][=====][=][=][=][=][=][=]
+    //                  ^~~~~ ms_cp
+    //                               ^_____^ versions_return: [req_start, req_end]
+    {
+        auto [req_bc_cnt, bc_cnt] = std::tuple {0, 0};
+        auto [req_cc_cnt, cc_cnt] = std::tuple {1, 1};
+        auto [req_cp, cp] = std::tuple {5, 5};
+        auto [req_start, req_end] = std::tuple {8, 12};
+        auto versions = MetaServiceImpl::calc_sync_versions(req_bc_cnt, bc_cnt, req_cc_cnt, cc_cnt,
+                                                            req_cp, cp, req_start, req_end);
+        ASSERT_EQ(versions, (Versions {{8, 12}}));
+    }
+    // * only one CC happened and CP changed
+    // req_cc_cnt == ms_cc_cnt - 1 && req_bc_cnt == ms_bc_cnt && req_cp < ms_cp
+    // BE  [=][=][=][=][=====][=][=]<.......>
+    //                  ^~~~~ req_cp
+    // MS  [=][=][=][=][xxxxxxxxxxxxxx][=======][=][=]
+    //                                  ^~~~~~~ ms_cp
+    //                  ^__________________^ versions_return: [req_cp, ms_cp - 1] v [req_start, req_end]
+    {
+        auto [req_bc_cnt, bc_cnt] = std::tuple {0, 0};
+        auto [req_cc_cnt, cc_cnt] = std::tuple {1, 2};
+        auto [req_cp, cp] = std::tuple {5, 10};
+        auto [req_start, req_end] = std::tuple {8, 12};
+        auto versions = MetaServiceImpl::calc_sync_versions(req_bc_cnt, bc_cnt, req_cc_cnt, cc_cnt,
+                                                            req_cp, cp, req_start, req_end);
+        ASSERT_EQ(versions, (Versions {{5, 12}})); // [5, 9] v [8, 12]
+    }
+    {
+        auto [req_bc_cnt, bc_cnt] = std::tuple {0, 0};
+        auto [req_cc_cnt, cc_cnt] = std::tuple {1, 2};
+        auto [req_cp, cp] = std::tuple {5, 15};
+        auto [req_start, req_end] = std::tuple {8, 12};
+        auto versions = MetaServiceImpl::calc_sync_versions(req_bc_cnt, bc_cnt, req_cc_cnt, cc_cnt,
+                                                            req_cp, cp, req_start, req_end);
+        ASSERT_EQ(versions, (Versions {{5, 14}})); // [5, 14] v [8, 12]
+    }
+    // * only one CC happened and CP remain unchanged
+    // req_cc_cnt == ms_cc_cnt - 1 && req_bc_cnt == ms_bc_cnt && req_cp == ms_cp
+    // BE  [=][=][=][=][=====][=][=]<.......>
+    //                  ^~~~~ req_cp
+    // MS  [=][=][=][=][xxxxxxxxxxxxxx][=][=][=][=][=]
+    //                  ^~~~~~~~~~~~~~ ms_cp
+    //                  ^__________________^ versions_return: [req_cp, max] v [req_start, req_end]
+    //
+    {
+        auto [req_bc_cnt, bc_cnt] = std::tuple {0, 0};
+        auto [req_cc_cnt, cc_cnt] = std::tuple {1, 2};
+        auto [req_cp, cp] = std::tuple {5, 5};
+        auto [req_start, req_end] = std::tuple {8, 12};
+        auto versions = MetaServiceImpl::calc_sync_versions(req_bc_cnt, bc_cnt, req_cc_cnt, cc_cnt,
+                                                            req_cp, cp, req_start, req_end);
+        ASSERT_EQ(versions,
+                  (Versions {{5, std::numeric_limits<int64_t>::max() - 1}})); // [5, max] v [8, 12]
+    }
+    // * more than one CC happened and CP remain unchanged
+    // req_cc_cnt < ms_cc_cnt - 1 && req_bc_cnt == ms_bc_cnt && req_cp == ms_cp
+    // BE  [=][=][=][=][=====][=][=]<.......>
+    //                  ^~~~~ req_cp
+    // MS  [=][=][=][=][xxxxxxxxxxxxxx][xxxxxxx][=][=]
+    //                  ^~~~~~~~~~~~~~ ms_cp
+    //                  ^_____________________^ versions_return: [req_cp, max] v [req_start, req_end]
+    {
+        auto [req_bc_cnt, bc_cnt] = std::tuple {0, 0};
+        auto [req_cc_cnt, cc_cnt] = std::tuple {1, 3};
+        auto [req_cp, cp] = std::tuple {5, 5};
+        auto [req_start, req_end] = std::tuple {8, 12};
+        auto versions = MetaServiceImpl::calc_sync_versions(req_bc_cnt, bc_cnt, req_cc_cnt, cc_cnt,
+                                                            req_cp, cp, req_start, req_end);
+        ASSERT_EQ(versions,
+                  (Versions {{5, std::numeric_limits<int64_t>::max() - 1}})); // [5, max] v [8, 12]
+    }
+    // * more than one CC happened and CP changed
+    // req_cc_cnt < ms_cc_cnt - 1 && req_bc_cnt == ms_bc_cnt && req_cp < ms_cp
+    // BE  [=][=][=][=][=====][=][=]<.......>
+    //                  ^~~~~ req_cp
+    // MS  [=][=][=][=][xxxxxxxxxxxxxx][xxxxxxx][=][=]
+    //                                           ^~~~~~~ ms_cp
+    //                  ^_____________________^ versions_return: [req_cp, ms_cp - 1] v [req_start, req_end]
+    {
+        auto [req_bc_cnt, bc_cnt] = std::tuple {0, 0};
+        auto [req_cc_cnt, cc_cnt] = std::tuple {1, 3};
+        auto [req_cp, cp] = std::tuple {5, 15};
+        auto [req_start, req_end] = std::tuple {8, 12};
+        auto versions = MetaServiceImpl::calc_sync_versions(req_bc_cnt, bc_cnt, req_cc_cnt, cc_cnt,
+                                                            req_cp, cp, req_start, req_end);
+        ASSERT_EQ(versions, (Versions {{5, 14}})); // [5, 14] v [8, 12]
+    }
+    // * for any BC happended
+    // req_bc_cnt < ms_bc_cnt
+    // BE  [=][=][=][=][=====][=][=]<.......>
+    //                  ^~~~~ req_cp
+    // MS  [xxxxxxxxxx][xxxxxxxxxxxxxx][=======][=][=]
+    //                                  ^~~~~~~ ms_cp
+    //     ^_________________________^ versions_return: [0, ms_cp - 1] v versions_return_in_above_case
+    {
+        auto [req_bc_cnt, bc_cnt] = std::tuple {0, 1};
+        auto [req_cc_cnt, cc_cnt] = std::tuple {1, 1};
+        auto [req_cp, cp] = std::tuple {5, 5};
+        auto [req_start, req_end] = std::tuple {8, 12};
+        auto versions = MetaServiceImpl::calc_sync_versions(req_bc_cnt, bc_cnt, req_cc_cnt, cc_cnt,
+                                                            req_cp, cp, req_start, req_end);
+        ASSERT_EQ(versions, (Versions {{0, 4}, {8, 12}}));
+    }
+    {
+        auto [req_bc_cnt, bc_cnt] = std::tuple {0, 1};
+        auto [req_cc_cnt, cc_cnt] = std::tuple {1, 1};
+        auto [req_cp, cp] = std::tuple {8, 8};
+        auto [req_start, req_end] = std::tuple {8, 12};
+        auto versions = MetaServiceImpl::calc_sync_versions(req_bc_cnt, bc_cnt, req_cc_cnt, cc_cnt,
+                                                            req_cp, cp, req_start, req_end);
+        ASSERT_EQ(versions, (Versions {{0, 12}})); // [0, 7] v [8, 12]
+    }
+    {
+        auto [req_bc_cnt, bc_cnt] = std::tuple {0, 1};
+        auto [req_cc_cnt, cc_cnt] = std::tuple {1, 2};
+        auto [req_cp, cp] = std::tuple {5, 10};
+        auto [req_start, req_end] = std::tuple {8, 12};
+        auto versions = MetaServiceImpl::calc_sync_versions(req_bc_cnt, bc_cnt, req_cc_cnt, cc_cnt,
+                                                            req_cp, cp, req_start, req_end);
+        ASSERT_EQ(versions, (Versions {{0, 12}})); // [0, 4] v [5, 9] v [8, 12]
+    }
+    {
+        auto [req_bc_cnt, bc_cnt] = std::tuple {0, 1};
+        auto [req_cc_cnt, cc_cnt] = std::tuple {1, 2};
+        auto [req_cp, cp] = std::tuple {5, 15};
+        auto [req_start, req_end] = std::tuple {8, 12};
+        auto versions = MetaServiceImpl::calc_sync_versions(req_bc_cnt, bc_cnt, req_cc_cnt, cc_cnt,
+                                                            req_cp, cp, req_start, req_end);
+        ASSERT_EQ(versions, (Versions {{0, 14}})); // [0, 4] v [5, 14] v [8, 12]
+    }
+    {
+        auto [req_bc_cnt, bc_cnt] = std::tuple {0, 1};
+        auto [req_cc_cnt, cc_cnt] = std::tuple {1, 2};
+        auto [req_cp, cp] = std::tuple {5, 5};
+        auto [req_start, req_end] = std::tuple {8, 12};
+        auto versions = MetaServiceImpl::calc_sync_versions(req_bc_cnt, bc_cnt, req_cc_cnt, cc_cnt,
+                                                            req_cp, cp, req_start, req_end);
+        // [0, 4] v [5, max] v [8, 12]
+        ASSERT_EQ(versions, (Versions {{0, std::numeric_limits<int64_t>::max() - 1}}));
+    }
+}
+
 // vim: et tw=100 ts=4 sw=4 cc=80:

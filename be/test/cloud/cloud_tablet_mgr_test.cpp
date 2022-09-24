@@ -20,8 +20,7 @@ public:
         return Status::OK();
     }
 
-    Status get_rowset_meta(const TabletMetaSharedPtr& tablet_meta, Version version_range,
-                           std::vector<RowsetMetaSharedPtr>* rs_metas) override {
+    Status sync_tablet_rowsets(Tablet* tablet) override {
         return Status::OK();
     }
 };

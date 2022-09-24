@@ -129,19 +129,16 @@ Status CloudMetaMgr::sync_tablet_rowsets(Tablet* tablet) {
             auto rs_meta = std::make_shared<RowsetMeta>(table_id, index_id);
             rs_meta->init_from_pb(meta_pb);
             RowsetSharedPtr rowset;
+            // schema is nullptr implies using RowsetMeta.tablet_schema
             RowsetFactory::create_rowset(nullptr, tablet->tablet_path(), std::move(rs_meta),
                                          &rowset);
             rowsets.push_back(std::move(rowset));
         }
         bool version_overlap = tablet->local_max_version() >= rowsets.front()->start_version();
         tablet->cloud_add_rowsets(std::move(rowsets), version_overlap);
-        // if resp.cumulative_point < 0, resp.cumulative_point could be less than new calculated cumulative_point,
-        // should not update compaction_cnt or cumulative_point in this case.
-        if (resp.cumulative_point() >= 0) {
-            tablet->set_base_compaction_cnt(resp.base_compaction_cnt());
-            tablet->set_cumulative_compaction_cnt(resp.cumulative_compaction_cnt());
-            tablet->set_cumulative_layer_point(resp.cumulative_point());
-        }
+        tablet->set_base_compaction_cnt(resp.base_compaction_cnt());
+        tablet->set_cumulative_compaction_cnt(resp.cumulative_compaction_cnt());
+        tablet->set_cumulative_layer_point(resp.cumulative_point());
     }
     return Status::OK();
 }

@@ -184,6 +184,7 @@ public:
                         const ::selectdb::GetCopyFilesRequest* request,
                         ::selectdb::GetCopyFilesResponse* response,
                         ::google::protobuf::Closure* done) override;
+
 private:
     // returns 0 for index exists, 1 for not exist, negative for error
     int index_exists(const ::selectdb::IndexRequest* request,
@@ -204,6 +205,10 @@ private:
 
     void remove_recycle_partition_kv(const ::selectdb::PartitionRequest* request,
                                      ::selectdb::MetaServiceGenericResponse* response);
+
+    static std::vector<std::pair<int64_t, int64_t>> calc_sync_versions(
+            int64_t req_bc_cnt, int64_t bc_cnt, int64_t req_cc_cnt, int64_t cc_cnt, int64_t req_cp,
+            int64_t cp, int64_t req_start, int64_t req_end);
 
 private:
     std::shared_ptr<TxnKv> txn_kv_;

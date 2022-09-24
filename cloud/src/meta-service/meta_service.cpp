@@ -1536,7 +1536,8 @@ void MetaServiceImpl::create_tablet(::google::protobuf::RpcController* controlle
     stats_pb.mutable_idx()->set_tablet_id(tablet_id);
     stats_pb.set_base_compaction_cnt(0);
     stats_pb.set_cumulative_compaction_cnt(0);
-    stats_pb.set_cumulative_point(-1);
+    // set cumulative point to 2 to not compact rowset [0-1]
+    stats_pb.set_cumulative_point(2);
     stats_val = stats_pb.SerializeAsString();
     DCHECK(!stats_val.empty());
     txn->put(stats_key, stats_val);
@@ -1957,10 +1958,9 @@ static void s_get_rowset(Transaction* txn, int64_t start, int64_t end,
     } while (it->more());
 }
 
-std::vector<std::pair<int64_t, int64_t>> calc_sync_versions(int64_t req_bc_cnt, int64_t bc_cnt,
-                                                            int64_t req_cc_cnt, int64_t cc_cnt,
-                                                            int64_t req_cp, int64_t cp,
-                                                            int64_t req_start, int64_t req_end) {
+std::vector<std::pair<int64_t, int64_t>> MetaServiceImpl::calc_sync_versions(
+        int64_t req_bc_cnt, int64_t bc_cnt, int64_t req_cc_cnt, int64_t cc_cnt, int64_t req_cp,
+        int64_t cp, int64_t req_start, int64_t req_end) {
     using Version = std::pair<int64_t, int64_t>;
     // combine `v1` `v2`  to `v1`, return true if success
     static auto combine_if_overlapping = [](Version& v1, Version& v2) -> bool {
@@ -2144,12 +2144,7 @@ void MetaServiceImpl::get_rowset(::google::protobuf::RpcController* controller,
     int64_t req_start = request->start_version();
     int64_t req_end = request->end_version();
     req_end = req_end < 0 ? std::numeric_limits<int64_t>::max() - 1 : req_end;
-    if (cp < 0) {
-        DCHECK(cc_cnt == 0);
-        s_get_rowset(txn.get(), req_start, req_end, instance_id, tablet_id, ret, code, msg,
-                     response);
-        return;
-    }
+
     LOG(INFO) << "req_bc_cnt=" << req_bc_cnt << ", bc_cnt=" << bc_cnt
               << ", req_cc_cnt=" << req_cc_cnt << ", cc_cnt=" << cc_cnt << ", req_cp=" << req_cp
               << ", cp=" << cp;

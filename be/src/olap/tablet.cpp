@@ -1332,7 +1332,10 @@ void Tablet::pick_candidate_rowsets_to_base_compaction(
         std::shared_lock<std::shared_mutex>& /* meta lock*/) {
 #ifdef CLOUD_MODE
     for (auto& [v, rs] : _rs_version_map) {
-        if (v.first < _cumulative_point) {
+        // MUST NOT compact rowset [0-1], otherwise alter tablet after base compaction will fail.
+        // i.e. new_tablet has init rowset [0-1] and want to convert [2-5] in base_tablet,
+        // however base_tablet has compacted [0-1][2-5] to [0-5]. 
+        if (v.first != 0 && v.first < _cumulative_point) {
             candidate_rowsets->push_back(rs);
         }
     }
