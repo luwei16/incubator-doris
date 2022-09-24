@@ -24,7 +24,6 @@
 
 #include "common/config.h"
 #include "common/status.h"
-#include "gutil/strings/substitute.h"
 #include "io/fs/file_system.h"
 #include "olap/column_predicate.h"
 #include "olap/olap_common.h"

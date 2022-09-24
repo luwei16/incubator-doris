@@ -133,6 +133,8 @@ public:
     // Return true if segment zone map is absent or `cond' could be satisfied, false otherwise.
     bool match_condition(const AndBlockColumnPredicate* col_predicates) const;
 
+    Status next_batch_of_zone_map(size_t* n, vectorized::MutableColumnPtr& dst) const;
+
     // get row ranges with zone map
     // - cond_column is user's query predicate
     // - delete_condition is a delete predicate of one version
@@ -269,6 +271,10 @@ public:
         return Status::NotSupported("next_batch not implement");
     }
 
+    virtual Status next_batch_of_zone_map(size_t* n, vectorized::MutableColumnPtr& dst) {
+        return Status::NotSupported("next_batch_of_zone_map not implement");
+    }
+
     virtual Status read_by_rowids(const rowid_t* rowids, const size_t count,
                                   vectorized::MutableColumnPtr& dst) {
         return Status::NotSupported("read_by_rowids not implement");
@@ -316,6 +322,8 @@ public:
     Status next_batch(size_t* n, ColumnBlockView* dst, bool* has_null) override;
 
     Status next_batch(size_t* n, vectorized::MutableColumnPtr& dst, bool* has_null) override;
+
+    Status next_batch_of_zone_map(size_t* n, vectorized::MutableColumnPtr& dst) override;
 
     Status read_by_rowids(const rowid_t* rowids, const size_t count,
                           vectorized::MutableColumnPtr& dst) override;
@@ -481,6 +489,10 @@ public:
     Status next_batch(size_t* n, ColumnBlockView* dst, bool* has_null) override;
 
     Status next_batch(size_t* n, vectorized::MutableColumnPtr& dst, bool* has_null) override;
+
+    Status next_batch_of_zone_map(size_t* n, vectorized::MutableColumnPtr& dst) override {
+        return next_batch(n, dst);
+    }
 
     Status read_by_rowids(const rowid_t* rowids, const size_t count,
                           vectorized::MutableColumnPtr& dst) override;
