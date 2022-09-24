@@ -316,7 +316,7 @@ LRUFileCache::FileSegmentCell* LRUFileCache::add_cell(const Key& key, bool is_pe
 bool LRUFileCache::try_reserve(const Key& key, const TUniqueId& query_id, bool is_persistent,
                                size_t offset, size_t size,
                                std::lock_guard<std::mutex>& cache_lock) {
-    auto query_context = _enable_query_cache_limit && (query_id.hi == 0 && query_id.lo == 0)
+    auto query_context = _enable_query_cache_limit && (query_id.hi != 0 || query_id.lo != 0)
                                  ? get_query_context(query_id, cache_lock)
                                  : nullptr;
     if (!query_context) {
@@ -424,7 +424,7 @@ bool LRUFileCache::try_reserve_for_main_list(const Key& key, QueryContextPtr que
     std::vector<FileSegmentCell*> to_evict;
     std::vector<FileSegmentCell*> trash;
 
-    for (const auto& [entry_key, entry_offset, _, entry_size] : *queue) {
+    for (const auto& [entry_key, entry_offset, entry_size, _] : *queue) {
         if (!is_overflow()) {
             break;
         }
@@ -547,7 +547,7 @@ void LRUFileCache::remove_if_releasable(bool is_persistent) {
     LRUQueue* queue = is_persistent ? &_persistent_queue : &_queue;
     std::vector<FileSegment*> to_remove;
     for (auto it = queue->begin(); it != queue->end();) {
-        const auto& [key, offset, _, size] = *it++;
+        const auto& [key, offset, size, _] = *it++;
         auto* cell = get_cell(key, is_persistent, offset, cache_lock);
 
         DCHECK(cell) << "Cache is in inconsistent state: LRU queue contains entries with no "

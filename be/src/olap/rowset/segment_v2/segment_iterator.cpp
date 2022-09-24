@@ -265,7 +265,9 @@ Status SegmentIterator::_init(bool is_vec) {
         range_iter.reset(new BitmapRangeIterator(_row_bitmap));
     }
     _ranges = range_iter->get_all_contiguous_ranges();
-    _range_rowid = _opts.read_orderby_key_reverse ? _ranges[0].second : _ranges[0].first;
+    if (LIKELY(!_ranges.empty())) {
+        _range_rowid = _opts.read_orderby_key_reverse ? _ranges[0].second : _ranges[0].first;
+    }
     if (is_vec) {
         _vec_init_lazy_materialization();
         _vec_init_char_column_id();
