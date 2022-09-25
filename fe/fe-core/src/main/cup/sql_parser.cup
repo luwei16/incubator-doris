@@ -603,6 +603,7 @@ nonterminal FileFormat file_format;
 nonterminal CopyOption copy_option;
 // copy into
 nonterminal CopyFromParam copy_from_param;
+nonterminal List<Expr> copy_select_expr_list;
 nonterminal FilesOrPattern files_or_pattern_option;
 nonterminal Boolean async_option;
 
@@ -1787,12 +1788,22 @@ copy_from_param ::=
     {:
         RESULT = new CopyFromParam(stage);
     :}
-    | LPAREN KW_SELECT /*opt_col_list:tableColList*/ KW_FROM STRING_LITERAL:stage opt_col_list:fileColList
-    opt_col_mapping_list:colMappingList pre_filter_clause:preFilterExpr where_clause:whereExpr RPAREN
+    | LPAREN KW_SELECT copy_select_expr_list:exprList KW_FROM STRING_LITERAL:stage where_clause:whereExpr RPAREN
     {:
-        RESULT = new CopyFromParam(stage, null, fileColList, colMappingList, preFilterExpr, whereExpr);
+        RESULT = new CopyFromParam(stage, exprList, whereExpr);
     :}
     ;
+
+copy_select_expr_list ::=
+    {:
+        RESULT = null;
+    :}
+    | STAR {:
+        RESULT = null;
+    :}
+    | expr_list:exprList {:
+        RESULT = exprList;
+    :};
 
 user ::=
     ident_or_text:user

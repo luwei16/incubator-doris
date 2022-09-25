@@ -110,11 +110,12 @@ public class CopyStmt extends DdlStmt {
         String fileFormatStr = fileFormat.getFormat();
         Map<String, String> dataDescProperties = new HashMap<>();
         fileFormat.toDataDescriptionProperties(dataDescProperties);
+        copyFromParam.analyze(label.getDbName(), tableName);
         if (copyFromParam.isSelect()) {
             dataDescription = new DataDescription(tableName.getTbl(), null, Lists.newArrayList(filePath),
-                    copyFromParam.getFileColumns(), separator, fileFormatStr, copyFromParam.getTableColumns(), false,
+                    copyFromParam.getFileColumns(), separator, fileFormatStr, null, false,
                     copyFromParam.getColumnMappingList(), copyFromParam.getFileFilterExpr(),
-                    copyFromParam.getWhereExpr(), MergeType.APPEND, null, null, dataDescProperties);
+                    null, MergeType.APPEND, null, null, dataDescProperties);
         } else {
             dataDescription = new DataDescription(tableName.getTbl(), null, Lists.newArrayList(filePath), null,
                     separator, fileFormatStr, null, false, null, null, null, MergeType.APPEND, null, null,

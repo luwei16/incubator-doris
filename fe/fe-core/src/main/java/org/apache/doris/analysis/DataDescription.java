@@ -33,6 +33,7 @@ import org.apache.doris.mysql.privilege.PrivPredicate;
 import org.apache.doris.qe.ConnectContext;
 import org.apache.doris.thrift.TNetworkAddress;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Function;
 import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
@@ -889,6 +890,11 @@ public class DataDescription {
         }
 
         LOG.debug("after fill column info. columns: {}, parsed column exprs: {}", fileFieldNames, parsedColumnExprList);
+    }
+
+    @VisibleForTesting
+    protected List<Expr> getColumnMappingList() {
+        return columnMappingList;
     }
 
     public String toSql() {

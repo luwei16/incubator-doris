@@ -17,64 +17,127 @@
 
 package org.apache.doris.analysis;
 
+import org.apache.doris.analysis.BinaryPredicate.Operator;
+import org.apache.doris.catalog.Column;
+import org.apache.doris.catalog.Database;
+import org.apache.doris.catalog.Env;
+import org.apache.doris.catalog.OlapTable;
+import org.apache.doris.common.AnalysisException;
+
 import com.google.common.base.Function;
 import com.google.common.base.Joiner;
 import com.google.common.collect.Lists;
 import lombok.Getter;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 
 public class CopyFromParam {
+    private static final Logger LOG = LogManager.getLogger(CopyFromParam.class);
+    private static final String DOLLAR = "$";
+
     @Getter
     private String stage;
     @Getter
-    private List<String> tableColumns;
-    @Getter
-    private List<String> fileColumns;
-    @Getter
-    private List<Expr> columnMappingList;
+    private List<Expr> exprList;
     @Getter
     private Expr fileFilterExpr;
     @Getter
-    private Expr whereExpr;
-    @Getter
     private boolean isSelect;
+    @Getter
+    private List<String> fileColumns = new ArrayList<>();
+    @Getter
+    private List<Expr> columnMappingList = new ArrayList<>();
 
     public CopyFromParam(String stage) {
         this.stage = stage;
         this.isSelect = false;
     }
 
-    public CopyFromParam(String stage, List<String> tableColumns, List<String> fileColumns,
-            List<Expr> columnMappingList, Expr fileFilterExpr, Expr whereExpr) {
+    public CopyFromParam(String stage, List<Expr> exprList, Expr whereExpr) {
         this.stage = stage;
-        this.tableColumns = tableColumns;
-        this.fileColumns = fileColumns;
-        this.columnMappingList = columnMappingList;
-        this.fileFilterExpr = fileFilterExpr;
-        this.whereExpr = whereExpr;
+        this.exprList = exprList;
+        this.fileFilterExpr = whereExpr;
         this.isSelect = true;
+    }
+
+    public void analyze(String fullDbName, TableName tableName) throws AnalysisException {
+        if (!isSelect || (exprList == null && fileFilterExpr == null)) {
+            return;
+        }
+
+        Database db = Env.getCurrentInternalCatalog().getDbOrAnalysisException(fullDbName);
+        OlapTable olapTable = db.getOlapTableOrAnalysisException(tableName.getTbl());
+        List<Column> tableColumns = olapTable.getBaseSchema();
+
+        int maxFileColumnId = getMaxFileColumnId();
+        maxFileColumnId = tableColumns.size() > maxFileColumnId ? tableColumns.size() : maxFileColumnId;
+        for (int i = 1; i <= maxFileColumnId; i++) {
+            fileColumns.add(DOLLAR + i);
+        }
+
+        if (exprList != null) {
+            if (tableColumns.size() > exprList.size()) {
+                throw new AnalysisException("select column size is less than table column size");
+            }
+            for (int i = 0; i < exprList.size(); i++) {
+                Expr expr = exprList.get(i);
+                String name = tableColumns.get(i).getName();
+                BinaryPredicate binaryPredicate = new BinaryPredicate(Operator.EQ, new SlotRef(null, name), expr);
+                columnMappingList.add(binaryPredicate);
+            }
+        } else {
+            for (int i = 0; i < tableColumns.size(); i++) {
+                String name = tableColumns.get(i).getName();
+                BinaryPredicate binaryPredicate = new BinaryPredicate(Operator.EQ, new SlotRef(null, name),
+                        new SlotRef(null, fileColumns.get(i)));
+                columnMappingList.add(binaryPredicate);
+            }
+        }
+    }
+
+    private int getMaxFileColumnId() {
+        int maxId = 0;
+        if (exprList != null) {
+            int maxFileColumnId = getMaxFileColumnId(exprList);
+            maxId = maxId > maxFileColumnId ? maxId : maxFileColumnId;
+        }
+        if (fileFilterExpr != null) {
+            int maxFileColumnId = getMaxFileColumnId(Lists.newArrayList(fileFilterExpr));
+            maxId = maxId > maxFileColumnId ? maxId : maxFileColumnId;
+        }
+        return maxId;
+    }
+
+    private int getMaxFileColumnId(List<Expr> exprList) {
+        List<SlotRef> slotRefs = Lists.newArrayList();
+        Expr.collectList(exprList, SlotRef.class, slotRefs);
+        return slotRefs.stream().map(s -> getFileColumnIdOfSlotRef(s)).max(Comparator.comparing(x -> x)).orElse(0);
+    }
+
+    private int getFileColumnIdOfSlotRef(SlotRef slotRef) {
+        String columnName = slotRef.getColumnName();
+        if (columnName.startsWith(DOLLAR)) {
+            String idStr = columnName.substring(1);
+            return Integer.parseInt(idStr);
+        }
+        return 0;
     }
 
     public String toSql() {
         StringBuilder sb = new StringBuilder();
         if (isSelect) {
-            sb.append("(SELECT FROM '").append(stage).append("'");
-            if (fileColumns != null && !fileColumns.isEmpty()) {
-                sb.append(" (");
-                Joiner.on(", ").appendTo(sb, fileColumns).append(")");
+            sb.append("(SELECT ");
+            if (columnMappingList != null) {
+                Joiner.on(", ").appendTo(sb,
+                        Lists.transform(columnMappingList, (Function<Expr, Object>) expr -> expr.toSql()));
             }
-            if (columnMappingList != null && !columnMappingList.isEmpty()) {
-                sb.append(" SET (");
-                Joiner.on(", ")
-                        .appendTo(sb, Lists.transform(columnMappingList, (Function<Expr, Object>) expr -> expr.toSql()))
-                        .append(")");
-            }
+            sb.append(" FROM '").append(stage).append("'");
             if (fileFilterExpr != null) {
-                sb.append(" PRECEDING FILTER ").append(fileFilterExpr.toSql());
-            }
-            if (whereExpr != null) {
-                sb.append(" WHERE ").append(whereExpr.toSql());
+                sb.append(" WHERE ").append(fileFilterExpr.toSql());
             }
             sb.append(")");
         } else {
@@ -82,5 +145,4 @@ public class CopyFromParam {
         }
         return sb.toString();
     }
-
 }

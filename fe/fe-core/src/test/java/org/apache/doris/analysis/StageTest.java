@@ -227,33 +227,6 @@ public class StageTest extends TestWithFeService {
             e.printStackTrace();
             Assert.fail("must be success.");
         }
-        // copy into with select
-        try {
-            String copyQuery = "copy into db.test_table from (select from '@ex_stage_1' (col1, col3, col2_tmp) "
-                    + "set (col2 = col2_tmp+100) preceding filter (col1 > 1) where (col2 > col1)) "
-                    + "file_format = ('type' = 'json', 'fuzzy_parse'='true', 'json_root'=\"{\") "
-                    + "copy_option = ('on_error' = 'continue', 'size_limit' = '200')";
-            CopyStmt copyStmt = (CopyStmt) UtFrameUtils.parseAndAnalyzeStmt(copyQuery, ctx);
-            // check file format
-            FileFormat fileFormat = copyStmt.getFileFormat();
-            Assert.assertNotNull(fileFormat);
-            Assert.assertEquals("json", fileFormat.getFormat());
-            // TODO should we merge file_format_option?
-            Assert.assertEquals(",", fileFormat.getColumnSeparator());
-            // check copy option
-            CopyOption copyOption = copyStmt.getCopyOption();
-            Assert.assertNotNull(copyOption);
-            Assert.assertEquals(200, copyOption.getSizeLimit());
-            Assert.assertEquals(1.0, copyOption.getMaxFilterRatio(), 0.02);
-            Assert.assertTrue(copyStmt.getDataDescriptions().size() == 1);
-            Assert.assertEquals("{", copyStmt.getDataDescriptions().get(0).getJsonRoot());
-            // check toSql method
-            String sql = copyStmt.toSql();
-            Assert.assertTrue(sql.contains("column_separator"));
-            Assert.assertFalse(sql.contains("num_as_string"));
-        } catch (Exception e) {
-            Assert.fail("must be success.");
-        }
         try {
             String copyQuery = "copy into db.test_table from '@ex_stage_2'";
             CopyStmt copyStmt = (CopyStmt) UtFrameUtils.parseAndAnalyzeStmt(copyQuery, ctx);
