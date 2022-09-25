@@ -52,6 +52,7 @@ import org.apache.doris.policy.PolicyTypeEnum;
 
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
+import com.selectdb.cloud.proto.SelectdbCloud.StagePB;
 
 import java_cup.runtime.Symbol;
 
@@ -327,7 +328,9 @@ terminal String
     KW_WARNINGS, KW_WEEK, KW_WHEN, KW_WHERE, KW_WHITELIST, KW_WITH, KW_WORK,
     KW_WRITE,
     
-    KW_YEAR;
+    KW_YEAR,
+
+    KW_STAGE, KW_FILE_FORMAT, KW_COPY_OPTION, KW_FILES, KW_PATTERN, KW_ASYNC;
 
 terminal COMMA, COLON, DOT, DOTDOTDOT, AT, STAR, LPAREN, RPAREN, SEMICOLON, LBRACKET, RBRACKET, DIVIDE, MOD, ADD, SUBTRACT;
 terminal BITAND, BITOR, BITXOR, BITNOT;
@@ -352,7 +355,7 @@ nonterminal StatementBase stmt, show_stmt, show_param, help_stmt, load_stmt,
     use_stmt, use_cloud_cluster_stmt, kill_stmt, drop_stmt, recover_stmt, grant_stmt, revoke_stmt, create_stmt, set_stmt, sync_stmt, cancel_stmt, cancel_param, delete_stmt,
     link_stmt, migrate_stmt, switch_stmt, enter_stmt, transaction_stmt, unsupported_stmt, export_stmt, admin_stmt, truncate_stmt,
     import_columns_stmt, import_delete_on_stmt, import_sequence_stmt, import_where_stmt, install_plugin_stmt, uninstall_plugin_stmt,
-    import_preceding_filter_stmt, unlock_tables_stmt, lock_tables_stmt, refresh_stmt, clean_stmt, analyze_stmt;
+    import_preceding_filter_stmt, unlock_tables_stmt, lock_tables_stmt, refresh_stmt, clean_stmt, analyze_stmt, copy_stmt;
 
 nonterminal String transaction_label;
 nonterminal ImportColumnDesc import_column_desc;
@@ -592,6 +595,17 @@ nonterminal MVRefreshInfo.RefreshMethod opt_refresh_method;
 nonterminal MVRefreshTriggerInfo opt_refresh_trigger;
 nonterminal MVRefreshInfo opt_mv_refersh_info;
 
+// stage
+nonterminal StageParam external_stage_param;
+// file_format
+nonterminal FileFormat file_format;
+// copy option
+nonterminal CopyOption copy_option;
+// copy into
+nonterminal CopyFromParam copy_from_param;
+nonterminal FilesOrPattern files_or_pattern_option;
+nonterminal Boolean async_option;
+
 precedence nonassoc COMMA;
 precedence nonassoc STRING_LITERAL;
 precedence nonassoc KW_COLUMNS;
@@ -815,6 +829,8 @@ stmt ::=
     | clean_stmt:stmt
     {: RESULT = stmt; :}
     | analyze_stmt:stmt
+    {: RESULT = stmt; :}
+    | copy_stmt:stmt
     {: RESULT = stmt; :}
     | /* empty: query only has comments */
     {:
@@ -1567,6 +1583,12 @@ create_stmt ::=
     {:
         RESULT = new CreatePolicyStmt(PolicyTypeEnum.STORAGE, ifNotExists, policyName, properties);
     :}
+    /* stage */
+    | KW_CREATE KW_STAGE opt_if_not_exists:ifNotExists ident:stageName
+    external_stage_param:stageParam file_format:fileFormat copy_option:copyOption
+    {:
+        RESULT = new CreateStageStmt(ifNotExists, stageName, stageParam, fileFormat, copyOption);
+    :}
     ;
 
 channel_desc_list ::=
@@ -1587,6 +1609,56 @@ channel_desc ::=
         RESULT = new ChannelDescription(srcDatabase, srcTableName, desTableName, partitionNames, colList);
     :}
     ;
+
+external_stage_param ::=
+  LPAREN key_value_map:properties RPAREN
+  {:
+        RESULT = new StageParam(StagePB.StageType.EXTERNAL, properties);
+  :};
+
+files_or_pattern_option ::=
+   {:
+        RESULT = null;
+   :}
+   |KW_FILES EQUAL LPAREN string_list:files RPAREN
+   {:
+        RESULT = new FilesOrPattern(files, null);
+   :}
+   |KW_PATTERN EQUAL STRING_LITERAL:pattern
+   {:
+        RESULT = new FilesOrPattern(null, pattern);
+   :};
+
+file_format ::=
+   {:
+        RESULT = null;
+   :}
+   | KW_FILE_FORMAT EQUAL LPAREN key_value_map:properties RPAREN
+   {:
+        RESULT = new FileFormat(properties);
+   :};
+
+copy_option ::=
+   {:
+       RESULT = null;
+   :}
+   | KW_COPY_OPTION EQUAL LPAREN key_value_map:properties RPAREN
+   {:
+       RESULT = new CopyOption(properties);
+   :};
+
+async_option ::=
+    {:
+        RESULT = false;
+    :}
+    | KW_ASYNC EQUAL KW_TRUE
+    {:
+        RESULT = true;
+    :}
+    | KW_ASYNC EQUAL KW_FALSE
+    {:
+        RESULT = false;
+    :};
 
 binlog_desc ::=
     KW_FROM KW_BINLOG LPAREN key_value_map:properties RPAREN
@@ -1696,6 +1768,29 @@ opt_user_role ::=
     | KW_DEFAULT KW_ROLE STRING_LITERAL:role
     {:
         RESULT = role;
+    :}
+    ;
+
+// Copy Statement
+copy_stmt ::=
+    KW_COPY KW_INTO table_name:name KW_FROM copy_from_param:copyFromParam
+    files_or_pattern_option:filesOrPatternOption
+    file_format:fileFormat
+    copy_option:copyOption
+    async_option:asyncOption
+    {:
+        RESULT = new CopyStmt(name, copyFromParam, filesOrPatternOption, fileFormat, copyOption, asyncOption);
+    :};
+
+copy_from_param ::=
+    STRING_LITERAL:stage
+    {:
+        RESULT = new CopyFromParam(stage);
+    :}
+    | LPAREN KW_SELECT /*opt_col_list:tableColList*/ KW_FROM STRING_LITERAL:stage opt_col_list:fileColList
+    opt_col_mapping_list:colMappingList pre_filter_clause:preFilterExpr where_clause:whereExpr RPAREN
+    {:
+        RESULT = new CopyFromParam(stage, null, fileColList, colMappingList, preFilterExpr, whereExpr);
     :}
     ;
 

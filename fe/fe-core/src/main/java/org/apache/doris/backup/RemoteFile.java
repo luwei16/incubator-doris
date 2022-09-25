@@ -26,12 +26,18 @@ public class RemoteFile {
     private String name;
     private boolean isFile;
     private long size;
+    private String etag;
 
     public RemoteFile(String name, boolean isFile, long size) {
         Preconditions.checkState(!Strings.isNullOrEmpty(name));
         this.name = name;
         this.isFile = isFile;
         this.size = size;
+    }
+
+    public RemoteFile(String name, boolean isFile, long size, String etag) {
+        this(name, isFile, size);
+        this.etag = etag;
     }
 
     public String getName() {
@@ -46,8 +52,18 @@ public class RemoteFile {
         return size;
     }
 
+    public String getEtag() {
+        return etag;
+    }
+
+    // used by copy stmt to avoid a s3 object is loaded duplicate
+    public String getUniqueId() {
+        // use "name"/"etag" as the unique id of file
+        return name + "/" + etag;
+    }
+
     @Override
     public String toString() {
-        return "[name: " + name + ", is file: " + isFile + "]";
+        return "[name: " + name + ", is file: " + isFile + (etag == null ? "" : ", etag: " + etag) + "]";
     }
 }

@@ -33,9 +33,9 @@ message StagePB {
     // external stage name
     optional string name = 3;
     // file format
-    optional FileFormatPB file_format = 4;
+    map<string, string> file_format_properties = 4;
     // copy option
-    optional CopyOptionPB copy_option = 5;
+    map<string, string> copy_option_properties = 5;
     optional ObjectStoreInfoPB obj_info = 6;
     optional string stage_id = 7;
 }
@@ -350,47 +350,6 @@ message CopyJobPB {
 message CopyFilePB {
     optional string copy_id = 1;
     optional int32 group_id = 2;
-}
-
-//==============================================================================
-// Stage persistence
-//==============================================================================
-message FileFormatOptionPB {
-    optional string field_delimiter = 1;
-    optional string record_delimiter = 2;
-    // json
-    optional bool fuzzy_parse = 3;
-    optional bool strip_outer_array = 4;
-    optional bool num_as_string = 5;
-    optional string json_paths = 6;
-    optional string json_root = 7;
-}
-
-message FileFormatPB {
-    enum FileFormatType {
-        CSV     = 0;
-        JSON    = 1;
-        PARQUET = 2;
-        ORC     = 3;
-    }
-    optional FileFormatType type = 1;
-    optional FileFormatOptionPB file_format_option = 2;
-}
-
-message OnErrorPB {
-    enum OnErrorType {
-        CONTINUE         = 0;
-        ABORT_STATEMENT  = 1;
-        MAX_FILTER_RATIO = 2;
-        SKIP_FILE        = 3;
-    }
-    optional OnErrorType type = 1;
-    optional double max_filter_ratio = 2;
-}
-
-message CopyOptionPB {
-    optional OnErrorPB on_error = 1;
-    optional int64 size_limit = 2;
 }
 
 //==============================================================================

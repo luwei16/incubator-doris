@@ -452,8 +452,15 @@ import org.apache.doris.qe.SqlModeHelper;
         keywordMap.put("work", new Integer(SqlParserSymbols.KW_WORK));
         keywordMap.put("write", new Integer(SqlParserSymbols.KW_WRITE));
         keywordMap.put("year", new Integer(SqlParserSymbols.KW_YEAR));
+
+        keywordMap.put("stage", new Integer(SqlParserSymbols.KW_STAGE));
+        keywordMap.put("file_format", new Integer(SqlParserSymbols.KW_FILE_FORMAT));
+        keywordMap.put("copy_option", new Integer(SqlParserSymbols.KW_COPY_OPTION));
+        keywordMap.put("files", new Integer(SqlParserSymbols.KW_FILES));
+        keywordMap.put("pattern", new Integer(SqlParserSymbols.KW_PATTERN));
+        keywordMap.put("async", new Integer(SqlParserSymbols.KW_ASYNC));
    }
-    
+
   // map from token id to token description
   public static final Map<Integer, String> tokenIdMap =
       new HashMap<Integer, String>();

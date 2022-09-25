@@ -1668,8 +1668,7 @@ public class StmtExecutor implements ProfileWriter {
 
     private void handleDdlStmt() {
         try {
-            DdlExecutor.execute(context.getEnv(), (DdlStmt) parsedStmt);
-            context.getState().setOk();
+            context.setState(DdlExecutor.execute(context.getEnv(), (DdlStmt) parsedStmt));
         } catch (QueryStateException e) {
             context.setState(e.getQueryState());
         } catch (UserException e) {

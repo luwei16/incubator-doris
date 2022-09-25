@@ -49,6 +49,7 @@ import org.apache.doris.analysis.CancelAlterTableStmt;
 import org.apache.doris.analysis.CancelBackupStmt;
 import org.apache.doris.analysis.CancelLoadStmt;
 import org.apache.doris.analysis.CleanLabelStmt;
+import org.apache.doris.analysis.CopyStmt;
 import org.apache.doris.analysis.CreateCatalogStmt;
 import org.apache.doris.analysis.CreateClusterStmt;
 import org.apache.doris.analysis.CreateDataSyncJobStmt;
@@ -64,6 +65,7 @@ import org.apache.doris.analysis.CreateResourceStmt;
 import org.apache.doris.analysis.CreateRoleStmt;
 import org.apache.doris.analysis.CreateRoutineLoadStmt;
 import org.apache.doris.analysis.CreateSqlBlockRuleStmt;
+import org.apache.doris.analysis.CreateStageStmt;
 import org.apache.doris.analysis.CreateTableAsSelectStmt;
 import org.apache.doris.analysis.CreateTableLikeStmt;
 import org.apache.doris.analysis.CreateTableStmt;
@@ -115,7 +117,15 @@ import org.apache.doris.catalog.Env;
 import org.apache.doris.common.Config;
 import org.apache.doris.common.DdlException;
 import org.apache.doris.load.EtlJobType;
+import org.apache.doris.load.EtlStatus;
+import org.apache.doris.load.FailMsg;
+import org.apache.doris.load.loadv2.JobState;
+import org.apache.doris.load.loadv2.LoadJob;
 import org.apache.doris.load.sync.SyncJobManager;
+
+import com.google.common.base.Strings;
+
+import java.util.Map;
 
 /**
  * Use for execute ddl.
@@ -124,7 +134,7 @@ public class DdlExecutor {
     /**
      * Execute ddl.
      **/
-    public static void execute(Env env, DdlStmt ddlStmt) throws Exception {
+    public static QueryState execute(Env env, DdlStmt ddlStmt) throws Exception {
         if (ddlStmt instanceof CreateClusterStmt) {
             CreateClusterStmt stmt = (CreateClusterStmt) ddlStmt;
             env.createCluster(stmt);
@@ -185,6 +195,8 @@ public class DdlExecutor {
             } else {
                 env.getLoadManager().createLoadJobFromStmt(loadStmt);
             }
+        } else if (ddlStmt instanceof CopyStmt) {
+            return executeCopyStmt(env, (CopyStmt) ddlStmt);
         } else if (ddlStmt instanceof CancelLoadStmt) {
             env.getLoadManager().cancelLoadJob((CancelLoadStmt) ddlStmt);
         } else if (ddlStmt instanceof CreateRoutineLoadStmt) {
@@ -248,7 +260,7 @@ public class DdlExecutor {
         } else if (ddlStmt instanceof DropRepositoryStmt) {
             env.getBackupHandler().dropRepository((DropRepositoryStmt) ddlStmt);
         } else if (ddlStmt instanceof SyncStmt) {
-            return;
+            // return;
         } else if (ddlStmt instanceof TruncateTableStmt) {
             env.truncateTable((TruncateTableStmt) ddlStmt);
         } else if (ddlStmt instanceof AdminRepairTableStmt) {
@@ -336,8 +348,57 @@ public class DdlExecutor {
             env.refreshMaterializedView((RefreshMaterializedViewStmt) ddlStmt);
         } else if (ddlStmt instanceof RefreshCatalogStmt) {
             env.getCatalogMgr().refreshCatalog((RefreshCatalogStmt) ddlStmt);
+        } else if (ddlStmt instanceof CreateStageStmt) {
+            env.createStage((CreateStageStmt) ddlStmt);
         } else {
             throw new DdlException("Unknown statement.");
         }
+        QueryState state = new QueryState();
+        state.setOk();
+        return state;
+    }
+
+    private static QueryState executeCopyStmt(Env env, CopyStmt copyStmt) throws Exception {
+        LoadJob job = env.getLoadManager().createLoadJobFromStmt(copyStmt);
+        if (!copyStmt.isAsync()) {
+            // wait for execute finished
+            while (!job.isCompleted()) {
+                Thread.sleep(5000);
+            }
+            if (job.getState() == JobState.UNKNOWN || job.getState() == JobState.CANCELLED) {
+                QueryState queryState = new QueryState();
+                StringBuilder sb = new StringBuilder();
+                sb.append("job state=").append(job.getState());
+                FailMsg failMsg = job.getFailMsg();
+                if (failMsg != null) {
+                    sb.append("; type=").append(failMsg.getCancelType());
+                    sb.append(", msg=[").append(failMsg.getMsg()).append("]");
+                }
+                EtlStatus loadingStatus = job.getLoadingStatus();
+                if (loadingStatus != null && !Strings.isNullOrEmpty(loadingStatus.getTrackingUrl())
+                        && !loadingStatus.getTrackingUrl().equals(EtlStatus.DEFAULT_TRACKING_URL)) {
+                    sb.append("; URL=").append(loadingStatus.getTrackingUrl());
+                }
+                queryState.setError(sb.toString());
+                return queryState;
+            } else if (job.getState() == JobState.FINISHED) {
+                EtlStatus loadingStatus = job.getLoadingStatus();
+                Map<String, String> counters = loadingStatus.getCounters();
+                long loadedRows = Long.parseLong(counters.getOrDefault(LoadJob.DPP_NORMAL_ALL, "0"));
+                long filterRows = Long.parseLong(counters.getOrDefault(LoadJob.DPP_ABNORMAL_ALL, "0"));
+                long unselectRows = Long.parseLong(counters.getOrDefault(LoadJob.UNSELECTED_ROWS, "0"));
+                String url = null;
+                if (loadingStatus != null && !Strings.isNullOrEmpty(loadingStatus.getTrackingUrl())
+                        && !loadingStatus.getTrackingUrl().equals(EtlStatus.DEFAULT_TRACKING_URL)) {
+                    url = "URL=" + loadingStatus.getTrackingUrl();
+                }
+                QueryState queryState = new QueryState();
+                queryState.setOk(loadedRows, (int) (filterRows + unselectRows), url);
+                return queryState;
+            }
+        }
+        QueryState state = new QueryState();
+        state.setOk();
+        return state;
     }
 }

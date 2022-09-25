@@ -95,7 +95,11 @@ public class BrokerLoadPendingTask extends LoadTask {
                     long groupFileSize = 0;
                     List<TBrokerFileStatus> fileStatuses = Lists.newArrayList();
                     for (String path : fileGroup.getFilePaths()) {
-                        BrokerUtil.parseFile(path, brokerDesc, fileStatuses);
+                        if (brokerDesc.isCopyInto()) {
+                            BrokerUtil.parseFileForCopyJob(fileGroup.getTableId(), path, brokerDesc, fileStatuses);
+                        } else {
+                            BrokerUtil.parseFile(path, brokerDesc, fileStatuses);
+                        }
                     }
                     boolean isBinaryFileFormat = fileGroup.isBinaryFileFormat();
                     List<TBrokerFileStatus> filteredFileStatuses = Lists.newArrayList();

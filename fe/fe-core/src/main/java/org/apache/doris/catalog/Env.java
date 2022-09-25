@@ -48,6 +48,7 @@ import org.apache.doris.analysis.CreateDbStmt;
 import org.apache.doris.analysis.CreateFunctionStmt;
 import org.apache.doris.analysis.CreateMaterializedViewStmt;
 import org.apache.doris.analysis.CreateMultiTableMaterializedViewStmt;
+import org.apache.doris.analysis.CreateStageStmt;
 import org.apache.doris.analysis.CreateTableAsSelectStmt;
 import org.apache.doris.analysis.CreateTableLikeStmt;
 import org.apache.doris.analysis.CreateTableStmt;
@@ -5277,5 +5278,12 @@ public class Env {
             }
         }
         return count;
+    }
+
+    public void createStage(CreateStageStmt stmt) throws DdlException {
+        if (Config.cloud_unique_id.isEmpty()) {
+            throw new DdlException("stage is only supported in cloud mode");
+        }
+        getInternalCatalog().createStage(stmt.toStageProto(), stmt.isIfNotExists());
     }
 }

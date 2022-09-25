@@ -17,6 +17,9 @@
 
 package org.apache.doris.backup;
 
+import org.apache.doris.persist.EditLog;
+
+import mockit.Mocked;
 import org.apache.commons.codec.digest.DigestUtils;
 import org.junit.Assert;
 import org.junit.Before;
@@ -44,6 +47,9 @@ public class S3StorageTest {
     private S3Storage storage;
     private String testFile;
     private String content;
+
+    @Mocked
+    private EditLog editLog;
 
     @BeforeClass
     public static void init() {
@@ -163,5 +169,62 @@ public class S3StorageTest {
         Assert.assertEquals(Status.OK, status);
         status = storage.checkPathExist(testFile + ".NOT_EXIST");
         Assert.assertEquals(Status.ErrCode.NOT_FOUND, status.getErrCode());
+    }
+
+    @Ignore
+    @Test
+    public void listObjectsWithSize() throws IOException {
+        // new S3Storage to use a new S3Client
+        S3Storage s3Storage = new S3Storage(properties);
+        String bucket = "s3://justtmp-bj-1308700295/meiyi_cloud_test/";
+        String path = bucket; // + "1_my.csv";
+
+
+        // size_limit = 0 and pattern = null;
+        do {
+            List<RemoteFile> result = new ArrayList<>();
+            Assert.assertEquals(Status.OK, s3Storage.list(0, path, null, 0, result));
+            for (RemoteFile remoteFile : result) {
+                System.out.println("remote file = " + remoteFile.getName());
+            }
+        } while (false);
+        // size_limit > 0 and pattern = null;
+        do {
+            List<RemoteFile> result = new ArrayList<>();
+            int i = 0;
+            int size;
+            do {
+                size = result.size();
+                i++;
+                Assert.assertEquals(Status.OK, s3Storage.list(1, path, null, 30, result));
+                for (RemoteFile remoteFile : result) {
+                    System.out.println("remote file " + i + " =" + remoteFile.getName());
+                }
+            } while (size != result.size());
+        } while (false);
+        // size_limit = 0 and pattern != null
+        do {
+            List<RemoteFile> result = new ArrayList<>();
+            String pattern = ".*my.*";
+            Assert.assertEquals(Status.OK, s3Storage.list(2, path, pattern, 0, result));
+            for (RemoteFile remoteFile : result) {
+                System.out.println("remote file with pattern = " + remoteFile.getName());
+            }
+        } while (false);
+        // size_limit > 0 and pattern != null
+        do {
+            List<RemoteFile> result = new ArrayList<>();
+            String pattern = ".*my.*";
+            int i = 0;
+            int size;
+            do {
+                size = result.size();
+                i++;
+                Assert.assertEquals(Status.OK, s3Storage.list(4, path, pattern, 30, result));
+                for (RemoteFile remoteFile : result) {
+                    System.out.println("remote file with pattern " + i + " =" + remoteFile.getName());
+                }
+            } while (size != result.size());
+        } while (false);
     }
 }

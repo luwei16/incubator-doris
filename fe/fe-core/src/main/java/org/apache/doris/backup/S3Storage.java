@@ -47,9 +47,13 @@ import software.amazon.awssdk.services.s3.model.DeleteObjectResponse;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectResponse;
 import software.amazon.awssdk.services.s3.model.S3Exception;
+import software.amazon.awssdk.services.s3.model.S3Object;
+import software.amazon.awssdk.services.s3.paginators.ListObjectsV2Iterable;
 
 import java.io.File;
 import java.io.FileNotFoundException;
@@ -60,9 +64,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 public class S3Storage extends BlobStorage {
     public static final String S3_PROPERTIES_PREFIX = "AWS";
@@ -412,4 +418,62 @@ public class S3Storage extends BlobStorage {
     public StorageBackend.StorageType getStorageType() {
         return StorageBackend.StorageType.S3;
     }
+
+    public Status list(long tableId, String path, String pattern, long sizeLimit, List<RemoteFile> remoteFiles) {
+        try {
+            S3URI uri = S3URI.create(path, false);
+            String prefix = uri.getKey();
+            if (pattern != null) {
+                pattern = prefix + pattern;
+            }
+
+            S3Client s3Client = getClient("");
+            ListObjectsV2Request request = ListObjectsV2Request.builder().bucket(uri.getBucket()).prefix(prefix)
+                    .build();
+            ListObjectsV2Iterable responses = s3Client.listObjectsV2Paginator(request);
+
+            List<RemoteFile> result = new ArrayList<>();
+            List<RemoteFile> files = new ArrayList<>();
+            long totalSize = 0;
+            for (ListObjectsV2Response response : responses) {
+                for (S3Object s3Object : response.contents()) {
+                    if (!matchPattern(s3Object.key(), pattern)) {
+                        continue;
+                    }
+                    totalSize += s3Object.size();
+                    String objUrl = "s3://" + uri.getBucket() + "/" + s3Object.key();
+                    files.add(new RemoteFile(objUrl, true, s3Object.size(), s3Object.eTag()));
+                    if (sizeLimit > 0 && totalSize >= sizeLimit) {
+                        result.addAll(files);
+                        files.clear();
+                        totalSize = result.stream().mapToLong(f -> f.getSize()).sum();
+                        if (totalSize >= sizeLimit) {
+                            break;
+                        }
+                    }
+                }
+            }
+            result.addAll(files);
+
+            remoteFiles.addAll(result);
+            return Status.OK;
+        } catch (S3Exception e) {
+            LOG.error("list file failed: ", e);
+            if (e.statusCode() == HttpStatus.SC_NOT_FOUND) {
+                return Status.OK;
+            }
+            return new Status(Status.ErrCode.COMMON_ERROR, "delete file failed: " + e.getMessage());
+        } catch (UserException ue) {
+            LOG.error("connect to s3 failed: ", ue);
+            return new Status(Status.ErrCode.COMMON_ERROR, "connect to s3 failed: " + ue.getMessage());
+        }
+    }
+
+    private boolean matchPattern(String key, String pattern) {
+        if (pattern == null) {
+            return true;
+        }
+        return Pattern.matches(pattern, key);
+    }
+
 }

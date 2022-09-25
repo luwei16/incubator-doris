@@ -18,6 +18,7 @@
 package org.apache.doris.common.util;
 
 import org.apache.doris.analysis.BrokerDesc;
+import org.apache.doris.analysis.FilesOrPattern;
 import org.apache.doris.analysis.StorageBackend;
 import org.apache.doris.backup.RemoteFile;
 import org.apache.doris.backup.S3Storage;
@@ -118,6 +119,46 @@ public class BrokerUtil {
             tHdfsParams.addToHdfsConf(new THdfsConf(HADOOP_SHORT_CIRCUIT, "false"));
         }
         return tHdfsParams;
+    }
+
+    // path is s3://bucket/prefix
+    public static void parseFileForCopyJob(long tableId, String path, BrokerDesc brokerDesc,
+            List<TBrokerFileStatus> fileStatuses) throws UserException {
+        S3Storage s3 = new S3Storage(brokerDesc.getProperties());
+        List<RemoteFile> rfiles = new ArrayList<>();
+        Status st = Status.OK;
+        try {
+            FilesOrPattern filesOrPattern = brokerDesc.getFilesOrPattern();
+            String filePath = path;
+            if (filesOrPattern != null && filesOrPattern.getFiles() != null) {
+                List<String> files = filesOrPattern.getFiles();
+                for (String file : files) {
+                    filePath = path + "/" + file;
+                    st = s3.list(tableId, filePath, null, brokerDesc.getSizeLimit(), rfiles);
+                    if (!st.ok()) {
+                        break;
+                    }
+                }
+            } else if (filesOrPattern != null && filesOrPattern.getPattern() != null) {
+                st = s3.list(tableId, path, filesOrPattern.getPattern(), brokerDesc.getSizeLimit(), rfiles);
+            } else {
+                st = s3.list(tableId, path, null, brokerDesc.getSizeLimit(), rfiles);
+            }
+            if (!st.ok()) {
+                throw new UserException("S3 list path failed. path=" + filePath + ",msg=" + st.getErrMsg());
+            }
+        } catch (Throwable e) {
+            LOG.warn("s3 list path exception, path={}", path, e);
+            throw new UserException("s3 list path exception. path=" + path + ", err: " + e.getMessage());
+        }
+        for (RemoteFile r : rfiles) {
+            if (r.isFile()) {
+                TBrokerFileStatus tBrokerFileStatus = new TBrokerFileStatus(r.getName(), !r.isFile(), r.getSize(),
+                        r.isFile());
+                tBrokerFileStatus.setEtag(r.getEtag());
+                fileStatuses.add(tBrokerFileStatus);
+            }
+        }
     }
 
     /**

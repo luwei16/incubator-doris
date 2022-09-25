@@ -20,6 +20,7 @@ package org.apache.doris.load.loadv2;
 import org.apache.doris.analysis.CancelLoadStmt;
 import org.apache.doris.analysis.CleanLabelStmt;
 import org.apache.doris.analysis.CompoundPredicate.Operator;
+import org.apache.doris.analysis.CopyStmt;
 import org.apache.doris.analysis.LoadStmt;
 import org.apache.doris.catalog.Database;
 import org.apache.doris.catalog.Env;
@@ -129,6 +130,36 @@ public class LoadManager implements Writable {
         // It guarantee that load job has not been changed before edit log.
         loadJobScheduler.submitJob(loadJob);
         return loadJob.getId();
+    }
+
+    public LoadJob createLoadJobFromStmt(CopyStmt stmt) throws DdlException {
+        Database database = checkDb(stmt.getDbName());
+        long dbId = database.getId();
+        BrokerLoadJob loadJob = null;
+        writeLock();
+        try {
+            if (unprotectedGetUnfinishedJobNum() >= Config.desired_max_waiting_jobs) {
+                throw new DdlException(
+                        "There are more than " + Config.desired_max_waiting_jobs
+                                + " unfinished load jobs, please retry later. "
+                                + "You can use `SHOW LOAD` to view submitted jobs");
+            }
+            loadJob = new BrokerLoadJob(dbId, stmt.getLabel().getLabelName(), stmt.getBrokerDesc(), stmt.getOrigStmt(),
+                    stmt.getUserInfo());
+            loadJob.setJobProperties(stmt.getProperties());
+            loadJob.checkAndSetDataSourceInfo(database, stmt.getDataDescriptions());
+            createLoadJob(loadJob);
+        } catch (MetaNotFoundException e) {
+            throw new DdlException(e.getMessage());
+        } finally {
+            writeUnlock();
+        }
+        Env.getCurrentEnv().getEditLog().logCreateLoadJob(loadJob);
+
+        // The job must be submitted after edit log.
+        // It guarantees that load job has not been changed before edit log.
+        loadJobScheduler.submitJob(loadJob);
+        return loadJob;
     }
 
     private long unprotectedGetUnfinishedJobNum() {

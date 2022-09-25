@@ -141,7 +141,7 @@ public abstract class BulkLoadJob extends LoadJob {
         }
     }
 
-    private void checkAndSetDataSourceInfo(Database db, List<DataDescription> dataDescriptions) throws DdlException {
+    protected void checkAndSetDataSourceInfo(Database db, List<DataDescription> dataDescriptions) throws DdlException {
         // check data source info
         db.readLock();
         try {
