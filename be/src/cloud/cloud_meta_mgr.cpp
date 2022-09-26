@@ -4,6 +4,8 @@
 #include <brpc/controller.h>
 #include <gen_cpp/olap_file.pb.h>
 
+#include <chrono>
+
 #include "common/config.h"
 #include "common/logging.h"
 #include "gen_cpp/selectdb_cloud.pb.h"
@@ -91,6 +93,10 @@ Status CloudMetaMgr::sync_tablet_rowsets(Tablet* tablet) {
     }
     req.set_end_version(-1);
     VLOG_DEBUG << "send GetRowsetRequest: " << req.DebugString();
+
+    using namespace std::chrono;
+    auto start_time = steady_clock::now();
+
     _stub->get_rowset(&cntl, &req, &resp, nullptr);
     if (cntl.Failed()) {
         return Status::RpcError("failed to get rowset meta: {}", cntl.ErrorText());
@@ -98,6 +104,13 @@ Status CloudMetaMgr::sync_tablet_rowsets(Tablet* tablet) {
     if (resp.status().code() != selectdb::MetaServiceCode::OK) {
         return Status::InternalError("failed to get rowset meta: {}", resp.status().msg());
     }
+
+    int64_t cost = duration_cast<milliseconds>(steady_clock::now() - start_time).count();
+    LOG(INFO) << "finish get_rowset rpc. rowset_meta.size()=" << resp.rowset_meta().size()
+              << ", cost=" << cost << "ms";
+
+    int64_t now = duration_cast<seconds>(system_clock::now().time_since_epoch()).count();
+    tablet->set_last_sync_time(now);
 
     if (resp.rowset_meta().empty()) {
         return Status::OK();

@@ -179,6 +179,11 @@ Status StorageEngine::cloud_start_bg_threads() {
             &_vacuum_stale_rowsets_thread));
     LOG(INFO) << "vacuum stale rowsets thread started";
 
+    RETURN_IF_ERROR(Thread::create(
+            "StorageEngine", "sync_tablets_thread",
+            [this]() { this->_sync_tablets_thread_callback(); }, &_sync_tablets_thread));
+    LOG(INFO) << "sync tablets thread started";
+
     // fd cache clean thread
     RETURN_IF_ERROR(Thread::create(
             "StorageEngine", "fd_cache_clean_thread",
@@ -232,6 +237,13 @@ void StorageEngine::_vacuum_stale_rowsets_thread_callback() {
     while (!_stop_background_threads_latch.wait_for(
             std::chrono::seconds(config::vacuum_stale_rowsets_interval_seconds))) {
         cloud::tablet_mgr()->vacuum_stale_rowsets();
+    }
+}
+
+void StorageEngine::_sync_tablets_thread_callback() {
+    while (!_stop_background_threads_latch.wait_for(
+            std::chrono::seconds(config::schedule_sync_tablets_interval_seconds))) {
+        cloud::tablet_mgr()->sync_tablets();
     }
 }
 

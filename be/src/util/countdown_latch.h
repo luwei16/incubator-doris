@@ -17,12 +17,11 @@
 
 #pragma once
 
+#include <glog/logging.h>
+
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
-
-#include "common/logging.h"
-#include "olap/olap_define.h"
 
 namespace doris {
 

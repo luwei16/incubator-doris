@@ -924,6 +924,8 @@ CONF_Int64(tablet_cache_capacity, "10000");
 CONF_Int64(tablet_cache_shards, "16");
 CONF_mInt32(refresh_s3_info_interval_seconds, "60");
 CONF_mInt32(vacuum_stale_rowsets_interval_seconds, "1800");
+CONF_mInt32(tablet_sync_interval_seconds, "1800");
+CONF_mInt32(schedule_sync_tablets_interval_seconds, "600");
 
 } // namespace config
 

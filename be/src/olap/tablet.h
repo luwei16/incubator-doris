@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -95,6 +96,10 @@ public:
     void set_cumulative_compaction_cnt(int64_t cnt) { _cumulative_compaction_cnt = cnt; }
     int64_t local_max_version() const { return _max_version; }
     bool version_exists(const Version& v) const { return _rs_version_map.count(v) != 0; }
+    void set_last_sync_time(int64_t time) {
+        _last_sync_time.store(time, std::memory_order_relaxed);
+    }
+    int64_t last_sync_time() const { return _last_sync_time.load(std::memory_order_relaxed); }
 
     // Disk space occupied by tablet, contain local and remote.
     size_t tablet_footprint();
@@ -494,6 +499,7 @@ private:
     int64_t _base_compaction_cnt = 0;
     int64_t _cumulative_compaction_cnt = 0;
     int64_t _max_version = -1;
+    std::atomic<int64_t> _last_sync_time = 0;
 
     // cumulative compaction policy
     std::shared_ptr<CumulativeCompactionPolicy> _cumulative_compaction_policy;
