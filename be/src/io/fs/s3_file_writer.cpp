@@ -74,6 +74,15 @@ Status S3FileWriter::close() {
     if (!_handle) {
         RETURN_IF_ERROR(finalize());
     }
+
+    {
+        SCOPED_ATTACH_TASK(ExecEnv::GetInstance()->orphan_mem_tracker());
+        _handle->WaitUntilFinished();
+        if (_handle->GetStatus() != Aws::Transfer::TransferStatus::COMPLETED) {
+            return Status::IOError("failed to upload {}: {}", _path.native(),
+                                   _handle->GetLastError().GetMessage());
+        }
+    }
     // If enable_write_as_cache == false，tmp file will delete by dtor.
     // If enable_write_as_cache == true, tmp file will be cached. And deleted when cache full or be restart
     if (config::enable_write_as_cache) {
@@ -109,17 +118,13 @@ Status S3FileWriter::finalize() {
     if (!client) {
         return Status::InternalError("init s3 client error");
     }
-    Aws::Transfer::TransferManagerConfiguration transfer_config(_fs->_executor.get());
-    transfer_config.s3Client = client;
-    auto transfer_manager = Aws::Transfer::TransferManager::Create(transfer_config);
-    _handle = transfer_manager->UploadFile(_tmp_file_writer->path().native(), _bucket, _key,
-                                           "text/plain", Aws::Map<Aws::String, Aws::String>());
-    // FIXME(luwei): we have to wait here to correctly accumulate memory consumption
-    // stats by memtracker, which leads to a lack of pipelining of uploading files to s3.
-    _handle->WaitUntilFinished();
-    if (_handle->GetStatus() != Aws::Transfer::TransferStatus::COMPLETED) {
-        return Status::IOError("failed to upload {}: {}", _path.native(),
-                               _handle->GetLastError().GetMessage());
+    {
+        SCOPED_ATTACH_TASK(ExecEnv::GetInstance()->orphan_mem_tracker());
+        Aws::Transfer::TransferManagerConfiguration transfer_config(_fs->_executor.get());
+        transfer_config.s3Client = client;
+        auto transfer_manager = Aws::Transfer::TransferManager::Create(transfer_config);
+        _handle = transfer_manager->UploadFile(_tmp_file_writer->path().native(), _bucket, _key,
+                                               "text/plain", Aws::Map<Aws::String, Aws::String>());
     }
     return Status::OK();
 }
