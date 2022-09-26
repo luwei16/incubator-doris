@@ -9,8 +9,8 @@
 
 #include "common/config.h"
 #include "common/logging.h"
-#include "common/util.h"
 #include "meta-service/keys.h"
+#include "meta-service/mem_txn_kv.h"
 
 static const std::string instance_id = "instance_id_recycle_test";
 static constexpr int64_t table_id = 10086;
@@ -37,8 +37,8 @@ int main(int argc, char** argv) {
 
 namespace selectdb {
 
-static int create_prepared_rowset(FdbTxnKv* txn_kv, S3Accessor* accessor,
-                                  const std::string& s3_prefix, int64_t tablet_id,
+static int create_prepared_rowset(TxnKv* txn_kv, S3Accessor* accessor,
+                                  const std::string& resource_id, int64_t tablet_id,
                                   int num_segments = 1) {
     ++cnt;
 
@@ -52,8 +52,8 @@ static int create_prepared_rowset(FdbTxnKv* txn_kv, S3Accessor* accessor,
     recycle_rowset_key(key_info, &key);
 
     RecycleRowsetPB rowset_pb;
-    rowset_pb.set_obj_bucket(config::test_s3_bucket);
-    rowset_pb.set_obj_prefix(fmt::format("{}/data/{}", s3_prefix, tablet_id));
+    rowset_pb.set_tablet_id(tablet_id);
+    rowset_pb.set_resource_id(resource_id);
     rowset_pb.set_creation_time(current_time);
     rowset_pb.SerializeToString(&val);
 
@@ -67,13 +67,13 @@ static int create_prepared_rowset(FdbTxnKv* txn_kv, S3Accessor* accessor,
     }
 
     for (int i = 0; i < num_segments; ++i) {
-        auto object_key = fmt::format("{}/data/{}/{}_{}.dat", s3_prefix, tablet_id, rowset_id, i);
-        accessor->put_object(config::test_s3_bucket, object_key, object_key);
+        auto path = fmt::format("data/{}/{}_{}.dat", tablet_id, rowset_id, i);
+        accessor->put_object(path, path);
     }
     return 0;
 }
 
-static int create_tmp_rowset(FdbTxnKv* txn_kv, S3Accessor* accessor, const std::string& s3_prefix,
+static int create_tmp_rowset(TxnKv* txn_kv, S3Accessor* accessor, const std::string& resource_id,
                              int64_t txn_id, int64_t tablet_id, int num_segments = 1) {
     ++cnt;
 
@@ -90,8 +90,7 @@ static int create_tmp_rowset(FdbTxnKv* txn_kv, S3Accessor* accessor, const std::
     rowset_pb.set_rowset_id(0); // useless but required
     rowset_pb.set_rowset_id_v2(rowset_id);
     rowset_pb.set_num_segments(num_segments);
-    rowset_pb.set_s3_bucket(config::test_s3_bucket);
-    rowset_pb.set_s3_prefix(fmt::format("{}/data/{}", s3_prefix, tablet_id));
+    rowset_pb.set_resource_id(resource_id);
     rowset_pb.set_creation_time(current_time);
     rowset_pb.SerializeToString(&val);
 
@@ -105,14 +104,14 @@ static int create_tmp_rowset(FdbTxnKv* txn_kv, S3Accessor* accessor, const std::
     }
 
     for (int i = 0; i < num_segments; ++i) {
-        auto object_key = fmt::format("{}/data/{}/{}_{}.dat", s3_prefix, tablet_id, rowset_id, i);
-        accessor->put_object(config::test_s3_bucket, object_key, object_key);
+        auto path = fmt::format("data/{}/{}_{}.dat", tablet_id, rowset_id, i);
+        accessor->put_object(path, path);
     }
     return 0;
 }
 
-static int create_committed_rowset(FdbTxnKv* txn_kv, S3Accessor* accessor,
-                                   const std::string& s3_prefix, int64_t tablet_id,
+static int create_committed_rowset(TxnKv* txn_kv, S3Accessor* accessor,
+                                   const std::string& resource_id, int64_t tablet_id,
                                    int num_segments = 1) {
     ++cnt;
 
@@ -129,8 +128,7 @@ static int create_committed_rowset(FdbTxnKv* txn_kv, S3Accessor* accessor,
     rowset_pb.set_rowset_id(0); // useless but required
     rowset_pb.set_rowset_id_v2(rowset_id);
     rowset_pb.set_num_segments(num_segments);
-    rowset_pb.set_s3_bucket(config::test_s3_bucket);
-    rowset_pb.set_s3_prefix(fmt::format("{}/data/{}", s3_prefix, tablet_id));
+    rowset_pb.set_resource_id(resource_id);
     rowset_pb.set_creation_time(current_time);
     rowset_pb.SerializeToString(&val);
 
@@ -144,13 +142,13 @@ static int create_committed_rowset(FdbTxnKv* txn_kv, S3Accessor* accessor,
     }
 
     for (int i = 0; i < num_segments; ++i) {
-        auto object_key = fmt::format("{}/data/{}/{}_{}.dat", s3_prefix, tablet_id, rowset_id, i);
-        accessor->put_object(config::test_s3_bucket, object_key, object_key);
+        auto path = fmt::format("data/{}/{}_{}.dat", tablet_id, rowset_id, i);
+        accessor->put_object(path, path);
     }
     return 0;
 }
 
-static int create_tablet(FdbTxnKv* txn_kv, S3Accessor* accessor, int64_t index_id,
+static int create_tablet(TxnKv* txn_kv, S3Accessor* accessor, int64_t index_id,
                          int64_t partition_id, int64_t tablet_id) {
     std::string key;
     std::string val;
@@ -175,7 +173,7 @@ static int create_tablet(FdbTxnKv* txn_kv, S3Accessor* accessor, int64_t index_i
     return 0;
 }
 
-static int create_prepared_partiton(FdbTxnKv* txn_kv, S3Accessor* accessor, int64_t partition_id,
+static int create_prepared_partiton(TxnKv* txn_kv, S3Accessor* accessor, int64_t partition_id,
                                     const std::vector<int64_t>& index_ids) {
     std::string key;
     std::string val;
@@ -203,7 +201,7 @@ static int create_prepared_partiton(FdbTxnKv* txn_kv, S3Accessor* accessor, int6
     return 0;
 }
 
-static int create_prepared_index(FdbTxnKv* txn_kv, S3Accessor* accessor, int64_t index_id) {
+static int create_prepared_index(TxnKv* txn_kv, S3Accessor* accessor, int64_t index_id) {
     std::string key;
     std::string val;
 
@@ -229,26 +227,29 @@ static int create_prepared_index(FdbTxnKv* txn_kv, S3Accessor* accessor, int64_t
 
 TEST(RecyclerTest, recycle_empty) {
     config::fdb_cluster_file_path = "fdb.cluster";
-    auto txn_kv = std::make_shared<FdbTxnKv>();
+    auto txn_kv = std::make_shared<MemTxnKv>();
     ASSERT_EQ(txn_kv->init(), 0);
 
-    S3Conf s3_conf;
-    s3_conf.ak = config::test_s3_ak;
-    s3_conf.sk = config::test_s3_sk;
-    s3_conf.endpoint = config::test_s3_endpoint;
-    s3_conf.region = config::test_s3_region;
-    auto accessor = std::make_shared<S3Accessor>(std::move(s3_conf));
-    ASSERT_EQ(accessor->init(), 0);
+    InstanceInfoPB instance;
+    instance.set_instance_id(instance_id);
+    auto obj_info = instance.add_obj_info();
+    obj_info->set_id("recycle_empty");
+    obj_info->set_ak(config::test_s3_ak);
+    obj_info->set_sk(config::test_s3_sk);
+    obj_info->set_endpoint(config::test_s3_endpoint);
+    obj_info->set_region(config::test_s3_region);
+    obj_info->set_bucket(config::test_s3_bucket);
+    obj_info->set_prefix("recycle_empty");
 
-    RecyclerImpl recycler(txn_kv, accessor);
+    InstanceRecycler recycler(txn_kv, instance);
 
-    recycler.recycle_rowsets(instance_id);
+    recycler.recycle_rowsets();
 }
 
 TEST(RecyclerTest, recycle_rowsets) {
     config::rowset_retention_seconds = 0;
     config::fdb_cluster_file_path = "fdb.cluster";
-    auto txn_kv = std::make_shared<FdbTxnKv>();
+    auto txn_kv = std::make_shared<MemTxnKv>();
     ASSERT_EQ(txn_kv->init(), 0);
 
     S3Conf s3_conf;
@@ -256,27 +257,40 @@ TEST(RecyclerTest, recycle_rowsets) {
     s3_conf.sk = config::test_s3_sk;
     s3_conf.endpoint = config::test_s3_endpoint;
     s3_conf.region = config::test_s3_region;
+    s3_conf.bucket = config::test_s3_bucket;
+    s3_conf.prefix = "recycle_rowsets";
     auto accessor = std::make_shared<S3Accessor>(std::move(s3_conf));
     ASSERT_EQ(accessor->init(), 0);
-
-    RecyclerImpl recycler(txn_kv, accessor);
 
     for (int i = 0; i < 500; ++i) {
         create_prepared_rowset(txn_kv.get(), accessor.get(), "recycle_rowsets", 10010, 5);
     }
 
-    recycler.recycle_rowsets(instance_id);
+    InstanceInfoPB instance;
+    instance.set_instance_id(instance_id);
+    auto obj_info = instance.add_obj_info();
+    obj_info->set_id("recycle_rowsets");
+    obj_info->set_ak(config::test_s3_ak);
+    obj_info->set_sk(config::test_s3_sk);
+    obj_info->set_endpoint(config::test_s3_endpoint);
+    obj_info->set_region(config::test_s3_region);
+    obj_info->set_bucket(config::test_s3_bucket);
+    obj_info->set_prefix("recycle_rowsets");
+
+    InstanceRecycler recycler(txn_kv, instance);
+
+    recycler.recycle_rowsets();
 
     // check rowset does not exist on s3
     std::vector<std::string> existed_segments;
-    ASSERT_EQ(0, accessor->list(config::test_s3_bucket, "recycle_rowsets/", &existed_segments));
+    ASSERT_EQ(0, accessor->list("data/", &existed_segments));
     ASSERT_TRUE(existed_segments.empty());
 }
 
 TEST(RecyclerTest, recycle_tmp_rowsets) {
     config::rowset_retention_seconds = 0;
     config::fdb_cluster_file_path = "fdb.cluster";
-    auto txn_kv = std::make_shared<FdbTxnKv>();
+    auto txn_kv = std::make_shared<MemTxnKv>();
     ASSERT_EQ(txn_kv->init(), 0);
 
     S3Conf s3_conf;
@@ -284,10 +298,10 @@ TEST(RecyclerTest, recycle_tmp_rowsets) {
     s3_conf.sk = config::test_s3_sk;
     s3_conf.endpoint = config::test_s3_endpoint;
     s3_conf.region = config::test_s3_region;
+    s3_conf.bucket = config::test_s3_bucket;
+    s3_conf.prefix = "recycle_tmp_rowsets";
     auto accessor = std::make_shared<S3Accessor>(std::move(s3_conf));
     ASSERT_EQ(accessor->init(), 0);
-
-    RecyclerImpl recycler(txn_kv, accessor);
 
     int64_t txn_id_base = 114115;
     int64_t tablet_id_base = 10015;
@@ -298,17 +312,30 @@ TEST(RecyclerTest, recycle_tmp_rowsets) {
         }
     }
 
-    recycler.recycle_tmp_rowsets(instance_id);
+    InstanceInfoPB instance;
+    instance.set_instance_id(instance_id);
+    auto obj_info = instance.add_obj_info();
+    obj_info->set_id("recycle_tmp_rowsets");
+    obj_info->set_ak(config::test_s3_ak);
+    obj_info->set_sk(config::test_s3_sk);
+    obj_info->set_endpoint(config::test_s3_endpoint);
+    obj_info->set_region(config::test_s3_region);
+    obj_info->set_bucket(config::test_s3_bucket);
+    obj_info->set_prefix("recycle_tmp_rowsets");
+
+    InstanceRecycler recycler(txn_kv, instance);
+
+    recycler.recycle_tmp_rowsets();
 
     // check rowset does not exist on s3
     std::vector<std::string> existed_segments;
-    ASSERT_EQ(0, accessor->list(config::test_s3_bucket, "recycle_tmp_rowsets/", &existed_segments));
+    ASSERT_EQ(0, accessor->list("data/", &existed_segments));
     ASSERT_TRUE(existed_segments.empty());
 }
 
 TEST(RecyclerTest, recycle_tablet) {
     config::fdb_cluster_file_path = "fdb.cluster";
-    auto txn_kv = std::make_shared<FdbTxnKv>();
+    auto txn_kv = std::make_shared<MemTxnKv>();
     ASSERT_EQ(txn_kv->init(), 0);
 
     S3Conf s3_conf;
@@ -316,10 +343,10 @@ TEST(RecyclerTest, recycle_tablet) {
     s3_conf.sk = config::test_s3_sk;
     s3_conf.endpoint = config::test_s3_endpoint;
     s3_conf.region = config::test_s3_region;
+    s3_conf.bucket = config::test_s3_bucket;
+    s3_conf.prefix = "recycle_tablet";
     auto accessor = std::make_shared<S3Accessor>(std::move(s3_conf));
     ASSERT_EQ(accessor->init(), 0);
-
-    RecyclerImpl recycler(txn_kv, accessor);
 
     create_tablet(txn_kv.get(), accessor.get(), 20010, 30010, 10020);
     for (int i = 0; i < 500; ++i) {
@@ -329,18 +356,31 @@ TEST(RecyclerTest, recycle_tablet) {
         create_committed_rowset(txn_kv.get(), accessor.get(), "recycle_tablet", 10020);
     }
 
-    ASSERT_EQ(0, recycler.recycle_tablet(instance_id, 10020));
+    InstanceInfoPB instance;
+    instance.set_instance_id(instance_id);
+    auto obj_info = instance.add_obj_info();
+    obj_info->set_id("recycle_tablet");
+    obj_info->set_ak(config::test_s3_ak);
+    obj_info->set_sk(config::test_s3_sk);
+    obj_info->set_endpoint(config::test_s3_endpoint);
+    obj_info->set_region(config::test_s3_region);
+    obj_info->set_bucket(config::test_s3_bucket);
+    obj_info->set_prefix("recycle_tablet");
+
+    InstanceRecycler recycler(txn_kv, instance);
+
+    ASSERT_EQ(0, recycler.recycle_tablet(10020));
 
     // check rowset does not exist on s3
     std::vector<std::string> existed_segments;
-    ASSERT_EQ(0, accessor->list(config::test_s3_bucket, "recycle_tablet/", &existed_segments));
+    ASSERT_EQ(0, accessor->list("data/", &existed_segments));
     ASSERT_TRUE(existed_segments.empty());
 }
 
 TEST(RecyclerTest, recycle_indexes) {
     config::index_retention_seconds = 0;
     config::fdb_cluster_file_path = "fdb.cluster";
-    auto txn_kv = std::make_shared<FdbTxnKv>();
+    auto txn_kv = std::make_shared<MemTxnKv>();
     ASSERT_EQ(txn_kv->init(), 0);
 
     S3Conf s3_conf;
@@ -348,10 +388,10 @@ TEST(RecyclerTest, recycle_indexes) {
     s3_conf.sk = config::test_s3_sk;
     s3_conf.endpoint = config::test_s3_endpoint;
     s3_conf.region = config::test_s3_region;
+    s3_conf.bucket = config::test_s3_bucket;
+    s3_conf.prefix = "recycle_indexes";
     auto accessor = std::make_shared<S3Accessor>(std::move(s3_conf));
     ASSERT_EQ(accessor->init(), 0);
-
-    RecyclerImpl recycler(txn_kv, accessor);
 
     create_prepared_index(txn_kv.get(), accessor.get(), 20015);
     int64_t tablet_id_base = 10100;
@@ -366,18 +406,31 @@ TEST(RecyclerTest, recycle_indexes) {
         }
     }
 
-    recycler.recycle_indexes(instance_id);
+    InstanceInfoPB instance;
+    instance.set_instance_id(instance_id);
+    auto obj_info = instance.add_obj_info();
+    obj_info->set_id("recycle_indexes");
+    obj_info->set_ak(config::test_s3_ak);
+    obj_info->set_sk(config::test_s3_sk);
+    obj_info->set_endpoint(config::test_s3_endpoint);
+    obj_info->set_region(config::test_s3_region);
+    obj_info->set_bucket(config::test_s3_bucket);
+    obj_info->set_prefix("recycle_indexes");
+
+    InstanceRecycler recycler(txn_kv, instance);
+
+    recycler.recycle_indexes();
 
     // check rowset does not exist on s3
     std::vector<std::string> existed_segments;
-    ASSERT_EQ(0, accessor->list(config::test_s3_bucket, "recycle_indexes/", &existed_segments));
+    ASSERT_EQ(0, accessor->list("data/", &existed_segments));
     ASSERT_TRUE(existed_segments.empty());
 }
 
 TEST(RecyclerTest, recycle_partitions) {
     config::partition_retention_seconds = 0;
     config::fdb_cluster_file_path = "fdb.cluster";
-    auto txn_kv = std::make_shared<FdbTxnKv>();
+    auto txn_kv = std::make_shared<MemTxnKv>();
     ASSERT_EQ(txn_kv->init(), 0);
 
     S3Conf s3_conf;
@@ -385,10 +438,10 @@ TEST(RecyclerTest, recycle_partitions) {
     s3_conf.sk = config::test_s3_sk;
     s3_conf.endpoint = config::test_s3_endpoint;
     s3_conf.region = config::test_s3_region;
+    s3_conf.bucket = config::test_s3_bucket;
+    s3_conf.prefix = "recycle_partitions";
     auto accessor = std::make_shared<S3Accessor>(std::move(s3_conf));
     ASSERT_EQ(accessor->init(), 0);
-
-    RecyclerImpl recycler(txn_kv, accessor);
 
     std::vector<int64_t> index_ids {20200, 20201, 20202, 20203, 20204};
     create_prepared_partiton(txn_kv.get(), accessor.get(), 30020, index_ids);
@@ -408,11 +461,24 @@ TEST(RecyclerTest, recycle_partitions) {
         }
     }
 
-    recycler.recycle_partitions(instance_id);
+    InstanceInfoPB instance;
+    instance.set_instance_id(instance_id);
+    auto obj_info = instance.add_obj_info();
+    obj_info->set_id("recycle_partitions");
+    obj_info->set_ak(config::test_s3_ak);
+    obj_info->set_sk(config::test_s3_sk);
+    obj_info->set_endpoint(config::test_s3_endpoint);
+    obj_info->set_region(config::test_s3_region);
+    obj_info->set_bucket(config::test_s3_bucket);
+    obj_info->set_prefix("recycle_partitions");
+
+    InstanceRecycler recycler(txn_kv, instance);
+
+    recycler.recycle_partitions();
 
     // check rowset does not exist on s3
     std::vector<std::string> existed_segments;
-    ASSERT_EQ(0, accessor->list(config::test_s3_bucket, "recycle_partitions/", &existed_segments));
+    ASSERT_EQ(0, accessor->list("data/", &existed_segments));
     ASSERT_TRUE(existed_segments.empty());
 }
 

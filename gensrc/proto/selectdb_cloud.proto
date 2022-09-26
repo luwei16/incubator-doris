@@ -256,8 +256,8 @@ message RecyclePartitionPB {
 }
 
 message RecycleRowsetPB {
-    optional string obj_bucket = 1;
-    optional string obj_prefix = 2;
+    optional int64 tablet_id = 1;
+    optional string resource_id = 2;
     optional int64 creation_time = 3;
 }
 
@@ -689,6 +689,10 @@ message GetCopyFilesResponse {
     optional MetaServiceResponseStatus status = 1;
     repeated ObjectFilePB object_files = 2;
 }
+    
+message RecycleInstanceRequest {
+    repeated string instance_ids = 1;
+}
 
 enum MetaServiceCode {
     OK = 0;
@@ -791,6 +795,11 @@ service MetaService {
     rpc begin_copy(BeginCopyRequest) returns (BeginCopyResponse);
     rpc finish_copy(FinishCopyRequest) returns (FinishCopyResponse);
     rpc get_copy_files(GetCopyFilesRequest) returns (GetCopyFilesResponse);
+};
+
+service RecyclerService {
+    rpc recycle_instance(RecycleInstanceRequest) returns (MetaServiceGenericResponse);
+    rpc http(MetaServiceHttpRequest) returns (MetaServiceHttpResponse);
 };
 
 // vim: et ts=4 sw=4:

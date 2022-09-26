@@ -1,11 +1,16 @@
 #!/bin/bash
 cd `dirname $0`
 
-if [ ! -f meta_service.pid ]; then
-	echo "no meta_service.pid found, process may have been stopped"
+process=meta_service
+if [ "$1" == "--recycler" ]; then
+	process=recycler
+fi
+
+if [ ! -f ${process}.pid ]; then
+	echo "no ${process}.pid found, process may have been stopped"
 	exit -1
 fi
 
-pid=`cat meta_service.pid`
+pid=`cat ${process}.pid`
 kill ${pid}
-rm -f meta_service.pid
+rm -f ${process}.pid

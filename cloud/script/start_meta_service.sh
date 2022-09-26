@@ -5,8 +5,13 @@ if [[ ! -d bin || ! -d conf || ! -d lib ]]; then
 	exit -1
 fi
 
-if [ -f bin/meta_service.pid ]; then
-	echo "pid file existed, meta service may have already started"
+process=meta_service
+if [ "$1" == "--recycler" ]; then
+	process=recycler
+fi
+
+if [ -f bin/${process}.pid ]; then
+	echo "pid file existed, ${process} may have already started"
 	exit -1;
 fi
 
@@ -25,5 +30,5 @@ if [ $? -eq 0 ]; then
 	ldd ${bin}
 fi
 # `$0 --recycler` to launch recycler process
-nohup ${bin} "$@" > log/meta_service.out 2>&1 &
+nohup ${bin} "$@" > log/${process}.out 2>&1 &
 echo "meta service started with args: $@"

@@ -1,15 +1,19 @@
 #pragma once
 
+#include <brpc/server.h>
+#include <gen_cpp/selectdb_cloud.pb.h>
+
+#include <condition_variable>
+#include <deque>
 #include <functional>
 #include <memory>
+#include <string>
 #include <string_view>
 
 #include "meta-service/txn_kv.h"
 #include "recycler/s3_accessor.h"
 
 namespace selectdb {
-
-class RecyclerImpl;
 
 class Recycler {
 public:
@@ -19,30 +23,51 @@ public:
     // returns 0 for success otherwise error
     int start();
 
+    void join();
+
+    void add_pending_instances(std::vector<InstanceInfoPB> instances);
+
 private:
-    std::vector<std::string> get_instance_ids();
+    void recycle_callback();
+
+    // standalone mode
+    std::vector<InstanceInfoPB> get_instances();
+    void instance_scanner_callback();
 
 private:
     std::shared_ptr<TxnKv> txn_kv_;
-    std::unique_ptr<RecyclerImpl> impl_;
+    std::unique_ptr<brpc::Server> server_;
+
+    std::vector<std::thread> workers_;
+    std::condition_variable pending_instance_queue_cond_;
+    std::mutex pending_instance_queue_mtx_;
+
+    std::deque<InstanceInfoPB> pending_instance_queue_;
+
+    std::mutex recycling_instance_set_mtx_;
+    std::unordered_set<std::string> recycling_instance_set_;
+
+    // standalone mode
+    std::mutex instance_scanner_mtx_;
+    std::condition_variable instance_scanner_cond_;
 };
 
-class RecyclerImpl {
+class InstanceRecycler {
 public:
-    RecyclerImpl(std::shared_ptr<TxnKv> txn_kv, std::shared_ptr<S3Accessor> accessor);
-    ~RecyclerImpl() = default;
+    explicit InstanceRecycler(std::shared_ptr<TxnKv> txn_kv, const InstanceInfoPB& instance);
+    ~InstanceRecycler() = default;
 
     // scan and recycle expired indexes
-    void recycle_indexes(const std::string& instance_id);
+    void recycle_indexes();
 
     // scan and recycle expired partitions
-    void recycle_partitions(const std::string& instance_id);
+    void recycle_partitions();
 
     // scan and recycle expired prepared rowsets
-    void recycle_rowsets(const std::string& instance_id);
+    void recycle_rowsets();
 
     // scan and recycle expired tmp rowsets
-    void recycle_tmp_rowsets(const std::string& instance_id);
+    void recycle_tmp_rowsets();
 
     /**
      * recycle all tablets belonging to the index specified by `index_id`
@@ -50,21 +75,20 @@ public:
      * @param partition_id if positive, only recycle tablets in this partition belonging to the specified index
      * @return 0 for success otherwise error
      */
-    int recycle_tablets(const std::string& instance_id, int64_t table_id, int64_t index_id,
-                        int64_t partition_id = -1);
+    int recycle_tablets(int64_t table_id, int64_t index_id, int64_t partition_id = -1);
 
     /**
      * recycle all rowsets belonging to the tablet specified by `tablet_id`
      *
      * @return 0 for success otherwise error
      */
-    int recycle_tablet(const std::string& instance_id, int64_t tablet_id);
+    int recycle_tablet(int64_t tablet_id);
 
     // scan and abort timeout txn label
-    void abort_timeout_txn(const std::string& instance_id);
+    void abort_timeout_txn();
 
     //scan and recycle expire txn label
-    void recycle_expired_txn_label(const std::string& instance_id);
+    void recycle_expired_txn_label();
 
 private:
     /**
@@ -79,10 +103,14 @@ private:
                          std::function<bool(std::string_view k, std::string_view v)> recycle_func,
                          bool try_range_remove_kv = false);
 
+    int delete_rowset_data(const doris::RowsetMetaPB& rs_meta_pb);
+
+    int delete_rowset_data(const std::string& rowset_id, const RecycleRowsetPB& recycl_rs_pb);
+
 private:
     std::shared_ptr<TxnKv> txn_kv_;
-    // TODO(cyx): support multi s3 endpoint
-    std::shared_ptr<S3Accessor> accessor_;
+    std::string instance_id_;
+    std::unordered_map<std::string, std::shared_ptr<S3Accessor>> accessor_map_;
 };
 
 } // namespace selectdb

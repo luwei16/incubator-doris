@@ -24,7 +24,7 @@ std::shared_ptr<int> gen_pidfile(const std::string& process_name) {
     std::cerr << "process current path: " << std::filesystem::current_path() << std::endl;
     std::string pid_path = "./bin/" + process_name + ".pid";
     int fd = ::open(pid_path.c_str(), O_RDWR | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
-    // clang-format-off
+    // clang-format off
     std::shared_ptr<int> holder(&fd, // Just pretend to need an address of int
             [fd, pid_path](...) {    // The real fd is captured
                 if (fd <= 0) { return; }
@@ -32,7 +32,7 @@ std::shared_ptr<int> gen_pidfile(const std::string& process_name) {
                 ::close(fd);
                 std::error_code ec; std::filesystem::remove(pid_path, ec);
             });
-    // clang-format-on
+    // clang-format on
     if (::lockf(fd, F_TLOCK, 0) != 0) {
         std::cerr << "failed to lock pidfile=" << pid_path << " fd=" << fd << std::endl;
         return nullptr;
@@ -81,6 +81,8 @@ int main(int argc, char** argv) {
         if (ret != 0) {
             std::cerr << "failed to start recycler" << std::endl;
         }
+        std::cout << "successfully start recycler" << std::endl;
+        recycler.join();
         return 0;
     }
 

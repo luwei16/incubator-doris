@@ -228,7 +228,8 @@ void process_compaction_job(MetaServiceCode& code, std::string& msg, std::string
     if (request->action() == FinishTabletJobRequest::ABORT) {
         // TODO(gavin): mv tmp rowsets to recycle or remove them directly
         txn->remove(job_key);
-        LOG(INFO) << "abort tablet compaction job, tablet_id=" << tablet_id << " key=" << hex(job_key);
+        LOG(INFO) << "abort tablet compaction job, tablet_id=" << tablet_id
+                  << " key=" << hex(job_key);
         need_commit = true;
         return;
     }
@@ -369,8 +370,7 @@ void process_compaction_job(MetaServiceCode& code, std::string& msg, std::string
             auto& recycle_key = *obj_pool.add(new std::string(
                     recycle_rowset_key({instance_id, tablet_id, rs.rowset_id_v2()})));
             RecycleRowsetPB recycle_rowset;
-            recycle_rowset.set_obj_bucket(rs.s3_bucket());
-            recycle_rowset.set_obj_prefix(rs.s3_prefix());
+            recycle_rowset.set_resource_id(rs.resource_id());
             recycle_rowset.set_creation_time(now);
             auto& recycle_val = *obj_pool.add(new std::string(recycle_rowset.SerializeAsString()));
             txn->put(recycle_key, recycle_val);

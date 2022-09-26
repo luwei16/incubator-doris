@@ -1608,13 +1608,13 @@ void MetaServiceImpl::update_tablet(::google::protobuf::RpcController* controlle
     LOG(INFO) << "rpc from " << ctrl->remote_side() << " request=" << request->DebugString();
     brpc::ClosureGuard closure_guard(done);
     MetaServiceResponseStatus status;
-    std::unique_ptr<int, std::function<void(int*)>> defer_status((int*)0x01, [&status, &response,
-                                                                              &ctrl](int*) {
-        *response->mutable_status() = std::move(status);
-        LOG(INFO) << (response->status().code() == MetaServiceCode::OK ? "succ to " : "failed to ")
-                  << __PRETTY_FUNCTION__ << " " << ctrl->remote_side() << " "
-                  << response->status().msg() << " code=" << response->status().code();
-    });
+    std::unique_ptr<int, std::function<void(int*)>> defer_status(
+            (int*)0x01, [&status, &response, &ctrl](int*) {
+                LOG(INFO) << (status.code() == MetaServiceCode::OK ? "succ to " : "failed to ")
+                          << __PRETTY_FUNCTION__ << " " << ctrl->remote_side() << " "
+                          << status.msg() << " code=" << status.code();
+                *response->mutable_status() = std::move(status);
+            });
     std::string instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
     if (instance_id.empty()) {
         status.set_code(MetaServiceCode::INVALID_ARGUMENT);
@@ -1671,13 +1671,13 @@ void MetaServiceImpl::get_tablet(::google::protobuf::RpcController* controller,
     LOG(INFO) << "rpc from " << ctrl->remote_side() << " request=" << request->DebugString();
     brpc::ClosureGuard closure_guard(done);
     MetaServiceResponseStatus status;
-    std::unique_ptr<int, std::function<void(int*)>> defer_status((int*)0x01, [&status, &response,
-                                                                              &ctrl](int*) {
-        *response->mutable_status() = std::move(status);
-        LOG(INFO) << (response->status().code() == MetaServiceCode::OK ? "succ to " : "failed to ")
-                  << __PRETTY_FUNCTION__ << " " << ctrl->remote_side() << " "
-                  << response->status().msg() << " code=" << response->status().code();
-    });
+    std::unique_ptr<int, std::function<void(int*)>> defer_status(
+            (int*)0x01, [&status, &response, &ctrl](int*) {
+                LOG(INFO) << (status.code() == MetaServiceCode::OK ? "succ to " : "failed to ")
+                          << __PRETTY_FUNCTION__ << " " << ctrl->remote_side() << " "
+                          << status.msg() << " code=" << status.code();
+                *response->mutable_status() = std::move(status);
+            });
     std::string instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
     if (instance_id.empty()) {
         status.set_code(MetaServiceCode::INVALID_ARGUMENT);
@@ -1778,8 +1778,8 @@ void MetaServiceImpl::prepare_rowset(::google::protobuf::RpcController* controll
     RecycleRowsetKeyInfo prepare_key_info {instance_id, tablet_id, rowset_id};
     recycle_rowset_key(prepare_key_info, &prepare_key);
     RecycleRowsetPB prepare_rowset;
-    prepare_rowset.set_obj_bucket(request->rowset_meta().s3_bucket());
-    prepare_rowset.set_obj_prefix(request->rowset_meta().s3_prefix());
+    prepare_rowset.set_tablet_id(request->rowset_meta().tablet_id());
+    prepare_rowset.set_resource_id(request->rowset_meta().resource_id());
     prepare_rowset.set_creation_time(request->rowset_meta().creation_time());
     prepare_rowset.SerializeToString(&prepare_val);
 

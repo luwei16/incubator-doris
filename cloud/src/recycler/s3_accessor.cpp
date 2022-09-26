@@ -22,9 +22,15 @@ private:
     Aws::SDKOptions aws_options_;
 };
 
-S3Accessor::S3Accessor(S3Conf conf) : conf_(std::move(conf)) {}
+S3Accessor::S3Accessor(S3Conf conf) : conf_(std::move(conf)) {
+    path_ = conf_.endpoint + '/' + conf_.bucket + '/' + conf_.prefix;
+}
 
 S3Accessor::~S3Accessor() = default;
+
+std::string S3Accessor::get_key(const std::string& relative_path) const {
+    return conf_.prefix + '/' + relative_path;
+}
 
 int S3Accessor::init() {
     static S3Environment s3_env;
@@ -38,19 +44,20 @@ int S3Accessor::init() {
     return 0;
 }
 
-int S3Accessor::delete_objects_by_prefix(const std::string& bucket, const std::string& prefix) {
+int S3Accessor::delete_objects_by_prefix(const std::string& relative_path) {
     Aws::S3::Model::ListObjectsV2Request request;
-    request.WithBucket(bucket).WithPrefix(prefix);
+    auto prefix = get_key(relative_path);
+    request.WithBucket(conf_.bucket).WithPrefix(prefix);
 
     Aws::S3::Model::DeleteObjectsRequest delete_request;
-    delete_request.SetBucket(bucket);
+    delete_request.SetBucket(conf_.bucket);
     bool is_trucated = false;
     do {
         auto outcome = s3_client_->ListObjectsV2(request);
         if (!outcome.IsSuccess()) {
             LOG_WARNING("failed to list objects")
                     .tag("endpoint", conf_.endpoint)
-                    .tag("bucket", bucket)
+                    .tag("bucket", conf_.bucket)
                     .tag("prefix", prefix)
                     .tag("error", outcome.GetError().GetMessage());
             return -1;
@@ -70,7 +77,7 @@ int S3Accessor::delete_objects_by_prefix(const std::string& bucket, const std::s
             if (!delete_outcome.IsSuccess()) {
                 LOG_WARNING("failed to delete objects")
                         .tag("endpoint", conf_.endpoint)
-                        .tag("bucket", bucket)
+                        .tag("bucket", conf_.bucket)
                         .tag("prefix", prefix)
                         .tag("error", outcome.GetError().GetMessage());
                 return -2;
@@ -79,7 +86,7 @@ int S3Accessor::delete_objects_by_prefix(const std::string& bucket, const std::s
                 const auto& e = delete_outcome.GetResult().GetErrors().front();
                 LOG_WARNING("failed to delete object")
                         .tag("endpoint", conf_.endpoint)
-                        .tag("bucket", bucket)
+                        .tag("bucket", conf_.bucket)
                         .tag("key", e.GetKey())
                         .tag("error", e.GetMessage());
                 return -3;
@@ -91,16 +98,21 @@ int S3Accessor::delete_objects_by_prefix(const std::string& bucket, const std::s
     return 0;
 }
 
-int S3Accessor::delete_objects(const std::string& bucket, const std::vector<std::string>& keys) {
-    if (keys.empty()) {
+int S3Accessor::delete_objects(const std::vector<std::string>& relative_paths) {
+    if (relative_paths.empty()) {
         return 0;
+    }
+    std::vector<std::string> keys;
+    keys.reserve(relative_paths.size());
+    for (auto& path : relative_paths) {
+        keys.push_back(get_key(path));
     }
     // `DeleteObjectsRequest` can only contain 1000 keys at most.
     constexpr size_t max_delete_batch = 1000;
     auto key_iter = keys.begin();
 
     Aws::S3::Model::DeleteObjectsRequest delete_request;
-    delete_request.SetBucket(bucket);
+    delete_request.SetBucket(conf_.bucket);
     do {
         Aws::S3::Model::Delete del;
         Aws::Vector<Aws::S3::Model::ObjectIdentifier> objects;
@@ -114,7 +126,7 @@ int S3Accessor::delete_objects(const std::string& bucket, const std::vector<std:
         if (!delete_outcome.IsSuccess()) {
             LOG_WARNING("failed to delete objects")
                     .tag("endpoint", conf_.endpoint)
-                    .tag("bucket", bucket)
+                    .tag("bucket", conf_.bucket)
                     .tag("key[0]", keys[0])
                     .tag("error", delete_outcome.GetError().GetMessage());
             return -1;
@@ -123,7 +135,7 @@ int S3Accessor::delete_objects(const std::string& bucket, const std::vector<std:
             const auto& e = delete_outcome.GetResult().GetErrors().front();
             LOG_WARNING("failed to delete object")
                     .tag("endpoint", conf_.endpoint)
-                    .tag("bucket", bucket)
+                    .tag("bucket", conf_.bucket)
                     .tag("key", e.GetKey())
                     .tag("error", e.GetMessage());
             return -2;
@@ -133,15 +145,15 @@ int S3Accessor::delete_objects(const std::string& bucket, const std::vector<std:
     return 0;
 }
 
-int S3Accessor::delete_object(const std::string& bucket, const std::string& key) {
+int S3Accessor::delete_object(const std::string& relative_path) {
     // TODO(cyx)
     return 0;
 }
 
-int S3Accessor::put_object(const std::string& bucket, const std::string& key,
-                           const std::string& content) {
+int S3Accessor::put_object(const std::string& relative_path, const std::string& content) {
     Aws::S3::Model::PutObjectRequest request;
-    request.WithBucket(bucket).WithKey(key);
+    auto key = get_key(relative_path);
+    request.WithBucket(conf_.bucket).WithKey(key);
     auto input = Aws::MakeShared<Aws::StringStream>("S3Accessor");
     *input << content;
     request.SetBody(input);
@@ -149,7 +161,7 @@ int S3Accessor::put_object(const std::string& bucket, const std::string& key,
     if (!outcome.IsSuccess()) {
         LOG_WARNING("failed to put object")
                 .tag("endpoint", conf_.endpoint)
-                .tag("bucket", bucket)
+                .tag("bucket", conf_.bucket)
                 .tag("key", key)
                 .tag("error", outcome.GetError().GetMessage());
         return -1;
@@ -157,10 +169,10 @@ int S3Accessor::put_object(const std::string& bucket, const std::string& key,
     return 0;
 }
 
-int S3Accessor::list(const std::string& bucket, const std::string& prefix,
-                     std::vector<std::string>* keys) {
+int S3Accessor::list(const std::string& relative_path, std::vector<std::string>* keys) {
     Aws::S3::Model::ListObjectsV2Request request;
-    request.WithBucket(bucket).WithPrefix(prefix);
+    auto prefix = get_key(relative_path);
+    request.WithBucket(conf_.bucket).WithPrefix(prefix);
 
     bool is_trucated = false;
     do {
@@ -168,7 +180,7 @@ int S3Accessor::list(const std::string& bucket, const std::string& prefix,
         if (!outcome.IsSuccess()) {
             LOG_WARNING("failed to list objects")
                     .tag("endpoint", conf_.endpoint)
-                    .tag("bucket", bucket)
+                    .tag("bucket", conf_.bucket)
                     .tag("prefix", prefix)
                     .tag("error", outcome.GetError().GetMessage());
             return -1;

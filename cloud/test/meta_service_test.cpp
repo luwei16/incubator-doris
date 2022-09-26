@@ -43,11 +43,13 @@ public:
         return "";
     }
 
-    std::string add_cluster(const std::string& instance_id, const ClusterInfo& cluster) override {
+    std::string add_cluster(const std::string& instance_id, const ClusterInfo& cluster,
+                            MetaServiceCode& code) override {
         return "";
     }
 
-    std::string drop_cluster(const std::string& instance_id, const ClusterInfo& cluster) override {
+    std::string drop_cluster(const std::string& instance_id, const ClusterInfo& cluster,
+                             MetaServiceCode& code) override {
         return "";
     }
 
@@ -495,7 +497,7 @@ TEST(MetaServiceTest, TabletJobTest) {
     int64_t tablet_id = 4;
 
     // Start compaciton job
-    auto start_compaction_job = [&]{
+    auto start_compaction_job = [&] {
         StartTabletJobRequest req;
         StartTabletJobResponse res;
         std::string job_id = "job_id123";
