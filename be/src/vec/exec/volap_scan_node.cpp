@@ -394,7 +394,10 @@ void VOlapScanNode::transfer_thread(RuntimeState* state) {
     }
 
     VLOG_CRITICAL << "TransferThread finish.";
-    _transfer_done = true;
+    {
+        std::unique_lock<std::mutex> l(_blocks_lock);
+        _transfer_done = true;
+    }
     _block_added_cv.notify_all();
     {
         std::unique_lock<doris::Mutex> l(_scan_blocks_lock);
