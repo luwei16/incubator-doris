@@ -55,8 +55,8 @@ public:
      */
     virtual std::string get_node(const std::string& cloud_unique_id, std::vector<NodeInfo>* nodes);
 
-    virtual std::string add_cluster(const std::string& instance_id, const ClusterInfo& cluster);
-
+    virtual std::string add_cluster(const std::string& instance_id, const ClusterInfo& cluster,
+                                    MetaServiceCode& code);
 
     /**
      * Drops a cluster
@@ -64,7 +64,8 @@ public:
      * @param clsuter cluster to drop, only cluster name and clsuter id are concered
      * @return empty string for success, otherwise failure reason returned
      */
-    virtual std::string drop_cluster(const std::string& instance_id, const ClusterInfo& cluster);
+    virtual std::string drop_cluster(const std::string& instance_id, const ClusterInfo& cluster,
+                                     MetaServiceCode& code);
 
     /**
      * Update a cluster
@@ -75,8 +76,8 @@ public:
      * @return empty string for success, otherwise failure reason returned
      */
     virtual std::string update_cluster(const std::string& instance_id, const ClusterInfo& cluster,
-                               std::function<std::string(::selectdb::ClusterPB&)> action,
-                               std::function<bool(const ::selectdb::ClusterPB&)> filter);
+                                       std::function<std::string(::selectdb::ClusterPB&)> action,
+                                       std::function<bool(const ::selectdb::ClusterPB&)> filter);
 
     /**
      * Get instance from underlying storage with given transaction.
@@ -86,8 +87,8 @@ public:
      * @return a <code, msg> pair, code == 0 for success, otherwise error
      */
     virtual std::pair<int, std::string> get_instance(std::shared_ptr<Transaction> txn,
-                                             const std::string& instance_id,
-                                             InstanceInfoPB* inst_pb);
+                                                     const std::string& instance_id,
+                                                     InstanceInfoPB* inst_pb);
     // return err msg
     std::string modify_nodes(const std::string& instance_id, const std::vector<NodeInfo>& to_add,
                              const std::vector<NodeInfo>& to_del);

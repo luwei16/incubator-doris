@@ -18,7 +18,9 @@
 package org.apache.doris.analysis;
 
 import org.apache.doris.backup.S3Storage;
+import org.apache.doris.catalog.Column;
 import org.apache.doris.catalog.Env;
+import org.apache.doris.catalog.ScalarType;
 import org.apache.doris.cluster.ClusterNamespace;
 import org.apache.doris.common.AnalysisException;
 import org.apache.doris.common.DdlException;
@@ -26,6 +28,7 @@ import org.apache.doris.common.UserException;
 import org.apache.doris.common.util.DebugUtil;
 import org.apache.doris.load.loadv2.LoadTask.MergeType;
 import org.apache.doris.qe.ConnectContext;
+import org.apache.doris.qe.ShowResultSetMetaData;
 
 import com.google.common.collect.Lists;
 import com.selectdb.cloud.proto.SelectdbCloud.ObjectStoreInfoPB;
@@ -44,6 +47,17 @@ import java.util.Map;
  */
 public class CopyStmt extends DdlStmt {
     private static final Logger LOG = LogManager.getLogger(CopyStmt.class);
+
+    private static final ShowResultSetMetaData COPY_INTO_META_DATA =
+            ShowResultSetMetaData.builder()
+                .addColumn(new Column("state", ScalarType.createVarchar(64)))
+                .addColumn(new Column("type", ScalarType.createVarchar(64)))
+                .addColumn(new Column("msg", ScalarType.createVarchar(128)))
+                .addColumn(new Column("loadedRows", ScalarType.createVarchar(64)))
+                .addColumn(new Column("filterRows", ScalarType.createVarchar(64)))
+                .addColumn(new Column("unselectRows", ScalarType.createVarchar(64)))
+                .addColumn(new Column("url", ScalarType.createVarchar(128)))
+            .build();
     public static final String S3_BUCKET = "bucket";
     public static final String S3_PREFIX = "prefix";
 
@@ -228,5 +242,9 @@ public class CopyStmt extends DdlStmt {
             sb.append(" ASYNC = true");
         }
         return sb.toString();
+    }
+
+    public ShowResultSetMetaData getMetaData() {
+        return COPY_INTO_META_DATA;
     }
 }

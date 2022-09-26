@@ -46,6 +46,8 @@ public class QueryState {
     private long affectedRows = 0;
     private int warningRows = 0;
     // make it public for easy to use
+
+    private ShowResultSet rs = null;
     public int serverStatus = 0;
 
     public QueryState() {
@@ -59,6 +61,7 @@ public class QueryState {
         isQuery = false;
         affectedRows = 0;
         warningRows = 0;
+        rs = null;
     }
 
     public MysqlStateType getStateType() {
@@ -132,6 +135,14 @@ public class QueryState {
 
     public int getWarningRows() {
         return warningRows;
+    }
+
+    public void setResultSet(ShowResultSet rs) {
+        this.rs = rs;
+    }
+
+    public ShowResultSet getResultSet() {
+        return this.rs;
     }
 
     public MysqlPacket toResponsePacket() {

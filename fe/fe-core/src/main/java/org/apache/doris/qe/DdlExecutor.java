@@ -124,7 +124,9 @@ import org.apache.doris.load.loadv2.LoadJob;
 import org.apache.doris.load.sync.SyncJobManager;
 
 import com.google.common.base.Strings;
+import com.google.common.collect.Lists;
 
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -379,6 +381,17 @@ public class DdlExecutor {
                         && !loadingStatus.getTrackingUrl().equals(EtlStatus.DEFAULT_TRACKING_URL)) {
                     sb.append("; URL=").append(loadingStatus.getTrackingUrl());
                 }
+                List<List<String>> result = Lists.newArrayList();
+                List<String> entry = Lists.newArrayList();
+                entry.add(job.getState().toString());
+                entry.add(failMsg == null ? "" : failMsg.getCancelType().toString());
+                entry.add(failMsg == null ? "" : failMsg.getMsg());
+                entry.add("");
+                entry.add("");
+                entry.add("");
+                entry.add(loadingStatus.getTrackingUrl());
+                result.add(entry);
+                queryState.setResultSet(new ShowResultSet(copyStmt.getMetaData(), result));
                 queryState.setError(sb.toString());
                 return queryState;
             } else if (job.getState() == JobState.FINISHED) {
@@ -393,6 +406,17 @@ public class DdlExecutor {
                     url = "URL=" + loadingStatus.getTrackingUrl();
                 }
                 QueryState queryState = new QueryState();
+                List<List<String>> result = Lists.newArrayList();
+                List<String> entry = Lists.newArrayList();
+                entry.add("");
+                entry.add("");
+                entry.add("");
+                entry.add(counters.getOrDefault(LoadJob.DPP_NORMAL_ALL, "0"));
+                entry.add(counters.getOrDefault(LoadJob.DPP_ABNORMAL_ALL, "0"));
+                entry.add(counters.getOrDefault(LoadJob.UNSELECTED_ROWS, "0"));
+                entry.add(loadingStatus.getTrackingUrl());
+                result.add(entry);
+                queryState.setResultSet(new ShowResultSet(copyStmt.getMetaData(), result));
                 queryState.setOk(loadedRows, (int) (filterRows + unselectRows), url);
                 return queryState;
             }

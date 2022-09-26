@@ -672,8 +672,8 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
             if (ret != 0) { // Must be 0, an existing value
                 code = MetaServiceCode::KV_TXN_GET_ERR;
                 ss << "failed to get tablet table index ids,"
-                   << (ret == 1 ? " not found" : " internal error")
-                   << " tablet_id=" << tablet_id << " key=" << hex(key);
+                   << (ret == 1 ? " not found" : " internal error") << " tablet_id=" << tablet_id
+                   << " key=" << hex(key);
                 msg = ss.str();
                 LOG(INFO) << msg << " ret=" << ret << " txn_id=" << txn_id;
                 return;
@@ -729,8 +729,7 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
         rowsets.emplace_back(std::move(key), std::move(val));
 
         // Accumulate affected rows
-        StatsTabletKeyInfo stat_key_info {instance_id, table_id, index_id, partition_id,
-                                          tablet_id};
+        StatsTabletKeyInfo stat_key_info {instance_id, table_id, index_id, partition_id, tablet_id};
         std::string stat_key, stat_val;
         stats_tablet_key(stat_key_info, &stat_key);
         while (tablet_stats.count(stat_key) == 0) {
@@ -2665,18 +2664,19 @@ void MetaServiceImpl::get_tablet_stats(::google::protobuf::RpcController* contro
     msg = ss.str();
 }
 
-std::string static convert_ms_code_to_http_code(const MetaServiceCode& ret) {
+std::string static convert_ms_code_to_http_code(const MetaServiceCode& ret, int& status_code) {
     switch (ret) {
     case OK:
         return "OK";
         break;
     case INVALID_ARGUMENT:
+    case PROTOBUF_PARSE_ERR:
+        status_code = 400;
         return "INVALID_ARGUMENT";
         break;
     case KV_TXN_CREATE_ERR:
     case KV_TXN_GET_ERR:
     case KV_TXN_COMMIT_ERR:
-    case PROTOBUF_PARSE_ERR:
     case PROTOBUF_SERIALIZE_ERR:
     case TXN_GEN_ID_ERR:
     case TXN_DUPLICATED_REQ:
@@ -2692,15 +2692,19 @@ std::string static convert_ms_code_to_http_code(const MetaServiceCode& ret) {
     case INDEX_ALREADY_EXISTED:
     case PARTITION_ALREADY_EXISTED:
     case UNDEFINED_ERR:
+        status_code = 500;
         return "INTERANAL_ERROR";
         break;
     case CLUSTER_NOT_FOUND:
+        status_code = 404;
         return "NOT_FOUND";
         break;
-    case INSTANCE_ALREADY_EXISTED:
+    case ALREADY_EXISTED:
+        status_code = 409;
         return "ALREADY_EXISTED";
         break;
     default:
+        status_code = 500;
         return "INTERANAL_ERROR";
         break;
     }
@@ -2747,7 +2751,7 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
     std::unique_ptr<int, std::function<void(int*)>> defer_status(
             (int*)0x01,
             [&ret, &msg, &status_code, &response_body, &cntl, &req, &keep_raw_body](int*) {
-                std::string c_ret = convert_ms_code_to_http_code(ret);
+                std::string c_ret = convert_ms_code_to_http_code(ret, status_code);
                 LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
                           << cntl->remote_side() << " request=\n"
                           << req << "\n ret=" << ret << " msg=" << msg;
@@ -3035,7 +3039,7 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
         response_body = msg;
         return;
     }
-    
+
     if (unresolved_path == "get_stage") {
         GetStageRequest req;
         auto st = google::protobuf::util::JsonStringToMessage(request_body, &req);
@@ -3244,8 +3248,9 @@ void MetaServiceImpl::alter_obj_store_info(google::protobuf::RpcController* cont
         for (auto& it : obj_info) {
             if (std::stoi(it.id()) == idx) {
                 if (it.ak() == ak && it.sk() == sk) {
-                    code = MetaServiceCode::INVALID_ARGUMENT;
-                    msg = "ak sk eq original, please check it";
+                    // not change, just return ok
+                    code = MetaServiceCode::OK;
+                    msg = "";
                     return;
                 }
                 it.set_mtime(time);
@@ -3416,8 +3421,7 @@ void MetaServiceImpl::create_instance(google::protobuf::RpcController* controlle
         std::stringstream ss;
         ss << (ret == 0 ? "instance already existed" : "internal error failed to check instance")
            << ", instance_id=" << request->instance_id();
-        code = ret == 0 ? MetaServiceCode::INSTANCE_ALREADY_EXISTED
-                        : MetaServiceCode::UNDEFINED_ERR;
+        code = ret == 0 ? MetaServiceCode::ALREADY_EXISTED : MetaServiceCode::UNDEFINED_ERR;
         msg = ss.str();
         LOG(WARNING) << msg << " ret=" << ret;
         return;
@@ -3472,10 +3476,10 @@ void MetaServiceImpl::alter_cluster(google::protobuf::RpcController* controller,
 
     switch (request->op()) {
     case AlterClusterRequest::ADD_CLUSTER: {
-        msg = resource_mgr_->add_cluster(instance_id, cluster);
+        msg = resource_mgr_->add_cluster(instance_id, cluster, code);
     } break;
     case AlterClusterRequest::DROP_CLUSTER: {
-        msg = resource_mgr_->drop_cluster(instance_id, cluster);
+        msg = resource_mgr_->drop_cluster(instance_id, cluster, code);
     } break;
     case AlterClusterRequest::UPDATE_CLUSTER_MYSQL_USER_NAME: {
         msg = resource_mgr_->update_cluster(
@@ -3484,6 +3488,7 @@ void MetaServiceImpl::alter_cluster(google::protobuf::RpcController* controller,
                     std::string msg = "";
                     if (0 == cluster.cluster.mysql_user_name_size()) {
                         msg = "no mysql user name to change";
+                        code = MetaServiceCode::INVALID_ARGUMENT;
                         LOG(WARNING) << "update cluster's mysql user name, " << msg;
                         return msg;
                     }
@@ -3492,8 +3497,7 @@ void MetaServiceImpl::alter_cluster(google::protobuf::RpcController* controller,
                     return msg;
                 },
                 [&](const ::selectdb::ClusterPB& i) {
-                    return i.cluster_id() == cluster.cluster.cluster_id() &&
-                           i.cluster_name() == cluster.cluster.cluster_name();
+                    return i.cluster_id() == cluster.cluster.cluster_id();
                 });
     } break;
     case AlterClusterRequest::ADD_NODE: {
@@ -3548,6 +3552,7 @@ void MetaServiceImpl::alter_cluster(google::protobuf::RpcController* controller,
                 [&](::selectdb::ClusterPB& c) {
                     std::string msg = "";
                     if (c.cluster_name() == cluster.cluster.cluster_name()) {
+                        code = MetaServiceCode::INVALID_ARGUMENT;
                         ss << "failed to rename cluster, name eq original name, original cluster "
                               "is "
                            << proto_to_json(c);
@@ -3568,7 +3573,7 @@ void MetaServiceImpl::alter_cluster(google::protobuf::RpcController* controller,
         return;
     }
     }
-    if (!msg.empty()) {
+    if (!msg.empty() && code == MetaServiceCode::OK) {
         code = MetaServiceCode::UNDEFINED_ERR;
     }
 } // alter cluster

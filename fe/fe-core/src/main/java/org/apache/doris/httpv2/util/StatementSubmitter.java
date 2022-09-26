@@ -17,7 +17,7 @@
 
 package org.apache.doris.httpv2.util;
 
-
+import org.apache.doris.analysis.CopyStmt;
 import org.apache.doris.analysis.DdlStmt;
 import org.apache.doris.analysis.ExportStmt;
 import org.apache.doris.analysis.QueryStmt;
@@ -73,6 +73,9 @@ public class StatementSubmitter {
     private static final String JDBC_DRIVER = "org.mariadb.jdbc.Driver";
     private static final String DB_URL_PATTERN = "jdbc:mariadb://127.0.0.1:%d/%s";
 
+    private static final String[] copyResult = {"state", "type", "msg", "loadedRows",
+            "filterRows", "unselectRows", "url"};
+
     private ThreadPoolExecutor executor = ThreadPoolManager.newDaemonCacheThreadPool(2, "SQL submitter", true);
 
     public Future<ExecutionResultSet> submit(StmtContext queryCtx) {
@@ -100,7 +103,7 @@ public class StatementSubmitter {
                 Class.forName(JDBC_DRIVER);
                 conn = DriverManager.getConnection(dbUrl, queryCtx.user, queryCtx.passwd);
                 long startTime = System.currentTimeMillis();
-                if (stmtBase instanceof QueryStmt || stmtBase instanceof ShowStmt) {
+                if (stmtBase instanceof QueryStmt || stmtBase instanceof ShowStmt || stmtBase instanceof CopyStmt) {
                     stmt = conn.prepareStatement(
                             queryCtx.stmt, ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY);
                     // set fetch size to 1 to enable streaming result set to avoid OOM.
@@ -112,7 +115,7 @@ public class StatementSubmitter {
                         rs.close();
                         return new ExecutionResultSet(null);
                     }
-                    ExecutionResultSet resultSet = generateResultSet(rs, startTime);
+                    ExecutionResultSet resultSet = generateResultSet(rs, startTime, stmtBase instanceof CopyStmt);
                     rs.close();
                     return resultSet;
                 } else if (stmtBase instanceof DdlStmt || stmtBase instanceof ExportStmt) {
@@ -149,20 +152,21 @@ public class StatementSubmitter {
         /**
          * Result json sample:
          * {
-         *  "type": "result_set",
-         *  "data": [
-         *      [1],
-         *      [2]
-         *  ],
-         *  "meta": [{
-         *      "name": "k1",
-         *      "type": "INT"
-         *        }],
-         *  "status": {},
-         *  "time" : 10
+         * "type": "result_set",
+         * "data": [
+         * [1],
+         * [2]
+         * ],
+         * "meta": [{
+         * "name": "k1",
+         * "type": "INT"
+         * }],
+         * "status": {},
+         * "time" : 10
          * }
          */
-        private ExecutionResultSet generateResultSet(ResultSet rs, long startTime) throws SQLException {
+        private ExecutionResultSet generateResultSet(ResultSet rs, long startTime, boolean isCopyStmt)
+                throws SQLException {
             Map<String, Object> result = Maps.newHashMap();
             result.put("type", TYPE_RESULT_SET);
             if (rs == null) {
@@ -170,22 +174,26 @@ public class StatementSubmitter {
             }
             ResultSetMetaData metaData = rs.getMetaData();
             int colNum = metaData.getColumnCount();
-            // 1. metadata
-            List<Map<String, String>> metaFields = Lists.newArrayList();
-            // index start from 1
-            for (int i = 1; i <= colNum; ++i) {
-                Map<String, String> field = Maps.newHashMap();
-                field.put("name", metaData.getColumnName(i));
-                field.put("type", metaData.getColumnTypeName(i));
-                metaFields.add(field);
+            if (!isCopyStmt) {
+                // 1. metadata
+                List<Map<String, String>> metaFields = Lists.newArrayList();
+                // index start from 1
+                for (int i = 1; i <= colNum; ++i) {
+                    Map<String, String> field = Maps.newHashMap();
+                    field.put("name", metaData.getColumnName(i));
+                    field.put("type", metaData.getColumnTypeName(i));
+                    metaFields.add(field);
+                }
+                result.put("meta", metaFields);
             }
             // 2. data
             List<List<Object>> rows = Lists.newArrayList();
             long rowCount = 0;
+            Map<String, String> copyResultFields = Maps.newHashMap();
             while (rs.next() && rowCount < queryCtx.limit) {
                 List<Object> row = Lists.newArrayListWithCapacity(colNum);
                 // index start from 1
-                for (int i = 1; i <= colNum; ++i) {
+                for (int i = 1; i <= colNum && (!isCopyStmt || i <= copyResult.length); ++i) {
                     String type = rs.getMetaData().getColumnTypeName(i);
                     if ("DATE".equalsIgnoreCase(type) || "DATETIME".equalsIgnoreCase(type)
                             || "DATEV2".equalsIgnoreCase(type) || "DATETIMEV2".equalsIgnoreCase(type)) {
@@ -193,12 +201,19 @@ public class StatementSubmitter {
                     } else {
                         row.add(rs.getObject(i));
                     }
+                    if (isCopyStmt) {
+                        // ATTN: java.sql.SQLException: Wrong index position. Is 0 but must be in 1-7 range
+                        copyResultFields.put(copyResult[i - 1], rs.getString(i));
+                    }
                 }
                 rows.add(row);
                 rowCount++;
             }
-            result.put("meta", metaFields);
-            result.put("data", rows);
+            if (!isCopyStmt) {
+                result.put("data", rows);
+            } else {
+                result.put("result", copyResultFields);
+            }
             result.put("time", (System.currentTimeMillis() - startTime));
             return new ExecutionResultSet(result);
         }
@@ -206,9 +221,9 @@ public class StatementSubmitter {
         /**
          * Result json sample:
          * {
-         *  "type": "exec_status",
-         *  "status": {},
-         *  "time" : 10
+         * "type": "exec_status",
+         * "status": {},
+         * "time" : 10
          * }
          */
         private ExecutionResultSet generateExecStatus(long startTime) {
@@ -218,21 +233,21 @@ public class StatementSubmitter {
             result.put("time", (System.currentTimeMillis() - startTime));
             return new ExecutionResultSet(result);
         }
+    }
 
-        private StatementBase analyzeStmt(String stmtStr) throws Exception {
-            SqlParser parser = new SqlParser(new SqlScanner(new StringReader(stmtStr)));
-            try {
-                return SqlParserUtils.getFirstStmt(parser);
-            } catch (AnalysisException e) {
-                String errorMessage = parser.getErrorMsg(stmtStr);
-                if (errorMessage == null) {
-                    throw e;
-                } else {
-                    throw new AnalysisException(errorMessage, e);
-                }
-            } catch (Exception e) {
-                throw new Exception("error happens when parsing stmt: " + e.getMessage());
+    public static StatementBase analyzeStmt(String stmtStr) throws Exception {
+        SqlParser parser = new SqlParser(new SqlScanner(new StringReader(stmtStr)));
+        try {
+            return SqlParserUtils.getFirstStmt(parser);
+        } catch (AnalysisException e) {
+            String errorMessage = parser.getErrorMsg(stmtStr);
+            if (errorMessage == null) {
+                throw e;
+            } else {
+                throw new AnalysisException(errorMessage, e);
             }
+        } catch (Exception e) {
+            throw new Exception("error happens when parsing stmt: " + e.getMessage());
         }
     }
 
