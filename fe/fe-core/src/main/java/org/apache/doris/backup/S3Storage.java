@@ -18,9 +18,12 @@
 package org.apache.doris.backup;
 
 import org.apache.doris.analysis.StorageBackend;
+import org.apache.doris.common.Pair;
 import org.apache.doris.common.UserException;
 import org.apache.doris.common.util.S3URI;
+import org.apache.doris.thrift.TBrokerFileStatus;
 
+import com.selectdb.cloud.proto.SelectdbCloud.ObjectFilePB;
 import org.apache.commons.collections.map.CaseInsensitiveMap;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.conf.Configuration;
@@ -64,11 +67,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 public class S3Storage extends BlobStorage {
     public static final String S3_PROPERTIES_PREFIX = "AWS";
@@ -419,7 +423,10 @@ public class S3Storage extends BlobStorage {
         return StorageBackend.StorageType.S3;
     }
 
-    public Status list(long tableId, String path, String pattern, long sizeLimit, List<RemoteFile> remoteFiles) {
+    public Status list(String path, String pattern, long sizeLimit, int fileNum, int metaSize,
+            List<Pair<TBrokerFileStatus, ObjectFilePB>> fileStatus, List<ObjectFilePB> copyFiles) {
+        Set<String> copyFileSet = copyFiles.stream().map(f -> f.getKey() + "_" + f.getEtag())
+                .collect(Collectors.toSet());
         try {
             S3URI uri = S3URI.create(path, false);
             String prefix = uri.getKey();
@@ -432,30 +439,36 @@ public class S3Storage extends BlobStorage {
                     .build();
             ListObjectsV2Iterable responses = s3Client.listObjectsV2Paginator(request);
 
-            List<RemoteFile> result = new ArrayList<>();
-            List<RemoteFile> files = new ArrayList<>();
             long totalSize = 0;
+            long totalMetaSize = 0;
+            boolean finishList = false;
             for (ListObjectsV2Response response : responses) {
                 for (S3Object s3Object : response.contents()) {
-                    if (!matchPattern(s3Object.key(), pattern)) {
+                    if (!matchPattern(s3Object.key(), pattern) || copyFileSet.contains(
+                            s3Object.key() + "_" + s3Object.eTag())) {
                         continue;
                     }
-                    totalSize += s3Object.size();
                     String objUrl = "s3://" + uri.getBucket() + "/" + s3Object.key();
-                    files.add(new RemoteFile(objUrl, true, s3Object.size(), s3Object.eTag()));
-                    if (sizeLimit > 0 && totalSize >= sizeLimit) {
-                        result.addAll(files);
-                        files.clear();
-                        totalSize = result.stream().mapToLong(f -> f.getSize()).sum();
-                        if (totalSize >= sizeLimit) {
-                            break;
-                        }
+                    TBrokerFileStatus brokerFileStatus = new TBrokerFileStatus(objUrl, false, s3Object.size(), true);
+                    brokerFileStatus.setEtag(s3Object.eTag());
+                    ObjectFilePB objectFilePB = ObjectFilePB.newBuilder().setKey(s3Object.key())
+                            .setEtag(s3Object.eTag()).build();
+                    fileStatus.add(Pair.of(brokerFileStatus, objectFilePB));
+
+                    totalSize += s3Object.size();
+                    totalMetaSize += objectFilePB.getSerializedSize();
+                    if ((sizeLimit > 0 && totalSize >= sizeLimit) || (fileNum > 0 && fileStatus.size() >= fileNum) || (
+                            metaSize > 0 && totalMetaSize >= metaSize)) {
+                        finishList = true;
+                        break;
                     }
                 }
+                if (finishList) {
+                    break;
+                }
             }
-            result.addAll(files);
-
-            remoteFiles.addAll(result);
+            LOG.debug("list {} objects for bucket={}, prefix={}, path={}, pattern={}", fileStatus.size(),
+                    uri.getBucket(), prefix, path, pattern);
             return Status.OK;
         } catch (S3Exception e) {
             LOG.error("list file failed: ", e);

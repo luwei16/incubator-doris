@@ -96,3 +96,4 @@ data_test
 # cloud
 cloud/build*/
 cloud/ut_build*/
+cloud/cmake-build*/

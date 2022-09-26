@@ -1793,4 +1793,22 @@ public class Config extends ConfigBase {
      */
     @ConfField(mutable = true)
     public static boolean enable_new_load_scan_node = false;
+
+    /**
+     * Default number of waiting copy jobs for the whole cluster
+     */
+    @ConfField
+    public static int cluster_max_waiting_copy_jobs = 20;
+
+    /**
+     * Default number of max file num for per copy into job
+     */
+    @ConfField
+    public static int max_file_num_per_copy_into_job = 50;
+
+    /**
+     * Default number of max meta size for per copy into job
+     */
+    @ConfField
+    public static int max_meta_size_per_copy_into_job = 51200;
 }

@@ -60,6 +60,7 @@ import org.apache.doris.thrift.TPaloBrokerService;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
+import com.selectdb.cloud.proto.SelectdbCloud.ObjectFilePB;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
@@ -122,27 +123,36 @@ public class BrokerUtil {
     }
 
     // path is s3://bucket/prefix
-    public static void parseFileForCopyJob(long tableId, String path, BrokerDesc brokerDesc,
-            List<TBrokerFileStatus> fileStatuses) throws UserException {
+    public static void parseFileForCopyJob(String stageId, long tableId, BrokerDesc brokerDesc, String path,
+            FilesOrPattern filesOrPattern, long sizeLimit, List<Pair<TBrokerFileStatus, ObjectFilePB>> fileStatus)
+            throws UserException {
+        List<ObjectFilePB> copyFiles = Env.getCurrentInternalCatalog().getCopyFiles(stageId, tableId);
+        if (LOG.isDebugEnabled()) {
+            LOG.debug("Get copy files for stage={}, table={}, size={}", stageId, tableId, copyFiles.size());
+            for (ObjectFilePB copyFile : copyFiles) {
+                LOG.debug("object key={}, etag={}", copyFile.getKey(), copyFile.getEtag());
+            }
+        }
         S3Storage s3 = new S3Storage(brokerDesc.getProperties());
-        List<RemoteFile> rfiles = new ArrayList<>();
         Status st = Status.OK;
         try {
-            FilesOrPattern filesOrPattern = brokerDesc.getFilesOrPattern();
             String filePath = path;
             if (filesOrPattern != null && filesOrPattern.getFiles() != null) {
                 List<String> files = filesOrPattern.getFiles();
                 for (String file : files) {
                     filePath = path + "/" + file;
-                    st = s3.list(tableId, filePath, null, brokerDesc.getSizeLimit(), rfiles);
+                    st = s3.list(filePath, null, sizeLimit, Config.max_file_num_per_copy_into_job,
+                            Config.max_meta_size_per_copy_into_job, fileStatus, copyFiles);
                     if (!st.ok()) {
                         break;
                     }
                 }
             } else if (filesOrPattern != null && filesOrPattern.getPattern() != null) {
-                st = s3.list(tableId, path, filesOrPattern.getPattern(), brokerDesc.getSizeLimit(), rfiles);
+                st = s3.list(path, filesOrPattern.getPattern(), sizeLimit, Config.max_file_num_per_copy_into_job,
+                        Config.max_meta_size_per_copy_into_job, fileStatus, copyFiles);
             } else {
-                st = s3.list(tableId, path, null, brokerDesc.getSizeLimit(), rfiles);
+                st = s3.list(path, null, sizeLimit, Config.max_file_num_per_copy_into_job,
+                        Config.max_meta_size_per_copy_into_job, fileStatus, copyFiles);
             }
             if (!st.ok()) {
                 throw new UserException("S3 list path failed. path=" + filePath + ",msg=" + st.getErrMsg());
@@ -150,14 +160,6 @@ public class BrokerUtil {
         } catch (Throwable e) {
             LOG.warn("s3 list path exception, path={}", path, e);
             throw new UserException("s3 list path exception. path=" + path + ", err: " + e.getMessage());
-        }
-        for (RemoteFile r : rfiles) {
-            if (r.isFile()) {
-                TBrokerFileStatus tBrokerFileStatus = new TBrokerFileStatus(r.getName(), !r.isFile(), r.getSize(),
-                        r.isFile());
-                tBrokerFileStatus.setEtag(r.getEtag());
-                fileStatuses.add(tBrokerFileStatus);
-            }
         }
     }
 

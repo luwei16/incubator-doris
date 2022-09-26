@@ -189,8 +189,9 @@ public class StageTest extends TestWithFeService {
             }
         };
         try {
-            String copyQuery = "copy into db.test_table from '@ex_stage_1'";
+            String copyQuery = "copy into db.test_table from @ex_stage_1";
             CopyStmt copyStmt = (CopyStmt) UtFrameUtils.parseAndAnalyzeStmt(copyQuery, ctx);
+            System.out.println("parsed sql: " + copyStmt.toSql());
             // check file format
             FileFormat fileFormat = copyStmt.getFileFormat();
             Assert.assertNotNull(fileFormat);
@@ -206,7 +207,7 @@ public class StageTest extends TestWithFeService {
             Assert.fail("must be success.");
         }
         try {
-            String copyQuery = "copy into db.test_table from '@ex_stage_1' "
+            String copyQuery = "copy into db.test_table from @ ex_stage_1 "
                     + "file_format = ('type' = 'json', 'fuzzy_parse'='true', 'json_root'=\"{\") "
                     + "copy_option= ('on_error' = 'continue', 'size_limit' = '200')";
             CopyStmt copyStmt = (CopyStmt) UtFrameUtils.parseAndAnalyzeStmt(copyQuery, ctx);
@@ -228,7 +229,7 @@ public class StageTest extends TestWithFeService {
             Assert.fail("must be success.");
         }
         try {
-            String copyQuery = "copy into db.test_table from '@ex_stage_2'";
+            String copyQuery = "copy into db.test_table from @ex_stage_2";
             CopyStmt copyStmt = (CopyStmt) UtFrameUtils.parseAndAnalyzeStmt(copyQuery, ctx);
             // check file format
             FileFormat fileFormat = copyStmt.getFileFormat();

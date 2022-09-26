@@ -66,31 +66,34 @@ public class CopyIntoTest extends TestWithFeService {
             }
         };
 
-        String copySql = "copy into t2 from (select from '@ex_stage_1') ";
+        String copySql = "copy into t2 from (select from @ex_stage_1) ";
         checkEmptyDataDescription(copySql);
 
-        copySql = "copy into t2 from (select * from '@ex_stage_1') ";
+        copySql = "copy into t2 from (select * from @ex_stage_1) ";
         checkEmptyDataDescription(copySql);
 
-        copySql = "copy into t2 from (select $2, $1, $3 from '@ex_stage_1') ";
+        copySql = "copy into t2 from (select $2, $1, $3 from @ex_stage_1) ";
         checkDataDescription(copySql, Lists.newArrayList("$2", "$1", "$3"));
 
-        copySql = "copy into t2 from (select $3, $1 from '@ex_stage_1') ";
+        copySql = "copy into t2 from (select $3, $1 from @ex_stage_1) ";
         checkDataDescriptionWithException(copySql);
 
-        copySql = "copy into t2 from (select $2, $1+100, $3 from '@ex_stage_1') ";
+        copySql = "copy into t2 from (select $2, $1+100, $3 from @ex_stage_1) ";
         checkDataDescription(copySql, Lists.newArrayList("$2", "$1", "$3"));
 
         copySql = "copy into t2 from "
-                + "(select $1, str_to_date($3, '%Y-%m-%d'), $2 + 1 from '@ex_stage_1' where $2 > $1) ";
+                + "(select $1, str_to_date($3, '%Y-%m-%d'), $2 + 1 from @ex_stage_1 where $2 > $1) ";
         checkDataDescription(copySql, Lists.newArrayList("$1", "$3", "$2"));
 
         copySql = "copy into t2 from "
-                + "(select $1, str_to_date($3, '%Y-%m-%d'), $2 + 1 from '@ex_stage_1' where $2 > $1) ";
+                + "(select $1, str_to_date($3, '%Y-%m-%d'), $2 + 1 from @ex_stage_1 where $2 > $1) ";
         checkDataDescription(copySql, Lists.newArrayList("$1", "$3", "$2"));
 
-        copySql = "copy into t2 from (select $2, NULL, $3 from '@ex_stage_1') ";
+        copySql = "copy into t2 from (select $2, NULL, $3 from @ex_stage_1) ";
         checkDataDescriptionWithNull(copySql, Lists.newArrayList("$2", "", "$3"), 1);
+
+        copySql = "copy into t2 from (select $3, $1, $a from @ex_stage_1) ";
+        checkDataDescriptionWithException(copySql);
     }
 
     private void checkDataDescription(String sql, List<String> filedColumns) {

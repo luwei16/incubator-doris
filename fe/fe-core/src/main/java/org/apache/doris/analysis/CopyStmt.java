@@ -67,6 +67,12 @@ public class CopyStmt extends DdlStmt {
     private DataDescription dataDescription = null;
     private final Map<String, String> brokerProperties = new HashMap<>();
     private final Map<String, String> properties = new HashMap<>();
+    @Getter
+    private String stageId;
+    @Getter
+    private StageType stageType;
+    @Getter
+    private long sizeLimit;
 
     /**
      * Use for cup.
@@ -94,15 +100,19 @@ public class CopyStmt extends DdlStmt {
         // analyze stage
         analyzeStageName();
         // get stage from meta service. And permission is checked in meta service
-        StagePB stagePB = Env.getCurrentInternalCatalog().getStage(StageType.EXTERNAL,
-                ClusterNamespace.getNameFromFullName(ConnectContext.get().getCurrentUserIdentity().getQualifiedUser()),
-                stage);
+        StagePB stagePB;
+        String user = ClusterNamespace.getNameFromFullName(
+                ConnectContext.get().getCurrentUserIdentity().getQualifiedUser());
+        if (stage.equals("u")) { // TODO internal stage use a speci
+            stagePB = Env.getCurrentInternalCatalog().getStage(StageType.INTERNAL, user, null);
+        } else {
+            stagePB = Env.getCurrentInternalCatalog().getStage(StageType.EXTERNAL, user, stage);
+        }
         analyzeStagePB(stagePB);
 
         // generate broker desc
-        long sizeLimit = copyOption.getSizeLimit();
-        brokerDesc = new BrokerDesc("S3", StorageBackend.StorageType.S3, brokerProperties, true, filesOrPattern,
-                sizeLimit);
+        sizeLimit = copyOption.getSizeLimit();
+        brokerDesc = new BrokerDesc("S3", StorageBackend.StorageType.S3, brokerProperties);
         // generate data description
         String filePath = "s3://" + brokerProperties.get(S3_BUCKET) + "/" + brokerProperties.get(S3_PREFIX);
         Separator separator = fileFormat.getColumnSeparator() != null ? new Separator(fileFormat.getColumnSeparator())
@@ -141,34 +151,24 @@ public class CopyStmt extends DdlStmt {
     }
 
     private void analyzeStageName() throws AnalysisException {
-        if (stage.startsWith("@~")) {
-            throw new AnalysisException("User stage is not supported now");
-        } else if (stage.startsWith("@%")) {
-            throw new AnalysisException("Table stage is not supported now");
-        } else if (stage.startsWith("@")) {
-            // TODO if allows path follows the stage name
-            stage = stage.substring(1);
-        } else {
-            throw new AnalysisException("Stage must start with '@'");
+        if (stage.isEmpty()) {
+            throw new AnalysisException("Stage name can not be empty");
         }
     }
 
     // after analyzeStagePB, fileFormat and copyOption is not null
     private void analyzeStagePB(StagePB stagePB) throws AnalysisException {
-        if (stagePB.getType() == StageType.EXTERNAL) {
-            ObjectStoreInfoPB objInfo = stagePB.getObjInfo();
-            brokerProperties.put(S3Storage.S3_ENDPOINT, "http://" + objInfo.getEndpoint());
-            // brokerProperties.put(S3Storage.S3_ENDPOINT, objInfo.getEndpoint());
-            brokerProperties.put(S3Storage.S3_REGION, objInfo.getRegion());
-            brokerProperties.put(S3Storage.S3_AK, objInfo.getAk());
-            brokerProperties.put(S3Storage.S3_SK, objInfo.getSk());
-            brokerProperties.put(S3_BUCKET, objInfo.getBucket());
-            brokerProperties.put(S3_PREFIX, objInfo.getPrefix());
-        } else if (stagePB.getType() == StageType.INTERNAL) {
-            throw new AnalysisException("Internal stage is not supported now");
-        } else {
-            throw new AnalysisException("Unsupported stage: " + stage);
-        }
+        ObjectStoreInfoPB objInfo = stagePB.getObjInfo();
+        brokerProperties.put(S3Storage.S3_ENDPOINT, "http://" + objInfo.getEndpoint());
+        // brokerProperties.put(S3Storage.S3_ENDPOINT, objInfo.getEndpoint());
+        brokerProperties.put(S3Storage.S3_REGION, objInfo.getRegion());
+        brokerProperties.put(S3Storage.S3_AK, objInfo.getAk());
+        brokerProperties.put(S3Storage.S3_SK, objInfo.getSk());
+        brokerProperties.put(S3_BUCKET, objInfo.getBucket());
+        brokerProperties.put(S3_PREFIX, objInfo.getPrefix());
+
+        stageType = stagePB.getType();
+        stageId = stagePB.getStageId();
         Map<String, String> fileFormatProperties = stagePB.getFileFormatPropertiesMap();
         if (this.fileFormat == null) {
             this.fileFormat = new FileFormat(fileFormatProperties);

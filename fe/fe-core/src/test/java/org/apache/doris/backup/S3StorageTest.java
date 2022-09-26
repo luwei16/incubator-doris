@@ -17,8 +17,12 @@
 
 package org.apache.doris.backup;
 
+import org.apache.doris.common.Config;
+import org.apache.doris.common.Pair;
 import org.apache.doris.persist.EditLog;
+import org.apache.doris.thrift.TBrokerFileStatus;
 
+import com.selectdb.cloud.proto.SelectdbCloud.ObjectFilePB;
 import mockit.Mocked;
 import org.apache.commons.codec.digest.DigestUtils;
 import org.junit.Assert;
@@ -178,51 +182,48 @@ public class S3StorageTest {
         S3Storage s3Storage = new S3Storage(properties);
         String bucket = "s3://justtmp-bj-1308700295/meiyi_cloud_test/";
         String path = bucket; // + "1_my.csv";
-
+        int fileNum = Config.max_file_num_per_copy_into_job;
+        int metaSize = Config.max_meta_size_per_copy_into_job;
+        List<Pair<TBrokerFileStatus, ObjectFilePB>> result = new ArrayList<>();
 
         // size_limit = 0 and pattern = null;
         do {
-            List<RemoteFile> result = new ArrayList<>();
-            Assert.assertEquals(Status.OK, s3Storage.list(0, path, null, 0, result));
-            for (RemoteFile remoteFile : result) {
-                System.out.println("remote file = " + remoteFile.getName());
+            Assert.assertEquals(Status.OK, s3Storage.list(path, null, 0, fileNum, metaSize, result, new ArrayList<>()));
+            for (Pair<TBrokerFileStatus, ObjectFilePB> pair : result) {
+                System.out.println("remote file = " + pair.first.getPath());
             }
         } while (false);
         // size_limit > 0 and pattern = null;
         do {
-            List<RemoteFile> result = new ArrayList<>();
-            int i = 0;
             int size;
             do {
                 size = result.size();
-                i++;
-                Assert.assertEquals(Status.OK, s3Storage.list(1, path, null, 30, result));
-                for (RemoteFile remoteFile : result) {
-                    System.out.println("remote file " + i + " =" + remoteFile.getName());
+                Assert.assertEquals(Status.OK,
+                        s3Storage.list(path, null, 30, fileNum, metaSize, result, new ArrayList<>()));
+                for (Pair<TBrokerFileStatus, ObjectFilePB> pair : result) {
+                    System.out.println("remote file = " + pair.first.getPath());
                 }
             } while (size != result.size());
         } while (false);
         // size_limit = 0 and pattern != null
         do {
-            List<RemoteFile> result = new ArrayList<>();
             String pattern = ".*my.*";
-            Assert.assertEquals(Status.OK, s3Storage.list(2, path, pattern, 0, result));
-            for (RemoteFile remoteFile : result) {
-                System.out.println("remote file with pattern = " + remoteFile.getName());
+            Assert.assertEquals(Status.OK,
+                    s3Storage.list(path, pattern, 0, fileNum, metaSize, result, new ArrayList<>()));
+            for (Pair<TBrokerFileStatus, ObjectFilePB> pair : result) {
+                System.out.println("remote file = " + pair.first.getPath());
             }
         } while (false);
         // size_limit > 0 and pattern != null
         do {
-            List<RemoteFile> result = new ArrayList<>();
             String pattern = ".*my.*";
-            int i = 0;
             int size;
             do {
                 size = result.size();
-                i++;
-                Assert.assertEquals(Status.OK, s3Storage.list(4, path, pattern, 30, result));
-                for (RemoteFile remoteFile : result) {
-                    System.out.println("remote file with pattern " + i + " =" + remoteFile.getName());
+                Assert.assertEquals(Status.OK,
+                        s3Storage.list(path, pattern, 30, fileNum, metaSize, result, new ArrayList<>()));
+                for (Pair<TBrokerFileStatus, ObjectFilePB> pair : result) {
+                    System.out.println("remote file = " + pair.first.getPath());
                 }
             } while (size != result.size());
         } while (false);

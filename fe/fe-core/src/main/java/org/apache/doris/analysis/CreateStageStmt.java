@@ -32,6 +32,8 @@ import lombok.Getter;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import java.util.UUID;
+
 /**
  * Create stage.
  */
@@ -86,8 +88,9 @@ public class CreateStageStmt extends DdlStmt {
 
     public StagePB toStageProto() throws DdlException {
         StagePB.Builder stageBuilder = StagePB.newBuilder();
-        stageBuilder.addMysqlUserName(
-                ClusterNamespace.getNameFromFullName(ConnectContext.get().getCurrentUserIdentity().getQualifiedUser()));
+        stageBuilder.addMysqlUserName(ClusterNamespace
+                        .getNameFromFullName(ConnectContext.get().getCurrentUserIdentity().getQualifiedUser()))
+                .setStageId(UUID.randomUUID().toString());
         switch (getStageParam().getType()) {
             case EXTERNAL:
                 stageBuilder.setName(getStageName()).setType(StagePB.StageType.EXTERNAL)

@@ -32,7 +32,6 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 
 public class CopyFromParam {
@@ -99,7 +98,7 @@ public class CopyFromParam {
         }
     }
 
-    private int getMaxFileColumnId() {
+    private int getMaxFileColumnId() throws AnalysisException {
         int maxId = 0;
         if (exprList != null) {
             int maxFileColumnId = getMaxFileColumnId(exprList);
@@ -112,19 +111,24 @@ public class CopyFromParam {
         return maxId;
     }
 
-    private int getMaxFileColumnId(List<Expr> exprList) {
+    private int getMaxFileColumnId(List<Expr> exprList) throws AnalysisException {
         List<SlotRef> slotRefs = Lists.newArrayList();
         Expr.collectList(exprList, SlotRef.class, slotRefs);
-        return slotRefs.stream().map(s -> getFileColumnIdOfSlotRef(s)).max(Comparator.comparing(x -> x)).orElse(0);
+        int maxId = 0;
+        for (SlotRef slotRef : slotRefs) {
+            int fileColumnId = getFileColumnIdOfSlotRef(slotRef);
+            maxId = fileColumnId < maxId ? maxId : fileColumnId;
+        }
+        return maxId;
     }
 
-    private int getFileColumnIdOfSlotRef(SlotRef slotRef) {
+    private int getFileColumnIdOfSlotRef(SlotRef slotRef) throws AnalysisException {
         String columnName = slotRef.getColumnName();
-        if (columnName.startsWith(DOLLAR)) {
-            String idStr = columnName.substring(1);
-            return Integer.parseInt(idStr);
+        try {
+            return columnName.startsWith(DOLLAR) ? Integer.parseInt(columnName.substring(1)) : 0;
+        } catch (NumberFormatException e) {
+            throw new AnalysisException("column name: " + columnName + " can not parse to a number");
         }
-        return 0;
     }
 
     public String toSql() {
@@ -135,13 +139,13 @@ public class CopyFromParam {
                 Joiner.on(", ").appendTo(sb,
                         Lists.transform(columnMappingList, (Function<Expr, Object>) expr -> expr.toSql()));
             }
-            sb.append(" FROM '").append(stage).append("'");
+            sb.append(" FROM @").append(stage);
             if (fileFilterExpr != null) {
                 sb.append(" WHERE ").append(fileFilterExpr.toSql());
             }
             sb.append(")");
         } else {
-            sb.append("'").append(stage).append("'");
+            sb.append("@").append(stage);
         }
         return sb.toString();
     }

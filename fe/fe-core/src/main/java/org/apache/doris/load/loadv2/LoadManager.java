@@ -37,6 +37,7 @@ import org.apache.doris.common.UserException;
 import org.apache.doris.common.io.Writable;
 import org.apache.doris.common.util.LogBuilder;
 import org.apache.doris.common.util.LogKey;
+import org.apache.doris.ha.FrontendNodeType;
 import org.apache.doris.load.EtlJobType;
 import org.apache.doris.load.FailMsg;
 import org.apache.doris.load.FailMsg.CancelType;
@@ -144,8 +145,17 @@ public class LoadManager implements Writable {
                                 + " unfinished load jobs, please retry later. "
                                 + "You can use `SHOW LOAD` to view submitted jobs");
             }
-            loadJob = new BrokerLoadJob(dbId, stmt.getLabel().getLabelName(), stmt.getBrokerDesc(), stmt.getOrigStmt(),
-                    stmt.getUserInfo());
+            int frontendNum = Env.getCurrentEnv().getFrontends(FrontendNodeType.OBSERVER).size() + 1;
+            int copyJobNumPerNode = Config.cluster_max_waiting_copy_jobs / frontendNum;
+            if (unprotectedGetUnfinishedCopyJobNum() >= copyJobNumPerNode) {
+                throw new DdlException(
+                        "There are more than " + copyJobNumPerNode + " unfinished copy jobs, " + frontendNum
+                                + " frontends, " + Config.cluster_max_waiting_copy_jobs
+                                + " copy jobs , please retry later. ");
+            }
+            loadJob = new CopyJob(dbId, stmt.getLabel().getLabelName(), stmt.getBrokerDesc(), stmt.getOrigStmt(),
+                    stmt.getUserInfo(), stmt.getStageId(), stmt.getStageType(), stmt.getSizeLimit(),
+                    stmt.getFilesOrPattern());
             loadJob.setJobProperties(stmt.getProperties());
             loadJob.checkAndSetDataSourceInfo(database, stmt.getDataDescriptions());
             createLoadJob(loadJob);
@@ -165,6 +175,12 @@ public class LoadManager implements Writable {
     private long unprotectedGetUnfinishedJobNum() {
         return idToLoadJob.values().stream()
                 .filter(j -> (j.getState() != JobState.FINISHED && j.getState() != JobState.CANCELLED)).count();
+    }
+
+    private long unprotectedGetUnfinishedCopyJobNum() {
+        return idToLoadJob.values().stream()
+                .filter(j -> (j.getState() != JobState.FINISHED && j.getState() != JobState.CANCELLED))
+                .filter(j -> j instanceof CopyJob).count();
     }
 
     /**

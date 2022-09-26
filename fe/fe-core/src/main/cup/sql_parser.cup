@@ -1784,11 +1784,11 @@ copy_stmt ::=
     :};
 
 copy_from_param ::=
-    STRING_LITERAL:stage
+    AT ident:stage
     {:
         RESULT = new CopyFromParam(stage);
     :}
-    | LPAREN KW_SELECT copy_select_expr_list:exprList KW_FROM STRING_LITERAL:stage where_clause:whereExpr RPAREN
+    | LPAREN KW_SELECT copy_select_expr_list:exprList KW_FROM AT ident:stage where_clause:whereExpr RPAREN
     {:
         RESULT = new CopyFromParam(stage, exprList, whereExpr);
     :}

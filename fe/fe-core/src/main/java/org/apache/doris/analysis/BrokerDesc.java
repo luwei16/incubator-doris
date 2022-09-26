@@ -47,10 +47,6 @@ public class BrokerDesc extends StorageDesc implements Writable {
     public static final String MULTI_LOAD_BROKER = "__DORIS_MULTI_LOAD_BROKER__";
     public static final String MULTI_LOAD_BROKER_BACKEND_KEY = "__DORIS_MULTI_LOAD_BROKER_BACKEND__";
 
-    private boolean isCopyInto = false;
-    private FilesOrPattern filesOrPattern = null;
-    private long sizeLimit;
-
     // Only used for recovery
     private BrokerDesc() {
         this.properties = Maps.newHashMap();
@@ -79,14 +75,6 @@ public class BrokerDesc extends StorageDesc implements Writable {
         }
         this.storageType = storageType;
         tryConvertToS3();
-    }
-
-    public BrokerDesc(String name, StorageBackend.StorageType storageType, Map<String, String> properties,
-            boolean isCopyInto, FilesOrPattern filesOrPattern, long sizeLimit) {
-        this(name, storageType, properties);
-        this.isCopyInto = isCopyInto;
-        this.filesOrPattern = filesOrPattern;
-        this.sizeLimit = sizeLimit;
     }
 
     public String getName() {
@@ -175,17 +163,5 @@ public class BrokerDesc extends StorageDesc implements Writable {
             sb.append(" (").append(printableMap.toString()).append(")");
         }
         return sb.toString();
-    }
-
-    public boolean isCopyInto() {
-        return isCopyInto;
-    }
-
-    public FilesOrPattern getFilesOrPattern() {
-        return filesOrPattern;
-    }
-
-    public long getSizeLimit() {
-        return sizeLimit;
     }
 }

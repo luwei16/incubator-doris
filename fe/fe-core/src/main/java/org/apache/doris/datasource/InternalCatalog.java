@@ -183,6 +183,8 @@ import com.google.common.collect.Sets;
 import com.selectdb.cloud.catalog.CloudPartition;
 import com.selectdb.cloud.catalog.CloudReplica;
 import com.selectdb.cloud.proto.SelectdbCloud;
+import com.selectdb.cloud.proto.SelectdbCloud.FinishCopyRequest.Action;
+import com.selectdb.cloud.proto.SelectdbCloud.ObjectFilePB;
 import com.selectdb.cloud.proto.SelectdbCloud.StagePB;
 import com.selectdb.cloud.rpc.MetaServiceProxy;
 import doris.segment_v2.SegmentV2;
@@ -3840,6 +3842,60 @@ public class InternalCatalog implements CatalogIf<Database> {
         } catch (RpcException e) {
             LOG.warn("createStage response: {} ", response);
             throw new DdlException(e.getMessage());
+        }
+    }
+
+    public List<ObjectFilePB> beginCopy(String stageId, SelectdbCloud.StagePB.StageType stageType, long tableId,
+            String copyJobId, int groupId, long startTime, long timeoutTime, List<ObjectFilePB> objectFiles)
+            throws DdlException {
+        SelectdbCloud.BeginCopyRequest.Builder builder = SelectdbCloud.BeginCopyRequest.newBuilder()
+                .setCloudUniqueId(Config.cloud_unique_id).setStageId(stageId).setStageType(stageType)
+                .setTableId(tableId).setCopyId(copyJobId).setGroupId(groupId).setStartTime(startTime)
+                .setTimeoutTime(timeoutTime).addAllObjectFiles(objectFiles);
+        SelectdbCloud.BeginCopyResponse response;
+        try {
+            response = MetaServiceProxy.getInstance().beginCopy(builder.build());
+            if (response.getStatus().getCode() != SelectdbCloud.MetaServiceCode.OK) {
+                LOG.warn("beginCopy response: {} ", response);
+                throw new DdlException(response.getStatus().getMsg());
+            }
+            return response.getFilteredObjectFilesList();
+        } catch (RpcException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public void finishCopy(String stageId, SelectdbCloud.StagePB.StageType stageType, long tableId, String copyJobId,
+            int groupId, boolean success) throws DdlException {
+        SelectdbCloud.FinishCopyRequest.Builder builder = SelectdbCloud.FinishCopyRequest.newBuilder()
+                .setCloudUniqueId(Config.cloud_unique_id).setStageId(stageId).setStageType(stageType)
+                .setTableId(tableId).setCopyId(copyJobId).setGroupId(groupId)
+                .setAction(success ? Action.COMMIT : Action.ABORT);
+        SelectdbCloud.FinishCopyResponse response;
+        try {
+            response = MetaServiceProxy.getInstance().finishCopy(builder.build());
+            if (response.getStatus().getCode() != SelectdbCloud.MetaServiceCode.OK) {
+                LOG.warn("beginCopy response: {} ", response);
+                throw new DdlException(response.getStatus().getMsg());
+            }
+        } catch (RpcException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public List<ObjectFilePB> getCopyFiles(String stageId, long tableId) throws DdlException {
+        SelectdbCloud.GetCopyFilesRequest.Builder builder = SelectdbCloud.GetCopyFilesRequest.newBuilder()
+                .setCloudUniqueId(Config.cloud_unique_id).setStageId(stageId).setTableId(tableId);
+        SelectdbCloud.GetCopyFilesResponse response;
+        try {
+            response = MetaServiceProxy.getInstance().getCopyFiles(builder.build());
+            if (response.getStatus().getCode() != SelectdbCloud.MetaServiceCode.OK) {
+                LOG.warn("getCopyFiles response: {} ", response);
+                throw new DdlException(response.getStatus().getMsg());
+            }
+            return response.getObjectFilesList();
+        } catch (RpcException e) {
+            throw new RuntimeException(e);
         }
     }
 }
