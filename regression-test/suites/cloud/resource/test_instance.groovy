@@ -15,7 +15,8 @@ suite("cloud_instance_test", "cloud_instance") {
                 "bucket": "test-bucket",
                 "prefix": "test-prefix",
                 "endpoint": "test-endpoint",
-                "region": "test-region"
+                "region": "test-region",
+		        "provider" : "BOS"
             }
         }'
      */
@@ -24,12 +25,13 @@ suite("cloud_instance_test", "cloud_instance") {
     def s3 = [ak: "test-ak1",
               sk : "test-sk1"
               ,bucket : "test-bucket", prefix: "test-prefix", endpoint: "test-endpoint"
-              ,region: "test-region"]
+              ,region: "test-region", provider : "BOS"]
     def map = [instance_id: "instance_id", name: "${name}", user_id: "${user_id}", obj_info: s3]
     def js = jsonOutput.toJson(map)
 
     def create_instance_api = { request_body, check_func ->
         httpTest {
+	        endpoint context.config.metaServiceHttpAddress
             uri "/MetaService/http/create_instance?token=greedisgood9999"
             body request_body
             check check_func

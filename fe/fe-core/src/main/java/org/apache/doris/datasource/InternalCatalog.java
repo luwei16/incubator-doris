@@ -3811,7 +3811,7 @@ public class InternalCatalog implements CatalogIf<Database> {
         try {
             response = MetaServiceProxy.getInstance().createStage(createStageRequest);
             // Now only create external stage
-            if (ifNotExists && response.getStatus().getCode() == SelectdbCloud.MetaServiceCode.STAGE_ALREADY_EXISTED) {
+            if (ifNotExists && response.getStatus().getCode() == SelectdbCloud.MetaServiceCode.ALREADY_EXISTED) {
                 LOG.info("stage already exists, stage_name: {}", stagePB.getName());
                 return;
             }

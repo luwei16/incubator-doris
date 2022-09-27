@@ -17,7 +17,8 @@ suite("cloud_cluster_test", "cloud_cluster") {
                 "bucket": "test-bucket",
                 "prefix": "test-prefix",
                 "endpoint": "test-endpoint",
-                "region": "test-region"
+                "region": "test-region",
+                "provider" : "BOS"
             }
         }'
      */
@@ -28,12 +29,14 @@ suite("cloud_cluster_test", "cloud_cluster") {
               bucket : "test-bucket",
               prefix: "test-prefix",
               endpoint: "test-endpoint",
-              region: "test-region"]
+              region: "test-region",
+              provider : "BOS"]
     def map = [instance_id: "${instance_id}", name: "${name}", user_id: "${user_id}", obj_info: s3]
     def js = jsonOutput.toJson(map)
 
     def create_instance_api = { request_body, check_func ->
         httpTest {
+            endpoint context.config.metaServiceHttpAddress
             uri "/MetaService/http/create_instance?token=$token"
             body request_body
             check check_func
@@ -79,6 +82,7 @@ suite("cloud_cluster_test", "cloud_cluster") {
 
     def add_cluster_api = { request_body, check_func ->
         httpTest {
+            endpoint context.config.metaServiceHttpAddress
             uri "/MetaService/http/add_cluster?token=$token"
             body request_body
             check check_func
@@ -89,7 +93,7 @@ suite("cloud_cluster_test", "cloud_cluster") {
         respCode, body ->
             log.info("http cli result: ${body} ${respCode}".toString())
             def json = parseJson(body)
-            assertTrue(json.code.equalsIgnoreCase("OK") || json.code.equalsIgnoreCase("INTERANAL_ERROR"))
+            assertTrue(json.code.equalsIgnoreCase("OK") || json.code.equalsIgnoreCase("ALREADY_EXISTED"))
     }
 
     jsonOutput = new JsonOutput()
@@ -108,6 +112,7 @@ suite("cloud_cluster_test", "cloud_cluster") {
 
     def drop_cluster_api = { request_body, check_func ->
         httpTest {
+            endpoint context.config.metaServiceHttpAddress
             uri "/MetaService/http/drop_cluster?token=$token"
             body request_body
             check check_func
@@ -165,6 +170,7 @@ suite("cloud_cluster_test", "cloud_cluster") {
     js = jsonOutput.toJson(get_obj_store_info_api_body)
     def get_obj_store_info_api = { request_body, check_func ->
         httpTest {
+            endpoint context.config.metaServiceHttpAddress
             uri "/MetaService/http/get_obj_store_info?token=$token"
             body request_body
             check check_func
@@ -194,6 +200,7 @@ suite("cloud_cluster_test", "cloud_cluster") {
     js = jsonOutput.toJson(update_ak_sk_api_body)
     def update_ak_sk_api = { request_body, check_func ->
         httpTest {
+            endpoint context.config.metaServiceHttpAddress
             uri "/MetaService/http/update_ak_sk?token=$token"
             body request_body
             check check_func
@@ -229,6 +236,7 @@ suite("cloud_cluster_test", "cloud_cluster") {
     js = jsonOutput.toJson(add_obj_info_api_body)
     def add_obj_info_api = { request_body, check_func ->
         httpTest {
+            endpoint context.config.metaServiceHttpAddress
             uri "/MetaService/http/add_obj_info?token=$token"
             body request_body
             check check_func
@@ -248,7 +256,7 @@ suite("cloud_cluster_test", "cloud_cluster") {
         respCode, body ->
             log.info("http cli result: ${body} ${respCode}".toString())
             def json = parseJson(body)
-            assertTrue(json.code.equalsIgnoreCase("INTERANAL_ERROR"))
+            assertTrue(json.code.equalsIgnoreCase("ALREADY_EXISTED"))
     }
 
     nodeList = [nodeMap]
@@ -274,14 +282,13 @@ suite("cloud_cluster_test", "cloud_cluster") {
          }'
      */
     // use a new instance_id add a cloud_unique_id node has been used, failed
-    // err: cloud_unique_id is already occupied by an instance,
-    // instance_id=instance_id_deadbeef cluster_name=cluster_name1 cluster_id=cluster_id1 cloud_unique_id=cloud_unique_id_compute_node0
+    // err: try to add a existing cluster id, existing_cluster_id=cluster_id1
     add_cluster_api.call(js) {
         respCode, body ->
             log.info("http cli result: ${body} ${respCode}".toString())
             def json = parseJson(body)
-            assertTrue(json.code.equalsIgnoreCase("INTERANAL_ERROR"))
-            assertTrue(json.msg.startsWith("cloud_unique_id is already occupied by an instance"))
+            assertTrue(json.code.equalsIgnoreCase("ALREADY_EXISTED"))
+            assertTrue(json.msg.startsWith("try to add a existing cluster id"))
     }
 
     // get_cluster by cluster name
@@ -297,6 +304,7 @@ suite("cloud_cluster_test", "cloud_cluster") {
 
     def get_cluster_api = { request_body, check_func ->
         httpTest {
+            endpoint context.config.metaServiceHttpAddress
             uri "/MetaService/http/get_cluster?token=$token"
             body request_body
             check check_func
@@ -354,6 +362,7 @@ suite("cloud_cluster_test", "cloud_cluster") {
     js = jsonOutput.toJson(default_name_cluster_body)
     def set_default_user_to_cluster_api = { request_body, check_func ->
         httpTest {
+            endpoint context.config.metaServiceHttpAddress
             uri "/MetaService/http/update_cluster_mysql_user_name?token=$token"
             body request_body
             check check_func
@@ -421,6 +430,7 @@ suite("cloud_cluster_test", "cloud_cluster") {
 
     def add_node_api = { request_body, check_func ->
         httpTest {
+            endpoint context.config.metaServiceHttpAddress
             uri "/MetaService/http/add_node?token=$token"
             body request_body
             check check_func
@@ -478,6 +488,7 @@ suite("cloud_cluster_test", "cloud_cluster") {
     js = jsonOutput.toJson(del_nodes_body)
     def drop_node_api = { request_body, check_func ->
         httpTest {
+            endpoint context.config.metaServiceHttpAddress
             uri "/MetaService/http/drop_node?token=$token"
             body request_body
             check check_func
@@ -506,6 +517,7 @@ suite("cloud_cluster_test", "cloud_cluster") {
      */
     def rename_node_api = { request_body, check_func ->
         httpTest {
+            endpoint context.config.metaServiceHttpAddress
             uri "/MetaService/http/rename_cluster?token=$token"
             body request_body
             check check_func
@@ -579,7 +591,7 @@ suite("cloud_cluster_test", "cloud_cluster") {
         respCode, body ->
             log.info("http cli result: ${body} ${respCode}".toString())
             def json = parseJson(body)
-            assertTrue(json.code.equalsIgnoreCase("INTERANAL_ERROR"))
+            assertTrue(json.code.equalsIgnoreCase("NOT_FOUND"))
     }
 
     // after drop, get cluster again, failed
@@ -623,7 +635,7 @@ suite("cloud_cluster_test", "cloud_cluster") {
         respCode, body ->
             log.info("http cli result: ${body} ${respCode}".toString())
             def json = parseJson(body)
-            assertTrue(json.code.equalsIgnoreCase("INTERANAL_ERROR") || json.code.equalsIgnoreCase("OK"))
+            assertTrue(json.code.equalsIgnoreCase("INVALID_ARGUMENT") || json.code.equalsIgnoreCase("OK"))
     }
 
     // drop cluster
@@ -644,7 +656,7 @@ suite("cloud_cluster_test", "cloud_cluster") {
         respCode, body ->
             log.info("http cli result: ${body} ${respCode}".toString())
             def json = parseJson(body)
-            assertTrue(json.code.equalsIgnoreCase("INTERANAL_ERROR"))
+            assertTrue(json.code.equalsIgnoreCase("NOT_FOUND"))
     }
 
     // add a fe cluster
@@ -695,7 +707,7 @@ suite("cloud_cluster_test", "cloud_cluster") {
         respCode, body ->
             log.info("http cli result: ${body} ${respCode}".toString())
             def json = parseJson(body)
-            assertTrue(json.code.equalsIgnoreCase("OK") || json.code.equalsIgnoreCase("INTERANAL_ERROR"))
+            assertTrue(json.code.equalsIgnoreCase("OK") || json.code.equalsIgnoreCase("ALREADY_EXISTED"))
     }
 
     // cluster is SQL type, must have only one master node, now master count: 0
@@ -709,7 +721,7 @@ suite("cloud_cluster_test", "cloud_cluster") {
         respCode, body ->
             log.info("http cli result: ${body} ${respCode}".toString())
             def json = parseJson(body)
-            assertTrue(json.code.equalsIgnoreCase("INTERANAL_ERROR"))
+            assertTrue(json.code.equalsIgnoreCase("INVALID_ARGUMENT"))
             assertTrue(json.msg.startsWith("cluster is SQL type"))
     }
 

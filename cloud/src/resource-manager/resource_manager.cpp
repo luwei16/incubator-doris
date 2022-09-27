@@ -138,8 +138,8 @@ bool ResourceManager::check_cluster_params_valid(const ClusterPB& cluster, std::
     return no_err;
 }
 
-std::string ResourceManager::add_cluster(const std::string& instance_id, const ClusterInfo& cluster,
-                                         MetaServiceCode& code) {
+std::pair<MetaServiceCode, std::string> ResourceManager::add_cluster(const std::string& instance_id,
+                                                                     const ClusterInfo& cluster) {
     std::string err;
     std::stringstream ss;
 
@@ -147,8 +147,8 @@ std::string ResourceManager::add_cluster(const std::string& instance_id, const C
             (int*)0x01, [&err](int*) { LOG(INFO) << "add_cluster err=" << err; });
 
     if (!check_cluster_params_valid(cluster.cluster, &err, true)) {
-        LOG(INFO) << err;
-        return err;
+        LOG(WARNING) << err;
+        return std::make_pair(MetaServiceCode::INVALID_ARGUMENT, err);
     }
 
     // FIXME(gavin): ensure atomicity of the entire process of adding cluster.
@@ -172,9 +172,8 @@ std::string ResourceManager::add_cluster(const std::string& instance_id, const C
                        << " cluster_id=" << it->second.cluster_id
                        << " cloud_unique_id=" << it->first;
                     err = ss.str();
-                    code = MetaServiceCode::ALREADY_EXISTED;
                     LOG(INFO) << err;
-                    return err;
+                    return std::make_pair(MetaServiceCode::ALREADY_EXISTED, err);
                 }
             }
         }
@@ -184,20 +183,17 @@ std::string ResourceManager::add_cluster(const std::string& instance_id, const C
     int ret = txn_kv_->create_txn(&txn0);
     if (ret != 0) {
         err = "failed to create txn";
-        code = MetaServiceCode::KV_TXN_CREATE_ERR;
         LOG(WARNING) << err << " ret=" << ret;
-        return err;
+        return std::make_pair(MetaServiceCode::KV_TXN_CREATE_ERR, err);
     }
 
     std::shared_ptr<Transaction> txn(txn0.release());
     InstanceInfoPB instance;
     auto [c0, m0] = get_instance(txn, instance_id, &instance);
     if (c0 != 0) {
-        err = m0;
-        err = "failed to get instance";
-        code = MetaServiceCode::KV_TXN_GET_ERR;
+        err = "failed to get instance, info " + m0;
         LOG(WARNING) << err << " ret=" << ret;
-        return err;
+        return std::make_pair(MetaServiceCode::KV_TXN_GET_ERR, err);
     }
 
     LOG(INFO) << "cluster to add json=" << proto_to_json(cluster.cluster);
@@ -209,17 +205,15 @@ std::string ResourceManager::add_cluster(const std::string& instance_id, const C
         if (i.cluster_id() == cluster.cluster.cluster_id()) {
             ss << "try to add a existing cluster id,"
                << " existing_cluster_id=" << i.cluster_id();
-            code = MetaServiceCode::ALREADY_EXISTED;
             err = ss.str();
-            return err;
+            return std::make_pair(MetaServiceCode::ALREADY_EXISTED, err);
         }
 
         if (i.cluster_name() == cluster.cluster.cluster_name()) {
             ss << "try to add a existing cluster name,"
                << " existing_cluster_name=" << i.cluster_name();
-            code = MetaServiceCode::ALREADY_EXISTED;
             err = ss.str();
-            return err;
+            return std::make_pair(MetaServiceCode::ALREADY_EXISTED, err);
         }
     }
 
@@ -242,47 +236,43 @@ std::string ResourceManager::add_cluster(const std::string& instance_id, const C
 
     val = instance.SerializeAsString();
     if (val.empty()) {
-        code = MetaServiceCode::PROTOBUF_SERIALIZE_ERR;
         err = "failed to serialize";
-        return err;
+        return std::make_pair(MetaServiceCode::PROTOBUF_SERIALIZE_ERR, err);
     }
 
     txn->put(key, val);
     LOG(INFO) << "put instnace_key=" << hex(key);
     ret = txn->commit();
     if (ret != 0) {
-        code = MetaServiceCode::KV_TXN_COMMIT_ERR;
         err = "failed to commit kv txn";
         LOG(WARNING) << err << " ret=" << ret;
-        return err;
+        return std::make_pair(MetaServiceCode::KV_TXN_COMMIT_ERR, err);
     }
 
     add_cluster_to_index(instance_id, cluster.cluster);
 
-    return err;
+    return std::make_pair(MetaServiceCode::OK, "");
 }
 
-std::string ResourceManager::drop_cluster(const std::string& instance_id,
-                                          const ClusterInfo& cluster, MetaServiceCode& code) {
+std::pair<MetaServiceCode, std::string> ResourceManager::drop_cluster(
+        const std::string& instance_id, const ClusterInfo& cluster) {
     std::stringstream ss;
     std::string err;
 
     std::string cluster_id = cluster.cluster.has_cluster_id() ? cluster.cluster.cluster_id() : "";
     if (cluster_id.empty()) {
-        code = MetaServiceCode::INVALID_ARGUMENT;
         ss << "missing cluster_id=" << cluster_id;
         err = ss.str();
         LOG(INFO) << err;
-        return err;
+        return std::make_pair(MetaServiceCode::INVALID_ARGUMENT, err);
     }
 
     std::unique_ptr<Transaction> txn0;
     int ret = txn_kv_->create_txn(&txn0);
     if (ret != 0) {
-        code = MetaServiceCode::KV_TXN_CREATE_ERR;
         err = "failed to create txn";
         LOG(WARNING) << err << " ret=" << ret;
-        return err;
+        return std::make_pair(MetaServiceCode::KV_TXN_CREATE_ERR, err);
     }
 
     std::shared_ptr<Transaction> txn(txn0.release());
@@ -290,7 +280,8 @@ std::string ResourceManager::drop_cluster(const std::string& instance_id,
     auto [c0, m0] = get_instance(txn, instance_id, &instance);
     if (c0 != 0) {
         err = m0;
-        return err;
+        LOG(WARNING) << err;
+        return std::make_pair(MetaServiceCode::CLUSTER_NOT_FOUND, err);
     }
 
     bool found = false;
@@ -314,9 +305,8 @@ std::string ResourceManager::drop_cluster(const std::string& instance_id,
         ss << "failed to find cluster to drop,"
            << " instance_id=" << instance_id << " cluster_id=" << cluster.cluster.cluster_id()
            << " cluster_name=" << cluster.cluster.cluster_name();
-        code = MetaServiceCode::CLUSTER_NOT_FOUND;
         err = ss.str();
-        return err;
+        return std::make_pair(MetaServiceCode::CLUSTER_NOT_FOUND, err);
     }
 
     auto& clusters = const_cast<std::decay_t<decltype(instance.clusters())>&>(instance.clusters());
@@ -329,24 +319,23 @@ std::string ResourceManager::drop_cluster(const std::string& instance_id,
 
     val = instance.SerializeAsString();
     if (val.empty()) {
-        code = MetaServiceCode::PROTOBUF_SERIALIZE_ERR;
         err = "failed to serialize";
-        return err;
+        LOG(WARNING) << err;
+        return std::make_pair(MetaServiceCode::PROTOBUF_SERIALIZE_ERR, err);
     }
 
     txn->put(key, val);
     LOG(INFO) << "put instnace_key=" << hex(key);
     ret = txn->commit();
     if (ret != 0) {
-        code = MetaServiceCode::KV_TXN_COMMIT_ERR;
         err = "failed to commit kv txn";
         LOG(WARNING) << err << " ret=" << ret;
-        return err;
+        return std::make_pair(MetaServiceCode::KV_TXN_COMMIT_ERR, err);
     }
 
     remove_cluster_from_index(instance_id, to_del);
 
-    return err;
+    return std::make_pair(MetaServiceCode::OK, "");
 }
 
 std::string ResourceManager::update_cluster(

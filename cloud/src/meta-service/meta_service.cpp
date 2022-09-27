@@ -1763,7 +1763,7 @@ void MetaServiceImpl::prepare_rowset(::google::protobuf::RpcController* controll
     // Check if commit key already exists.
     ret = txn->get(commit_key, &commit_val);
     if (ret == 0) {
-        code = MetaServiceCode::ROWSET_ALREADY_EXISTED;
+        code = MetaServiceCode::ALREADY_EXISTED;
         msg = "rowset already exists";
         return;
     }
@@ -1876,7 +1876,7 @@ void MetaServiceImpl::commit_rowset(::google::protobuf::RpcController* controlle
             // Same request, return OK
             return;
         }
-        code = MetaServiceCode::ROWSET_ALREADY_EXISTED;
+        code = MetaServiceCode::ALREADY_EXISTED;
         msg = "rowset already exists";
         return;
     }
@@ -2186,7 +2186,7 @@ void MetaServiceImpl::prepare_index(::google::protobuf::RpcController* controlle
     if (ret < 0) {
         return;
     } else if (ret == 0) {
-        response->mutable_status()->set_code(MetaServiceCode::INDEX_ALREADY_EXISTED);
+        response->mutable_status()->set_code(MetaServiceCode::ALREADY_EXISTED);
         response->mutable_status()->set_msg("index already existed");
         return;
     }
@@ -2400,7 +2400,7 @@ void MetaServiceImpl::prepare_partition(::google::protobuf::RpcController* contr
     if (ret < 0) {
         return;
     } else if (ret == 0) {
-        response->mutable_status()->set_code(MetaServiceCode::PARTITION_ALREADY_EXISTED);
+        response->mutable_status()->set_code(MetaServiceCode::ALREADY_EXISTED);
         response->mutable_status()->set_msg("partition already existed");
         return;
     }
@@ -2688,9 +2688,6 @@ std::string static convert_ms_code_to_http_code(const MetaServiceCode& ret, int&
     case TXN_ALREADY_VISIBLE:
     case TXN_ALREADY_PRECOMMITED:
     case VERSION_NOT_FOUND:
-    case ROWSET_ALREADY_EXISTED:
-    case INDEX_ALREADY_EXISTED:
-    case PARTITION_ALREADY_EXISTED:
     case UNDEFINED_ERR:
         status_code = 500;
         return "INTERANAL_ERROR";
@@ -3476,10 +3473,14 @@ void MetaServiceImpl::alter_cluster(google::protobuf::RpcController* controller,
 
     switch (request->op()) {
     case AlterClusterRequest::ADD_CLUSTER: {
-        msg = resource_mgr_->add_cluster(instance_id, cluster, code);
+        auto r = resource_mgr_->add_cluster(instance_id, cluster);
+        code = r.first;
+        msg = r.second;
     } break;
     case AlterClusterRequest::DROP_CLUSTER: {
-        msg = resource_mgr_->drop_cluster(instance_id, cluster, code);
+        auto r = resource_mgr_->drop_cluster(instance_id, cluster);
+        code = r.first;
+        msg = r.second;
     } break;
     case AlterClusterRequest::UPDATE_CLUSTER_MYSQL_USER_NAME: {
         msg = resource_mgr_->update_cluster(
@@ -3663,7 +3664,7 @@ void MetaServiceImpl::get_cluster(google::protobuf::RpcController* controller,
 
     if (ret != 0) {
         code = MetaServiceCode::KV_TXN_GET_ERR;
-        ss << "failed to get intancece, instance_id=" << instance_id << " ret=" << ret;
+        ss << "failed to get instance, instance_id=" << instance_id << " ret=" << ret;
         msg = ss.str();
         return;
     }
@@ -3810,7 +3811,7 @@ void MetaServiceImpl::create_stage(::google::protobuf::RpcController* controller
     for (int i = 0; i < instance.stages_size(); ++i) {
         auto& s = instance.stages(i);
         if (s.type() == stage.type() && s.name() == stage.name()) {
-            code = MetaServiceCode::STAGE_ALREADY_EXISTED;
+            code = MetaServiceCode::ALREADY_EXISTED;
             msg = "stage already exist";
             return;
         }
@@ -3963,7 +3964,7 @@ void MetaServiceImpl::get_stage(google::protobuf::RpcController* controller,
                 LOG(WARNING) << "can't create more than 20 stages, and instance has "
                              << std::to_string(stage.size());
                 msg = "can't create more than 20 stages";
-                code = MetaServiceCode::STAGE_ALREADY_EXISTED;
+                code = MetaServiceCode::ALREADY_EXISTED;
                 return;
             }
             // ${prefix}/stage/user/username
@@ -3973,6 +3974,10 @@ void MetaServiceImpl::get_stage(google::protobuf::RpcController* controller,
             as->mutable_obj_info()->set_prefix(prefix);
             as->mutable_obj_info()->set_id(lastest_obj.id());
             as->add_mysql_user_name(mysql_user_name);
+            // ATTN: external stage_id is uuid, set in fe. internal stage_id set in be.
+            // stage_id need to be unique, But I don't want to introduce the calculation method of uuid
+            std::string stage_id = fmt::format("{}_{}", lastest_obj.id(), mysql_user_name);
+            as->set_stage_id(stage_id);
 
             txn->put(key, instance.SerializeAsString());
             LOG(INFO) << "put instance_id=" << instance_id << " instance_key=" << hex(key)

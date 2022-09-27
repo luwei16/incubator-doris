@@ -1,6 +1,7 @@
 package com.selectdb.cloud.catalog;
 
 import com.selectdb.cloud.proto.SelectdbCloud;
+import com.selectdb.cloud.proto.SelectdbCloud.MetaServiceCode;
 
 import org.apache.doris.catalog.Env;
 import org.apache.doris.common.Config;
@@ -62,68 +63,82 @@ public class CloudClusterChecker extends MasterDaemon {
     @Override
     protected void runAfterCatalogReady() {
         Map<String, List<Backend>> clusterIdToBackend = Env.getCurrentSystemInfo().getCloudClusterIdToBackend();
-        for (String clusterId : clusterIdToBackend.keySet()) {
+        for (Map.Entry<String, List<Backend>> entry : clusterIdToBackend.entrySet()) {
             SelectdbCloud.GetClusterResponse response =
-                    Env.getCurrentSystemInfo().getCloudCluster("", clusterId, "");
+                    Env.getCurrentSystemInfo().getCloudCluster("", entry.getKey(), "");
             if (!response.hasStatus() || !response.getStatus().hasCode()
-                    || response.getStatus().getCode() != SelectdbCloud.MetaServiceCode.OK) {
+                    || (response.getStatus().getCode() != SelectdbCloud.MetaServiceCode.OK
+                    && response.getStatus().getCode() != MetaServiceCode.CLUSTER_NOT_FOUND)) {
                 LOG.warn("failed to get cloud cluster due to incomplete response, "
                         + "cloud_unique_id={}, clusterId={}, response={}",
-                        Config.cloud_unique_id, clusterId, response);
-                continue;
-            }
-            LOG.info("get cloud cluster, clusterId={} nodes={}", clusterId, response.getCluster().getNodesList());
-            List<Backend> currentBes = clusterIdToBackend.get(clusterId);
-            String currentClusterName = currentBes.stream().map(Backend::getCloudClusterName).findFirst().orElse("");
-            String newClusterName = response.getCluster().getClusterName();
-            if (!newClusterName.equals(currentClusterName)) {
-                // rename cluster's name
-                LOG.info("cluster_name corresponding to cluster_id has been changed,"
-                        + " cluster_id : {} , current_cluster_name : {}, new_cluster_name :{}",
-                        clusterId, currentClusterName, newClusterName);
-                // change all be's cluster_name
-                currentBes.forEach(b -> b.setCloudClusterName(newClusterName));
-                // update clusterNameToId
-                Env.getCurrentSystemInfo().updateClusterNameToId(newClusterName, currentClusterName, clusterId);
-            }
-            List<Backend> toAdd = new ArrayList<>();
-            List<Backend> toDel = new ArrayList<>();
-            List<SelectdbCloud.NodeInfoPB> expectedBes = response.getCluster().getNodesList();
-            diffNodes(toAdd, toDel, () -> {
-                Map<String, Backend> currentMap = new HashMap<>();
-                for (Backend be : currentBes) {
-                    String endpoint = be.getHost() + ":" + be.getHeartbeatPort();
-                    currentMap.put(endpoint, be);
-                }
-                return currentMap;
-            }, () -> {
-                Map<String, Backend> nodeMap = new HashMap<>();
-                for (SelectdbCloud.NodeInfoPB node : expectedBes) {
-                    String endpoint = node.getIp() + ":" + node.getHeartbeatPort();
-                    Backend b = new Backend(Env.getCurrentEnv().getNextId(),
-                            node.getIp(), node.getHeartbeatPort());
-                    nodeMap.put(endpoint, b);
-                }
-                return nodeMap;
-            });
-            LOG.debug("diffBackends nodes: {}, current: {}, toAdd: {}, toDel: {}",
-                    expectedBes, currentBes, toAdd, toDel);
-            if (toAdd.isEmpty() && toDel.isEmpty()) {
-                LOG.debug("runAfterCatalogReady nothing todo");
+                        Config.cloud_unique_id, entry.getKey(), response);
                 continue;
             }
 
-            // Attach tag to BEs
-            Map<String, String> newTagMap = Tag.DEFAULT_BACKEND_TAG.toMap();
-            newTagMap.put(Tag.CLOUD_CLUSTER_NAME, response.getCluster().getClusterName());
-            newTagMap.put(Tag.CLOUD_CLUSTER_ID, response.getCluster().getClusterId());
-            toAdd.stream().forEach(i -> i.setTagMap(newTagMap));
-            Env.getCurrentSystemInfo().updateCloudBackends(toAdd, toDel);
+            List<Backend> toAdd = new ArrayList<>();
+            List<Backend> toDel = new ArrayList<>();
+            if (response.getStatus().getCode() == MetaServiceCode.CLUSTER_NOT_FOUND) {
+                // drop be cluster
+                LOG.info("get cloud cluster, but not found by clusterId={}, remove it.", entry.getKey());
+                toDel.addAll(entry.getValue());
+                Env.getCurrentSystemInfo().updateCloudBackends(toAdd, toDel);
+            } else {
+                // ok
+                LOG.info("get cloud cluster, clusterId={} nodes={}",
+                        entry.getKey(), response.getCluster().getNodesList());
+                String newClusterName = response.getCluster().getClusterName();
+                List<Backend> currentBes = clusterIdToBackend.get(entry.getKey());
+                String currentClusterName = currentBes.stream()
+                        .map(Backend::getCloudClusterName).findFirst().orElse("");
+                if (!newClusterName.equals(currentClusterName)) {
+                    // rename cluster's name
+                    LOG.info("cluster_name corresponding to cluster_id has been changed,"
+                            + " cluster_id : {} , current_cluster_name : {}, new_cluster_name :{}",
+                            entry.getKey(), currentClusterName, newClusterName);
+                    // change all be's cluster_name
+                    currentBes.forEach(b -> b.setCloudClusterName(newClusterName));
+                    // update clusterNameToId
+                    Env.getCurrentSystemInfo()
+                            .updateClusterNameToId(newClusterName, currentClusterName, entry.getKey());
+                }
+
+                List<SelectdbCloud.NodeInfoPB> expectedBes = response.getCluster().getNodesList();
+                diffNodes(toAdd, toDel, () -> {
+                    Map<String, Backend> currentMap = new HashMap<>();
+                    for (Backend be : currentBes) {
+                        String endpoint = be.getHost() + ":" + be.getHeartbeatPort();
+                        currentMap.put(endpoint, be);
+                    }
+                    return currentMap;
+                }, () -> {
+                    Map<String, Backend> nodeMap = new HashMap<>();
+                    for (SelectdbCloud.NodeInfoPB node : expectedBes) {
+                        String endpoint = node.getIp() + ":" + node.getHeartbeatPort();
+                        Backend b = new Backend(Env.getCurrentEnv().getNextId(),
+                                node.getIp(), node.getHeartbeatPort());
+                        nodeMap.put(endpoint, b);
+                    }
+                    return nodeMap;
+                });
+                LOG.debug("diffBackends nodes: {}, current: {}, toAdd: {}, toDel: {}",
+                        expectedBes, currentBes, toAdd, toDel);
+                if (toAdd.isEmpty() && toDel.isEmpty()) {
+                    LOG.debug("runAfterCatalogReady nothing todo");
+                    continue;
+                }
+
+                // Attach tag to BEs
+                Map<String, String> newTagMap = Tag.DEFAULT_BACKEND_TAG.toMap();
+                newTagMap.put(Tag.CLOUD_CLUSTER_NAME, response.getCluster().getClusterName());
+                newTagMap.put(Tag.CLOUD_CLUSTER_ID, response.getCluster().getClusterId());
+                toAdd.stream().forEach(i -> i.setTagMap(newTagMap));
+                Env.getCurrentSystemInfo().updateCloudBackends(toAdd, toDel);
+            }
         }
 
         clusterIdToBackend = Env.getCurrentSystemInfo().getCloudClusterIdToBackend();
         for (Map.Entry<String, List<Backend>> entry : clusterIdToBackend.entrySet()) {
-            Long aliveNum = 0L;
+            long aliveNum = 0L;
             for (Backend backend : entry.getValue()) {
                 MetricRepo.CLOUD_CLUSTER_BACKEND_ALIVE.computeIfAbsent(backend.getAddress(), key -> {
                     GaugeMetricImpl<Boolean> backendAlive = new GaugeMetricImpl<>("backend_alive", MetricUnit.NOUNIT,
@@ -135,6 +150,7 @@ public class CloudClusterChecker extends MasterDaemon {
                 }).setValue(backend.isAlive());
                 aliveNum = backend.isAlive() ? aliveNum + 1 : aliveNum;
             }
+
             MetricRepo.CLOUD_CLUSTER_BACKEND_ALIVE_TOTAL.computeIfAbsent(entry.getKey(), key -> {
                 GaugeMetricImpl<Long> backendAliveTotal =
                                         new GaugeMetricImpl<>("backend_alive_total", MetricUnit.NOUNIT,
@@ -144,6 +160,7 @@ public class CloudClusterChecker extends MasterDaemon {
                 return backendAliveTotal;
             }).setValue(aliveNum);
         }
+
         LOG.debug("daemon cluster get cluster info succ, current cloudClusterIdToBackendMap: {}",
                 Env.getCurrentSystemInfo().getCloudClusterIdToBackend());
         getObserverFes();
@@ -201,7 +218,7 @@ public class CloudClusterChecker extends MasterDaemon {
         try {
             Env.getCurrentSystemInfo().updateCloudFrontends(toAdd, toDel);
         } catch (DdlException e) {
-            LOG.warn("update cloud fronteds exception e: {}, msg: {}", e, e.getMessage());
+            LOG.warn("update cloud frontends exception e: {}, msg: {}", e, e.getMessage());
         }
     }
 }

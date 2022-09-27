@@ -35,7 +35,7 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
 @RestController
-@RequestMapping(path = "/load")
+@RequestMapping(path = "/copy")
 public class CloudLoadAction extends RestBaseController {
     private static final Logger LOG = LogManager.getLogger(CloudLoadAction.class);
 
@@ -95,7 +95,7 @@ public class CloudLoadAction extends RestBaseController {
         Map<String, Object> resultMap = new HashMap<>(3);
         try {
             if (Strings.isNullOrEmpty(postContent)) {
-                return ResponseEntityBuilder.badRequest("POST body must contains json object");
+                return ResponseEntityBuilder.badRequest("POST body must contain json object");
             }
             JSONObject jsonObject = (JSONObject) JSONValue.parse(postContent);
             if (jsonObject == null) {
@@ -105,7 +105,7 @@ public class CloudLoadAction extends RestBaseController {
             String copyIntoSql = (String) jsonObject.get("sql");
 
             if (Strings.isNullOrEmpty(copyIntoSql)) {
-                return ResponseEntityBuilder.badRequest("POST body must contains [sql] root object");
+                return ResponseEntityBuilder.badRequest("POST body must contain [sql] root object");
             }
 
             StatementBase copyIntoStmt = StatementSubmitter.analyzeStmt(copyIntoSql);
