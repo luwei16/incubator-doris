@@ -7,13 +7,17 @@
 namespace doris {
 namespace io {
 
-DEFINE_COUNTER_METRIC_PROTOTYPE_2ARG(num_io_total, MetricUnit::OPERATIONS);
-DEFINE_COUNTER_METRIC_PROTOTYPE_2ARG(num_io_hit_cache, MetricUnit::OPERATIONS);
-DEFINE_COUNTER_METRIC_PROTOTYPE_2ARG(num_io_bytes_read_total, MetricUnit::OPERATIONS);
-DEFINE_COUNTER_METRIC_PROTOTYPE_2ARG(num_io_bytes_read_from_file_cache, MetricUnit::OPERATIONS);
-DEFINE_COUNTER_METRIC_PROTOTYPE_2ARG(num_io_bytes_read_from_write_cache, MetricUnit::OPERATIONS);
-DEFINE_COUNTER_METRIC_PROTOTYPE_2ARG(num_io_written_in_file_cache, MetricUnit::OPERATIONS);
-DEFINE_COUNTER_METRIC_PROTOTYPE_2ARG(num_io_bytes_written_in_file_cache, MetricUnit::OPERATIONS);
+DEFINE_COUNTER_METRIC_PROTOTYPE_2ARG(file_cache_num_io_total, MetricUnit::OPERATIONS);
+DEFINE_COUNTER_METRIC_PROTOTYPE_2ARG(file_cache_num_io_hit_cache, MetricUnit::OPERATIONS);
+DEFINE_COUNTER_METRIC_PROTOTYPE_2ARG(file_cache_num_io_bytes_read_total, MetricUnit::OPERATIONS);
+DEFINE_COUNTER_METRIC_PROTOTYPE_2ARG(file_cache_num_io_bytes_read_from_file_cache,
+                                     MetricUnit::OPERATIONS);
+DEFINE_COUNTER_METRIC_PROTOTYPE_2ARG(file_cache_num_io_bytes_read_from_write_cache,
+                                     MetricUnit::OPERATIONS);
+DEFINE_COUNTER_METRIC_PROTOTYPE_2ARG(file_cache_num_io_written_in_file_cache,
+                                     MetricUnit::OPERATIONS);
+DEFINE_COUNTER_METRIC_PROTOTYPE_2ARG(file_cache_num_io_bytes_written_in_file_cache,
+                                     MetricUnit::OPERATIONS);
 
 FileCacheStatistics FileCacheProfile::report(int64_t table_id, int64_t partition_id) {
     FileCacheStatistics stats;
@@ -116,35 +120,41 @@ void FileCacheProfile::deregister_metric(int64_t table_id, int64_t partition_id)
 void FileCacheMetric::register_entity(const std::string& name) {
     entity = DorisMetrics::instance()->metric_registry()->register_entity(
             std::string("cloud_file_cache"), {{"name", name}});
-    INT_ATOMIC_COUNTER_METRIC_REGISTER(entity, num_io_total);
-    INT_ATOMIC_COUNTER_METRIC_REGISTER(entity, num_io_hit_cache);
-    INT_ATOMIC_COUNTER_METRIC_REGISTER(entity, num_io_bytes_read_total);
-    INT_ATOMIC_COUNTER_METRIC_REGISTER(entity, num_io_bytes_read_from_file_cache);
-    INT_ATOMIC_COUNTER_METRIC_REGISTER(entity, num_io_bytes_read_from_write_cache);
-    INT_ATOMIC_COUNTER_METRIC_REGISTER(entity, num_io_written_in_file_cache);
-    INT_ATOMIC_COUNTER_METRIC_REGISTER(entity, num_io_bytes_written_in_file_cache);
+    INT_ATOMIC_COUNTER_METRIC_REGISTER(entity, file_cache_num_io_total);
+    INT_ATOMIC_COUNTER_METRIC_REGISTER(entity, file_cache_num_io_hit_cache);
+    INT_ATOMIC_COUNTER_METRIC_REGISTER(entity, file_cache_num_io_bytes_read_total);
+    INT_ATOMIC_COUNTER_METRIC_REGISTER(entity, file_cache_num_io_bytes_read_from_file_cache);
+    INT_ATOMIC_COUNTER_METRIC_REGISTER(entity, file_cache_num_io_bytes_read_from_write_cache);
+    INT_ATOMIC_COUNTER_METRIC_REGISTER(entity, file_cache_num_io_written_in_file_cache);
+    INT_ATOMIC_COUNTER_METRIC_REGISTER(entity, file_cache_num_io_bytes_written_in_file_cache);
 }
 
 void FileCacheMetric::update_table_metrics() const {
     FileCacheStatistics stats = profile->report(table_id);
-    num_io_total->set_value(stats.num_io_total);
-    num_io_hit_cache->set_value(stats.num_io_hit_cache);
-    num_io_bytes_read_total->set_value(stats.num_io_bytes_read_total);
-    num_io_bytes_read_from_file_cache->set_value(stats.num_io_bytes_read_from_file_cache);
-    num_io_bytes_read_from_write_cache->set_value(stats.num_io_bytes_read_from_write_cache);
-    num_io_written_in_file_cache->set_value(stats.num_io_written_in_file_cache);
-    num_io_bytes_written_in_file_cache->set_value(stats.num_io_bytes_written_in_file_cache);
+    file_cache_num_io_total->set_value(stats.num_io_total);
+    file_cache_num_io_hit_cache->set_value(stats.num_io_hit_cache);
+    file_cache_num_io_bytes_read_total->set_value(stats.num_io_bytes_read_total);
+    file_cache_num_io_bytes_read_from_file_cache->set_value(
+            stats.num_io_bytes_read_from_file_cache);
+    file_cache_num_io_bytes_read_from_write_cache->set_value(
+            stats.num_io_bytes_read_from_write_cache);
+    file_cache_num_io_written_in_file_cache->set_value(stats.num_io_written_in_file_cache);
+    file_cache_num_io_bytes_written_in_file_cache->set_value(
+            stats.num_io_bytes_written_in_file_cache);
 }
 
 void FileCacheMetric::update_partition_metrics() const {
     FileCacheStatistics stats = profile->report(table_id, partition_id);
-    num_io_total->set_value(stats.num_io_total);
-    num_io_hit_cache->set_value(stats.num_io_hit_cache);
-    num_io_bytes_read_total->set_value(stats.num_io_bytes_read_total);
-    num_io_bytes_read_from_file_cache->set_value(stats.num_io_bytes_read_from_file_cache);
-    num_io_bytes_read_from_write_cache->set_value(stats.num_io_bytes_read_from_write_cache);
-    num_io_written_in_file_cache->set_value(stats.num_io_written_in_file_cache);
-    num_io_bytes_written_in_file_cache->set_value(stats.num_io_bytes_written_in_file_cache);
+    file_cache_num_io_total->set_value(stats.num_io_total);
+    file_cache_num_io_hit_cache->set_value(stats.num_io_hit_cache);
+    file_cache_num_io_bytes_read_total->set_value(stats.num_io_bytes_read_total);
+    file_cache_num_io_bytes_read_from_file_cache->set_value(
+            stats.num_io_bytes_read_from_file_cache);
+    file_cache_num_io_bytes_read_from_write_cache->set_value(
+            stats.num_io_bytes_read_from_write_cache);
+    file_cache_num_io_written_in_file_cache->set_value(stats.num_io_written_in_file_cache);
+    file_cache_num_io_bytes_written_in_file_cache->set_value(
+            stats.num_io_bytes_written_in_file_cache);
 }
 
 } // namespace io

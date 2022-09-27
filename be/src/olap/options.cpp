@@ -209,7 +209,7 @@ io::FileCacheSettings CachePath::init_settings() const {
             config::max_elements == 0 ? settings.max_elements : config::max_elements;
     settings.persistent_max_elements = settings.max_elements;
     settings.max_query_cache_size = query_limit_bytes;
-    settings.max_file_segment_size = config::max_file_segment_size * KB;
+    settings.max_file_segment_size = config::max_file_segment_size;
     return settings;
 }
 

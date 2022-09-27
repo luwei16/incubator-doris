@@ -129,6 +129,8 @@ public final class MetricRepo {
 
     public static Map<String, GaugeMetricImpl<Boolean>>
                     CLOUD_CLUSTER_BACKEND_ALIVE = new HashMap<>();
+    public static Map<String, GaugeMetricImpl<Long>>
+                    CLOUD_CLUSTER_BACKEND_ALIVE_TOTAL = new HashMap<>();
 
     private static ScheduledThreadPoolExecutor metricTimer = ThreadPoolManager.newDaemonScheduledThreadPool(1,
             "metric-timer-pool", true);

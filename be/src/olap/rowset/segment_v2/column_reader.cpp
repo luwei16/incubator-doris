@@ -649,7 +649,7 @@ Status FileColumnIterator::init(const ColumnIteratorOptions& opts) {
         _reader->encoding_info()->encoding() == DICT_ENCODING) {
         auto dict_encoding_type = _reader->get_dict_encoding_type();
         if (dict_encoding_type == ColumnReader::UNKNOWN_DICT_ENCODING) {
-            seek_to_ordinal(_reader->num_rows() - 1);
+            RETURN_IF_ERROR(seek_to_ordinal(_reader->num_rows() - 1));
             _is_all_dict_encoding = _cur_page->is_dict_encoding;
             _reader->set_dict_encoding_type(_is_all_dict_encoding
                                                     ? ColumnReader::ALL_DICT_ENCODING

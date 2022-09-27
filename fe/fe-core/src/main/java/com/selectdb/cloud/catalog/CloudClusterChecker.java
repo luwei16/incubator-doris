@@ -123,7 +123,8 @@ public class CloudClusterChecker extends MasterDaemon {
 
         clusterIdToBackend = Env.getCurrentSystemInfo().getCloudClusterIdToBackend();
         for (Map.Entry<String, List<Backend>> entry : clusterIdToBackend.entrySet()) {
-            entry.getValue().forEach(backend -> {
+            Long aliveNum = (long)0;
+            for (Backend backend : entry.getValue()) {
                 MetricRepo.CLOUD_CLUSTER_BACKEND_ALIVE.computeIfAbsent(backend.getAddress(), key -> {
                     GaugeMetricImpl<Boolean> backendAlive = new GaugeMetricImpl<>("backend_alive", MetricUnit.NOUNIT,
                             "backend alive or not");
@@ -132,7 +133,15 @@ public class CloudClusterChecker extends MasterDaemon {
                     MetricRepo.DORIS_METRIC_REGISTER.addMetrics(backendAlive);
                     return backendAlive;
                 }).setValue(backend.isAlive());
-            });
+                aliveNum = backend.isAlive() ? aliveNum + 1 : aliveNum;
+            }
+            MetricRepo.CLOUD_CLUSTER_BACKEND_ALIVE_TOTAL.computeIfAbsent(entry.getKey(), key -> {
+                GaugeMetricImpl<Long> backendAliveTotal = new GaugeMetricImpl<>("backend_alive_total", MetricUnit.NOUNIT,
+                        "backend alive num in cluster");
+                backendAliveTotal.addLabel(new MetricLabel("cluster", key));
+                MetricRepo.DORIS_METRIC_REGISTER.addMetrics(backendAliveTotal);
+                return backendAliveTotal;
+            }).setValue(aliveNum);;
         }
         LOG.debug("daemon cluster get cluster info succ, current cloudClusterIdToBackendMap: {}",
                 Env.getCurrentSystemInfo().getCloudClusterIdToBackend());
