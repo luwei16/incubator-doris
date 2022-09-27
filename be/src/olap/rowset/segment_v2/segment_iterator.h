@@ -166,8 +166,9 @@ private:
                 _range_rowid = _ranges[_range_idx].second;
             }
             *to = _range_rowid;
-            uint32_t limit = _range_rowid - max_range_size;
-            _range_rowid = limit > _ranges[_range_idx].first ? limit : _ranges[_range_idx].first;
+            size_t left_size = _range_rowid - _ranges[_range_idx].first;
+            _range_rowid = left_size > max_range_size ? _range_rowid - max_range_size
+                                                      : _ranges[_range_idx].first;
             *from = _range_rowid;
             return true;
         }

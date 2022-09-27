@@ -74,17 +74,27 @@ void FileCacheProfile::update(int64_t table_id, int64_t partition_id, OlapReader
         return;
     }
     std::shared_ptr<AtomicStatistics> count;
+    bool need_register_p = false;
+    bool need_register_t = false;
     {
         std::lock_guard lock(_mtx);
         if (_profile.count(table_id) < 1 || _profile[table_id].count(partition_id) < 1) {
             _profile[table_id][partition_id] = std::make_shared<AtomicStatistics>();
             _partition_metrics[table_id][partition_id] =
                     std::make_shared<FileCacheMetric>(table_id, partition_id, this);
+            need_register_p = true;
             if (_table_metrics.count(table_id) < 1) {
                 _table_metrics[table_id] = std::make_shared<FileCacheMetric>(table_id, this);
+                need_register_t = true;
             }
         }
         count = _profile[table_id][partition_id];
+    }
+    if (need_register_p) [[unlikely]] {
+        _partition_metrics[table_id][partition_id]->register_entity();
+    }
+    if (need_register_t) [[unlikely]] {
+        _table_metrics[table_id]->register_entity();
     }
     count->num_io_total.fetch_add(stats->file_cache_stats.num_io_total, std::memory_order_relaxed);
     count->num_io_hit_cache.fetch_add(stats->file_cache_stats.num_io_hit_cache,
@@ -105,6 +115,10 @@ void FileCacheProfile::deregister_metric(int64_t table_id, int64_t partition_id)
     if (!s_enable_profile.load(std::memory_order_acquire)) {
         return;
     }
+    _partition_metrics[table_id][partition_id]->deregister_entity();
+    if (_partition_metrics[table_id].size() == 1) {
+        _table_metrics[table_id]->deregister_entity();
+    }
     std::lock_guard lock(_mtx);
     _partition_metrics[table_id].erase(partition_id);
     if (_partition_metrics[table_id].empty()) {
@@ -117,7 +131,11 @@ void FileCacheProfile::deregister_metric(int64_t table_id, int64_t partition_id)
     }
 }
 
-void FileCacheMetric::register_entity(const std::string& name) {
+void FileCacheMetric::register_entity() {
+    std::string name = "table_" + std::to_string(table_id);
+    if (partition_id != -1) {
+        name += "_partition_" + std::to_string(partition_id);
+    }
     entity = DorisMetrics::instance()->metric_registry()->register_entity(
             std::string("cloud_file_cache"), {{"name", name}});
     INT_ATOMIC_COUNTER_METRIC_REGISTER(entity, file_cache_num_io_total);
@@ -127,6 +145,7 @@ void FileCacheMetric::register_entity(const std::string& name) {
     INT_ATOMIC_COUNTER_METRIC_REGISTER(entity, file_cache_num_io_bytes_read_from_write_cache);
     INT_ATOMIC_COUNTER_METRIC_REGISTER(entity, file_cache_num_io_written_in_file_cache);
     INT_ATOMIC_COUNTER_METRIC_REGISTER(entity, file_cache_num_io_bytes_written_in_file_cache);
+    entity->register_hook(name, std::bind(&FileCacheMetric::update_table_metrics, this));
 }
 
 void FileCacheMetric::update_table_metrics() const {

@@ -30,30 +30,23 @@ struct FileCacheProfile;
 
 struct FileCacheMetric {
     FileCacheMetric(int64_t table_id, FileCacheProfile* profile)
-            : profile(profile), table_id(table_id) {
-        std::string name = "table_" + std::to_string(table_id);
-        register_entity(name);
-        entity->register_hook(name, std::bind(&FileCacheMetric::update_table_metrics, this));
-    }
+            : profile(profile), table_id(table_id) {}
 
     FileCacheMetric(int64_t table_id, int64_t partition_id, FileCacheProfile* profile)
-            : profile(profile), table_id(table_id), partition_id(partition_id) {
-        std::string name =
-                "table_" + std::to_string(table_id) + "_partition_" + std::to_string(partition_id);
-        register_entity(name);
-        entity->register_hook(name, std::bind(&FileCacheMetric::update_partition_metrics, this));
-    }
+            : profile(profile), table_id(table_id), partition_id(partition_id) {}
 
-    void register_entity(const std::string& name);
+    void register_entity();
+    void deregister_entity() const {
+        DorisMetrics::instance()->metric_registry()->deregister_entity(entity);
+    }
     void update_table_metrics() const;
     void update_partition_metrics() const;
 
-    ~FileCacheMetric() { DorisMetrics::instance()->metric_registry()->deregister_entity(entity); }
     FileCacheMetric& operator=(const FileCacheMetric&) = delete;
     FileCacheMetric(const FileCacheMetric&) = delete;
     FileCacheProfile* profile = nullptr;
-    int64_t table_id;
-    int64_t partition_id;
+    int64_t table_id = -1;
+    int64_t partition_id = -1;
     std::shared_ptr<MetricEntity> entity;
     IntAtomicCounter* file_cache_num_io_total = nullptr;
     IntAtomicCounter* file_cache_num_io_hit_cache = nullptr;
