@@ -766,8 +766,8 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
         auto& stat = tablet_stats[stat_key];
         stat.set_data_size(stat.data_size() + i.data_disk_size());
         stat.set_num_rows(stat.num_rows() + i.num_rows());
-        stat.set_num_rows(stat.num_rowsets() + 1);
-        stat.set_num_rows(stat.num_segments() + i.num_segments());
+        stat.set_num_rowsets(stat.num_rowsets() + 1);
+        stat.set_num_segments(stat.num_segments() + i.num_segments());
     } // for tmp_rowsets_meta
 
     // Save rowset meta
