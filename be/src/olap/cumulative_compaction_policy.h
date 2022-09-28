@@ -99,6 +99,11 @@ public:
                                          RowsetSharedPtr output_rowset,
                                          Version& last_delete_version) = 0;
 
+    // CLOUD_MODE
+    virtual int64_t new_cumulative_point(const std::vector<RowsetSharedPtr>& input_rowsets,
+                                         const RowsetSharedPtr& output_rowset,
+                                         Version& last_delete_version) = 0;
+
     /// Calculate tablet's cumulatiuve point before compaction. This calculation just executes once when the tablet compacts
     /// first time after BE initialization and then motion of cumulatiuve point depends on update_cumulative_point policy.
     /// This function is pure virtual function. In general, the cumulative point splits the rowsets into two parts:
@@ -143,6 +148,13 @@ public:
                                  RowsetSharedPtr _output_rowset,
                                  Version& last_delete_version) override;
 
+    // CLOUD_MODE
+    int64_t new_cumulative_point(const std::vector<RowsetSharedPtr>& input_rowsets,
+                                 const RowsetSharedPtr& output_rowset,
+                                 Version& last_delete_version) override {
+        return output_rowset->end_version() + 1;
+    }
+
     /// Num based cumulative compaction policy implements calculate cumulative point function.
     /// When the first time the tablet does compact, this calculation is executed. Its main policy is to find first rowset
     /// which is segments_overlapping type, it represent this rowset is not compacted and use this version as cumulative point.
@@ -182,6 +194,18 @@ public:
 
     /// Destructor function of SizeBasedCumulativeCompactionPolicy.
     ~SizeBasedCumulativeCompactionPolicy() {}
+
+    // CLOUD_MODE
+    int64_t new_cumulative_point(const std::vector<RowsetSharedPtr>& input_rowsets,
+                                 const RowsetSharedPtr& output_rowset,
+                                 Version& last_delete_version) override {
+        // if rowsets have delete version, move to the last directly.
+        // if rowsets have no delete version, check output_rowset total disk size satisfies promotion size.
+        return (last_delete_version.first != -1 ||
+                output_rowset->data_disk_size() >= _tablet_size_based_promotion_size)
+                       ? output_rowset->end_version() + 1
+                       : input_rowsets.front()->start_version();
+    }
 
     /// SizeBased cumulative compaction policy implements calculate cumulative point function.
     /// When the first time the tablet does compact, this calculation is executed. Its main policy is to find first rowset

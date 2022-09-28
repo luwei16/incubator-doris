@@ -141,13 +141,12 @@ void MetaServiceImpl::start_tablet_job(::google::protobuf::RpcController* contro
     using namespace std::chrono;
     int64_t now = duration_cast<seconds>(system_clock::now().time_since_epoch()).count();
     while (ret == 0) {
+        job_pb.ParseFromString(job_val);
         if (job_pb.expiration() > 0 && job_pb.expiration() < now) {
             LOG(INFO) << "got an expired job, continue to process, tablet_id=" << tablet_id
                       << " job=" << proto_to_json(job_pb);
             break;
         }
-
-        job_pb.ParseFromString(job_val);
         SS << "a tablet job has already started instance_id=" << instance_id
            << " tablet_id=" << tablet_id << " job=" << proto_to_json(job_pb);
         msg = ss.str();
@@ -174,6 +173,41 @@ void MetaServiceImpl::start_tablet_job(::google::protobuf::RpcController* contro
                                                : "")
               << " job to save, instance_id=" << instance_id << " tablet_id=" << tablet_id
               << " job=" << proto_to_json(request->job().compaction());
+
+    if (job_pb.has_compaction()) {
+        // check compaction_cnt to avoid compact on expired tablet cache
+        auto& compaction = job_pb.compaction();
+        if (!compaction.has_base_compaction_cnt() || !compaction.has_cumulative_compaction_cnt()) {
+            code = MetaServiceCode::INVALID_ARGUMENT;
+            msg = "no valid compaction_cnt given";
+            return;
+        }
+
+        std::string stats_key =
+                meta_tablet_key({instance_id, table_id, index_id, partition_id, tablet_id});
+        std::string stats_val;
+        ret = txn->get(stats_key, &stats_val);
+        if (ret != 0) {
+            code = ret == 1 ? MetaServiceCode::UNDEFINED_ERR : MetaServiceCode::KV_TXN_GET_ERR;
+            SS << (ret == 1 ? "internal error" : "get kv error") << " tablet_id=" << tablet_id
+               << " key=" << hex(stats_key) << " ret=" << ret;
+            msg = ss.str();
+            return;
+        }
+        TabletStatsPB stats;
+        stats.ParseFromString(stats_val);
+        if (compaction.base_compaction_cnt() < stats.base_compaction_cnt() ||
+            compaction.cumulative_compaction_cnt() < stats.cumulative_compaction_cnt()) {
+            code = MetaServiceCode::INVALID_ARGUMENT;
+            SS << "could not perform compaction on expired tablet cache."
+               << " req_base_compaction_cnt=" << compaction.base_compaction_cnt()
+               << ", base_compaction_cnt=" << stats.base_compaction_cnt()
+               << ", req_cumulative_compaction_cnt=" << compaction.cumulative_compaction_cnt()
+               << ", cumulative_compaction_cnt=" << stats.cumulative_compaction_cnt();
+            msg = ss.str();
+            return;
+        }
+    }
 
     job_val = job_pb.SerializeAsString();
     if (job_val.empty()) {

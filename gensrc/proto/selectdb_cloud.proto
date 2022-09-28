@@ -300,6 +300,8 @@ message TabletCompactionJobPB {
     repeated int64 output_versions = 16;
     repeated string output_rowset_ids = 17;
     optional int64 txn_id = 18;
+    optional int64 base_compaction_cnt = 19;        // prepare
+    optional int64 cumulative_compaction_cnt = 20;  // prepare
 }
 
 message TabletSchemaChangeJobPB {

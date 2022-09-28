@@ -25,6 +25,11 @@ Status CloudCumulativeCompaction::prepare_compact() {
 
     RETURN_IF_ERROR(_tablet->cloud_sync_rowsets());
 
+    // MUST get compaction_cnt before `pick_rowsets_to_compact` to ensure statistic of tablet during `pick_rowsets_to_compact`
+    // not lag behind start tablet job request.
+    int64_t base_compaction_cnt = _tablet->base_compaction_cnt();
+    int64_t cumulative_compaction_cnt = _tablet->cumulative_compaction_cnt();
+
     // pick rowsets to compact
     RETURN_NOT_OK(pick_rowsets_to_compact());
     TRACE("rowsets picked");
@@ -44,6 +49,8 @@ Status CloudCumulativeCompaction::prepare_compact() {
     compaction_job->set_initiator(BackendOptions::get_localhost() + ':' +
                                   std::to_string(config::heartbeat_service_port));
     compaction_job->set_type(selectdb::TabletCompactionJobPB::CUMULATIVE);
+    compaction_job->set_base_compaction_cnt(base_compaction_cnt);
+    compaction_job->set_cumulative_compaction_cnt(cumulative_compaction_cnt);
     return cloud::meta_mgr()->prepare_tablet_job(job);
 }
 
@@ -69,7 +76,8 @@ Status CloudCumulativeCompaction::execute_compact_impl() {
 
 Status CloudCumulativeCompaction::update_tablet_meta() {
     // calculate new cumulative point
-    int64_t new_cumulative_point = _input_rowsets.back()->end_version() + 1;
+    int64_t new_cumulative_point = _tablet->cumulative_compaction_policy()->new_cumulative_point(
+            _input_rowsets, _output_rowset, _last_delete_version);
     // commit compaction job
     int64_t input_rows = 0;
     int64_t input_segments = 0;
@@ -124,7 +132,21 @@ Status CloudCumulativeCompaction::update_tablet_meta() {
 }
 
 void CloudCumulativeCompaction::garbage_collection() {
-    // TODO(cyx): abort compact job rpc
+    selectdb::TabletJobInfoPB job;
+    job.set_id(_uuid);
+    auto idx = job.mutable_idx();
+    idx->set_tablet_id(_tablet->tablet_id());
+    idx->set_table_id(_tablet->table_id());
+    idx->set_index_id(_tablet->index_id());
+    idx->set_partition_id(_tablet->partition_id());
+    auto compaction_job = job.mutable_compaction();
+    compaction_job->set_initiator(BackendOptions::get_localhost() + ':' +
+                                  std::to_string(config::heartbeat_service_port));
+    compaction_job->set_type(selectdb::TabletCompactionJobPB::CUMULATIVE);
+    auto st = cloud::meta_mgr()->abort_tablet_job(job);
+    if (!st.ok()) {
+        LOG_WARNING("failed to gc compaction job").tag("tablet_id", _tablet->tablet_id()).error(st);
+    }
 }
 
 } // namespace doris
