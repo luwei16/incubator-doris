@@ -100,8 +100,6 @@ public class CopyStmt extends DdlStmt {
         this.fileFormat = fileFormat;
         this.copyOption = copyOption;
         this.async = async;
-        LOG.info("tableName={}, copyFromParam={}, filesOrPattern={}, fileFormat={}, copyOption={}, async={}", tableName,
-                copyFromParam, filesOrPattern, fileFormat, copyOption, async);
     }
 
     @Override
@@ -117,7 +115,7 @@ public class CopyStmt extends DdlStmt {
         StagePB stagePB;
         String user = ClusterNamespace.getNameFromFullName(
                 ConnectContext.get().getCurrentUserIdentity().getQualifiedUser());
-        if (stage.equals("u")) { // TODO internal stage use a speci
+        if (stage.equals("~")) {
             stagePB = Env.getCurrentInternalCatalog().getStage(StageType.INTERNAL, user, null);
         } else {
             stagePB = Env.getCurrentInternalCatalog().getStage(StageType.EXTERNAL, user, stage);
@@ -159,9 +157,6 @@ public class CopyStmt extends DdlStmt {
         } catch (DdlException e) {
             throw new AnalysisException(e.getMessage());
         }
-
-        LOG.info("tableName={}, dbName={}, stage={}, dataDes={}, prop={}", tableName, label.getDbName(), stage,
-                dataDescription, properties);
     }
 
     private void analyzeStageName() throws AnalysisException {

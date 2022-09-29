@@ -53,6 +53,36 @@ public class CopyIntoTest extends TestWithFeService {
     }
 
     @Test
+    public void testCopyFromInternalStage() throws Exception {
+        String query = "create stage if not exists in_stage_1 " + OBJ_INFO;
+        StagePB stagePB = ((CreateStageStmt) UtFrameUtils.parseAndAnalyzeStmt(query, connectContext)).toStageProto();
+        String stageId = "test_in_stage_id";
+        StagePB internalStagePB = StagePB.newBuilder().setType(StageType.INTERNAL).addMysqlUserName("test")
+                .setStageId(stageId).setObjInfo(stagePB.getObjInfo()).build();
+
+        new Expectations(connectContext.getEnv(), connectContext.getEnv().getInternalCatalog()) {
+            {
+                Env.getCurrentInternalCatalog().getStage(StageType.INTERNAL, anyString, null);
+                minTimes = 0;
+                result = internalStagePB;
+            }
+        };
+
+        String sql = "copy into t2 from @~";
+        try {
+            CopyStmt copyStmt = (CopyStmt) UtFrameUtils.parseAndAnalyzeStmt(sql, connectContext);
+            System.out.println("original sql: " + sql);
+            System.out.println("parsed sql: " + copyStmt.toSql());
+            Assert.assertEquals(StageType.INTERNAL, copyStmt.getStageType());
+            Assert.assertEquals("~", copyStmt.getStage());
+            Assert.assertEquals(stageId, copyStmt.getStageId());
+        } catch (Exception e) {
+            e.printStackTrace();
+            Assert.fail("must be success.");
+        }
+    }
+
+    @Test
     public void testCopyInto() throws Exception {
         String query = "create stage if not exists ex_stage_1 " + OBJ_INFO
                 + "file_format = ('type' = 'csv', 'column_separator'=\",\") "
@@ -61,7 +91,7 @@ public class CopyIntoTest extends TestWithFeService {
 
         new Expectations(connectContext.getEnv(), connectContext.getEnv().getInternalCatalog()) {
             {
-                Env.getCurrentInternalCatalog().getStage((StageType) any, anyString, "ex_stage_1");
+                Env.getCurrentInternalCatalog().getStage(StageType.EXTERNAL, anyString, "ex_stage_1");
                 minTimes = 0;
                 result = stagePB;
             }

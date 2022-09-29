@@ -603,6 +603,7 @@ nonterminal FileFormat file_format;
 nonterminal CopyOption copy_option;
 // copy into
 nonterminal CopyFromParam copy_from_param;
+nonterminal String stage_name;
 nonterminal List<Expr> copy_select_expr_list;
 nonterminal FilesOrPattern files_or_pattern_option;
 nonterminal Boolean async_option;
@@ -1784,13 +1785,24 @@ copy_stmt ::=
     :};
 
 copy_from_param ::=
-    AT ident:stage
+    stage_name:stage
     {:
         RESULT = new CopyFromParam(stage);
     :}
-    | LPAREN KW_SELECT copy_select_expr_list:exprList KW_FROM AT ident:stage where_clause:whereExpr RPAREN
+    | LPAREN KW_SELECT copy_select_expr_list:exprList KW_FROM stage_name:stage where_clause:whereExpr RPAREN
     {:
         RESULT = new CopyFromParam(stage, exprList, whereExpr);
+    :}
+    ;
+
+stage_name ::=
+    AT ident:stage
+    {:
+        RESULT = stage;
+    :}
+    | AT BITNOT
+    {:
+        RESULT = "~";
     :}
     ;
 
