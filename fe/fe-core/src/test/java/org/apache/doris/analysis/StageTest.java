@@ -39,8 +39,10 @@ public class StageTest extends TestWithFeService {
     private Database db;
     @Mocked
     private OlapTable table;
+    private ConnectContext ctx;
     private static final String OBJ_INFO =  "(\"bucket\" = \"tmp_bucket\", "
             + "\"endpoint\" = \"cos.ap-beijing.myqcloud.com\", "
+            + "\"provider\" = \"cos\", "
             + "\"prefix\" = \"tmp_prefix\", "
             + "\"sk\" = \"tmp_sk\", "
             + "\"ak\" = \"tmp_ak\", "
@@ -49,119 +51,96 @@ public class StageTest extends TestWithFeService {
     @Override
     protected void runBeforeAll() throws Exception {
         FeConstants.runningUnitTest = true;
+        ctx = UtFrameUtils.createDefaultCtx();
     }
 
     @Test
     public void testCreateStageStmt() throws Exception {
-        ConnectContext ctx = UtFrameUtils.createDefaultCtx();
         // create an internal stage
-        do {
-            try {
-                String query = "create stage in_stage_1";
-                UtFrameUtils.parseAndAnalyzeStmt(query, ctx);
-            } catch (AnalysisException e) {
-                Assert.assertTrue(true);
-                break;
-            } catch (Exception e) {
-                Assert.fail("must be AnalysisException.");
-            }
-            Assert.fail("must be AnalysisException.");
-        } while (false);
-        // create an external stage
-        try {
-            String query = "create stage if not exists ex_stage_1 " + OBJ_INFO;
-            UtFrameUtils.parseAndAnalyzeStmt(query, ctx);
-        } catch (Exception e) {
-            Assert.fail("must be success.");
-        }
+        String sql = "create stage in_stage_1";
+        parseAndAnalyzeWithException(sql, "Syntax error");
+
         // create an external stage with no bucket
-        do {
-            try {
-                String query = "create stage ex_stage_1 "
-                        + "('endpoint' = 'cos.ap-beijing.myqcloud.com', "
-                        + "'region' = 'ap-beijing', "
-                        + "'prefix' = 'tmp_prefix', "
-                        + "'ak'='tmp_ak', 'sk'='tmp_sk');";
-                UtFrameUtils.parseAndAnalyzeStmt(query, ctx);
-            } catch (AnalysisException e) {
-                Assert.assertTrue(true);
-                break;
-            } catch (Exception e) {
-                Assert.fail("must be AnalysisException.");
-            }
-            Assert.fail("must be AnalysisException.");
-        } while (false);
+        sql = "create stage ex_stage_1 "
+                + "('endpoint' = 'cos.ap-beijing.myqcloud.com', "
+                + "'region' = 'ap-beijing', "
+                + "'prefix' = 'tmp_prefix', "
+                + "'ak'='tmp_ak', 'sk'='tmp_sk');";
+        parseAndAnalyzeWithException(sql, "bucket is required for ExternalStage");
+
         // create stage with file format
         try {
-            String query = "create stage if not exists ex_stage_1 " + OBJ_INFO
+            sql = "create stage if not exists ex_stage_1 " + OBJ_INFO
                     + "file_format = ('type' = 'csv', 'column_separator'=\",\", 'line_delimiter'=\"\t\")";
-            UtFrameUtils.parseAndAnalyzeStmt(query, ctx);
+            UtFrameUtils.parseAndAnalyzeStmt(sql, ctx);
         } catch (Exception e) {
             Assert.fail("must be success.");
         }
+
         // create stage with unknown file format property
-        do {
-            try {
-                String query = "create stage if not exists ex_stage_1 " + OBJ_INFO
-                        + "file_format = ('type' = 'csv', 'test_key'='test_value')";
-                UtFrameUtils.parseAndAnalyzeStmt(query, ctx);
-            } catch (AnalysisException e) {
-                Assert.assertTrue(true);
-                break;
-            } catch (Exception e) {
-                Assert.fail("must be AnalysisException.");
-            }
-            Assert.fail("must be AnalysisException.");
-        } while (false);
+        sql = "create stage if not exists ex_stage_1 " + OBJ_INFO
+                + "file_format = ('type' = 'csv', 'test_key'='test_value')";
+        parseAndAnalyzeWithException(sql, "'test_key' is invalid in FileFormat");
+
         // create stage with copy option: on_error
         try {
-            String query = "create stage if not exists ex_stage_1 " + OBJ_INFO
+            sql = "create stage if not exists ex_stage_1 " + OBJ_INFO
                     + "copy_option= ('on_error' = 'continue')";
-            UtFrameUtils.parseAndAnalyzeStmt(query, ctx);
+            UtFrameUtils.parseAndAnalyzeStmt(sql, ctx);
         } catch (Exception e) {
             Assert.fail("must be success.");
         }
+
         // create stage with copy option: on_error and size_limit
         try {
-            String query = "create stage if not exists ex_stage_1 " + OBJ_INFO
+            sql = "create stage if not exists ex_stage_1 " + OBJ_INFO
                     + "copy_option= ('on_error' = 'max_filter_ratio_0.4', 'size_limit' = '100')";
-            StatementBase statementBase = UtFrameUtils.parseAndAnalyzeStmt(query, ctx);
+            StatementBase statementBase = UtFrameUtils.parseAndAnalyzeStmt(sql, ctx);
             Assert.assertTrue(statementBase instanceof CreateStageStmt);
             Assert.assertEquals(0.4, ((CreateStageStmt) statementBase).getCopyOption().getMaxFilterRatio(), 0.02);
         } catch (Exception e) {
             Assert.fail("must be success.");
         }
+
         // create stage with copy option: invalid max_filter_ratio
-        do {
-            try {
-                String query = "create stage if not exists ex_stage_1 " + OBJ_INFO
-                        + "copy_option= ('on_error' = 'max_filter_ratio_a') ";
-                StatementBase statementBase = UtFrameUtils.parseAndAnalyzeStmt(query, ctx);
-                Assert.assertTrue(statementBase instanceof CreateStageStmt);
-                Assert.assertEquals(0.4, ((CreateStageStmt) statementBase).getCopyOption().getMaxFilterRatio(), 0.02);
-            } catch (AnalysisException e) {
-                Assert.assertTrue(true);
-                break;
-            } catch (Exception e) {
-                Assert.fail("must be AnalysisException.");
-            }
-            Assert.fail("must be AnalysisException.");
-        } while (false);
+        sql = "create stage if not exists ex_stage_1 " + OBJ_INFO
+                + "copy_option= ('on_error' = 'max_filter_ratio_a') ";
+        parseAndAnalyzeWithException(sql, "Property on_error with invalid value max_filter_ratio_a");
+
         // create an external stage with file format and copy option
         try {
-            String query = "create stage ex_stage_1 " + OBJ_INFO
+            sql = "create stage ex_stage_1 " + OBJ_INFO
                     + "file_format = (\"type\" = \"csv\", \"column_separator\" = \",\") "
                     + "copy_option = (\"on_error\" = \"max_filter_ratio_0.4\", \"size_limit\" = \"100\")";
-            StatementBase statementBase = UtFrameUtils.parseAndAnalyzeStmt(query, ctx);
-            Assert.assertEquals(query, statementBase.toSql().toLowerCase().trim());
+            StatementBase statementBase = UtFrameUtils.parseAndAnalyzeStmt(sql, ctx);
+            Assert.assertEquals(sql, statementBase.toSql().toLowerCase().trim());
         } catch (Exception e) {
             Assert.fail("must be success.");
         }
+
+        // create stage with invalid prefix
+        sql = "create stage ex_stage_1 "
+                + "('endpoint' = 'cos.ap-beijing.myqcloud.com', "
+                + "'region' = 'ap-beijing', "
+                + "'bucket' = 'tmp_bucket', "
+                + "'prefix' = '/tmp_prefix', "
+                + "'provider' = 'OSS', "
+                + "'ak'='tmp_ak', 'sk'='tmp_sk');";
+        parseAndAnalyzeWithException(sql, "can not start or end with '/'");
+
+        // create stage with invalid provider
+        sql = "create stage ex_stage_1 "
+                + "('endpoint' = 'cos.ap-beijing.myqcloud.com', "
+                + "'region' = 'ap-beijing', "
+                + "'bucket' = 'tmp_bucket', "
+                + "'prefix' = 'tmp_prefix', "
+                + "'provider' = 'abc', "
+                + "'ak'='tmp_ak', 'sk'='tmp_sk');";
+        parseAndAnalyzeWithException(sql, "Property provider with invalid value abc");
     }
 
     @Test
     public void testStagePB() throws Exception {
-        ConnectContext ctx = UtFrameUtils.createDefaultCtx();
         String query = "create stage if not exists ex_stage_1 " + OBJ_INFO
                 + "file_format = ('type' = 'csv', 'column_separator'=\",\") "
                 + "copy_option = ('on_error' = 'max_filter_ratio_0.4', 'size_limit' = '100')";
@@ -243,5 +222,19 @@ public class StageTest extends TestWithFeService {
             e.printStackTrace();
             Assert.fail("must be success.");
         }
+    }
+
+    private void parseAndAnalyzeWithException(String sql, String errorMsg) {
+        do {
+            try {
+                UtFrameUtils.parseAndAnalyzeStmt(sql, ctx);
+            } catch (AnalysisException e) {
+                Assert.assertTrue(e.getMessage().contains(errorMsg));
+                break;
+            } catch (Exception e) {
+                Assert.fail("must be AnalysisException.");
+            }
+            Assert.fail("must be AnalysisException.");
+        } while (false);
     }
 }

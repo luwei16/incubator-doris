@@ -38,6 +38,7 @@ public class CopyIntoTest extends TestWithFeService {
             + "\"prefix\" = \"tmp_prefix\", "
             + "\"sk\" = \"tmp_sk\", "
             + "\"ak\" = \"tmp_ak\", "
+            + "\"provider\" = \"s3\", "
             + "\"region\" = \"ap-beijing\") ";
     private List<String> tableColumnNames = Lists.newArrayList("id", "name", "score");
 

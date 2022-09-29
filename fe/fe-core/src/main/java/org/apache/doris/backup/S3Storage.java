@@ -431,7 +431,7 @@ public class S3Storage extends BlobStorage {
             S3URI uri = S3URI.create(path, false);
             String prefix = uri.getKey();
             if (pattern != null) {
-                pattern = prefix + pattern;
+                pattern = prefix + "/" + pattern;
             }
 
             S3Client s3Client = getClient("");

@@ -22,8 +22,10 @@ import org.apache.doris.common.util.PrintableMap;
 
 import com.google.common.collect.ImmutableSet;
 import com.selectdb.cloud.proto.SelectdbCloud.ObjectStoreInfoPB;
+import com.selectdb.cloud.proto.SelectdbCloud.ObjectStoreInfoPB.Provider;
 import com.selectdb.cloud.proto.SelectdbCloud.StagePB;
 import lombok.Getter;
+import org.apache.commons.lang3.EnumUtils;
 
 import java.util.Map;
 import java.util.Map.Entry;
@@ -35,8 +37,9 @@ public class StageParam {
     public static final String PREFIX = "prefix";
     public static final String AK = "ak";
     public static final String SK = "sk";
+    public static final String PROVIDER = "provider";
     private static final ImmutableSet<String> CONFIGURABLE_PROPERTIES_SET = new ImmutableSet.Builder<String>().add(
-            ENDPOINT).add(REGION).add(BUCKET).add(PREFIX).add(AK).add(SK).build();
+            ENDPOINT).add(REGION).add(BUCKET).add(PREFIX).add(AK).add(SK).add(PROVIDER).build();
 
     @Getter
     protected StagePB.StageType type;
@@ -50,15 +53,23 @@ public class StageParam {
     public void analyze() throws AnalysisException {
         for (Entry<String, String> entry : properties.entrySet()) {
             if (!CONFIGURABLE_PROPERTIES_SET.contains(entry.getKey())) {
-                throw new AnalysisException("Property '" + entry.getKey() + "' is invalid for ExternalStage");
+                throw new AnalysisException("Property " + entry.getKey() + " is invalid for ExternalStage");
             }
         }
         if (properties.size() != CONFIGURABLE_PROPERTIES_SET.size()) {
             for (String prop : CONFIGURABLE_PROPERTIES_SET) {
                 if (!properties.containsKey(prop)) {
-                    throw new AnalysisException("Property '" + prop + "' is required for ExternalStage");
+                    throw new AnalysisException("Property " + prop + " is required for ExternalStage");
                 }
             }
+        }
+        String prefix = properties.get(PREFIX);
+        if (prefix.startsWith("/") || prefix.endsWith("/")) {
+            throw new AnalysisException("Property " + PREFIX + " can not start or end with '/'");
+        }
+        String provider = properties.get(PROVIDER);
+        if (!EnumUtils.isValidEnumIgnoreCase(ObjectStoreInfoPB.Provider.class, provider)) {
+            throw new AnalysisException("Property " + PROVIDER + " with invalid value " + provider);
         }
     }
 
@@ -71,6 +82,7 @@ public class StageParam {
     public ObjectStoreInfoPB toProto() {
         return ObjectStoreInfoPB.newBuilder().setEndpoint(properties.get(ENDPOINT)).setRegion(properties.get(REGION))
                 .setBucket(properties.get(BUCKET)).setPrefix(properties.get(PREFIX)).setAk(properties.get(AK))
-                .setSk(properties.get(SK)).build();
+                .setSk(properties.get(SK)).setProvider(Provider.valueOf(properties.get(PROVIDER).toUpperCase()))
+                .build();
     }
 }

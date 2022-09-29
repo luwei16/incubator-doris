@@ -84,7 +84,7 @@ public class CopyOption {
         try {
             Long.parseLong(value);
         } catch (Exception e) {
-            throw new AnalysisException("Failed to parse property " + key + ". Error: " + e.getMessage());
+            throw new AnalysisException("Property " + key + " with invalid value " + value);
         }
     }
 
@@ -122,10 +122,10 @@ public class CopyOption {
                 }
             } else if (!value.equalsIgnoreCase(ON_ERROR_CONTINUE) && !value.equalsIgnoreCase(
                     ON_ERROR_ABORT_STATEMENT)) {
-                throw new AnalysisException("Failed to parse property " + key + " with value: " + value);
+                throw new AnalysisException("Property " + key + " with invalid value " + value);
             }
         } catch (Exception e) {
-            throw new AnalysisException("Failed to parse property " + key + ". Error: " + e.getMessage());
+            throw new AnalysisException("Property " + key + " with invalid value " + value);
         }
     }
 }
