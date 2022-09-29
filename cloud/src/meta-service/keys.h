@@ -13,12 +13,12 @@
 //
 // 0x01 "instance" ${instance_id}                                                            -> InstanceInfoPB
 //
-// 0x01 "txn" ${instance_id} "txn_index" ${db_id} ${label}                                   -> TxnInfoPB ${version_timestamp}
+// 0x01 "txn" ${instance_id} "txn_label" ${db_id} ${label}                                   -> TxnLabelPB ${version_timestamp}
 // 0x01 "txn" ${instance_id} "txn_info" ${db_id} ${txn_id}                                   -> TxnInfoPB
-// 0x01 "txn" ${instance_id} "txn_db_tbl" ${txn_id}                                          -> ${db_id} ${tbl_id}
-// 0x01 "txn" ${instance_id} "txn_running" ${db_id} ${txn_id}                                -> ${table_id_list}
+// 0x01 "txn" ${instance_id} "txn_db_tbl" ${txn_id}                                          -> TxnIndexPB
+// 0x01 "txn" ${instance_id} "txn_running" ${db_id} ${txn_id}                                -> TxnRunningPB
 //
-// 0x01 "version" ${instance_id} "version_id" ${db_id} ${tbl_id} ${partition_id}             -> ${version}
+// 0x01 "version" ${instance_id} "partition" ${db_id} ${tbl_id} ${partition_id}              -> VersionPB
 //
 // 0x01 "meta" ${instance_id} "rowset" ${tablet_id} ${version}                               -> RowsetMetaPB
 // 0x01 "meta" ${instance_id} "rowset_tmp" ${txn_id} ${rowset_id}                            -> RowsetMetaPB
@@ -30,7 +30,7 @@
 // 0x01 "recycle" ${instance_id} "index" ${index_id}                                         -> RecycleIndexPB
 // 0x01 "recycle" ${instance_id} "partition" ${partition_id}                                 -> RecyclePartitionPB
 // 0x01 "recycle" ${instance_id} "rowset" ${tablet_id} ${rowset_id}                          -> RecycleRowsetPB
-// 0x01 "recycle" ${instance_id} "txn" ${tablet_id} ${txn_id}                                -> RecycleTxnKeyInfo
+// 0x01 "recycle" ${instance_id} "txn" ${db_id} ${txn_id}                                    -> RecycleTxnKeyInfo
 //
 // 0x01 "job" ${instance_id} "tablet" ${tablet_id}                                           -> TabletJobInfoPB
 // clang-format on
@@ -61,13 +61,13 @@ struct BasicKeyInfo : Base {
 using InstanceKeyInfo      = BasicKeyInfo<0 , std::tuple<std::string>>;
 
 //                                                      0:instance_id  1:db_id  2:label
-using TxnIndexKeyInfo      = BasicKeyInfo<1 , std::tuple<std::string,  int64_t, std::string>>;
+using TxnLabelKeyInfo      = BasicKeyInfo<1 , std::tuple<std::string,  int64_t, std::string>>;
 
 //                                                      0:instance_id  1:db_id  2:txn_id
 using TxnInfoKeyInfo       = BasicKeyInfo<2 , std::tuple<std::string,  int64_t, int64_t>>;
 
 //                                                      0:instance_id  1:txn_id
-using TxnDbTblKeyInfo      = BasicKeyInfo<3 , std::tuple<std::string,  int64_t>>;
+using TxnIndexKeyInfo      = BasicKeyInfo<3 , std::tuple<std::string,  int64_t>>;
 
 //                                                      0:instance_id  1:db_id  2:txn_id
 using TxnRunningKeyInfo    = BasicKeyInfo<5 , std::tuple<std::string,  int64_t, int64_t>>;
@@ -113,9 +113,9 @@ using CopyFileKeyInfo      = BasicKeyInfo<18, std::tuple<std::string,  std::stri
 
 void instance_key(const InstanceKeyInfo& in, std::string* out);
 
-void txn_index_key(const TxnIndexKeyInfo& in, std::string* out);
+void txn_label_key(const TxnLabelKeyInfo& in, std::string* out);
 void txn_info_key(const TxnInfoKeyInfo& in, std::string* out);
-void txn_db_tbl_key(const TxnDbTblKeyInfo& in, std::string* out);
+void txn_index_key(const TxnIndexKeyInfo& in, std::string* out);
 void txn_running_key(const TxnRunningKeyInfo& in, std::string* out);
 
 void version_key(const VersionKeyInfo& in, std::string* out);

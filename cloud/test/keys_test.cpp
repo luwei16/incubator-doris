@@ -30,12 +30,12 @@ int decode_bytes(std::string_view* in, std::string* out);
 //
 // 0x01 "instance" ${instance_id} -> InstanceInfoPB
 // 
-// 0x01 "txn" ${instance_id} "txn_index" ${db_id} ${label} -> TxnIndexPB ${version_timestamp}
+// 0x01 "txn" ${instance_id} "txn_label" ${db_id} ${label} -> TxnLabelPB ${version_timestamp}
 // 0x01 "txn" ${instance_id} "txn_info" ${db_id} ${version_timestamp} -> TxnInfoPB
-// 0x01 "txn" ${instance_id} "txn_db_tbl" ${version_timestamp} -> ${db_id} ${tbl_id}
-// 0x01 "txn" ${instance_id} "txn_running" ${db_id} ${version_timestamp} -> ${table_id_list} // creaet at begin, delete at commit
+// 0x01 "txn" ${instance_id} "txn_index" ${version_timestamp} -> TxnIndexPB
+// 0x01 "txn" ${instance_id} "txn_running" ${db_id} ${version_timestamp} -> TxnRunningPB // creaet at begin, delete at commit
 //
-// 0x01 "version" ${instance_id} "version_id" ${db_id} ${tbl_id} ${partition_id} -> ${version}
+// 0x01 "version" ${instance_id} "partition" ${db_id} ${tbl_id} ${partition_id} -> VersionPB
 // 
 // 0x01 "meta" ${instance_id} "rowset" ${tablet_id} ${version} ${rowset_id} -> RowsetMetaPB
 // 0x01 "meta" ${instance_id} "rowset_tmp" ${txn_id} ${rowset_id} -> RowsetMetaPB
@@ -206,13 +206,13 @@ TEST(KeysTest, TxnKeysTest) {
     using namespace selectdb;
     std::string instance_id = "instance_id_deadbeef";
 
-    // 0x01 "txn" ${instance_id} "txn_index" ${db_id} ${label} -> set<${version_timestamp}>
+    // 0x01 "txn" ${instance_id} "txn_label" ${db_id} ${label} -> set<${version_timestamp}>
     {
         int64_t db_id = 12345678;
         std::string label = "label1xxx";
-        TxnIndexKeyInfo index_key {instance_id, db_id, label};
+        TxnLabelKeyInfo index_key {instance_id, db_id, label};
         std::string encoded_txn_index_key0;
-        txn_index_key(index_key, &encoded_txn_index_key0);
+        txn_label_key(index_key, &encoded_txn_index_key0);
         std::cout << hex(encoded_txn_index_key0) << std::endl;
 
         std::string dec_instance_id;
@@ -235,7 +235,7 @@ TEST(KeysTest, TxnKeysTest) {
 
         std::get<1>(index_key) = db_id + 1;
         std::string encoded_txn_index_key1;
-        txn_index_key(index_key, &encoded_txn_index_key1);
+        txn_label_key(index_key, &encoded_txn_index_key1);
         std::cout << hex(encoded_txn_index_key1) << std::endl;
 
         ASSERT_GT(encoded_txn_index_key1, encoded_txn_index_key0);
@@ -276,18 +276,18 @@ TEST(KeysTest, TxnKeysTest) {
         ASSERT_GT(encoded_txn_info_key1, encoded_txn_info_key0);
     }
 
-    // 0x01 "txn" ${instance_id} "txn_db_tbl" ${version_timestamp} -> ${db_id} ${tbl_id}
+    // 0x01 "txn" ${instance_id} "txn_index" ${version_timestamp} -> TxnIndexPB
     {
         int64_t txn_id = 12343212453;
-        TxnDbTblKeyInfo db_tbl_key {instance_id, txn_id};
-        std::string encoded_txn_db_tbl_key0;
-        txn_db_tbl_key(db_tbl_key, &encoded_txn_db_tbl_key0);
-        std::cout << hex(encoded_txn_db_tbl_key0) << std::endl;
+        TxnIndexKeyInfo txn_index_key_ {instance_id, txn_id};
+        std::string encoded_txn_index_key0;
+        txn_index_key(txn_index_key_, &encoded_txn_index_key0);
+        std::cout << hex(encoded_txn_index_key0) << std::endl;
 
         std::string dec_instance_id;
         int64_t dec_txn_id = 0;
 
-        std::string_view key_sv(encoded_txn_db_tbl_key0);
+        std::string_view key_sv(encoded_txn_index_key0);
         std::string dec_txn_prefix;
         std::string dec_txn_infix;
         key_sv.remove_prefix(1); // Remove CLOUD_KEY_SPACE01
@@ -299,12 +299,12 @@ TEST(KeysTest, TxnKeysTest) {
         EXPECT_EQ(instance_id, dec_instance_id);
         EXPECT_EQ(txn_id, dec_txn_id);
 
-        std::get<1>(db_tbl_key) = txn_id + 1;
-        std::string encoded_txn_db_tbl_key1;
-        txn_db_tbl_key(db_tbl_key, &encoded_txn_db_tbl_key1);
-        std::cout << hex(encoded_txn_db_tbl_key1) << std::endl;
+        std::get<1>(txn_index_key_) = txn_id + 1;
+        std::string encoded_txn_index_key1;
+        txn_index_key(txn_index_key_, &encoded_txn_index_key1);
+        std::cout << hex(encoded_txn_index_key1) << std::endl;
 
-        ASSERT_GT(encoded_txn_db_tbl_key1, encoded_txn_db_tbl_key0);
+        ASSERT_GT(encoded_txn_index_key1, encoded_txn_index_key0);
     }
 
     // 0x01 "txn" ${instance_id} "txn_running" ${db_id} ${version_timestamp} -> ${table_id_list}

@@ -43,8 +43,8 @@ CONF_mInt64(recycl_interval_seconds, "3600");
 CONF_mInt64(index_retention_seconds, "172800");    // 48h
 CONF_mInt64(partition_retention_seconds, "86400"); // 24h
 CONF_mInt64(rowset_retention_seconds, "10800");    // 3h
-CONF_Int32(recycl_concurrency, "16");
-CONF_Bool(recycl_standalone_mode, "false");
+CONF_Int32(recycle_concurrency, "16");
+CONF_Bool(recycle_standalone_mode, "false");
 
 CONF_String(test_s3_ak, "ak");
 CONF_String(test_s3_sk, "sk");

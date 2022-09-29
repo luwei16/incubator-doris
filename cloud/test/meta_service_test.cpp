@@ -9,6 +9,7 @@
 #include "meta-service/keys.h"
 #include "meta-service/mem_txn_kv.h"
 #include "resource-manager/resource_manager.h"
+#include "mock_resource_manager.h"
 
 #include "brpc/controller.h"
 #include "gtest/gtest.h"
@@ -25,46 +26,7 @@ int main(int argc, char** argv) {
     return RUN_ALL_TESTS();
 }
 
-std::string mock_instance = "test_instance";
-std::string mock_cluster_name = "test_cluster";
-std::string mock_cluster_id = "test_cluster_id";
 using namespace selectdb;
-class MockResourceManager : public ResourceManager {
-public:
-    MockResourceManager(std::shared_ptr<TxnKv> txn_kv) : ResourceManager(txn_kv) {};
-    ~MockResourceManager() override = default;
-
-    int init() override { return 0; }
-
-    std::string get_node(const std::string& cloud_unique_id,
-                         std::vector<NodeInfo>* nodes) override {
-        NodeInfo i {Role::COMPUTE_NODE, mock_instance, mock_cluster_name, mock_cluster_id};
-        nodes->push_back(i);
-        return "";
-    }
-
-    std::string add_cluster(const std::string& instance_id, const ClusterInfo& cluster,
-                            MetaServiceCode& code) override {
-        return "";
-    }
-
-    std::string drop_cluster(const std::string& instance_id, const ClusterInfo& cluster,
-                             MetaServiceCode& code) override {
-        return "";
-    }
-
-    std::string update_cluster(const std::string& instance_id, const ClusterInfo& cluster,
-                               std::function<std::string(::selectdb::ClusterPB&)> action,
-                               std::function<bool(const ::selectdb::ClusterPB&)> filter) override {
-        return "";
-    }
-
-    std::pair<int, std::string> get_instance(std::shared_ptr<Transaction> txn,
-                                             const std::string& instance_id,
-                                             InstanceInfoPB* inst_pb) override {
-        return {1, ""};
-    }
-};
 
 std::unique_ptr<MetaServiceImpl> get_meta_service() {
     auto txn_kv = std::dynamic_pointer_cast<TxnKv>(std::make_shared<MemTxnKv>());

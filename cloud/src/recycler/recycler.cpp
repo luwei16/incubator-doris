@@ -124,6 +124,8 @@ void Recycler::recycle_callback() {
         instance_recycler->recycle_partitions();
         instance_recycler->recycle_tmp_rowsets();
         instance_recycler->recycle_rowsets();
+        instance_recycler->abort_timeout_txn();
+        instance_recycler->recycle_expired_txn_label();
         {
             std::lock_guard lock(recycling_instance_set_mtx_);
             recycling_instance_set_.erase(instance_id);
@@ -159,10 +161,10 @@ int Recycler::start() {
 
     s_is_working = true;
 
-    if (config::recycl_standalone_mode) {
+    if (config::recycle_standalone_mode) {
         workers_.push_back(std::thread(std::bind(&Recycler::instance_scanner_callback, this)));
     }
-    for (int i = 0; i < config::recycl_concurrency; ++i) {
+    for (int i = 0; i < config::recycle_concurrency; ++i) {
         workers_.push_back(std::thread(std::bind(&Recycler::recycle_callback, this)));
     }
     return 0;
@@ -746,7 +748,8 @@ void InstanceRecycler::abort_timeout_txn() {
     int num_abort = 0;
 
     TxnRunningKeyInfo txn_running_key_info0 {instance_id_, 0, 0};
-    TxnRunningKeyInfo txn_running_key_info1 {instance_id_, std::numeric_limits<int64_t>::max(), 0};
+    TxnRunningKeyInfo txn_running_key_info1 {instance_id_, std::numeric_limits<int64_t>::max(),
+                                             std::numeric_limits<int64_t>::max()};
     std::string begin_txn_running_key;
     std::string end_txn_running_key;
     txn_running_key(txn_running_key_info0, &begin_txn_running_key);
@@ -766,7 +769,8 @@ void InstanceRecycler::abort_timeout_txn() {
                 .tag("num_abort", num_abort);
     });
 
-    int64_t current_time = duration_cast<seconds>(system_clock::now().time_since_epoch()).count();
+    int64_t current_time =
+            duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
     VLOG_DEBUG << "current_time=" << current_time;
 
     std::unique_ptr<RangeGetIterator> it;
@@ -794,7 +798,7 @@ void InstanceRecycler::abort_timeout_txn() {
 
         while (it->has_next()) {
             auto [k, v] = it->next();
-            VLOG_DEBUG << "k=" << hex(k);
+            VLOG_DEBUG << "k=" << hex(k) << " v=" << hex(v);
 
             if (!it->has_next()) {
                 begin_txn_running_key = k;
@@ -809,7 +813,8 @@ void InstanceRecycler::abort_timeout_txn() {
                 LOG_WARNING("malformed txn_running_pb").tag("key", hex(k)).tag("val", hex(v));
                 continue;
             }
-            if (txn_running_pb.timeout_time() < current_time) {
+            VLOG_DEBUG << "txn_running_pb:" << txn_running_pb.DebugString();
+            if (txn_running_pb.timeout_time() <= current_time) {
                 LOG_INFO("found timeout txn").tag("key", hex(k));
                 timeout_txn_running_keys.push_back(k);
                 num_timeout++;
@@ -818,27 +823,28 @@ void InstanceRecycler::abort_timeout_txn() {
 
         begin_txn_running_key.push_back('\x00');
         {
-            for (auto& k : timeout_txn_running_keys) {
+            for (const auto& k : timeout_txn_running_keys) {
                 //abort timeout txn
                 std::unique_ptr<Transaction> txn;
                 ret = txn_kv_->create_txn(&txn);
                 if (ret != 0) {
                     LOG_ERROR("failed to create txn ret={}", ret).tag("key", hex(k));
-                    return;
+                    continue;
                 }
 
+                std::string_view k1 = k;
                 //TxnRunningKeyInfo 0:instance_id  1:db_id  2:txn_id
-                k.remove_prefix(1); // Remove key space
+                k1.remove_prefix(1); // Remove key space
                 std::vector<std::tuple<std::variant<int64_t, std::string>, int, int>> out;
-                ret = decode_key(&k, &out);
+                ret = decode_key(&k1, &out);
                 if (ret != 0) {
                     LOG_ERROR("failed to decode key, ret={}", ret).tag("key", hex(k));
                     continue;
                 }
 
-                int64_t db_id = std::get<int64_t>(std::get<0>(out[2]));
-                int64_t txn_id = std::get<int64_t>(std::get<0>(out[3]));
-                VLOG_DEBUG << "xxx instance_id=" << instance_id_ << " db_id=" << db_id
+                int64_t db_id = std::get<int64_t>(std::get<0>(out[3]));
+                int64_t txn_id = std::get<int64_t>(std::get<0>(out[4]));
+                VLOG_DEBUG << "instance_id=" << instance_id_ << " db_id=" << db_id
                            << " txn_id=" << txn_id;
 
                 std::string txn_inf_key;
@@ -919,7 +925,8 @@ void InstanceRecycler::abort_timeout_txn() {
                 LOG_INFO("abort timeout txn")
                         .tag("key", hex(k))
                         .tag("db_id", db_id)
-                        .tag("txn_id", txn_id);
+                        .tag("txn_id", txn_id)
+                        .tag("label", txn_info.label());
             }
         }
     } while (it->more());
@@ -934,7 +941,8 @@ void InstanceRecycler::recycle_expired_txn_label() {
     int num_recycle = 0;
 
     RecycleTxnKeyInfo recycle_txn_key_info0 {instance_id_, 0, 0};
-    RecycleTxnKeyInfo recycle_txn_key_info1 {instance_id_, std::numeric_limits<int64_t>::max(), 0};
+    RecycleTxnKeyInfo recycle_txn_key_info1 {instance_id_, std::numeric_limits<int64_t>::max(),
+                                             std::numeric_limits<int64_t>::max()};
     std::string begin_recycle_txn_key;
     std::string end_recycle_txn_key;
     recycle_txn_key(recycle_txn_key_info0, &begin_recycle_txn_key);
@@ -947,14 +955,15 @@ void InstanceRecycler::recycle_expired_txn_label() {
 
     std::unique_ptr<int, std::function<void(int*)>> defer_log_statistics((int*)0x01, [&](int*) {
         auto cost = duration<float>(steady_clock::now() - start_time).count();
-        LOG_INFO("end to recycle expire txn, cost={}s", cost)
+        LOG_INFO("end to recycle expired txn, cost={}s", cost)
                 .tag("instance_id", instance_id_)
                 .tag("num_scanned", num_scanned)
                 .tag("num_expired", num_expired)
                 .tag("num_recycle", num_recycle);
     });
 
-    int64_t current_time = duration_cast<seconds>(system_clock::now().time_since_epoch()).count();
+    int64_t current_time =
+            duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
     VLOG_DEBUG << "current_time=" << current_time;
 
     std::unique_ptr<RangeGetIterator> it;
@@ -983,7 +992,7 @@ void InstanceRecycler::recycle_expired_txn_label() {
 
         while (it->has_next()) {
             auto [k, v] = it->next();
-            VLOG_DEBUG << "k=" << hex(k) << " v=" << v;
+            VLOG_DEBUG << "k=" << hex(k) << " v=" << hex(v);
 
             if (!it->has_next()) {
                 begin_recycle_txn_key = k;
@@ -998,8 +1007,10 @@ void InstanceRecycler::recycle_expired_txn_label() {
                 LOG_WARNING("malformed txn_running_pb").tag("key", hex(k)).tag("val", hex(v));
                 continue;
             }
+
+            VLOG_DEBUG << "recycle_txn_pb:" << recycle_txn_pb.DebugString();
             if ((recycle_txn_pb.has_immediate() && recycle_txn_pb.immediate()) ||
-                (recycle_txn_pb.creation_time() + config::label_keep_max_second < current_time)) {
+                (recycle_txn_pb.creation_time() + config::label_keep_max_second <= current_time)) {
                 LOG_INFO("found recycle txn").tag("key", hex(k));
                 expire_recycle_txn_keys.push_back(k);
                 num_expired++;
@@ -1009,26 +1020,32 @@ void InstanceRecycler::recycle_expired_txn_label() {
         begin_recycle_txn_key.push_back('\x00');
 
         {
-            for (auto& k : expire_recycle_txn_keys) {
+            for (const auto& k : expire_recycle_txn_keys) {
                 //recycle expired txn
                 std::unique_ptr<Transaction> txn;
                 ret = txn_kv_->create_txn(&txn);
                 if (ret != 0) {
                     LOG_ERROR("failed to create txn ret={}", ret).tag("key", hex(k));
-                    return;
+                    continue;
                 }
+
+                std::string_view k1 = k;
                 //RecycleTxnKeyInfo 0:instance_id  1:db_id  2:txn_id
-                k.remove_prefix(1); // Remove key space
+                k1.remove_prefix(1); // Remove key space
                 std::vector<std::tuple<std::variant<int64_t, std::string>, int, int>> out;
-                ret = decode_key(&k, &out);
+                ret = decode_key(&k1, &out);
                 if (ret != 0) {
                     LOG_ERROR("failed to decode key, ret={}", ret).tag("key", hex(k));
                     continue;
                 }
-                int64_t db_id = std::get<int64_t>(std::get<0>(out[2]));
-                int64_t txn_id = std::get<int64_t>(std::get<0>(out[3]));
-                VLOG_DEBUG << "xxx instance_id=" << instance_id_ << " db_id=" << db_id
+                int64_t db_id = std::get<int64_t>(std::get<0>(out[3]));
+                int64_t txn_id = std::get<int64_t>(std::get<0>(out[4]));
+                VLOG_DEBUG << "instance_id=" << instance_id_ << " db_id=" << db_id
                            << " txn_id=" << txn_id;
+
+                std::string txn_index_key_;
+                TxnIndexKeyInfo txn_index_key_info {instance_id_, txn_id};
+                txn_index_key(txn_index_key_info, &txn_index_key_);
 
                 std::string txn_inf_key;
                 std::string txn_inf_val;
@@ -1053,23 +1070,25 @@ void InstanceRecycler::recycle_expired_txn_label() {
                             .tag("txn_id", txn_id);
                     continue;
                 }
+                VLOG_DEBUG << "txn_info:" << txn_info.DebugString();
 
-                std::string txn_idx_key;
-                std::string txn_idx_val;
-                TxnIndexKeyInfo txn_idx_key_info {instance_id_, db_id, txn_info.label()};
-                txn_index_key(txn_idx_key_info, &txn_idx_key);
+                std::string txn_label_key_;
+                std::string txn_label_val;
+                TxnLabelKeyInfo txn_label_key_info {instance_id_, db_id, txn_info.label()};
+                txn_label_key(txn_label_key_info, &txn_label_key_);
 
-                ret = txn->get(txn_idx_key, &txn_idx_val);
+                ret = txn->get(txn_label_key_, &txn_label_val);
                 if (ret != 0) {
                     continue;
                 }
 
-                VLOG_DEBUG << "txn->get txn_idx_key=" << hex(txn_idx_key)
-                           << " txn_idx_val=" << hex(txn_idx_val);
-                std::string label_to_ids_str =
-                        txn_idx_val.substr(0, txn_idx_val.size() - VERSION_STAMP_LEN);
-                TxnLabelToIdsPB label_to_ids;
-                if (!label_to_ids.ParseFromString(label_to_ids_str)) {
+                VLOG_DEBUG << "txn->get txn_label_key=" << hex(txn_label_key_)
+                           << " txn_label_val=" << hex(txn_label_key_);
+                std::string txn_label_pb_str =
+                        txn_label_val.substr(0, txn_label_val.size() - VERSION_STAMP_LEN);
+
+                TxnLabelPB txn_label_pb;
+                if (!txn_label_pb.ParseFromString(txn_label_pb_str)) {
                     LOG_WARNING("failed to parse txn index")
                             .tag("key", hex(k))
                             .tag("db_id", db_id)
@@ -1077,35 +1096,42 @@ void InstanceRecycler::recycle_expired_txn_label() {
                     continue;
                 }
 
-                VLOG_DEBUG << "label_to_ids:" << label_to_ids.DebugString();
+                VLOG_DEBUG << "txn_label_pb:" << txn_label_pb.DebugString();
 
-                auto iter = label_to_ids.txn_ids().begin();
-                for (int64_t cur_txn_id : label_to_ids.txn_ids()) {
+                auto iter = txn_label_pb.txn_ids().begin();
+                for (int64_t cur_txn_id : txn_label_pb.txn_ids()) {
                     if (cur_txn_id == txn_id) {
                         break;
                     }
                     iter++;
                 }
-                label_to_ids.mutable_txn_ids()->erase(iter);
+                txn_label_pb.mutable_txn_ids()->erase(iter);
 
-                if (label_to_ids.txn_ids().empty()) {
-                    txn->remove(k);
-                    VLOG_DEBUG << "txn->remove, k=" << hex(k);
+                if (txn_label_pb.txn_ids().empty()) {
+                    txn->remove(txn_label_key_);
+                    VLOG_DEBUG << "txn->remove, txn_label_key=" << hex(txn_label_key_)
+                               << " label=" << txn_info.label() << " txn_id=" << txn_id;
                 } else {
-                    if (!label_to_ids.SerializeToString(&txn_idx_val)) {
+                    if (!txn_label_pb.SerializeToString(&txn_label_val)) {
                         LOG_WARNING("failed to serialize txn index label={}", txn_info.label())
                                 .tag("key", hex(k))
                                 .tag("db_id", db_id)
                                 .tag("txn_id", txn_id);
+                        continue;
                     }
 
-                    txn->atomic_set_ver_value(txn_idx_key, txn_idx_val);
-                    VLOG_DEBUG << "update label_to_ids:" << label_to_ids.DebugString();
+                    txn->atomic_set_ver_value(txn_label_key_, txn_label_val);
+                    VLOG_DEBUG << "update txn_label_key=" << hex(txn_label_key_)
+                               << " label=" << txn_info.label() << " txn_id=" << txn_id
+                               << " txn_label_pb:" << txn_label_pb.DebugString();
                 }
+
+                txn->remove(k);
+                VLOG_DEBUG << "txn->remove, recycle k=" << hex(k);
                 txn->remove(txn_inf_key);
                 VLOG_DEBUG << "txn->remove, txn_inf_key=" << hex(txn_inf_key);
-                txn->remove(txn_idx_key);
-                VLOG_DEBUG << "txn->remove, txn_idx_key=" << hex(txn_idx_key);
+                txn->remove(txn_index_key_);
+                VLOG_DEBUG << "txn->remove, txn_index_key=" << hex(txn_index_key_);
 
                 ret = txn->commit();
                 if (ret != 0) {

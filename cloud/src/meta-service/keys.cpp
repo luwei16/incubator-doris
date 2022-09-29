@@ -24,12 +24,12 @@ namespace selectdb {
 [[maybe_unused]] static const char* COPY_KEY_PREFIX     = "copy";
 
 // Infix
-[[maybe_unused]] static const char* TXN_KEY_INFIX_INDEX       = "txn_index";
+[[maybe_unused]] static const char* TXN_KEY_INFIX_LABEL       = "txn_label";
 [[maybe_unused]] static const char* TXN_KEY_INFIX_INFO        = "txn_info";
-[[maybe_unused]] static const char* TXN_KEY_INFIX_DB_TBL      = "txn_db_tbl";
+[[maybe_unused]] static const char* TXN_KEY_INFIX_INDEX       = "txn_index";
 [[maybe_unused]] static const char* TXN_KEY_INFIX_RUNNING     = "txn_running";
 
-[[maybe_unused]] static const char* VERSION_KEY_INFIX         = "version_id";
+[[maybe_unused]] static const char* VERSION_KEY_INFIX         = "partition";
 
 [[maybe_unused]] static const char* META_KEY_INFIX_ROWSET     = "rowset";
 [[maybe_unused]] static const char* META_KEY_INFIX_ROWSET_TMP = "rowset_tmp";
@@ -88,7 +88,7 @@ static void encode_prefix(const T& t, std::string* key) {
     // Input type T must be one of the following, add if needed
     static_assert(check_types_v<T,
         InstanceKeyInfo,
-        TxnIndexKeyInfo, TxnInfoKeyInfo, TxnDbTblKeyInfo, TxnRunningKeyInfo,
+        TxnLabelKeyInfo, TxnInfoKeyInfo, TxnIndexKeyInfo, TxnRunningKeyInfo,
         MetaRowsetKeyInfo, MetaRowsetTmpKeyInfo, MetaTabletKeyInfo, MetaTabletIdxKeyInfo,
         VersionKeyInfo,
         RecycleIndexKeyInfo, RecyclePartKeyInfo, RecycleRowsetKeyInfo, RecycleTxnKeyInfo,
@@ -98,9 +98,9 @@ static void encode_prefix(const T& t, std::string* key) {
     // Prefixes for key families
     if        constexpr (std::is_same_v<T, InstanceKeyInfo>) {
         encode_bytes(INSTANCE_KEY_PREFIX, key);
-    } else if constexpr (std::is_same_v<T, TxnIndexKeyInfo>
+    } else if constexpr (std::is_same_v<T, TxnLabelKeyInfo>
                       || std::is_same_v<T, TxnInfoKeyInfo>
-                      || std::is_same_v<T, TxnDbTblKeyInfo>
+                      || std::is_same_v<T, TxnIndexKeyInfo>
                       || std::is_same_v<T, TxnRunningKeyInfo>) {
         encode_bytes(TXN_KEY_PREFIX, key);
     } else if constexpr (std::is_same_v<T, MetaRowsetKeyInfo>
@@ -141,9 +141,9 @@ void instance_key(const InstanceKeyInfo& in, std::string* out) {
 // Transaction keys
 //==============================================================================
 
-void txn_index_key(const TxnIndexKeyInfo& in, std::string* out) {
+void txn_label_key(const TxnLabelKeyInfo& in, std::string* out) {
     encode_prefix(in, out);                 // 0x01 "txn" ${instance_id}
-    encode_bytes(TXN_KEY_INFIX_INDEX, out); // "txn_index"
+    encode_bytes(TXN_KEY_INFIX_LABEL, out); // "txn_index"
     encode_int64(std::get<1>(in), out);     // db_id
     encode_bytes(std::get<2>(in), out);     // label
 }
@@ -155,10 +155,10 @@ void txn_info_key(const TxnInfoKeyInfo& in, std::string* out) {
     encode_int64(std::get<2>(in), out);    // txn_id
 }
 
-void txn_db_tbl_key(const TxnDbTblKeyInfo& in, std::string* out) {
-    encode_prefix(in, out);                  // 0x01 "txn" ${instance_id}
-    encode_bytes(TXN_KEY_INFIX_DB_TBL, out); // "txn_db_tbl"
-    encode_int64(std::get<1>(in), out);      // txn_id
+void txn_index_key(const TxnIndexKeyInfo& in, std::string* out) {
+    encode_prefix(in, out);                 // 0x01 "txn" ${instance_id}
+    encode_bytes(TXN_KEY_INFIX_INDEX, out); // "txn_index"
+    encode_int64(std::get<1>(in), out);     // txn_id
 }
 
 void txn_running_key(const TxnRunningKeyInfo& in, std::string* out) {
@@ -237,8 +237,8 @@ void recycle_rowset_key(const RecycleRowsetKeyInfo& in, std::string* out) {
 }
 
 void recycle_txn_key(const RecycleTxnKeyInfo& in, std::string* out) {
-    encode_prefix(in, out);             // 0x01 "txn" ${instance_id}
-    encode_bytes(RECYCLE_KEY_TXN, out); // "recycle_txn"
+    encode_prefix(in, out);             // 0x01 "recycle" ${instance_id}
+    encode_bytes(RECYCLE_KEY_TXN, out); // "txn"
     encode_int64(std::get<1>(in), out); // db_id
     encode_int64(std::get<2>(in), out); // txn_id
 }

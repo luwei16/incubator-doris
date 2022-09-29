@@ -15,7 +15,11 @@ for i in `ls *_test`; do
 			patchelf --set-rpath `pwd` ${i}
 			patchelf --set-interpreter `pwd`/ld-linux-x86-64.so.2 ${i}
 		fi
-		./${i} --gtest_print_time=true --gtest_output=xml:${i}.xml --gtest_filter=$2
+		if [ "x$2" != "x" ]; then
+			./${i} --gtest_print_time=true --gtest_output=xml:${i}.xml --gtest_filter=$2
+		else
+			./${i} --gtest_print_time=true --gtest_output=xml:${i}.xml
+		fi
 		echo "--------------------------"
 	fi
 done

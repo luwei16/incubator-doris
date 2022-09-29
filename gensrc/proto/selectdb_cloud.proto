@@ -144,25 +144,6 @@ message TxnCoordinatorPB {
     optional string ip = 2;
 }
 
-// For storing label->txn_ids
-message TxnHistoryPB {
-    optional string label = 1;
-    optional int64 db_id = 2;
-    repeated int64 txn_ids = 3;
-}
-
-// For expire and check txn conflict
-message TxnRunningPB {
-    repeated int64 table_ids = 1;
-    optional int64 timeout_time = 2;
-}
-
-message RecycleTxnPB {
-    optional int64 creation_time = 1;
-    optional string label = 2;
-    optional bool immediate = 3; //recycle immediately
-}
-
 message TxnCommitAttachmentPB {
     enum Type {
         LODD_JOB_FINAL_OPERATION = 0;
@@ -219,8 +200,14 @@ message TxnCommitAttachmentPB {
     optional LoadJobFinalOperationPB load_job_final_operation = 2;
 }
 
-message TxnLabelToIdsPB {
+// For storing label -> txn_ids
+message TxnLabelPB {
     repeated int64 txn_ids = 1;
+}
+
+// txn_id -> db_id
+message TxnIndexPB {
+    optional TabletIndexPB tablet_index = 1;
 }
 
 message TxnInfoPB {
@@ -242,6 +229,23 @@ message TxnInfoPB {
     optional TxnCommitAttachmentPB commit_attachment = 16;
     optional int64 listener_id = 17; //callback id
     // TODO: There are more fields TBD
+}
+
+// For check txn conflict and txn timeout
+message TxnRunningPB {
+    repeated int64 table_ids = 1;
+    //milliseconds
+    optional int64 timeout_time = 2;
+}
+
+message VersionPB {
+    optional int64 version = 1;
+}
+
+message RecycleTxnPB {
+    optional int64 creation_time = 1;
+    optional string label = 2;
+    optional bool immediate = 3; //recycle immediately
 }
 
 message RecycleIndexPB {
