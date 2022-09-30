@@ -53,6 +53,7 @@ TEST(MetaServiceTest, CreateInstanceTest) {
         obj.set_prefix("654");
         obj.set_endpoint("789");
         obj.set_region("987");
+        obj.set_provider(ObjectStoreInfoPB::BOS);
         req.mutable_obj_info()->CopyFrom(obj);
 
         MetaServiceGenericResponse res;
@@ -489,15 +490,22 @@ TEST(MetaServiceTest, TabletJobTest) {
         idx_pb.set_index_id(2);
         idx_pb.set_partition_id(3);
         idx_pb.set_tablet_id(tablet_id + 1); // error, tablet_id not match
+        req.mutable_job()->mutable_compaction()->set_base_compaction_cnt(10);
+        req.mutable_job()->mutable_compaction()->set_cumulative_compaction_cnt(20);
         std::string idx_val = idx_pb.SerializeAsString();
         std::unique_ptr<Transaction> txn;
         ASSERT_EQ(meta_service->txn_kv_->create_txn(&txn), 0);
         txn->put(index_key, idx_val);
+        std::string stats_key =
+                meta_tablet_key({instance_id, table_id, index_id, partition_id, tablet_id});
+        TabletStatsPB stats;
+        stats.set_base_compaction_cnt(9);
+        stats.set_cumulative_compaction_cnt(19);
+        txn->put(stats_key, stats.SerializeAsString());
         ASSERT_EQ(txn->commit(), 0);
         meta_service->start_tablet_job(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
                                        &req, &res, nullptr);
         ASSERT_NE(res.status().msg().find("internal error"), std::string::npos);
-
         idx_pb.set_tablet_id(tablet_id); // Correct tablet_id
         idx_val = idx_pb.SerializeAsString();
         ASSERT_EQ(meta_service->txn_kv_->create_txn(&txn), 0);
@@ -520,6 +528,8 @@ TEST(MetaServiceTest, TabletJobTest) {
         meta_service->start_tablet_job(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
                                        &req, &res, nullptr);
         ASSERT_NE(res.status().msg().find("already started"), std::string::npos);
+        txn->remove(stats_key);
+        txn->commit();
     };
 
     // Finish, this unit test relies on the previous (start_job)
@@ -539,6 +549,8 @@ TEST(MetaServiceTest, TabletJobTest) {
         req.mutable_job()->mutable_idx()->set_index_id(index_id);
         req.mutable_job()->mutable_idx()->set_partition_id(partition_id);
         req.mutable_job()->mutable_idx()->set_tablet_id(tablet_id);
+        req.mutable_job()->mutable_compaction()->set_base_compaction_cnt(10);
+        req.mutable_job()->mutable_compaction()->set_cumulative_compaction_cnt(20);
         // Action is not set
         meta_service->finish_tablet_job(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
                                         &req, &res, nullptr);
@@ -782,6 +794,11 @@ TEST(MetaServiceTest, CopyJobTest) {
     auto cloud_unique_id = "test_cloud_unique_id";
     auto stage_id = "test_stage_id";
     int64_t table_id = 100;
+    std::string instance_id = "tablet_job_test_instance_id";
+    [[maybe_unused]] auto sp = SyncPoint::get_instance();
+    sp->set_call_back("get_instance_id::pred", [](void* p) { *((bool*)p) = true; });
+    sp->set_call_back("get_instance_id", [&](void* p) { *((std::string*)p) = instance_id; });
+    sp->enable_processing();
 
     // generate a begin copy request
     BeginCopyRequest begin_copy_request;
@@ -898,8 +915,8 @@ TEST(MetaServiceTest, CopyJobTest) {
         ASSERT_EQ(ret, 0);
         // 0 copy files
         {
-            CopyFileKeyInfo key_info0 {mock_instance, stage_id, table_id, "", ""};
-            CopyFileKeyInfo key_info1 {mock_instance, stage_id, table_id + 1, "", ""};
+            CopyFileKeyInfo key_info0 {instance_id, stage_id, table_id, "", ""};
+            CopyFileKeyInfo key_info1 {instance_id, stage_id, table_id + 1, "", ""};
             std::string key0;
             std::string key1;
             copy_file_key(key_info0, &key0);
@@ -912,8 +929,8 @@ TEST(MetaServiceTest, CopyJobTest) {
         }
         // 1 copy job with finish status
         {
-            CopyJobKeyInfo key_info0 {mock_instance, stage_id, table_id, "", 0};
-            CopyJobKeyInfo key_info1 {mock_instance, stage_id, table_id + 1, "", 0};
+            CopyJobKeyInfo key_info0 {instance_id, stage_id, table_id, "", 0};
+            CopyJobKeyInfo key_info1 {instance_id, stage_id, table_id + 1, "", 0};
             std::string key0;
             std::string key1;
             copy_job_key(key_info0, &key0);

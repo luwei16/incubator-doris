@@ -37,6 +37,12 @@ MetaServiceImpl::MetaServiceImpl(std::shared_ptr<TxnKv> txn_kv,
 
 MetaServiceImpl::~MetaServiceImpl() {}
 
+std::string static trim(std::string& str) {
+    const std::string drop = "/ \t";
+    str.erase(str.find_last_not_of(drop) + 1);
+    return str.erase(0, str.find_first_not_of(drop));
+}
+
 // FIXME(gavin): should it be a member function of ResourceManager?
 std::string get_instance_id(const std::shared_ptr<ResourceManager>& rc_mgr,
                             const std::string& cloud_unique_id) {
@@ -3368,6 +3374,8 @@ void MetaServiceImpl::alter_obj_store_info(google::protobuf::RpcController* cont
         last_item.set_ak(ak);
         last_item.set_sk(sk);
         last_item.set_bucket(bucket);
+        // format prefix, such as `/aa/bb/`, `aa/bb//`, `//aa/bb`, `  /aa/bb` -> `aa/bb`
+        prefix = trim(prefix);
         last_item.set_prefix(prefix);
         last_item.set_endpoint(endpoint);
         last_item.set_region(region);
@@ -3427,6 +3435,8 @@ void MetaServiceImpl::create_instance(google::protobuf::RpcController* controlle
     std::string sk = obj.has_sk() ? obj.sk() : "";
     std::string bucket = obj.has_bucket() ? obj.bucket() : "";
     std::string prefix = obj.has_prefix() ? obj.prefix() : "";
+    // format prefix, such as `/aa/bb/`, `aa/bb//`, `//aa/bb`, `  /aa/bb` -> `aa/bb`
+    prefix = trim(prefix);
     std::string endpoint = obj.has_endpoint() ? obj.endpoint() : "";
     std::string region = obj.has_region() ? obj.region() : "";
 

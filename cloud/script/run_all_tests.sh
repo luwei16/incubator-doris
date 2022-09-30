@@ -2,6 +2,9 @@
 
 echo "$@"
 
+# fdb memory leaks, we don't care the core dump of unit test
+unset ASAN_OPTIONS
+
 for i in `ls *_test`; do
 	if [ "$1" != "" ]; then
 		if [ "$1" != "${i}" ]; then
@@ -10,7 +13,7 @@ for i in `ls *_test`; do
 	fi
 	if [ -x ${i} ]; then
 		echo "========== ${i} =========="
-		fdb=`ldd ${i} | grep libfdb_c`
+		fdb=$(ldd ${i} | grep libfdb_c | grep found)
 		if [ "${fdb}" != "" ]; then
 			patchelf --set-rpath `pwd` ${i}
 			patchelf --set-interpreter `pwd`/ld-linux-x86-64.so.2 ${i}
