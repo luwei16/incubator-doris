@@ -150,6 +150,11 @@ public:
                          ::selectdb::MetaServiceGenericResponse* response,
                          ::google::protobuf::Closure* done) override;
 
+    void alter_instance(google::protobuf::RpcController* controller,
+                        const ::selectdb::AlterInstanceRequest* request,
+                        ::selectdb::MetaServiceGenericResponse* response,
+                        ::google::protobuf::Closure* done) override;
+
     void alter_cluster(google::protobuf::RpcController* controller,
                        const ::selectdb::AlterClusterRequest* request,
                        ::selectdb::MetaServiceGenericResponse* response,
@@ -209,6 +214,12 @@ private:
     static std::vector<std::pair<int64_t, int64_t>> calc_sync_versions(
             int64_t req_bc_cnt, int64_t bc_cnt, int64_t req_cc_cnt, int64_t cc_cnt, int64_t req_cp,
             int64_t cp, int64_t req_start, int64_t req_end);
+
+    std::pair<MetaServiceCode, std::string> create_instance(
+            const ::selectdb::AlterInstanceRequest* request);
+
+    std::pair<MetaServiceCode, std::string> drop_instance(
+            const ::selectdb::AlterInstanceRequest* request);
 
 private:
     std::shared_ptr<TxnKv> txn_kv_;

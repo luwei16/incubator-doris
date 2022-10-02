@@ -1,7 +1,7 @@
 import groovy.json.JsonOutput
 suite("cloud_cluster_test", "cloud_cluster") {
     def token = "greedisgood9999"
-    def instance_id = "instance_id_deadbeef"
+    def instance_id = "instance_id_deadbeef_cluster"
     def name = "user_1"
     def user_id = "10000"
 

@@ -12,6 +12,10 @@ option cc_generic_services = true;
 //==============================================================================
 
 message InstanceInfoPB {
+    enum Status {
+        NORMAL = 0;
+        DELETED = 1;
+    }    
     optional string user_id = 1;
     optional string instance_id = 2;
     optional string name = 3;
@@ -21,6 +25,7 @@ message InstanceInfoPB {
     repeated ClusterPB clusters = 7;
     repeated ObjectStoreInfoPB obj_info = 8;
     repeated StagePB stages = 9;
+    optional Status status = 10;
 }
 
 message StagePB {
@@ -566,6 +571,15 @@ message CreateInstanceRequest {
     optional ObjectStoreInfoPB obj_info = 4;
 }
 
+message AlterInstanceRequest {
+    enum Operation {
+        UNKNOWN        = 0;
+        DROP           = 1;
+    }
+    optional string instance_id = 1;
+    optional Operation op = 2;
+}
+
 message AlterClusterRequest {
     enum Operation {
         UNKNOWN        = 0;
@@ -782,6 +796,7 @@ service MetaService {
     rpc get_obj_store_info(GetObjStoreInfoRequest) returns (GetObjStoreInfoResponse);
     rpc alter_obj_store_info(AlterObjStoreInfoRequest) returns (MetaServiceGenericResponse);
     rpc create_instance(CreateInstanceRequest) returns (MetaServiceGenericResponse);
+    rpc alter_instance(AlterInstanceRequest) returns (MetaServiceGenericResponse);
     rpc alter_cluster(AlterClusterRequest) returns (MetaServiceGenericResponse);
     rpc get_cluster(GetClusterRequest) returns (GetClusterResponse);
 

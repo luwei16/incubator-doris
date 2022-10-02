@@ -196,6 +196,11 @@ std::pair<MetaServiceCode, std::string> ResourceManager::add_cluster(const std::
         return std::make_pair(MetaServiceCode::KV_TXN_GET_ERR, err);
     }
 
+    if (instance.status() != InstanceInfoPB::NORMAL) {
+        err = "instance status has been set delete, plz check it";
+        return std::make_pair(MetaServiceCode::CLUSTER_NOT_FOUND, err);
+    }
+
     LOG(INFO) << "cluster to add json=" << proto_to_json(cluster.cluster);
     LOG(INFO) << "json=" << proto_to_json(instance);
 
@@ -284,6 +289,11 @@ std::pair<MetaServiceCode, std::string> ResourceManager::drop_cluster(
         return std::make_pair(MetaServiceCode::CLUSTER_NOT_FOUND, err);
     }
 
+    if (instance.status() != InstanceInfoPB::NORMAL) {
+        err = "instance status has been set delete, plz check it";
+        return std::make_pair(MetaServiceCode::CLUSTER_NOT_FOUND, err);
+    }
+
     bool found = false;
     int idx = -1;
     ClusterPB to_del;
@@ -368,6 +378,11 @@ std::string ResourceManager::update_cluster(
     auto [c0, m0] = get_instance(txn, instance_id, &instance);
     if (c0 != 0) {
         err = m0;
+        return err;
+    }
+
+    if (instance.status() != InstanceInfoPB::NORMAL) {
+        err = "instance status has been set delete, plz check it";
         return err;
     }
 
@@ -476,18 +491,19 @@ void ResourceManager::remove_cluster_from_index_no_lock(const std::string& insta
     int cnt = 0;
     for (auto it = node_info_.begin(); it != node_info_.end();) {
         auto& [_, n] = *it;
-        if (n.cluster_id != cluster_id || n.cluster_name != cluster_name) {
+        if (n.instance_id != instance_id || n.cluster_id != cluster_id ||
+            n.cluster_name != cluster_name) {
             ++it;
             continue;
         }
         ++cnt;
-        LOG(INFO) << "remove node from index,"
+        LOG(INFO) << "remove node from index, instance_id=" << instance_id
                   << " role=" << static_cast<int>(n.role) << " cluster_name=" << n.cluster_name
                   << " cluster_id=" << n.cluster_id << " node_info=" << proto_to_json(n.node_info);
         it = node_info_.erase(it);
     }
     LOG(INFO) << cnt << " nodes removed from index, cluster_id=" << cluster_id
-              << " cluster_name=" << cluster_name;
+              << " cluster_name=" << cluster_name << " instance_id=" << instance_id;
 }
 
 void ResourceManager::remove_cluster_from_index(const std::string& instance_id,
@@ -569,6 +585,13 @@ std::string ResourceManager::modify_nodes(const std::string& instance_id,
         err = m0;
         return err;
     }
+
+    if (instance.status() != InstanceInfoPB::NORMAL) {
+        err = "instance status has been set delete, plz check it";
+        LOG(WARNING) << err;
+        return err;
+    }
+
     LOG(INFO) << "instance json=" << proto_to_json(instance);
     std::vector<std::pair<ClusterPB, ClusterPB>> vec;
     using modify_impl_func = std::function<std::string(const ClusterPB& c, const NodeInfo& n)>;

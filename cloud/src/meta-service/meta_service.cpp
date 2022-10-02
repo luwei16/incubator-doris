@@ -2872,8 +2872,8 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
     // Process http request
     // just for debug and regression test
     if (unresolved_path == "get_obj_store_info") {
-        GetObjStoreInfoRequest req;
-        auto st = google::protobuf::util::JsonStringToMessage(request_body, &req);
+        GetObjStoreInfoRequest r;
+        auto st = google::protobuf::util::JsonStringToMessage(request_body, &r);
         if (!st.ok()) {
             msg = "failed to GetObjStoreInfoRequest, error: " + st.message().ToString();
             ret = MetaServiceCode::PROTOBUF_PARSE_ERR;
@@ -2882,15 +2882,15 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
             return;
         }
         GetObjStoreInfoResponse res;
-        get_obj_store_info(cntl, &req, &res, nullptr);
+        get_obj_store_info(cntl, &r, &res, nullptr);
         ret = res.status().code();
         msg = res.status().msg();
         response_body = msg;
         return;
     }
     if (unresolved_path == "update_ak_sk") {
-        AlterObjStoreInfoRequest req;
-        auto st = google::protobuf::util::JsonStringToMessage(request_body, &req);
+        AlterObjStoreInfoRequest r;
+        auto st = google::protobuf::util::JsonStringToMessage(request_body, &r);
         if (!st.ok()) {
             msg = "failed to SetObjStoreInfoRequest, error: " + st.message().ToString();
             ret = MetaServiceCode::PROTOBUF_PARSE_ERR;
@@ -2898,17 +2898,17 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
             LOG(WARNING) << msg;
             return;
         }
-        req.set_op(AlterObjStoreInfoRequest::UPDATE_AK_SK);
+        r.set_op(AlterObjStoreInfoRequest::UPDATE_AK_SK);
         MetaServiceGenericResponse res;
-        alter_obj_store_info(cntl, &req, &res, nullptr);
+        alter_obj_store_info(cntl, &r, &res, nullptr);
         ret = res.status().code();
         msg = res.status().msg();
         response_body = msg;
         return;
     }
     if (unresolved_path == "add_obj_info") {
-        AlterObjStoreInfoRequest req;
-        auto st = google::protobuf::util::JsonStringToMessage(request_body, &req);
+        AlterObjStoreInfoRequest r;
+        auto st = google::protobuf::util::JsonStringToMessage(request_body, &r);
         if (!st.ok()) {
             msg = "failed to SetObjStoreInfoRequest, error: " + st.message().ToString();
             ret = MetaServiceCode::PROTOBUF_PARSE_ERR;
@@ -2916,9 +2916,9 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
             LOG(WARNING) << msg;
             return;
         }
-        req.set_op(AlterObjStoreInfoRequest::ADD_OBJ_INFO);
+        r.set_op(AlterObjStoreInfoRequest::ADD_OBJ_INFO);
         MetaServiceGenericResponse res;
-        alter_obj_store_info(cntl, &req, &res, nullptr);
+        alter_obj_store_info(cntl, &r, &res, nullptr);
         ret = res.status().code();
         msg = res.status().msg();
         response_body = msg;
@@ -2948,8 +2948,8 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
     }
 
     if (unresolved_path == "create_instance") {
-        CreateInstanceRequest req;
-        auto st = google::protobuf::util::JsonStringToMessage(request_body, &req);
+        CreateInstanceRequest r;
+        auto st = google::protobuf::util::JsonStringToMessage(request_body, &r);
         if (!st.ok()) {
             msg = "failed to CreateInstanceRequest, error: " + st.message().ToString();
             ret = MetaServiceCode::PROTOBUF_PARSE_ERR;
@@ -2958,7 +2958,26 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
             return;
         }
         MetaServiceGenericResponse res;
-        create_instance(cntl, &req, &res, nullptr);
+        create_instance(cntl, &r, &res, nullptr);
+        ret = res.status().code();
+        msg = res.status().msg();
+        response_body = msg;
+        return;
+    }
+
+    if (unresolved_path == "drop_instance") {
+        AlterInstanceRequest r;
+        auto st = google::protobuf::util::JsonStringToMessage(request_body, &r);
+        if (!st.ok()) {
+            msg = "failed to AlterInstanceRequest, error: " + st.message().ToString();
+            ret = MetaServiceCode::PROTOBUF_PARSE_ERR;
+            response_body = msg;
+            LOG(WARNING) << msg;
+            return;
+        }
+        r.set_op(AlterInstanceRequest::DROP);
+        MetaServiceGenericResponse res;
+        alter_instance(cntl, &r, &res, nullptr);
         ret = res.status().code();
         msg = res.status().msg();
         response_body = msg;
@@ -2966,8 +2985,8 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
     }
 
     if (unresolved_path == "add_cluster") {
-        AlterClusterRequest req;
-        auto st = google::protobuf::util::JsonStringToMessage(request_body, &req);
+        AlterClusterRequest r;
+        auto st = google::protobuf::util::JsonStringToMessage(request_body, &r);
         if (!st.ok()) {
             msg = "failed to parse AlterClusterRequest, error: " + st.message().ToString();
             ret = MetaServiceCode::PROTOBUF_PARSE_ERR;
@@ -2975,9 +2994,9 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
             LOG(WARNING) << msg;
             return;
         }
-        req.set_op(AlterClusterRequest::ADD_CLUSTER);
+        r.set_op(AlterClusterRequest::ADD_CLUSTER);
         MetaServiceGenericResponse res;
-        alter_cluster(cntl, &req, &res, nullptr);
+        alter_cluster(cntl, &r, &res, nullptr);
         ret = res.status().code();
         msg = res.status().msg();
         response_body = msg;
@@ -2985,8 +3004,8 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
     }
 
     if (unresolved_path == "add_node") {
-        AlterClusterRequest req;
-        auto st = google::protobuf::util::JsonStringToMessage(request_body, &req);
+        AlterClusterRequest r;
+        auto st = google::protobuf::util::JsonStringToMessage(request_body, &r);
         if (!st.ok()) {
             msg = "failed to parse AlterClusterRequest, error: " + st.message().ToString();
             ret = MetaServiceCode::PROTOBUF_PARSE_ERR;
@@ -2994,9 +3013,9 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
             LOG(WARNING) << msg;
             return;
         }
-        req.set_op(AlterClusterRequest::ADD_NODE);
+        r.set_op(AlterClusterRequest::ADD_NODE);
         MetaServiceGenericResponse res;
-        alter_cluster(cntl, &req, &res, nullptr);
+        alter_cluster(cntl, &r, &res, nullptr);
         ret = res.status().code();
         msg = res.status().msg();
         response_body = msg;
@@ -3004,8 +3023,8 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
     }
 
     if (unresolved_path == "drop_node") {
-        AlterClusterRequest req;
-        auto st = google::protobuf::util::JsonStringToMessage(request_body, &req);
+        AlterClusterRequest r;
+        auto st = google::protobuf::util::JsonStringToMessage(request_body, &r);
         if (!st.ok()) {
             msg = "failed to parse AlterClusterRequest, error: " + st.message().ToString();
             ret = MetaServiceCode::PROTOBUF_PARSE_ERR;
@@ -3013,9 +3032,9 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
             LOG(WARNING) << msg;
             return;
         }
-        req.set_op(AlterClusterRequest::DROP_NODE);
+        r.set_op(AlterClusterRequest::DROP_NODE);
         MetaServiceGenericResponse res;
-        alter_cluster(cntl, &req, &res, nullptr);
+        alter_cluster(cntl, &r, &res, nullptr);
         ret = res.status().code();
         msg = res.status().msg();
         response_body = msg;
@@ -3024,8 +3043,8 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
 
     // This is useful for debuggin
     if (unresolved_path == "get_cluster") {
-        GetClusterRequest req;
-        auto st = google::protobuf::util::JsonStringToMessage(request_body, &req);
+        GetClusterRequest r;
+        auto st = google::protobuf::util::JsonStringToMessage(request_body, &r);
         if (!st.ok()) {
             msg = "failed to GetClusterRequest, error: " + st.message().ToString();
             ret = MetaServiceCode::PROTOBUF_PARSE_ERR;
@@ -3034,7 +3053,7 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
             return;
         }
         GetClusterResponse res;
-        get_cluster(cntl, &req, &res, nullptr);
+        get_cluster(cntl, &r, &res, nullptr);
         ret = res.status().code();
         msg = res.status().msg();
         response_body = msg;
@@ -3042,8 +3061,8 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
     }
 
     if (unresolved_path == "drop_cluster") {
-        AlterClusterRequest req;
-        auto st = google::protobuf::util::JsonStringToMessage(request_body, &req);
+        AlterClusterRequest r;
+        auto st = google::protobuf::util::JsonStringToMessage(request_body, &r);
         if (!st.ok()) {
             msg = "failed to parse AlterClusterRequest, error: " + st.message().ToString();
             ret = MetaServiceCode::PROTOBUF_PARSE_ERR;
@@ -3051,9 +3070,9 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
             LOG(WARNING) << msg;
             return;
         }
-        req.set_op(AlterClusterRequest::DROP_CLUSTER);
+        r.set_op(AlterClusterRequest::DROP_CLUSTER);
         MetaServiceGenericResponse res;
-        alter_cluster(cntl, &req, &res, nullptr);
+        alter_cluster(cntl, &r, &res, nullptr);
         ret = res.status().code();
         msg = res.status().msg();
         response_body = msg;
@@ -3061,8 +3080,8 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
     }
 
     if (unresolved_path == "rename_cluster") {
-        AlterClusterRequest req;
-        auto st = google::protobuf::util::JsonStringToMessage(request_body, &req);
+        AlterClusterRequest r;
+        auto st = google::protobuf::util::JsonStringToMessage(request_body, &r);
         if (!st.ok()) {
             msg = "failed to parse AlterClusterRequest, error: " + st.message().ToString();
             ret = MetaServiceCode::PROTOBUF_PARSE_ERR;
@@ -3071,9 +3090,9 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
             return;
         }
 
-        req.set_op(AlterClusterRequest::RENAME_CLUSTER);
+        r.set_op(AlterClusterRequest::RENAME_CLUSTER);
         MetaServiceGenericResponse res;
-        alter_cluster(cntl, &req, &res, nullptr);
+        alter_cluster(cntl, &r, &res, nullptr);
         ret = res.status().code();
         msg = res.status().msg();
         response_body = msg;
@@ -3081,8 +3100,8 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
     }
 
     if (unresolved_path == "update_cluster_mysql_user_name") {
-        AlterClusterRequest req;
-        auto st = google::protobuf::util::JsonStringToMessage(request_body, &req);
+        AlterClusterRequest r;
+        auto st = google::protobuf::util::JsonStringToMessage(request_body, &r);
         if (!st.ok()) {
             msg = "failed to parse AlterClusterRequest, error: " + st.message().ToString();
             ret = MetaServiceCode::PROTOBUF_PARSE_ERR;
@@ -3091,9 +3110,9 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
             return;
         }
 
-        req.set_op(AlterClusterRequest::UPDATE_CLUSTER_MYSQL_USER_NAME);
+        r.set_op(AlterClusterRequest::UPDATE_CLUSTER_MYSQL_USER_NAME);
         MetaServiceGenericResponse res;
-        alter_cluster(cntl, &req, &res, nullptr);
+        alter_cluster(cntl, &r, &res, nullptr);
         ret = res.status().code();
         msg = res.status().msg();
         response_body = msg;
@@ -3101,8 +3120,8 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
     }
 
     if (unresolved_path == "get_tablet_meta") {
-        GetTabletStatsRequest req;
-        auto st = google::protobuf::util::JsonStringToMessage(request_body, &req);
+        GetTabletStatsRequest r;
+        auto st = google::protobuf::util::JsonStringToMessage(request_body, &r);
         if (!st.ok()) {
             msg = "failed to parse GetTabletStatsRequest, error: " + st.message().ToString();
             ret = MetaServiceCode::PROTOBUF_PARSE_ERR;
@@ -3111,7 +3130,7 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
             return;
         }
         GetTabletStatsResponse res;
-        get_tablet_stats(cntl, &req, &res, nullptr);
+        get_tablet_stats(cntl, &r, &res, nullptr);
         ret = res.status().code();
         msg = res.status().msg();
         response_body = msg;
@@ -3119,8 +3138,8 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
     }
 
     if (unresolved_path == "get_stage") {
-        GetStageRequest req;
-        auto st = google::protobuf::util::JsonStringToMessage(request_body, &req);
+        GetStageRequest r;
+        auto st = google::protobuf::util::JsonStringToMessage(request_body, &r);
         if (!st.ok()) {
             msg = "failed to parse GetStageRequest, error: " + st.message().ToString();
             ret = MetaServiceCode::PROTOBUF_PARSE_ERR;
@@ -3130,7 +3149,7 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
         }
 
         GetStageResponse res;
-        get_stage(cntl, &req, &res, nullptr);
+        get_stage(cntl, &r, &res, nullptr);
         ret = res.status().code();
         msg = res.status().msg();
         response_body = msg;
@@ -3303,6 +3322,12 @@ void MetaServiceImpl::alter_obj_store_info(google::protobuf::RpcController* cont
     if (!instance.ParseFromString(val)) {
         code = MetaServiceCode::PROTOBUF_PARSE_ERR;
         msg = "failed to parse InstanceInfoPB";
+        return;
+    }
+
+    if (instance.status() != InstanceInfoPB::NORMAL) {
+        code = MetaServiceCode::CLUSTER_NOT_FOUND;
+        msg = "instance status has been set delete, plz check it";
         return;
     }
 
@@ -3517,6 +3542,112 @@ void MetaServiceImpl::create_instance(google::protobuf::RpcController* controlle
         msg = "failed to commit kv txn";
         LOG(WARNING) << msg << " ret=" << ret;
     }
+}
+
+void MetaServiceImpl::alter_instance(google::protobuf::RpcController* controller,
+                                     const ::selectdb::AlterInstanceRequest* request,
+                                     ::selectdb::MetaServiceGenericResponse* response,
+                                     ::google::protobuf::Closure* done) {
+    auto ctrl = static_cast<brpc::Controller*>(controller);
+    LOG(INFO) << "rpc from " << ctrl->remote_side() << " request=" << request->DebugString();
+    brpc::ClosureGuard closure_guard(done);
+    int ret = 0;
+    MetaServiceCode code = MetaServiceCode::OK;
+    std::string msg = "OK";
+    [[maybe_unused]] std::stringstream ss;
+    std::unique_ptr<int, std::function<void(int*)>> defer_status(
+            (int*)0x01, [&ret, &code, &msg, &response, &ctrl](int*) {
+                response->mutable_status()->set_code(code);
+                response->mutable_status()->set_msg(msg);
+                LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
+                          << ctrl->remote_side() << " " << msg;
+            });
+
+    switch (request->op()) {
+    case AlterInstanceRequest::DROP: {
+        auto r = drop_instance(request);
+        code = r.first;
+        msg = r.second;
+    } break;
+    default: {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        ss << "invalid request op, op=" << request->op();
+        msg = ss.str();
+        return;
+    }
+    }
+}
+
+std::pair<MetaServiceCode, std::string> MetaServiceImpl::drop_instance(
+        const selectdb::AlterInstanceRequest* request) {
+    int ret = 0;
+    MetaServiceCode code = MetaServiceCode::OK;
+    std::string msg = "OK";
+    std::string instance_id = request->has_instance_id() ? request->instance_id() : "";
+    if (instance_id.empty()) {
+        msg = "instance id not set";
+        LOG(WARNING) << msg;
+        return std::make_pair(MetaServiceCode::INVALID_ARGUMENT, msg);
+    }
+
+    InstanceKeyInfo key_info {instance_id};
+    std::string key;
+    std::string val;
+    instance_key(key_info, &key);
+    std::unique_ptr<Transaction> txn;
+    ret = txn_kv_->create_txn(&txn);
+    if (ret != 0) {
+        msg = "failed to create txn";
+        LOG(WARNING) << msg << " ret=" << ret;
+        return std::make_pair(MetaServiceCode::KV_TXN_CREATE_ERR, msg);
+    }
+
+    // Check existence before proceeding
+    ret = txn->get(key, &val);
+    if (ret != 0) {
+        std::stringstream ss;
+        ss << (ret == 1 ? "instance not existed" : "internal error failed to check instance")
+           << ", instance_id=" << request->instance_id();
+        // TODO(dx): fix CLUSTER_NOT_FOUND，VERSION_NOT_FOUND，TXN_LABEL_NOT_FOUND，etc to NOT_FOUND
+        code = ret == 1 ? MetaServiceCode::CLUSTER_NOT_FOUND : MetaServiceCode::UNDEFINED_ERR;
+        msg = ss.str();
+        LOG(WARNING) << msg << " ret=" << ret;
+        return std::make_pair(code, msg);
+    }
+
+    InstanceInfoPB instance;
+    if (!instance.ParseFromString(val)) {
+        msg = "failed to parse InstanceInfoPB";
+        LOG(WARNING) << msg;
+        return std::make_pair(MetaServiceCode::PROTOBUF_PARSE_ERR, msg);
+    }
+
+    // check instance doesn't have any cluster.
+    if (instance.clusters_size() != 0) {
+        msg = "failed to drop instance, instance has clusters";
+        LOG(WARNING) << msg;
+        return std::make_pair(MetaServiceCode::INVALID_ARGUMENT, msg);
+    }
+
+    instance.set_status(InstanceInfoPB::DELETED);
+
+    val = instance.SerializeAsString();
+    if (val.empty()) {
+        msg = "failed to serialize";
+        LOG(ERROR) << msg;
+        return std::make_pair(MetaServiceCode::PROTOBUF_SERIALIZE_ERR, msg);
+    }
+    LOG(INFO) << "put instance_id=" << request->instance_id() << " instance_key=" << hex(key)
+              << "drop instance json=" << proto_to_json(instance);
+
+    txn->put(key, val);
+    ret = txn->commit();
+    if (ret != 0) {
+        msg = "failed to commit kv txn";
+        LOG(WARNING) << msg << " ret=" << ret;
+        return std::make_pair(MetaServiceCode::KV_TXN_COMMIT_ERR, msg);
+    }
+    return std::make_pair(code, msg);
 }
 
 void MetaServiceImpl::alter_cluster(google::protobuf::RpcController* controller,
