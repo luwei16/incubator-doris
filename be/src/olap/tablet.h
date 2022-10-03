@@ -148,36 +148,49 @@ public:
 
     Status add_inc_rowset(const RowsetSharedPtr& rowset);
 
-    // CLOUD_MODE
+    ////////////////////////////////////////////////////////////////////////////
+    // begin CLOUD_MODE functions
+    ////////////////////////////////////////////////////////////////////////////
     // for example:
     //     [0-4][5-5][8-8][9-9][13-13]
     // if spec_version = 12, it will return [6-7],[10-12]
     Versions cloud_calc_missed_versions(int64_t spec_version);
 
-    // CLOUD_MODE
     Status cloud_capture_rs_readers(const Version& version_range,
                                     std::vector<RowsetReaderSharedPtr>* rs_readers);
 
-    // CLOUD_MODE
     // Synchronize the rowsets from meta service.
     // If `query_version` > 0 and local max_version of the tablet >= `query_version`, do nothing.
     Status cloud_sync_rowsets(int64_t query_version = -1);
 
-    // CLOUD_MODE
     // If `version_overlap` is true, function will delete rowsets with overlapped version in this tablet.
     // MUST hold EXCLUSIVE `_meta_lock`.
     void cloud_add_rowsets(std::vector<RowsetSharedPtr> to_add, bool version_overlap);
 
-    // CLOUD_MODE
     // MUST hold EXCLUSIVE `_meta_lock`.
     void cloud_delete_rowsets(const std::vector<RowsetSharedPtr>& to_delete);
 
-    // CLOUD_MODE
     // return number of deleted stale rowsets
     int cloud_delete_expired_stale_rowsets();
 
-    // CLOUD_MODE
     bool has_stale_rowsets() const { return !_stale_rs_version_map.empty(); }
+
+    // clang-format off
+    int64_t fetch_add_approximate_num_rowsets (int64_t x) { return _approximate_num_rowsets .fetch_add(x, std::memory_order_relaxed); }
+    int64_t fetch_add_approximate_num_segments(int64_t x) { return _approximate_num_segments.fetch_add(x, std::memory_order_relaxed); }
+    int64_t fetch_add_approximate_num_rows    (int64_t x) { return _approximate_num_rows    .fetch_add(x, std::memory_order_relaxed); }
+    int64_t fetch_add_approximate_data_size   (int64_t x) { return _approximate_data_size   .fetch_add(x, std::memory_order_relaxed); }
+    int64_t fetch_add_approximate_cumu_num_rowsets (int64_t x) { return _approximate_cumu_num_rowsets.fetch_add(x, std::memory_order_relaxed); }
+    int64_t fetch_add_approximate_cumu_data_size   (int64_t x) { return _approximate_cumu_data_size  .fetch_add(x, std::memory_order_relaxed); }
+    // clang-format on
+    // meta lock must be held when calling this function
+    void reset_approximate_stats(int64_t num_rowsets, int64_t num_segments, int64_t num_rows,
+                                 int64_t data_size);
+    int64_t get_cloud_base_compaction_score();
+    int64_t get_cloud_cumu_compaction_score();
+    ////////////////////////////////////////////////////////////////////////////
+    // end CLOUD_MODE functions
+    ////////////////////////////////////////////////////////////////////////////
 
     /// Delete stale rowset by timing. This delete policy uses now() minutes
     /// config::tablet_rowset_expired_stale_sweep_time_sec to compute the deadline of expired rowset
@@ -500,6 +513,12 @@ private:
     int64_t _cumulative_compaction_cnt = 0;
     int64_t _max_version = -1;
     std::atomic<int64_t> _last_sync_time = 0;
+    std::atomic<int64_t> _approximate_num_rowsets {-1};
+    std::atomic<int64_t> _approximate_num_rows {-1};
+    std::atomic<int64_t> _approximate_num_segments {-1};
+    std::atomic<int64_t> _approximate_data_size {-1};
+    std::atomic<int64_t> _approximate_cumu_num_rowsets {-1};
+    std::atomic<int64_t> _approximate_cumu_data_size {-1};
 
     // cumulative compaction policy
     std::shared_ptr<CumulativeCompactionPolicy> _cumulative_compaction_policy;

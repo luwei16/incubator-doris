@@ -1926,11 +1926,11 @@ void MetaServiceImpl::commit_rowset(::google::protobuf::RpcController* controlle
     std::string commit_key;
     std::string commit_val;
 
-    if (temporary) {
+    if (temporary) { // Txn
         int64_t txn_id = request->rowset_meta().txn_id();
         MetaRowsetTmpKeyInfo key_info {instance_id, txn_id, tablet_id};
         meta_rowset_tmp_key(key_info, &commit_key);
-    } else {
+    } else { // Schema change
         MetaRowsetKeyInfo key_info {instance_id, tablet_id, end_version};
         meta_rowset_key(key_info, &commit_key);
     }
@@ -2217,9 +2217,7 @@ void MetaServiceImpl::get_rowset(::google::protobuf::RpcController* controller,
     int64_t cc_cnt = tablet_stat.cumulative_compaction_cnt();
     int64_t cp = tablet_stat.cumulative_point();
 
-    response->set_base_compaction_cnt(bc_cnt);
-    response->set_cumulative_compaction_cnt(cc_cnt);
-    response->set_cumulative_point(cp);
+    response->mutable_stats()->CopyFrom(tablet_stat);
 
     int64_t req_start = request->start_version();
     int64_t req_end = request->end_version();

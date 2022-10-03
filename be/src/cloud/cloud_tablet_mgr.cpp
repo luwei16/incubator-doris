@@ -1,7 +1,9 @@
 #include "cloud/cloud_tablet_mgr.h"
 
+#include <algorithm>
 #include <condition_variable>
 #include <mutex>
+#include <sstream>
 #include <variant>
 
 #include "cloud/utils.h"
@@ -110,7 +112,7 @@ Status CloudTabletMgr::get_tablet(int64_t tablet_id, TabletSharedPtr* tablet) {
             auto tablet = std::make_shared<Tablet>(std::move(tablet_meta), cloud::cloud_data_dir());
             auto value = new Value();
             value->tablet = tablet.get();
-            value->tablet_id = tablet->tablet_id(); 
+            value->tablet_id = tablet->tablet_id();
             st = meta_mgr()->sync_tablet_rowsets(tablet.get());
             // ignore failure here because we will sync this tablet before query
             if (!st.ok()) {
@@ -195,8 +197,8 @@ void CloudTabletMgr::add_to_vacuum_set(int64_t tablet_id) {
 
 std::vector<std::weak_ptr<Tablet>> CloudTabletMgr::get_weak_tablets() {
     std::vector<std::weak_ptr<Tablet>> weak_tablets;
-    std::lock_guard lock(s_tablet_map_mtx);
     weak_tablets.reserve(s_tablet_map.size());
+    std::lock_guard lock(s_tablet_map_mtx);
     for (auto& [_, tablet] : s_tablet_map) {
         weak_tablets.push_back(tablet);
     }
@@ -236,6 +238,76 @@ void CloudTabletMgr::sync_tablets() {
             }
         }
     }
+}
+
+Status CloudTabletMgr::get_topn_tablets_to_compact(int n, CompactionType compaction_type,
+                                                   const std::function<bool(Tablet*)>& filter_out,
+                                                   std::vector<TabletSharedPtr>* tablets,
+                                                   std::vector<int64_t>* scores) {
+    scores->clear();
+    scores->reserve(n + 1);
+
+    // clang-format off
+    auto score = [compaction_type](Tablet* t) {
+        return compaction_type == CompactionType::BASE_COMPACTION ? t->get_cloud_base_compaction_score()
+               : compaction_type == CompactionType::CUMULATIVE_COMPACTION ? t->get_cloud_cumu_compaction_score()
+               : 0;
+    };
+
+    using namespace std::chrono;
+    auto now = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+
+    auto last_compaction_time_ms = [type = compaction_type](Tablet* t) {
+        return type == CompactionType::BASE_COMPACTION ? t->last_base_compaction_success_time()
+               : type == CompactionType::CUMULATIVE_COMPACTION ? t->last_cumu_compaction_success_time()
+               : 0;
+    };
+    // We don't schedule tablets that are recently successfully scheduled
+    auto skip = [&now, type = compaction_type, &last_compaction_time_ms](Tablet* t) {
+        int64_t interval = type == CompactionType::BASE_COMPACTION ? config::base_compaction_interval_seconds_since_last_operation * 1000
+                           : type == CompactionType::CUMULATIVE_COMPACTION ? 1 * 1000
+                           : 0;
+        return now - last_compaction_time_ms(t) < interval;
+    };
+    // We don't schedule tablets that are disabled for compaction
+    auto disable = [](Tablet* t) { return t->tablet_meta()->tablet_schema()->disable_auto_compaction(); };
+
+    auto [num_filtered, num_disabled, num_skipped] = std::make_tuple(0, 0, 0);
+
+    auto weak_tablets = get_weak_tablets();
+    std::vector<std::pair<TabletSharedPtr, int64_t>> buf;
+    buf.reserve(n + 1);
+    for (auto& weak_tablet : weak_tablets) {
+        auto t = weak_tablet.lock();
+        if (t == nullptr) continue;
+
+        scores->push_back(score(t.get()));
+        std::sort(scores->begin(), scores->end(), [](auto& a, auto& b) { return a > b; });
+        if (scores->size() > n) scores->pop_back();
+
+        if (filter_out(t.get())) { ++num_filtered; continue; }
+        if (disable(t.get())) { ++num_disabled; continue; }
+        if (skip(t.get())) { ++num_skipped; continue; }
+
+        auto s = score(t.get());
+        buf.push_back({std::move(t), s});
+        std::sort(buf.begin(), buf.end(), [](auto& a, auto& b) { return a.second > b.second; });
+        if (buf.size() > n) buf.pop_back();
+    }
+
+    VLOG_DEBUG << "get_topn_compaction_score, n=" << n << " type=" << compaction_type
+               << " num_tablets=" << weak_tablets.size() << " num_skipped=" << num_skipped
+               << " num_disabled=" << num_disabled << " num_filtered=" << num_filtered
+               << " scores=[" << [&scores] { std::stringstream ss; for (auto& i : *scores) ss << i << ","; return ss.str(); }() << "]"
+               << " tablets=[" << [&buf] { std::stringstream ss; for (auto& i : buf) ss << i.first->tablet_id() << ":" << i.second << ","; return ss.str(); }() << "]"
+               ;
+    // clang-format on
+
+    tablets->clear();
+    tablets->reserve(n + 1);
+    for (auto& [t, _] : buf) tablets->emplace_back(std::move(t));
+
+    return Status::OK();
 }
 
 } // namespace doris::cloud

@@ -497,7 +497,7 @@ TEST(MetaServiceTest, TabletJobTest) {
         ASSERT_EQ(meta_service->txn_kv_->create_txn(&txn), 0);
         txn->put(index_key, idx_val);
         std::string stats_key =
-                meta_tablet_key({instance_id, table_id, index_id, partition_id, tablet_id});
+                stats_tablet_key({instance_id, table_id, index_id, partition_id, tablet_id});
         TabletStatsPB stats;
         stats.set_base_compaction_cnt(9);
         stats.set_cumulative_compaction_cnt(19);
@@ -528,8 +528,6 @@ TEST(MetaServiceTest, TabletJobTest) {
         meta_service->start_tablet_job(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
                                        &req, &res, nullptr);
         ASSERT_NE(res.status().msg().find("already started"), std::string::npos);
-        txn->remove(stats_key);
-        txn->commit();
     };
 
     // Finish, this unit test relies on the previous (start_job)
@@ -638,12 +636,18 @@ TEST(MetaServiceTest, TabletJobTest) {
         req.mutable_job()->mutable_compaction()->add_output_versions(input_version_end);
         req.mutable_job()->mutable_compaction()->add_output_rowset_ids("output rowset id");
 
-        // Input rowsets must exist, and more than 1
+        // Input rowsets must exist, and more than 0
         // Check number input rowsets
         sp->set_call_back("process_compaction_job::loop_input_done", [](void* c) {
             int& num_input_rowsets = *(int*)c;
             ASSERT_EQ(num_input_rowsets, 0); // zero existed rowsets
         });
+        sp->set_call_back("process_compaction_job::too_few_rowsets", [](void* c) {
+            auto& need_commit = *(bool*)c;
+            ASSERT_EQ(need_commit, true);
+            need_commit = false; // Donot remove tablet job in order to continue test
+        });
+
         meta_service->finish_tablet_job(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
                                         &req, &res, nullptr);
         ASSERT_NE(res.status().msg().find("too few input rowsets"), std::string::npos);

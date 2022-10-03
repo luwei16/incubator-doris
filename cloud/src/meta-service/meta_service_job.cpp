@@ -134,7 +134,8 @@ void MetaServiceImpl::start_tablet_job(::google::protobuf::RpcController* contro
     std::string job_val;
     TabletJobInfoPB job_pb;
     ret = txn->get(job_key, &job_val);
-    LOG(INFO) << "get tablet job, tablet_id=" << tablet_id << " key=" << hex(job_key);
+    LOG(INFO) << "get tablet job, tablet_id=" << tablet_id << " key=" << hex(job_key)
+              << " ret=" << ret;
 
     TEST_SYNC_POINT_CALLBACK("start_tablet_job_get_key_ret", &ret);
 
@@ -184,18 +185,18 @@ void MetaServiceImpl::start_tablet_job(::google::protobuf::RpcController* contro
         }
 
         std::string stats_key =
-                meta_tablet_key({instance_id, table_id, index_id, partition_id, tablet_id});
+                stats_tablet_key({instance_id, table_id, index_id, partition_id, tablet_id});
         std::string stats_val;
         ret = txn->get(stats_key, &stats_val);
         if (ret != 0) {
             code = ret == 1 ? MetaServiceCode::UNDEFINED_ERR : MetaServiceCode::KV_TXN_GET_ERR;
-            SS << (ret == 1 ? "internal error" : "get kv error") << " tablet_id=" << tablet_id
-               << " key=" << hex(stats_key) << " ret=" << ret;
+            SS << (ret == 1 ? "internal error" : "get kv error") << " when get tablet stats, "
+               << " tablet_id=" << tablet_id << " key=" << hex(stats_key) << " ret=" << ret;
             msg = ss.str();
             return;
         }
         TabletStatsPB stats;
-        stats.ParseFromString(stats_val);
+        CHECK(stats.ParseFromString(stats_val));
         if (compaction.base_compaction_cnt() < stats.base_compaction_cnt() ||
             compaction.cumulative_compaction_cnt() < stats.cumulative_compaction_cnt()) {
             code = MetaServiceCode::INVALID_ARGUMENT;
@@ -340,13 +341,6 @@ void process_compaction_job(MetaServiceCode& code, std::string& msg, std::string
     LOG(INFO) << "update tablet stats tabelt_id=" << tablet_id << " key=" << hex(stats_key);
 
     //==========================================================================
-    //                      Remove job key
-    //==========================================================================
-    // TODO(gavin): move deleted job info into recycle or history
-    txn->remove(job_key);
-    LOG(INFO) << "remove tablet job tabelt_id=" << tablet_id << " key=" << hex(job_key);
-
-    //==========================================================================
     //                    Move input rowsets to recycle
     //==========================================================================
     if (request->job().compaction().input_versions_size() != 2 ||
@@ -419,10 +413,14 @@ void process_compaction_job(MetaServiceCode& code, std::string& msg, std::string
 
     TEST_SYNC_POINT_CALLBACK("process_compaction_job::loop_input_done", &num_rowsets);
 
-    if (num_rowsets < 2) {
+    if (num_rowsets < 1) {
         SS << "too few input rowsets, tablet_id=" << tablet_id << " num_rowsets=" << num_rowsets;
         code = MetaServiceCode::UNDEFINED_ERR;
         msg = ss.str();
+        txn->remove(job_key);
+        LOG(INFO) << "remove tablet job, tablet_id=" << tablet_id << " key=" << hex(job_key);
+        need_commit = true;
+        TEST_SYNC_POINT_CALLBACK("process_compaction_job::too_few_rowsets", &need_commit);
         return;
     }
 
@@ -470,6 +468,13 @@ void process_compaction_job(MetaServiceCode& code, std::string& msg, std::string
             *obj_pool.add(new std::string(meta_rowset_key({instance_id, tablet_id, version})));
     txn->put(rowset_key, tmp_rowset_val);
     LOG(INFO) << "put rowset meta, tablet_id=" << tablet_id << " rowset_key=" << hex(rowset_key);
+
+    //==========================================================================
+    //                      Remove job key
+    //==========================================================================
+    // TODO(gavin): move deleted job info into recycle or history
+    txn->remove(job_key);
+    LOG(INFO) << "remove tablet job tabelt_id=" << tablet_id << " key=" << hex(job_key);
 
     need_commit = true;
 }

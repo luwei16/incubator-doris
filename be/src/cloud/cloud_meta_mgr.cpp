@@ -11,6 +11,7 @@
 #include "gen_cpp/selectdb_cloud.pb.h"
 #include "olap/rowset/rowset_factory.h"
 #include "util/s3_util.h"
+#include "utils.h"
 
 namespace doris::cloud {
 
@@ -117,15 +118,16 @@ Status CloudMetaMgr::sync_tablet_rowsets(Tablet* tablet) {
     }
     int64_t resp_max_version = (resp.rowset_meta().end() - 1)->end_version();
     {
+        auto& stats = resp.stats();
         std::lock_guard wlock(tablet->get_header_lock());
-        if (resp.base_compaction_cnt() < tablet->base_compaction_cnt() ||
-            resp.cumulative_compaction_cnt() < tablet->cumulative_compaction_cnt() ||
+        if (stats.base_compaction_cnt() < tablet->base_compaction_cnt() ||
+            stats.cumulative_compaction_cnt() < tablet->cumulative_compaction_cnt() ||
             resp_max_version < tablet->local_max_version()) {
             // stale request, ignore
             LOG_WARNING("stale get rowset meta request")
-                    .tag("resp_base_compaction_cnt", resp.base_compaction_cnt())
+                    .tag("resp_base_compaction_cnt", stats.base_compaction_cnt())
                     .tag("base_compaction_cnt", tablet->base_compaction_cnt())
-                    .tag("resp_cumulative_compaction_cnt", resp.cumulative_compaction_cnt())
+                    .tag("resp_cumulative_compaction_cnt", stats.cumulative_compaction_cnt())
                     .tag("cumulative_compaction_cnt", tablet->cumulative_compaction_cnt())
                     .tag("resp_max_version", resp_max_version)
                     .tag("max_version", tablet->local_max_version());
@@ -149,9 +151,11 @@ Status CloudMetaMgr::sync_tablet_rowsets(Tablet* tablet) {
         }
         bool version_overlap = tablet->local_max_version() >= rowsets.front()->start_version();
         tablet->cloud_add_rowsets(std::move(rowsets), version_overlap);
-        tablet->set_base_compaction_cnt(resp.base_compaction_cnt());
-        tablet->set_cumulative_compaction_cnt(resp.cumulative_compaction_cnt());
-        tablet->set_cumulative_layer_point(resp.cumulative_point());
+        tablet->set_base_compaction_cnt(stats.base_compaction_cnt());
+        tablet->set_cumulative_compaction_cnt(stats.cumulative_compaction_cnt());
+        tablet->set_cumulative_layer_point(stats.cumulative_point());
+        tablet->reset_approximate_stats(stats.num_rowsets(), stats.num_segments(), stats.num_rows(),
+                                        stats.data_size());
     }
     return Status::OK();
 }

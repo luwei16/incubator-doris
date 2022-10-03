@@ -84,28 +84,4 @@ TEST(TxnIdConvert, TxnIdTest) {
     }
 }
 
-TEST(MetaServiceTest, BeginTxnTest) {
-    using namespace selectdb;
-    config::fdb_cluster_file_path = "fdb.cluster";
-    auto txn_kv = std::dynamic_pointer_cast<TxnKv>(std::make_shared<FdbTxnKv>());
-    ASSERT_NE(txn_kv.get(), nullptr);
-    int ret = txn_kv->init();
-    ASSERT_EQ(ret, 0);
-    std::unique_ptr<Transaction> txn;
-    txn_kv->create_txn(&txn);
-    std::string val;
-    ret = txn->get("test", &val);
-    ASSERT_EQ(ret, 1);
-
-    // Add service
-    auto meta_service = std::make_unique<MetaServiceImpl>(txn_kv, nullptr);
-    brpc::Controller cntl;
-    BeginTxnRequest req;
-    BeginTxnResponse res;
-    meta_service->begin_txn(reinterpret_cast<::google::protobuf::RpcController*>(&cntl), &req, &res,
-                            nullptr);
-
-    ASSERT_EQ(res.status().code(), MetaServiceCode::INVALID_ARGUMENT);
-}
-
 // vim: et tw=100 ts=4 sw=4 cc=80:

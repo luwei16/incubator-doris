@@ -70,6 +70,7 @@ AgentServer::AgentServer(ExecEnv* exec_env, const TMasterInfo& master_info)
 #ifdef CLOUD_MODE
     CREATE_AND_START_POOL(DELETE, _delete_workers);
     CREATE_AND_START_POOL(ALTER_TABLE, _alter_tablet_workers);
+    CREATE_AND_START_POOL(SUBMIT_TABLE_COMPACTION, _submit_table_compaction_workers);
 #else
     CREATE_AND_START_POOL(CREATE_TABLE, _create_tablet_workers);
     CREATE_AND_START_POOL(DROP_TABLE, _drop_tablet_workers);

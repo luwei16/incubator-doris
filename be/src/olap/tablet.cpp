@@ -28,6 +28,7 @@
 #include <sys/stat.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -620,6 +621,7 @@ void Tablet::cloud_delete_rowsets(const std::vector<RowsetSharedPtr>& to_delete)
     for (auto& rs : to_delete) {
         _rs_version_map.erase(rs->version());
     }
+
     _tablet_meta->cloud_delete_rs_metas(to_delete);
     cloud::tablet_mgr()->add_to_vacuum_set(tablet_id());
 }
@@ -939,6 +941,10 @@ bool Tablet::version_for_delete_predicate(const Version& version) {
 }
 
 bool Tablet::can_do_compaction(size_t path_hash, CompactionType compaction_type) {
+#ifdef CLOUD_MODE
+    return true; // Cloud compaction does not depend on any local state
+#endif
+
     if (compaction_type == CompactionType::BASE_COMPACTION && tablet_state() != TABLET_RUNNING) {
         // base compaction can only be done for tablet in TABLET_RUNNING state.
         // but cumulative compaction can be done for TABLET_NOTREADY, such as tablet under alter process.
@@ -1334,7 +1340,7 @@ void Tablet::pick_candidate_rowsets_to_base_compaction(
     for (auto& [v, rs] : _rs_version_map) {
         // MUST NOT compact rowset [0-1], otherwise alter tablet after base compaction will fail.
         // i.e. new_tablet has init rowset [0-1] and want to convert [2-5] in base_tablet,
-        // however base_tablet has compacted [0-1][2-5] to [0-5]. 
+        // however base_tablet has compacted [0-1][2-5] to [0-5].
         if (v.first != 0 && v.first < _cumulative_point) {
             candidate_rowsets->push_back(rs);
         }
@@ -1683,7 +1689,8 @@ Status Tablet::prepare_compaction_and_calculate_permits(CompactionType compactio
             *permits = 0;
             if (res.precise_code() != OLAP_ERR_CUMULATIVE_NO_SUITABLE_VERSION) {
                 DorisMetrics::instance()->cumulative_compaction_request_failed->increment(1);
-                return Status::InternalError("prepare cumulative compaction with err: {}", res);
+                return Status::InternalError("prepare cumulative compaction with err: {}",
+                                             res.get_error_msg());
             }
             // return OK if OLAP_ERR_CUMULATIVE_NO_SUITABLE_VERSION, so that we don't need to
             // print too much useless logs.
@@ -2373,6 +2380,45 @@ bool Tablet::check_all_rowset_segment() {
         }
     }
     return true;
+}
+
+void Tablet::reset_approximate_stats(int64_t num_rowsets, int64_t num_segments, int64_t num_rows,
+                                     int64_t data_size) {
+    _approximate_num_rowsets.store(num_rowsets, std::memory_order_relaxed);
+    _approximate_num_segments.store(num_segments, std::memory_order_relaxed);
+    _approximate_num_rows.store(num_rows, std::memory_order_relaxed);
+    _approximate_data_size.store(data_size, std::memory_order_relaxed);
+    int64_t cumu_data_size = 0;
+    int64_t cumu_num_rowsets = 0;
+    auto cp = _cumulative_point.load(std::memory_order_relaxed);
+    for (auto& [v, r] : _rs_version_map) {
+        if (v.second <= cp) continue;
+        cumu_data_size += r->data_disk_size();
+        ++cumu_num_rowsets;
+    }
+    _approximate_cumu_num_rowsets.store(cumu_num_rowsets, std::memory_order_relaxed);
+    _approximate_cumu_data_size.store(cumu_data_size, std::memory_order_relaxed);
+}
+
+int64_t Tablet::get_cloud_base_compaction_score() {
+    auto cp = _cumulative_point.load(std::memory_order_relaxed);
+    [[maybe_unused]] int64_t data_size_score = 0;
+    [[maybe_unused]] int64_t num_rowsets_score = 0;
+    [[maybe_unused]] int64_t num_segments_score = 0;
+    [[maybe_unused]] int64_t delete_score = 0;
+    std::shared_lock meta_rlock(_meta_lock); // This lock may be bottle neck
+    for (auto& [v, r] : _rs_version_map) {
+        if (v.second > cp) continue; // Only caculate rowsets <= cumu_point
+        if (v.first == v.second && r->rowset_meta()->has_delete_predicate()) ++delete_score;
+        ++num_rowsets_score;
+        num_segments_score += r->num_segments();
+        data_size_score += r->data_disk_size();
+    }
+    return num_rowsets_score;
+}
+
+int64_t Tablet::get_cloud_cumu_compaction_score() {
+    return _approximate_cumu_num_rowsets.load(std::memory_order_relaxed);
 }
 
 } // namespace doris

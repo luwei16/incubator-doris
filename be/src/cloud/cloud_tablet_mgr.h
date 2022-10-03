@@ -28,6 +28,21 @@ public:
 
     void sync_tablets();
 
+    /**
+     * Gets top N tablets that are considered to be compacted first
+     *
+     * @param n max number of tablets to get, all of them are comapction enabled
+     * @param filter_out a filter takes a tablet and return bool to check
+     *                   whether skipping the tablet, true for skip
+     * @param tablets output param
+     * @param scores output param, ranking score of each picked tablet
+     * @return status of this call
+     */
+    Status get_topn_tablets_to_compact(int n, CompactionType compaction_type,
+                                       const std::function<bool(Tablet*)>& filter_out,
+                                       std::vector<TabletSharedPtr>* tablets,
+                                       std::vector<int64_t>* scores);
+
 private:
     std::unique_ptr<Cache> _cache;
 

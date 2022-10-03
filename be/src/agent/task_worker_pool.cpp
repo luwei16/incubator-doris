@@ -27,6 +27,7 @@
 #include <sstream>
 #include <string>
 
+#include "cloud/utils.h"
 #include "common/status.h"
 #include "env/env.h"
 #include "gen_cpp/Types_types.h"
@@ -1615,8 +1616,19 @@ void TaskWorkerPool::_submit_table_compaction_worker_thread_callback() {
             compaction_type = CompactionType::CUMULATIVE_COMPACTION;
         }
 
+#ifdef CLOUD_MODE
+        TabletSharedPtr tablet_ptr;
+        Status status = cloud::tablet_mgr()->get_tablet(compaction_req.tablet_id, &tablet_ptr);
+        if (!status.ok()) {
+            LOG(WARNING) << "failed to get tablet, tablet_id=" << compaction_req.tablet_id
+                         << " err=" << status;
+            return;
+        }
+#else
         TabletSharedPtr tablet_ptr =
                 StorageEngine::instance()->tablet_manager()->get_tablet(compaction_req.tablet_id);
+#endif
+
         if (tablet_ptr != nullptr) {
             auto data_dir = tablet_ptr->data_dir();
             if (!tablet_ptr->can_do_compaction(data_dir->path_hash(), compaction_type)) {

@@ -36,6 +36,7 @@
 #include "olap/olap_common.h"
 #include "olap/olap_define.h"
 #include "olap/storage_engine.h"
+#include "tablet.h"
 #include "util/file_utils.h"
 #include "util/time.h"
 
@@ -190,7 +191,26 @@ Status StorageEngine::cloud_start_bg_threads() {
             [this]() { this->_fd_cache_clean_callback(); }, &_fd_cache_clean_thread));
     LOG(INFO) << "fd cache clean thread started";
 
-    LOG(INFO) << "all storage engine's background threads are started.";
+    // compaction tasks producer thread
+    ThreadPoolBuilder("BaseCompactionTaskThreadPool")
+            .set_min_threads(config::max_base_compaction_threads)
+            .set_max_threads(config::max_base_compaction_threads)
+            .build(&_base_compaction_thread_pool);
+    ThreadPoolBuilder("CumuCompactionTaskThreadPool")
+            .set_min_threads(config::max_cumu_compaction_threads)
+            .set_max_threads(config::max_cumu_compaction_threads)
+            .build(&_cumu_compaction_thread_pool);
+    ThreadPoolBuilder("SmallCompactionTaskThreadPool")
+            .set_min_threads(config::quick_compaction_max_threads)
+            .set_max_threads(config::quick_compaction_max_threads)
+            .build(&_quick_compaction_thread_pool);
+    RETURN_IF_ERROR(Thread::create(
+            "StorageEngine", "compaction_tasks_producer_thread",
+            [this]() { this->_compaction_tasks_producer_callback(); },
+            &_compaction_tasks_producer_thread));
+    LOG(INFO) << "compaction tasks producer thread started";
+
+    LOG(INFO) << "all storage engine's background threads for cloud are started.";
     return Status::OK();
 }
 
@@ -528,8 +548,13 @@ void StorageEngine::_compaction_tasks_producer_callback() {
                           << ", max_threads: " << thread_pool->max_threads()
                           << ", min_threads: " << thread_pool->min_threads()
                           << ", num_total_queued_tasks: " << thread_pool->get_queue_size();
+#ifdef CLOUD_MODE
+            std::vector<TabletSharedPtr> tablets_compaction =
+                    _generate_cloud_compaction_tasks(compaction_type, data_dirs, check_score);
+#else
             std::vector<TabletSharedPtr> tablets_compaction =
                     _generate_compaction_tasks(compaction_type, data_dirs, check_score);
+#endif
             if (tablets_compaction.size() == 0) {
                 std::unique_lock<std::mutex> lock(_compaction_producer_sleep_mutex);
                 _wakeup_producer_flag = 0;
@@ -546,7 +571,7 @@ void StorageEngine::_compaction_tasks_producer_callback() {
             /// If it is not cleaned up, the reference count of the tablet will always be greater than 1,
             /// thus cannot be collected by the garbage collector. (TabletManager::start_trash_sweep)
             for (const auto& tablet : tablets_compaction) {
-                Status st = _submit_compaction_task(tablet, compaction_type);
+                Status st = submit_compaction_task(tablet, compaction_type);
                 if (!st.ok()) {
                     LOG(WARNING) << "failed to submit compaction task for tablet: "
                                  << tablet->tablet_id() << ", err: " << st.get_error_msg();
@@ -557,6 +582,84 @@ void StorageEngine::_compaction_tasks_producer_callback() {
             interval = config::check_auto_compaction_interval_seconds * 1000;
         }
     } while (!_stop_background_threads_latch.wait_for(std::chrono::milliseconds(interval)));
+}
+
+std::vector<TabletSharedPtr> StorageEngine::_generate_cloud_compaction_tasks(
+        CompactionType compaction_type, std::vector<DataDir*>& data_dirs, bool check_score) {
+    _update_cumulative_compaction_policy();
+    [[maybe_unused]] std::vector<std::weak_ptr<Tablet>> tablet_ids;
+    std::vector<std::shared_ptr<Tablet>> tablets_compaction;
+
+    int64_t max_compaction_score = 0;
+    std::mt19937 rng(std::chrono::system_clock::now().time_since_epoch().count());
+    std::shuffle(data_dirs.begin(), data_dirs.end(), rng);
+
+    std::map<DataDir*, std::unordered_set<TTabletId>> copied_cumu_map;
+    std::map<DataDir*, std::unordered_set<TTabletId>> copied_base_map;
+    {
+        std::unique_lock<std::mutex> lock(_tablet_submitted_compaction_mutex);
+        copied_cumu_map = _tablet_submitted_cumu_compaction;
+        copied_base_map = _tablet_submitted_base_compaction;
+    }
+
+    for (auto data_dir : data_dirs) { // There is only one disk in cloud mode
+        bool need_pick_tablet = true;
+        // We need to reserve at least one thread for cumulative compaction,
+        // because base compactions may take too long to complete, which may
+        // leads to "too many rowsets" error.
+        int count = copied_cumu_map[data_dir].size() + copied_base_map[data_dir].size();
+        int thread_per_disk = data_dir->is_ssd_disk() ? config::compaction_task_num_per_fast_disk
+                                                      : config::compaction_task_num_per_disk;
+        if ((count >= thread_per_disk)       // No threads available
+            || (count == thread_per_disk - 1 // Only one thread left
+                && compaction_type == CompactionType::BASE_COMPACTION &&
+                copied_cumu_map[data_dir].empty())) {
+            need_pick_tablet = false;
+            if (!check_score) continue;
+        }
+
+        // FIXME(gaivn): We may have to allow concurrent BC and CC
+        // Return true for skipping compaction
+        auto filter_out = [data_dir, &copied_base_map, &copied_cumu_map](Tablet* t) {
+            return !!copied_base_map[data_dir].count(t->tablet_id()) ||
+                   !!copied_cumu_map[data_dir].count(t->tablet_id());
+        };
+
+        // Even if need_pick_tablet is false, we still need to call find_best_tablet_to_compaction(),
+        // So that we can update the max_compaction_score metric.
+        do {
+            std::vector<TabletSharedPtr> tablets;
+            std::vector<int64_t> scores;
+            int n = thread_per_disk - count;
+            auto st = cloud::tablet_mgr()->get_topn_tablets_to_compact(
+                    n, compaction_type, filter_out, &tablets, &scores);
+            if (!st.ok()) {
+                LOG(WARNING) << "failed to get tablets to compact, err=" << st.get_error_msg();
+                break;
+            }
+            if (tablets.empty()) {
+                LOG(WARNING) << "no tablets to compact";
+                break;
+            }
+            std::for_each(scores.begin(), scores.end(), [&](auto& i) {
+                max_compaction_score = std::max(max_compaction_score, i);
+            });
+            if (!need_pick_tablet) break;
+            for (auto& i : tablets) tablets_compaction.emplace_back(std::move(i));
+        } while (false);
+    } // end for
+
+    if (max_compaction_score > 0) {
+        if (compaction_type == CompactionType::BASE_COMPACTION) {
+            DorisMetrics::instance()->tablet_base_max_compaction_score->set_value(
+                    max_compaction_score);
+        } else {
+            DorisMetrics::instance()->tablet_cumulative_max_compaction_score->set_value(
+                    max_compaction_score);
+        }
+    }
+
+    return tablets_compaction;
 }
 
 std::vector<TabletSharedPtr> StorageEngine::_generate_compaction_tasks(

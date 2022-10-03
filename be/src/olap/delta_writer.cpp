@@ -347,6 +347,13 @@ Status DeltaWriter::close_wait(const PSlaveTabletNodes& slave_tablet_nodes,
     }
 #ifdef CLOUD_MODE
     RETURN_IF_ERROR(cloud::meta_mgr()->commit_rowset(_cur_rowset->rowset_meta(), true));
+    // These stats may be larger than the actual value if the txn is aborted
+    _tablet->fetch_add_approximate_num_rowsets(1);
+    _tablet->fetch_add_approximate_num_segments(_cur_rowset->num_segments());
+    _tablet->fetch_add_approximate_num_rows(_cur_rowset->num_rows());
+    _tablet->fetch_add_approximate_data_size(_cur_rowset->data_disk_size());
+    _tablet->fetch_add_approximate_cumu_num_rowsets(1);
+    _tablet->fetch_add_approximate_cumu_data_size(_cur_rowset->data_disk_size());
 #else
     Status res = _storage_engine->txn_manager()->commit_txn(_req.partition_id, _tablet, _req.txn_id,
                                                             _req.load_id, _cur_rowset, false);

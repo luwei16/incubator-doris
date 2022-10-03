@@ -531,9 +531,7 @@ message GetRowsetRequest {
 message GetRowsetResponse {
     optional MetaServiceResponseStatus status = 1;
     repeated doris.RowsetMetaPB rowset_meta = 2;
-    optional int64 base_compaction_cnt = 3;
-    optional int64 cumulative_compaction_cnt = 4;
-    optional int64 cumulative_point = 5;
+    optional TabletStatsPB stats = 3;
 }
 
 message IndexRequest {

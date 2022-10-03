@@ -285,6 +285,10 @@ private:
                                                             std::vector<DataDir*>& data_dirs,
                                                             bool check_score);
 
+    std::vector<TabletSharedPtr> _generate_cloud_compaction_tasks(CompactionType compaction_type,
+                                                                  std::vector<DataDir*>& data_dirs,
+                                                                  bool check_score);
+
     void _update_cumulative_compaction_policy();
 
     bool _push_tablet_into_submitted_compaction(TabletSharedPtr tablet,
@@ -390,7 +394,7 @@ private:
     // CLOUD_MODE
     scoped_refptr<Thread> _refresh_s3_info_thread;
     scoped_refptr<Thread> _vacuum_stale_rowsets_thread;
-    scoped_refptr<Thread> _sync_tablets_thread; 
+    scoped_refptr<Thread> _sync_tablets_thread;
 
     // For tablet and disk-stat report
     std::mutex _report_mtx;
