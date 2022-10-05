@@ -203,3 +203,55 @@ namespace doris {
 
 #endif
 EOF
+
+################################################################################
+#                      selectdb cloud version info
+################################################################################
+
+build_version_prefix="selectdb"
+build_version_major=2
+build_version_minor=0
+build_version_patch=0
+build_version_rc_version="dev"
+
+if [ -f /etc/os-release ]; then
+	build_os_version=$(cat /etc/os-release | head -n2 | tr '\n' ' ')
+else
+	build_os_version="unknown-os-version"
+fi
+
+build_version="${build_version_prefix}-${build_version_major}.${build_version_minor}.${build_version_patch}-${build_version_rc_version}"
+
+build_hash=${revision}
+build_short_hash=${short_revision}
+build_time=$(date +"%Y-%m-%d %H:%M:%S %z")
+build_revision_time=$(git log -1 --pretty=format:"%ad")
+build_initiator="${user}@${hostname}"
+
+GEN_CPP_DIR="${DORIS_HOME}/gensrc/build/gen_cpp"
+mkdir -p "${GEN_CPP_DIR}"
+cat >"${GEN_CPP_DIR}/selectdb_version.h" <<EOF
+// This is a generated file, DO NOT EDIT IT.
+// To change this file, see gensrc/script/gen_build_version.sh
+// the file should be placed in gensrc/build/gen_cpp/selectdb_version.h
+
+#pragma once
+
+namespace selectdb {
+
+#define SELECTDB_BUILD_VERSION_PREFIX      R"(${build_version_prefix})"
+#define SELECTDB_BUILD_VERSION_MAJOR       ${build_version_major}
+#define SELECTDB_BUILD_VERSION_MINOR       ${build_version_minor}
+#define SELECTDB_BUILD_VERSION_PATCH       ${build_version_patch}
+#define SELECTDB_BUILD_VERSION_RC_VERSION  R"(${build_version_rc_version})"
+
+#define SELECTDB_BUILD_VERSION             R"(${build_version})"
+#define SELECTDB_BUILD_HASH                R"(${build_hash})"
+#define SELECTDB_BUILD_SHORT_HASH          R"(${build_short_hash})"
+#define SELECTDB_BUILD_TIME                R"(${build_time})"
+#define SELECTDB_BUILD_VERSION_TIME        R"(${build_revision_time})"
+#define SELECTDB_BUILD_INITIATOR           R"(${build_initiator})"
+#define SELECTDB_BUILD_OS_VERSION          R"#(${build_os_version})#"
+
+} // namespace selectdb
+EOF

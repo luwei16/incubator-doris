@@ -137,11 +137,13 @@ void Recycler::recycle_callback() {
 int Recycler::start() {
     int ret = 0;
     txn_kv_ = std::make_shared<FdbTxnKv>();
+    LOG(INFO) << "begin to init txn kv";
     ret = txn_kv_->init();
     if (ret != 0) {
         LOG(WARNING) << "failed to init txnkv, ret=" << ret;
         return 1;
     }
+    LOG(INFO) << "successfully init txn kv";
 
     // Add service
     auto recycler_service = new RecyclerServiceImpl(txn_kv_, this);

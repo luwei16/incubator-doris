@@ -15,15 +15,18 @@
 // specific language governing permissions and limitations
 // under the License.
 
+// Convert to KV formart with Vim
+// %s/.*(\([a-z_A-Z]\+\),.*"\([^"]*\)".*/\1 = \2/gc
+
 #pragma once
 
 #include "configbase.h"
 
 namespace selectdb::config {
 
-CONF_String(meta_service_conf_path, "./conf/meta_service.conf");
 CONF_Int32(brpc_listen_port, "5000");
 CONF_Int32(brpc_num_threads, "-1");
+CONF_String(fdb_cluster, "xxx:yyy@127.0.0.1:4500");
 CONF_String(fdb_cluster_file_path, "./conf/fdb.cluster");
 CONF_String(http_token, "greedisgood9999");
 // use volatile mem kv for test. MUST NOT be `true` in production environment.

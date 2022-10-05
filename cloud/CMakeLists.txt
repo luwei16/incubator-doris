@@ -427,13 +427,14 @@ set(DORIS_DEPENDENCIES
 
 message(STATUS "DORIS_DEPENDENCIES is ${DORIS_DEPENDENCIES}")
 
-# Add all external dependencies. They should come after the palo libs.
+# Add all external dependencies. They should come after the project's libs.
 # static link gcc's lib
 set(DORIS_LINK_LIBS ${DORIS_LINK_LIBS}
     ${DORIS_DEPENDENCIES}
     SelectdbGen
     Common
     MetaService
+    ResourceManager
     Recycler
     -static-libstdc++
     -static-libgcc
@@ -517,6 +518,32 @@ if (${MAKE_TEST} STREQUAL "ON")
     add_subdirectory(${TEST_DIR})
 endif ()
 
+if (${MAKE_TEST} STREQUAL "OFF")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -lfdb_c -L${THIRDPARTY_DIR}/lib")
+
+    add_executable(selectdb_cloud src/main.cpp)
+
+    # This permits libraries loaded by dlopen to link to the symbols in the program.
+    set_target_properties(selectdb_cloud PROPERTIES ENABLE_EXPORTS 1)
+
+    target_link_libraries(selectdb_cloud ${DORIS_LINK_LIBS})
+
+    install(DIRECTORY DESTINATION ${OUTPUT_DIR}/lib)
+    install(TARGETS selectdb_cloud DESTINATION ${OUTPUT_DIR}/lib)
+
+    if ("${STRIP_DEBUG_INFO}" STREQUAL "ON")
+        add_custom_command(TARGET selectdb_cloud POST_BUILD
+            COMMAND ${CMAKE_OBJCOPY} --only-keep-debug $<TARGET_FILE:selectdb_cloud> $<TARGET_FILE:selectdb_cloud>.dbg
+            COMMAND ${CMAKE_STRIP} --strip-debug --strip-unneeded $<TARGET_FILE:selectdb_cloud>
+            COMMAND ${CMAKE_OBJCOPY} --add-gnu-debuglink=$<TARGET_FILE:selectdb_cloud>.dbg $<TARGET_FILE:selectdb_cloud>
+            )
+
+        install(DIRECTORY DESTINATION ${OUTPUT_DIR}/lib/debug_info/)
+        install(FILES $<TARGET_FILE:selectdb_cloud>.dbg DESTINATION ${OUTPUT_DIR}/lib/debug_info/)
+    endif()
+endif()
+
+
 message("install files at ${OUTPUT_DIR}")
 install(DIRECTORY DESTINATION ${OUTPUT_DIR})
 install(DIRECTORY DESTINATION ${OUTPUT_DIR}/bin)
@@ -524,8 +551,8 @@ install(DIRECTORY DESTINATION ${OUTPUT_DIR}/conf)
 install(DIRECTORY DESTINATION ${OUTPUT_DIR}/lib)
 
 install(FILES
-    ${BASE_DIR}/script/start_meta_service.sh
-    ${BASE_DIR}/script/stop_meta_service.sh
+    ${BASE_DIR}/script/start.sh
+    ${BASE_DIR}/script/stop.sh
     PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE
     GROUP_READ GROUP_WRITE GROUP_EXECUTE
     WORLD_READ WORLD_EXECUTE
@@ -533,7 +560,7 @@ install(FILES
 
 install(FILES
     ${BASE_DIR}/conf/fdb.cluster
-    ${BASE_DIR}/conf/meta_service.conf
+    ${BASE_DIR}/conf/selectdb_cloud.conf
     DESTINATION ${OUTPUT_DIR}/conf)
 
 install(FILES

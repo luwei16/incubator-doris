@@ -31,11 +31,13 @@ int MetaServer::start() {
         LOG(WARNING) << "failed to create txn kv, invalid txnkv type";
         return 1;
     }
+    LOG(INFO) << "begin to init txn kv";
     int ret = txn_kv_->init();
     if (ret != 0) {
         LOG(WARNING) << "failed to init txnkv, ret=" << ret;
         return 1;
     }
+    LOG(INFO) << "successfully init txn kv";
 
     auto rc_mgr = std::make_shared<ResourceManager>(txn_kv_);
     ret = rc_mgr->init();

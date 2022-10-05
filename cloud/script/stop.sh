@@ -1,10 +1,7 @@
 #!/bin/bash
 cd `dirname $0`
 
-process=meta_service
-if [ "$1" == "--recycler" ]; then
-	process=recycler
-fi
+process=selectdb_cloud
 
 if [ ! -f ${process}.pid ]; then
 	echo "no ${process}.pid found, process may have been stopped"

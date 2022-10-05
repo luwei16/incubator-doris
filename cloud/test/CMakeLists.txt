@@ -81,7 +81,7 @@ target_link_libraries(recycler_test
 install(FILES
     ${BASE_DIR}/script/run_all_tests.sh
     ${BASE_DIR}/conf/fdb.cluster
-    ${BASE_DIR}/conf/meta_service.conf
+    ${BASE_DIR}/conf/selectdb_cloud.conf
     PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE
     GROUP_READ GROUP_WRITE GROUP_EXECUTE
     WORLD_READ WORLD_EXECUTE
