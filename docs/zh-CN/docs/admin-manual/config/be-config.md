@@ -64,11 +64,11 @@ BE 的配置项有两种方式进行配置：
 
 ## 应用举例
 
-1. 静态方式修改 `max_base_compaction_concurrency`
+1. 静态方式修改 `max_base_compaction_threads`
 
   通过在 `be.conf` 文件中添加：
 
-  ```max_base_compaction_concurrency=5```
+  ```max_base_compaction_threads=5```
 
   之后重启 BE 进程以生效该配置。
 
@@ -845,7 +845,7 @@ txn 管理器中每个 txn_partition_map 的最大 txns 数，这是一种自我
 
 * 类型：string
 * 描述：限制BE进程使用服务器最大内存百分比。用于防止BE内存挤占太多的机器内存，该参数必须大于0，当百分大于100%之后，该值会默认为100%。
-* 默认值：90%
+* 默认值：80%
 
 ### `memory_limitation_per_thread_for_schema_change`
 
