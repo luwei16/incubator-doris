@@ -79,6 +79,7 @@ enum class TypeIndex {
     TimeV2,
     FixedLengthObject,
     JSONB,
+    VARIANT,
 };
 
 struct Consted {
@@ -241,6 +242,10 @@ struct TypeId<Float32> {
 template <>
 struct TypeId<Float64> {
     static constexpr const TypeIndex value = TypeIndex::Float64;
+};
+template <>
+struct TypeId<String> {
+    static constexpr const TypeIndex value = TypeIndex::String;
 };
 
 /// Not a data type in database, defined just for convenience.
@@ -446,6 +451,8 @@ inline const char* getTypeName(TypeIndex idx) {
         return "AggregateFunction";
     case TypeIndex::LowCardinality:
         return "LowCardinality";
+    case TypeIndex::VARIANT:
+        return "Variant";
     case TypeIndex::BitMap:
         return TypeName<BitmapValue>::get();
     case TypeIndex::HLL:

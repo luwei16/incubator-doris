@@ -37,6 +37,8 @@
 #include "olap/storage_engine.h"
 #include "runtime/exec_env.h"
 
+#include "vec/common/object_util.h" // LocalSchemaChangeRecorder
+
 namespace doris {
 
 BetaRowsetWriter::BetaRowsetWriter()
@@ -82,6 +84,7 @@ Status BetaRowsetWriter::init(const RowsetWriterContext& rowset_writer_context) 
 #else
     _rowset_meta->set_fs(_context.fs);
 #endif
+    _context.schema_change_recorder = std::make_shared<vectorized::object_util::LocalSchemaChangeRecorder>();
     _rowset_meta->set_rowset_id(_context.rowset_id);
     _rowset_meta->set_partition_id(_context.partition_id);
     _rowset_meta->set_tablet_id(_context.tablet_id);
@@ -109,7 +112,7 @@ Status BetaRowsetWriter::add_block(const vectorized::Block* block) {
         return Status::OK();
     }
     if (UNLIKELY(_segment_writer == nullptr)) {
-        RETURN_NOT_OK(_create_segment_writer(&_segment_writer));
+        RETURN_NOT_OK(_create_segment_writer(&_segment_writer, block));
     }
     return _add_block(block, &_segment_writer);
 }
@@ -126,7 +129,7 @@ Status BetaRowsetWriter::_add_block(const vectorized::Block* block,
         if (UNLIKELY(max_row_add < 1)) {
             // no space for another signle row, need flush now
             RETURN_NOT_OK(_flush_segment_writer(segment_writer));
-            RETURN_NOT_OK(_create_segment_writer(segment_writer));
+            RETURN_NOT_OK(_create_segment_writer(segment_writer, block));
             max_row_add = (*segment_writer)->max_row_to_add(row_avg_size_in_bytes);
             DCHECK(max_row_add > 0);
         }
@@ -232,7 +235,7 @@ Status BetaRowsetWriter::flush_single_memtable(const vectorized::Block* block) {
         return Status::OK();
     }
     std::unique_ptr<segment_v2::SegmentWriter> writer;
-    RETURN_NOT_OK(_create_segment_writer(&writer));
+    RETURN_NOT_OK(_create_segment_writer(&writer, block));
     RETURN_NOT_OK(_add_block(block, &writer));
     RETURN_NOT_OK(_flush_segment_writer(&writer));
     return Status::OK();
@@ -259,6 +262,19 @@ RowsetSharedPtr BetaRowsetWriter::build() {
 
     if (_rowset_meta->newest_write_timestamp() == -1) {
         _rowset_meta->set_newest_write_timestamp(UnixSeconds());
+    }
+
+    // schema changed during this load
+    if (_context.schema_change_recorder->has_extended_columns()) {
+        DCHECK(_context.tablet_schema->is_dynamic_schema())
+                << "Load can change local schema only in dynamic table";
+        TabletSchemaSPtr new_schema = std::make_shared<TabletSchema>();
+        new_schema->copy_from(*_context.tablet_schema);
+        for (auto const& [_, col] : _context.schema_change_recorder->copy_extended_columns()) {
+            new_schema->append_column(col);
+        }
+        new_schema->set_schema_version(_context.schema_change_recorder->schema_version());
+        _rowset_meta->set_tablet_schema(new_schema);
     }
 
     RowsetSharedPtr rowset;
@@ -308,7 +324,8 @@ RowsetSharedPtr BetaRowsetWriter::build_tmp() {
 }
 
 Status BetaRowsetWriter::_create_segment_writer(
-        std::unique_ptr<segment_v2::SegmentWriter>* writer) {
+        std::unique_ptr<segment_v2::SegmentWriter>* writer,
+        const vectorized::Block* block) {
     int32_t segment_id = _num_segment.fetch_add(1);
     std::string path = _rowset_meta->is_local()
         ? BetaRowset::local_segment_path(_context.tablet_path, _context.rowset_id, segment_id)
@@ -327,6 +344,7 @@ Status BetaRowsetWriter::_create_segment_writer(
 
     DCHECK(file_writer != nullptr);
     segment_v2::SegmentWriterOptions writer_options;
+    writer_options.rowset_ctx = &_context;
     writer_options.enable_unique_key_merge_on_write = _context.enable_unique_key_merge_on_write;
     writer->reset(new segment_v2::SegmentWriter(file_writer.get(), segment_id,
                                                 _context.tablet_schema, _context.data_dir,
@@ -336,7 +354,7 @@ Status BetaRowsetWriter::_create_segment_writer(
         _file_writers.push_back(std::move(file_writer));
     }
 
-    auto s = (*writer)->init(config::push_write_mbytes_per_sec);
+    auto s = (*writer)->init(config::push_write_mbytes_per_sec, block);
     if (!s.ok()) {
         LOG(WARNING) << "failed to init segment writer: " << s.to_string();
         writer->reset(nullptr);

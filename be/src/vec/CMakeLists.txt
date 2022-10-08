@@ -51,6 +51,12 @@ set(VEC_FILES
   columns/column_jsonb.cpp
   columns/column_vector.cpp
   columns/columns_common.cpp
+  columns/column_object.cpp
+  columns/column_sparse.cpp
+  json/json_parser.cpp
+  json/parse2column.cpp
+  json/path_in_data.cpp
+  common/object_util.cpp
   common/demangle.cpp
   common/exception.cpp
   common/mremap.cpp
@@ -81,11 +87,13 @@ set(VEC_FILES
   data_types/data_type_string.cpp
   data_types/data_type_decimal.cpp
   data_types/get_least_supertype.cpp
+  data_types/convert_field_to_type.cpp
   data_types/nested_utils.cpp
   data_types/data_type_date.cpp
   data_types/data_type_date_time.cpp
   data_types/data_type_time_v2.cpp
   data_types/data_type_jsonb.cpp
+  data_types/data_type_object.cpp
   exec/vaggregation_node.cpp
   exec/varrow_scanner.cpp
   exec/ves_http_scan_node.cpp

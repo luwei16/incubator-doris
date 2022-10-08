@@ -115,6 +115,10 @@ public:
     /// Creates empty column with the same type.
     virtual MutablePtr clone_empty() const { return clone_resized(0); }
 
+    /// If column isn't ColumnSparse, return itself.
+    /// If column is ColumnSparse, transforms it to full column.
+    virtual Ptr convert_to_full_column_if_sparse() const { return get_ptr(); }
+
     /// Creates column with the same type and specified size.
     /// If size is less current size, then data is cut.
     /// If size is greater, than default values are appended.
@@ -128,6 +132,8 @@ public:
         LOG(FATAL) << "Cannot clone_resized() column " << get_name();
         return nullptr;
     }
+
+    virtual TypeIndex get_data_type() const { return TypeIndex::Nothing; };
 
     /// Returns number of values in column.
     virtual size_t size() const = 0;
@@ -387,7 +393,10 @@ public:
 
     /// Creates new column with values column[indexes[:limit]]. If limit is 0, all indexes are used.
     /// Indexes must be one of the ColumnUInt. For default implementation, see select_index_impl from ColumnsCommon.h
-    //    virtual Ptr index(const IColumn & indexes, size_t limit) const = 0;
+    virtual Ptr index(const IColumn& indexes, size_t limit) const {
+        LOG(FATAL) << "column not support filter_by_selector";
+        __builtin_unreachable();
+    }
 
     /** Compares (*this)[n] and rhs[m]. Column rhs should have the same type.
       * Returns negative number, 0, or positive number (*this)[n] is less, equal, greater than rhs[m] respectively.
@@ -431,6 +440,27 @@ public:
     virtual void replicate(const uint32_t* counts, size_t target_size, IColumn& column) const {
         LOG(FATAL) << "not support";
     };
+
+    /// Appends one field multiple times. Can be optimized in inherited classes.
+    virtual void insert_many(const Field& field, size_t length) {
+        for (size_t i = 0; i < length; ++i) insert(field);
+    }
+    /// Returns indices of values in column, that not equal to default value of column.
+    virtual void get_indices_of_non_default_rows(Offsets64& indices, size_t from,
+                                                 size_t limit) const {
+        LOG(FATAL) << "not support";
+    }
+
+    template <typename Derived>
+    void get_indices_of_non_default_rows_impl(Offsets64& indices, size_t from, size_t limit) const;
+
+    /// Returns column with @total_size elements.
+    /// In result column values from current column are at positions from @offsets.
+    /// Other values are filled by @default_value.
+    /// @shift means how much rows to skip from the beginning of current column.
+    /// Used to create full column from sparse.
+    virtual Ptr create_with_offsets(const Offsets64& offsets, const Field& default_field,
+                                    size_t total_rows, size_t shift) const;
 
     /** Split column to smaller columns. Each value goes to column index, selected by corresponding element of 'selector'.
       * Selector must contain values from 0 to num_columns - 1.
@@ -496,6 +526,14 @@ public:
         return res;
     }
 
+    static MutablePtr mutate(Ptr ptr) {
+        MutablePtr res = ptr->shallow_mutate(); /// Now use_count is 2.
+        ptr.reset();                            /// Reset use_count to 1.
+        res->for_each_subcolumn(
+                [](WrappedPtr& subcolumn) { subcolumn = std::move(*subcolumn).mutate(); });
+        return res;
+    }
+
     /** Some columns can contain another columns inside.
       * So, we have a tree of columns. But not all combinations are possible.
       * There are the following rules:
@@ -510,6 +548,8 @@ public:
     virtual bool is_nullable() const { return false; }
 
     virtual bool is_bitmap() const { return false; }
+
+    virtual bool is_sparse() const { return false; }
 
     // true if column has null element
     virtual bool has_null() const { return false; }

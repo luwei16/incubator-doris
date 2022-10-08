@@ -57,8 +57,6 @@ void VNodeChannel::clear_all_blocks() {
 Status VNodeChannel::init(RuntimeState* state) {
     RETURN_IF_ERROR(NodeChannel::init(state));
 
-    _cur_mutable_block.reset(new vectorized::MutableBlock({_tuple_desc}));
-
     // Initialize _cur_add_block_request
     _cur_add_block_request.set_allocated_id(&_parent->_load_id);
     _cur_add_block_request.set_index_id(_index_channel->_index_id);
@@ -189,6 +187,10 @@ Status VNodeChannel::add_block(vectorized::Block* block,
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 
+    if (UNLIKELY(!_cur_mutable_block)) {
+        _cur_mutable_block.reset(new vectorized::MutableBlock(block->clone_empty()));
+    }
+
     block->append_block_by_selector(_cur_mutable_block->mutable_columns(), *(payload.first));
     for (auto tablet_id : payload.second) {
         _cur_add_block_request.add_tablet_ids(tablet_id);
@@ -209,7 +211,7 @@ Status VNodeChannel::add_block(vectorized::Block* block,
                        << " loadinfo:" << _load_info;
         }
 
-        _cur_mutable_block.reset(new vectorized::MutableBlock({_tuple_desc}));
+        _cur_mutable_block.reset(new vectorized::MutableBlock(block->clone_empty()));
         _cur_add_block_request.clear_tablet_ids();
     }
 
@@ -386,6 +388,10 @@ void VNodeChannel::mark_close() {
     {
         debug::ScopedTSANIgnoreReadsAndWrites ignore_tsan;
         std::lock_guard<std::mutex> l(_pending_batches_lock);
+        if (!_cur_mutable_block) {
+            // add a dummy block
+            _cur_mutable_block.reset(new vectorized::MutableBlock());
+        }
         _pending_blocks.emplace(std::move(_cur_mutable_block), _cur_add_block_request);
         _pending_batches_num++;
         DCHECK(_pending_blocks.back().second.eos());
@@ -395,6 +401,39 @@ void VNodeChannel::mark_close() {
     }
 
     _eos_is_produced = true;
+}
+
+void VNodeChannel::force_send_cur_block() {
+    if (_cur_mutable_block->rows() > 0) {
+        SCOPED_ATOMIC_TIMER(&_queue_push_lock_ns);
+        std::lock_guard<std::mutex> l(_pending_batches_lock);
+        // To simplify the add_row logic, postpone adding block into req until the time of sending req
+        _pending_batches_bytes += _cur_mutable_block->allocated_bytes();
+        _pending_blocks.emplace(std::move(_cur_mutable_block), _cur_add_block_request);
+        _pending_batches_num++;
+    }
+
+    _cur_mutable_block.reset(nullptr);
+    _cur_add_block_request.clear_tablet_ids();
+}
+
+bool VNodeChannel::fitted_with(VecBlock* input_block) {
+    if (_cur_mutable_block == nullptr) {
+        return true;
+    }
+    if (input_block->columns() != _cur_mutable_block->columns()) {
+        return false;
+    }
+    const std::vector<std::string>& names = _cur_mutable_block->get_names();
+    for (size_t i = 0; i < input_block->columns(); ++i) {
+        auto& column_type_name = input_block->get_by_position(i);
+        if (column_type_name.name != names[i] ||
+            !column_type_name.type->equals(*_cur_mutable_block->get_datatype_by_position(i))) {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 VOlapTableSink::VOlapTableSink(ObjectPool* pool, const RowDescriptor& row_desc,
@@ -738,6 +777,9 @@ Status VOlapTableSink::_validate_data(RuntimeState* state, vectorized::Block* bl
                                       Bitmap* filter_bitmap, int* filtered_rows,
                                       bool* stop_processing) {
     for (int i = 0; i < _output_tuple_desc->slots().size(); ++i) {
+        if (i >= block->columns()) {
+            break;
+        }
         SlotDescriptor* desc = _output_tuple_desc->slots()[i];
         block->get_by_position(i).column =
                 block->get_by_position(i).column->convert_to_full_column_if_const();
@@ -757,7 +799,7 @@ Status VOlapTableSink::_validate_data(RuntimeState* state, vectorized::Block* bl
 }
 
 void VOlapTableSink::_convert_to_dest_desc_block(doris::vectorized::Block* block) {
-    for (int i = 0; i < _output_tuple_desc->slots().size(); ++i) {
+    for (int i = 0; i < _output_tuple_desc->slots().size() && i < block->columns(); ++i) {
         SlotDescriptor* desc = _output_tuple_desc->slots()[i];
         if (desc->is_nullable() != block->get_by_position(i).type->is_nullable()) {
             if (desc->is_nullable()) {

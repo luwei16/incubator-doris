@@ -932,6 +932,9 @@ CONF_mInt32(vacuum_stale_rowsets_interval_seconds, "1800");
 CONF_mInt32(tablet_sync_interval_seconds, "1800");
 CONF_mInt32(schedule_sync_tablets_interval_seconds, "600");
 
+// semi-structure configs
+CONF_Bool(enable_parse_multi_dimession_array, "true");
+
 } // namespace config
 
 } // namespace doris
