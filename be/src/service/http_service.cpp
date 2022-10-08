@@ -195,6 +195,13 @@ Status HttpService::cloud_start() {
     _ev_http_server->register_handler(HttpMethod::PUT, "/api/{db}/_stream_load_2pc",
                                       streamload_2pc_action);
 
+    DownloadAction* error_log_download_action =
+            _pool.add(new DownloadAction(_env, _env->load_path_mgr()->get_load_error_file_dir()));
+    _ev_http_server->register_handler(HttpMethod::GET, "/api/_load_error_log",
+                                      error_log_download_action);
+    _ev_http_server->register_handler(HttpMethod::HEAD, "/api/_load_error_log",
+                                      error_log_download_action);
+
     HealthAction* health_action = _pool.add(new HealthAction());
     _ev_http_server->register_handler(HttpMethod::GET, "/api/health", health_action);
 
