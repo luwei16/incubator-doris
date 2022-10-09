@@ -157,6 +157,7 @@ public class GsonUtils {
 
     private static RuntimeTypeAdapterFactory<Replica> replicaTypeAdapterFactory = RuntimeTypeAdapterFactory
             .of(Replica.class, "clazz")
+            .registerSubtype(Replica.class, Replica.class.getSimpleName())
             .registerSubtype(CloudReplica.class, CloudReplica.class.getSimpleName());
 
     // the builder of GSON instance.
