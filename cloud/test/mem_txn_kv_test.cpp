@@ -7,6 +7,7 @@
 #include "meta-service/doris_txn.h"
 
 #include "gtest/gtest.h"
+#include "meta-service/txn_kv.h"
 // clang-format on
 
 std::shared_ptr<selectdb::TxnKv> fdb_txn_kv;
@@ -366,5 +367,90 @@ TEST(TxnMemKvTest, ModifyIdenticalKeyTest) {
 
     modify_identical_key_test(mem_txn_kv);
     modify_identical_key_test(fdb_txn_kv);
+}
+
+static void modify_snapshot_test(std::shared_ptr<selectdb::TxnKv> txn_kv) {
+    using namespace selectdb;
+    std::unique_ptr<Transaction> txn_1;
+    std::unique_ptr<Transaction> txn_2;
+
+    {
+        std::string get_val;
+        // txn_1: put <test, version1> and commit
+        int ret = txn_kv->create_txn(&txn_1);
+        ASSERT_EQ(ret, 0);
+        txn_1->put("test", "version1");
+        ASSERT_EQ(txn_1->commit(), 0);
+
+        // txn_2: get the snapshot of database, will see <test, version1>
+        txn_kv->create_txn(&txn_2);
+        ASSERT_EQ(txn_2->get("test", &get_val), 0);
+        ASSERT_EQ(get_val, "version1");
+
+        // txn_1: modify <test, version1> to <test, version2> and commit
+        txn_kv->create_txn(&txn_1);
+        txn_1->put("test", "version2");
+        ASSERT_EQ(txn_1->commit(), 0);
+
+        // txn_2: should still see the <test, version1>
+        ASSERT_EQ(txn_2->get("test", &get_val), 0);
+        ASSERT_EQ(get_val, "version1");
+
+        // txn_2: modify <test, version1> to <test, version3> but not commit,
+        // txn_2 should get <test, version3>
+        txn_2->put("test", "version3");
+        ASSERT_EQ(txn_2->get("test", &get_val), 0);
+        ASSERT_EQ(get_val, "version3");
+
+        // txn_2: remove <test, version3> bu not commit,
+        // txn_2 should not get <test, version3>
+        txn_2->remove("test");
+        ASSERT_EQ(txn_2->get("test", &get_val), 1);
+
+        // txn_1: will still see <test, version2>
+        txn_kv->create_txn(&txn_1);
+        ASSERT_EQ(txn_1->get("test", &get_val), 0);
+        ASSERT_EQ(get_val, "version2");
+
+        // txn_2: commit all changes
+        ASSERT_EQ(txn_2->commit(), 0);
+
+        // txn_1: should not get <test, verison2>
+        txn_kv->create_txn(&txn_1);
+        ASSERT_EQ(txn_1->get("test", &get_val), 1);
+    }
+
+    {
+        std::string get_val;
+
+        // txn_1: put <test, version1> and commit
+        int ret = txn_kv->create_txn(&txn_1);
+        ASSERT_EQ(ret, 0);
+        txn_1->put("test", "version1");
+        ASSERT_EQ(txn_1->commit(), 0);
+
+        // txn_2: read the key set by atomic_xxx before commit
+        txn_kv->create_txn(&txn_2);
+        txn_2->atomic_set_ver_value("test", "");
+        ret = txn_2->get("test", &get_val);
+        // can not read the unreadable key
+        ASSERT_EQ(ret != 0 && ret != 1, true);
+        // after read the unreadable key, can not commit
+        ASSERT_NE(txn_2->commit(), 0);
+
+        // txn_1: still see the <test verison1>
+        txn_kv->create_txn(&txn_1);
+        ASSERT_EQ(txn_1->get("test", &get_val), 0);
+        ASSERT_EQ(get_val, "version1");
+    }
+}
+
+TEST(TxnMemKvTest, ModifySnapshotTest) {
+    using namespace selectdb;
+    auto mem_txn_kv = std::dynamic_pointer_cast<TxnKv>(std::make_shared<MemTxnKv>());
+    ASSERT_NE(mem_txn_kv.get(), nullptr);
+
+    modify_snapshot_test(mem_txn_kv);
+    modify_snapshot_test(fdb_txn_kv);
 }
 // vim: et tw=100 ts=4 sw=4 cc=80:

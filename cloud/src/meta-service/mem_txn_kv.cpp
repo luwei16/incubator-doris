@@ -20,17 +20,8 @@ int MemTxnKv::create_txn(std::unique_ptr<Transaction>* txn) {
 }
 
 int MemTxnKv::update(std::vector<std::tuple<memkv::ModifyOpType, std::string, std::string>> &op_list,
-            int64_t* committed_version) {
+                        int64_t* committed_version) {
     std::lock_guard<std::mutex> l(lock_);
-
-    // check remove_keys's range
-    for (const auto& vec: op_list) {
-        auto [op_type, begin, end] = vec;
-        if (op_type == memkv::ModifyOpType::REMOVE_RANGE
-                && (begin >= end)) {
-            return -1;
-        }
-    }
 
     int64_t version = committed_version_ + 1;
     int16_t seq = 0;
@@ -89,6 +80,13 @@ int MemTxnKv::update(std::vector<std::tuple<memkv::ModifyOpType, std::string, st
     return 0;
 }
 
+int MemTxnKv::get_kv(std::map<std::string, std::string> *kv, int64_t* version) {
+    std::lock_guard<std::mutex> l(lock_);
+    *kv = mem_kv_;
+    *version = committed_version_;
+    return 0;
+}
+
 int MemTxnKv::gen_version_timestamp(int64_t ver, int16_t seq, std::string* str) {
     // Convert litter endian to big endian
     static auto to_big_int64 = [](int64_t v) {
@@ -110,53 +108,6 @@ int MemTxnKv::gen_version_timestamp(int64_t ver, int16_t seq, std::string* str) 
     str->resize(size + 10, '\0');
     std::memcpy(str->data() + size, &ver, sizeof(ver));
     std::memcpy(str->data() + size + 8, &seq, sizeof(seq));
-    return 0;
-}
-
-int MemTxnKv::get(std::string_view key, std::string* val, int64_t* version) {
-    std::lock_guard<std::mutex> l(lock_);
-    auto iter = mem_kv_.find(std::string(key.data(), key.size()));
-    if (iter == mem_kv_.end()) { return 1;}
-    *val = iter->second;
-    *version = committed_version_;
-    return 0;
-}
-
-int MemTxnKv::get(std::string_view begin, std::string_view end,
-            std::unique_ptr<selectdb::RangeGetIterator>* iter, int limit, int64_t* version) {
-    std::lock_guard<std::mutex> l(lock_);
-    std::vector<std::pair<std::string, std::string>> kv_list;
-    std::string begin_k(begin.data(), begin.size());
-    std::string end_k(end.data(), end.size());
-    if (begin_k >= end_k) {
-        std::unique_ptr<RangeGetIterator> ret(new memkv::RangeGetIterator(kv_list, false));
-        *(iter) = std::move(ret);
-        *version = committed_version_;
-        return 0;
-    }
-
-    bool use_limit = true;
-
-    if (limit < 0) { return -1;}
-    if (limit == 0) { use_limit = false;}
-
-    bool more = false;
-    auto begin_iter = mem_kv_.lower_bound(begin_k);
-    auto end_iter = mem_kv_.lower_bound(end_k);
-    for (; begin_iter != mem_kv_.end() && begin_iter != end_iter; begin_iter++) {
-        kv_list.push_back({begin_iter->first, begin_iter->second});
-
-        if (use_limit) {
-            limit--;
-            if (limit == 0) { break;}
-        }
-    }
-    if (use_limit && limit == 0 && ++begin_iter != end_iter) {
-        more = true;
-    }
-    std::unique_ptr<RangeGetIterator> ret(new memkv::RangeGetIterator(kv_list, more));
-    *(iter) = std::move(ret);
-    *version = committed_version_;
     return 0;
 }
 
@@ -191,22 +142,82 @@ void Transaction::put(std::string_view key, std::string_view val) {
     std::lock_guard<std::mutex> l(lock_);
     std::string k(key.data(), key.size());
     std::string v(val.data(), val.size());
+    inner_kv_[k] = v;
     op_list_.emplace_back(ModifyOpType::PUT, k, v);
 }
 
 int Transaction::get(std::string_view key, std::string* val) {
-    return kv_->get(key, val, &read_version_);
+    std::lock_guard<std::mutex> l(lock_);
+    std::string k(key.data(), key.size());
+
+    // the key set by atomic_xxx can't not be read before the txn is committed.
+    // if it is read, the txn will not be able to commit. 
+    if (unreadable_keys_.count(k) != 0) {
+        aborted_ = true;
+        return -2;
+    }
+    return inner_get(k, val);
 }
 
 int Transaction::get(std::string_view begin, std::string_view end,
                      std::unique_ptr<selectdb::RangeGetIterator>* iter, int limit) { 
-    return kv_->get(begin, end, iter, limit, &read_version_);
+    std::lock_guard<std::mutex> l(lock_);
+    std::string begin_k(begin.data(), begin.size());
+    std::string end_k(end.data(), end.size());
+    // TODO: figure out what happen if range_get has part of unreadable_keys
+    if (unreadable_keys_.count(begin_k) != 0) {
+        aborted_ = true;
+        return -2;
+    }
+    return inner_get(begin_k, end_k, iter, limit);
+}
+
+
+int Transaction::inner_get(const std::string& key, std::string* val) {
+    auto iter = inner_kv_.find(std::string(key.data(), key.size()));
+    if (iter == inner_kv_.end()) { return 1;}
+    *val = iter->second;
+    return 0;
+}
+
+int Transaction::inner_get(const std::string& begin, const std::string& end,
+                        std::unique_ptr<selectdb::RangeGetIterator>* iter, int limit) {
+    std::vector<std::pair<std::string, std::string>> kv_list;
+    if (begin >= end) {
+        std::unique_ptr<RangeGetIterator> ret(new memkv::RangeGetIterator(kv_list, false));
+        *(iter) = std::move(ret);
+        return 0;
+    }
+
+    bool use_limit = true;
+
+    if (limit < 0) { return -1;}
+    if (limit == 0) { use_limit = false;}
+
+    bool more = false;
+    auto begin_iter = inner_kv_.lower_bound(begin);
+    auto end_iter = inner_kv_.lower_bound(end);
+    for (; begin_iter != inner_kv_.end() && begin_iter != end_iter; begin_iter++) {
+        kv_list.push_back({begin_iter->first, begin_iter->second});
+
+        if (use_limit) {
+            limit--;
+            if (limit == 0) { break;}
+        }
+    }
+    if (use_limit && limit == 0 && ++begin_iter != end_iter) {
+        more = true;
+    }
+    std::unique_ptr<RangeGetIterator> ret(new memkv::RangeGetIterator(kv_list, more));
+    *(iter) = std::move(ret);
+    return 0;
 }
 
 void Transaction::atomic_set_ver_key(std::string_view key_prefix, std::string_view val) {
     std::lock_guard<std::mutex> l(lock_);
     std::string k(key_prefix.data(), key_prefix.size());
     std::string v(val.data(), val.size());
+    unreadable_keys_.insert(k);
     op_list_.emplace_back(ModifyOpType::ATOMIC_SET_VER_KEY, k, v);
 }
 
@@ -214,17 +225,21 @@ void Transaction::atomic_set_ver_value(std::string_view key, std::string_view va
     std::lock_guard<std::mutex> l(lock_);
     std::string k(key.data(), key.size());
     std::string v(value.data(), value.size());
+    unreadable_keys_.insert(k);
     op_list_.emplace_back(ModifyOpType::ATOMTC_SET_VER_VAL, k, v);
 }
 
 void Transaction::atomic_add(std::string_view key, int64_t to_add) {
     std::lock_guard<std::mutex> l(lock_);
-    op_list_.emplace_back(ModifyOpType::ATOMIC_ADD, std::string(key.data(), key.size()), std::to_string(to_add));
+    std::string k(key.data(), key.size());
+    unreadable_keys_.insert(k);
+    op_list_.emplace_back(ModifyOpType::ATOMIC_ADD, k, std::to_string(to_add));
 }
 
 void Transaction::remove(std::string_view key) {
     std::lock_guard<std::mutex> l(lock_);
     std::string k(key.data(), key.size());
+    inner_kv_.erase(k);
     op_list_.emplace_back(ModifyOpType::REMOVE, k, "");
 }
 
@@ -232,25 +247,34 @@ void Transaction::remove(std::string_view begin, std::string_view end) {
     std::lock_guard<std::mutex> l(lock_);
     std::string begin_k(begin.data(), begin.size());
     std::string end_k(end.data(), end.size());
-    op_list_.emplace_back(ModifyOpType::REMOVE_RANGE, begin_k, end_k);
+    if (begin_k >= end_k) {
+        aborted_ = true;
+    } else {
+        auto begin_iter = inner_kv_.lower_bound(begin_k);
+        auto end_iter = inner_kv_.lower_bound(end_k);
+        inner_kv_.erase(begin_iter, end_iter);
+        op_list_.emplace_back(ModifyOpType::REMOVE_RANGE, begin_k, end_k);
+    }
 }
 
 int Transaction::commit() {
     std::lock_guard<std::mutex> l(lock_);
-    int ret = kv_->update(op_list_, &committed_version_);
-    if (ret != 0) {
+    if (aborted_ || kv_->update(op_list_, &committed_version_) != 0) {
         return -2;
     }
     commited_ = true;
     op_list_.clear();
+    inner_kv_.clear();
     return 0;
 }
 
 int64_t Transaction::get_read_version() {
+    std::lock_guard<std::mutex> l(lock_);
     return read_version_;
 }
 
 int64_t Transaction::get_committed_version() {
+    std::lock_guard<std::mutex> l(lock_);
     return committed_version_;
 }
 

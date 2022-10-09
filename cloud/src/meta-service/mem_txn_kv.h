@@ -31,11 +31,9 @@ public:
 private:
     int update(std::vector<std::tuple<memkv::ModifyOpType, std::string, std::string>> &op_list,
                 int64_t* version);
+ 
+    int get_kv(std::map<std::string, std::string> *kv, int64_t* version);
 
-    int get(std::string_view key, std::string* val, int64_t* version);
-
-    int get(std::string_view begin, std::string_view end,
-                     std::unique_ptr<selectdb::RangeGetIterator>* iter, int limit, int64_t* version);
     int64_t get_last_commited_version();
     int64_t get_last_read_version();
 
@@ -62,7 +60,9 @@ enum class ModifyOpType {
 
 class Transaction : public selectdb::Transaction {
 public:
-    Transaction(std::shared_ptr<MemTxnKv> kv) : kv_(std::move(kv)) {}
+    Transaction(std::shared_ptr<MemTxnKv> kv) : kv_(std::move(kv)) {
+        kv_->get_kv(&inner_kv_, &read_version_);
+    }
 
     ~Transaction() override {
         //
@@ -138,11 +138,18 @@ public:
     int abort() override;
 
 private:
+    int inner_get(const std::string& key, std::string* val);
+
+    int inner_get(const std::string& begin, const std::string& end,
+                     std::unique_ptr<selectdb::RangeGetIterator>* iter, int limit);
+
+private:
     std::shared_ptr<MemTxnKv> kv_ {nullptr};
     bool commited_ = false;
-    //bool aborted_ = false;
+    bool aborted_ = false;
     std::mutex lock_;
-
+    std::map<std::string, std::string> inner_kv_;
+    std::set<std::string> unreadable_keys_;
     std::vector<std::tuple<ModifyOpType, std::string, std::string>> op_list_;
 
     int64_t committed_version_ = -1;
