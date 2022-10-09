@@ -691,6 +691,9 @@ public abstract class LoadJob extends AbstractTxnStateChangeCallback implements 
         state = JobState.FINISHED;
         // when load job finished, there is no need to hold the tasks which are the biggest memory consumers.
         idToTasks.clear();
+        if (!Config.cloud_unique_id.isEmpty()) {
+            logFinalOperation();
+        }
     }
 
     protected boolean checkDataQuality() {
