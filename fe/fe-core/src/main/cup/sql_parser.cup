@@ -1651,7 +1651,7 @@ copy_option ::=
 
 async_option ::=
     {:
-        RESULT = false;
+        RESULT = true;
     :}
     | KW_ASYNC EQUAL KW_TRUE
     {:

@@ -101,7 +101,8 @@ public class CopyJob extends BrokerLoadJob {
         }
     }
 
-    protected String getCopyId() {
-        return "copy" + label;
+    public String getCopyId() {
+        // FIXME(meiyi): specify copy id use: 1. label; 2. auto_increment job id from meta service...
+        return label;
     }
 }

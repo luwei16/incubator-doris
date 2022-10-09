@@ -50,6 +50,7 @@ public class CopyStmt extends DdlStmt {
 
     private static final ShowResultSetMetaData COPY_INTO_META_DATA =
             ShowResultSetMetaData.builder()
+                .addColumn(new Column("copyId", ScalarType.createVarchar(64)))
                 .addColumn(new Column("state", ScalarType.createVarchar(64)))
                 .addColumn(new Column("type", ScalarType.createVarchar(64)))
                 .addColumn(new Column("msg", ScalarType.createVarchar(128)))

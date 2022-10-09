@@ -119,6 +119,7 @@ import org.apache.doris.common.DdlException;
 import org.apache.doris.load.EtlJobType;
 import org.apache.doris.load.EtlStatus;
 import org.apache.doris.load.FailMsg;
+import org.apache.doris.load.loadv2.CopyJob;
 import org.apache.doris.load.loadv2.JobState;
 import org.apache.doris.load.loadv2.LoadJob;
 import org.apache.doris.load.sync.SyncJobManager;
@@ -361,7 +362,7 @@ public class DdlExecutor {
     }
 
     private static QueryState executeCopyStmt(Env env, CopyStmt copyStmt) throws Exception {
-        LoadJob job = env.getLoadManager().createLoadJobFromStmt(copyStmt);
+        CopyJob job = (CopyJob) env.getLoadManager().createLoadJobFromStmt(copyStmt);
         if (!copyStmt.isAsync()) {
             // wait for execute finished
             while (!job.isCompleted()) {
@@ -383,6 +384,7 @@ public class DdlExecutor {
                 }
                 List<List<String>> result = Lists.newArrayList();
                 List<String> entry = Lists.newArrayList();
+                entry.add(job.getCopyId());
                 entry.add(job.getState().toString());
                 entry.add(failMsg == null ? "" : failMsg.getCancelType().toString());
                 entry.add(failMsg == null ? "" : failMsg.getMsg());
@@ -408,7 +410,8 @@ public class DdlExecutor {
                 QueryState queryState = new QueryState();
                 List<List<String>> result = Lists.newArrayList();
                 List<String> entry = Lists.newArrayList();
-                entry.add("");
+                entry.add(job.getCopyId());
+                entry.add(job.getState().toString());
                 entry.add("");
                 entry.add("");
                 entry.add(counters.getOrDefault(LoadJob.DPP_NORMAL_ALL, "0"));
@@ -421,8 +424,20 @@ public class DdlExecutor {
                 return queryState;
             }
         }
-        QueryState state = new QueryState();
-        state.setOk();
-        return state;
+        QueryState queryState = new QueryState();
+        List<List<String>> result = Lists.newArrayList();
+        List<String> entry = Lists.newArrayList();
+        entry.add(job.getCopyId());
+        entry.add(job.getState().toString());
+        entry.add("");
+        entry.add("");
+        entry.add("");
+        entry.add("");
+        entry.add("");
+        entry.add("");
+        result.add(entry);
+        queryState.setResultSet(new ShowResultSet(copyStmt.getMetaData(), result));
+        queryState.setOk();
+        return queryState;
     }
 }
