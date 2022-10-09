@@ -127,7 +127,7 @@ public final class MetricRepo {
     public static ConcurrentHashMap<String, Histogram>
                     CLOUD_CLUSTER_HISTO_QUERY_LATENCY = new ConcurrentHashMap<>();
 
-    public static Map<String, GaugeMetricImpl<Boolean>>
+    public static Map<String, GaugeMetricImpl<Integer>>
                     CLOUD_CLUSTER_BACKEND_ALIVE = new HashMap<>();
     public static Map<String, GaugeMetricImpl<Long>>
                     CLOUD_CLUSTER_BACKEND_ALIVE_TOTAL = new HashMap<>();

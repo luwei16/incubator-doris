@@ -255,8 +255,18 @@ public class SystemInfoService {
         lock.unlock();
     }
 
+    // Return the ref of concurrentMap clusterIdToBackend
+    // It should be thread-safe to iterate.
+    // reference: https://stackoverflow.com/questions/3768554/is-iterating-concurrenthashmap-values-thread-safe
     public Map<String, List<Backend>> getCloudClusterIdToBackend() {
         return clusterIdToBackend;
+    }
+
+    // Return the ref of concurrentMap clusterNameToId
+    // It should be thread-safe to iterate.
+    // reference: https://stackoverflow.com/questions/3768554/is-iterating-concurrenthashmap-values-thread-safe
+    public Map<String, String> getCloudClusterNameToId() {
+        return clusterNameToId;
     }
 
     public List<Pair<String, Integer>> getCurrentObFrontends() {
