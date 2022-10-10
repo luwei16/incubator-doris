@@ -41,42 +41,33 @@ public class CloudLoadAction extends RestBaseController {
 
     private static StatementSubmitter stmtSubmitter = new StatementSubmitter();
 
-    @RequestMapping(path = "/presigned_url", method = RequestMethod.POST)
-    public Object loadPresignedUrl(HttpServletRequest request, HttpServletResponse response) {
+    // curl  -u user:password -H "fileName: file" -T file -L http://127.0.0.1:12104/copy/upload
+    @RequestMapping(path = "/upload", method = RequestMethod.PUT)
+    public Object copy(HttpServletRequest request, HttpServletResponse response) {
         executeCheckPassword(request, response);
-        String postContent = HttpUtil.getBody(request);
         Map<String, Object> resultMap = new HashMap<>(3);
         try {
-            if (Strings.isNullOrEmpty(postContent)) {
-                return ResponseEntityBuilder.badRequest("POST body must contains json object");
-            }
-            JSONObject jsonObject = (JSONObject) JSONValue.parse(postContent);
-            if (jsonObject == null) {
-                return ResponseEntityBuilder.badRequest("malformed json: " + postContent);
-            }
-
-            String filename = (String) jsonObject.get("filename");
-
-            if (Strings.isNullOrEmpty(filename)) {
-                return ResponseEntityBuilder.badRequest("POST body must contains [filename] root object");
+            String fileName = request.getHeader("fileName");
+            if (Strings.isNullOrEmpty(fileName)) {
+                return ResponseEntityBuilder.badRequest("http header must have fileName entry");
             }
             String mysqlUserName = ClusterNamespace
                     .getNameFromFullName(ConnectContext.get().getCurrentUserIdentity().getQualifiedUser());
             LOG.info("receive Presigned url request [ user [{}]] for filename [{}]",
-                    mysqlUserName, filename);
+                    mysqlUserName, fileName);
 
             // use userName, fileName to get presigned url from ms EXTERNAL
             // 1. rpc to ms, by unique_id、username
             StagePB internalStage = Env.getCurrentInternalCatalog().getStage(StageType.INTERNAL,
-                    mysqlUserName, filename);
+                    mysqlUserName, fileName);
             // 2. call RemoteBase to get pre-signedUrl
             RemoteBase rb = RemoteBase.newInstance(new ObjectInfo(internalStage.getObjInfo().getProvider(),
                     internalStage.getObjInfo().getAk(), internalStage.getObjInfo().getSk(),
                     internalStage.getObjInfo().getBucket(), internalStage.getObjInfo().getEndpoint(),
                     internalStage.getObjInfo().getRegion(), internalStage.getObjInfo().getPrefix()));
-            LOG.debug("get internal stage remote info: {}", rb.toString());
-            String signedUrl = rb.getPresignedUrl(filename);
-            resultMap.put("url", signedUrl);
+            String signedUrl = rb.getPresignedUrl(fileName);
+            LOG.info("get internal stage remote info: {}, and signedUrl: {}", rb.toString(), signedUrl);
+            return redirectToObj(signedUrl);
         } catch (DorisHttpException e) {
             // status code  should conforms to HTTP semantic
             resultMap.put("code", e.getCode().code());

@@ -106,6 +106,25 @@ public class RestBaseController extends BaseController {
         return redirectView;
     }
 
+    public RedirectView redirectToObj(String sign) {
+        URI urlObj = null;
+        URI resultUriObj = null;
+        try {
+            urlObj = new URI(sign);
+            LOG.debug("urlObj {}", urlObj);
+            resultUriObj = new URI(urlObj.getScheme(), null, urlObj.getHost(),
+                urlObj.getPort(), urlObj.getPath(), urlObj.getQuery(), null);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+        String redirectUrl = resultUriObj.toASCIIString();
+        LOG.info("redirect url: {}", redirectUrl);
+        RedirectView redirectView = new RedirectView(redirectUrl);
+        redirectView.setContentType("text/html;charset=utf-8");
+        redirectView.setStatusCode(org.springframework.http.HttpStatus.TEMPORARY_REDIRECT);
+        return redirectView;
+    }
+
     public RedirectView redirectToMaster(HttpServletRequest request, HttpServletResponse response) {
         Env env = Env.getCurrentEnv();
         if (env.isMaster()) {
