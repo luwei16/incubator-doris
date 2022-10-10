@@ -28,8 +28,16 @@
 #include "runtime/runtime_state.h"
 #include "runtime/tuple.h"
 #include "vec/data_types/data_type_factory.hpp"
+#include "vec/common/object_util.h"
 
 namespace doris {
+
+BaseScanner::~BaseScanner() {
+    Expr::close(_dest_expr_ctx, _state);
+    if (_state->enable_vectorized_exec()) {
+        vectorized::VExpr::close(_dest_vexpr_ctx, _state);
+    }
+}
 
 BaseScanner::BaseScanner(RuntimeState* state, RuntimeProfile* profile,
                          const TBrokerScanRangeParams& params,

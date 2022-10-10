@@ -21,7 +21,6 @@
 #include "exprs/expr.h"
 #include "runtime/tuple.h"
 #include "util/runtime_profile.h"
-#include "vec/common/object_util.h"
 #include "vec/exprs/vexpr.h"
 #include "vec/exprs/vexpr_context.h"
 
@@ -38,6 +37,9 @@ namespace vectorized {
 class VExprContext;
 class IColumn;
 using MutableColumnPtr = IColumn::MutablePtr;
+namespace object_util {
+struct FullBaseSchemaView;
+}
 } // namespace vectorized
 
 // The counter will be passed to each scanner.
@@ -57,12 +59,7 @@ public:
                 const std::vector<TNetworkAddress>& broker_addresses,
                 const std::vector<TExpr>& pre_filter_texprs, ScannerCounter* counter);
 
-    virtual ~BaseScanner() {
-        Expr::close(_dest_expr_ctx, _state);
-        if (_state->enable_vectorized_exec()) {
-            vectorized::VExpr::close(_dest_vexpr_ctx, _state);
-        }
-    }
+    virtual ~BaseScanner();
 
     // Register conjuncts for push down
     virtual void reg_conjunct_ctxs(const TupleId& tupleId,
