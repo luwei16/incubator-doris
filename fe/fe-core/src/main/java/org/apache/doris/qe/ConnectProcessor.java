@@ -198,29 +198,34 @@ public class ConnectProcessor {
                     MetricRepo.DORIS_METRIC_REGISTER.addMetrics(counterQueryAll);
                     return counterQueryAll;
                 }).increase(1L);
+
+                // registered metrics
+                MetricRepo.CLOUD_CLUSTER_COUNTER_QUERY_ERR.computeIfAbsent(ctx.cloudCluster, key -> {
+                    LongCounterMetric counterQueryErr = new LongCounterMetric("query_err", MetricUnit.REQUESTS,
+                            "total error query");
+                    counterQueryErr.addLabel(new MetricLabel("cluster", key));
+                    MetricRepo.DORIS_METRIC_REGISTER.addMetrics(counterQueryErr);
+                    return counterQueryErr;
+                });
+
+                MetricRepo.CLOUD_CLUSTER_HISTO_QUERY_LATENCY.computeIfAbsent(ctx.cloudCluster, key -> {
+                    Histogram histoQueryLatency = MetricRepo.METRIC_REGISTER.histogram(
+                            MetricRegistry.name("query", "latency", "ms", key));
+                    return histoQueryLatency;
+                });
             }
             if (ctx.getState().getStateType() == MysqlStateType.ERR
                     && ctx.getState().getErrType() != QueryState.ErrType.ANALYSIS_ERR) {
                 // err query
                 MetricRepo.COUNTER_QUERY_ERR.increase(1L);
                 if (!Config.cloud_unique_id.isEmpty() && ctx.cloudCluster != null) {
-                    MetricRepo.CLOUD_CLUSTER_COUNTER_QUERY_ERR.computeIfAbsent(ctx.cloudCluster, key -> {
-                        LongCounterMetric counterQueryErr = new LongCounterMetric("query_err", MetricUnit.REQUESTS,
-                                "total error query");
-                        counterQueryErr.addLabel(new MetricLabel("cluster", key));
-                        MetricRepo.DORIS_METRIC_REGISTER.addMetrics(counterQueryErr);
-                        return counterQueryErr;
-                    }).increase(1L);
+                    MetricRepo.CLOUD_CLUSTER_COUNTER_QUERY_ERR.get(ctx.cloudCluster).increase(1L);
                 }
             } else if (ctx.getState().getStateType() == MysqlStateType.OK) {
                 // ok query
                 MetricRepo.HISTO_QUERY_LATENCY.update(elapseMs);
                 if (!Config.cloud_unique_id.isEmpty() && ctx.cloudCluster != null) {
-                    MetricRepo.CLOUD_CLUSTER_HISTO_QUERY_LATENCY.computeIfAbsent(ctx.cloudCluster, key -> {
-                        Histogram histoQueryLatency = MetricRepo.METRIC_REGISTER.histogram(
-                                MetricRegistry.name("query", "latency", "ms", key));
-                        return histoQueryLatency;
-                    }).update(elapseMs);
+                    MetricRepo.CLOUD_CLUSTER_HISTO_QUERY_LATENCY.get(ctx.cloudCluster).update(elapseMs);
                 }
                 if (elapseMs > Config.qe_slow_log_ms) {
                     String sqlDigest = DigestUtils.md5Hex(((Queriable) parsedStmt).toDigest());
