@@ -118,8 +118,8 @@ int Database::init() {
     // TODO: process opt
     fdb_error_t err = fdb_create_database(cluster_file_path_.c_str(), &db_);
     if (err) {
-        std::cout << "fdb_create_database error: " << fdb_get_error(err)
-                  << " conf: " << cluster_file_path_ << std::endl;
+        LOG(WARNING) << __PRETTY_FUNCTION__ << " fdb_create_database error: " << fdb_get_error(err)
+                     << " conf: " << cluster_file_path_;
         return 1;
     }
 
@@ -134,7 +134,8 @@ int Transaction::init() {
     // TODO: process opt
     fdb_error_t err = fdb_database_create_transaction(db_->db(), &txn_);
     if (err) {
-        std::cout << fdb_get_error(err) << std::endl;
+        LOG(WARNING) << __PRETTY_FUNCTION__
+                     << " fdb_database_create_transaction error:" << fdb_get_error(err);
         return -1;
     }
     return 0;
@@ -156,14 +157,16 @@ int Transaction::get(std::string_view key, std::string* val) {
 
     auto err = fdb_future_block_until_ready(fut);
     if (err) {
-        LOG(WARNING) << __PRETTY_FUNCTION__ << " failed to fdb_future_block_until_ready err="
-            << fdb_get_error(err) << " key=" << hex(key);
+        LOG(WARNING) << __PRETTY_FUNCTION__
+                     << " failed to fdb_future_block_until_ready err=" << fdb_get_error(err)
+                     << " key=" << hex(key);
         return -1;
     }
     err = fdb_future_get_error(fut);
     if (err) {
-        LOG(WARNING) << __PRETTY_FUNCTION__ << " failed to fdb_future_get_error err="
-            << fdb_get_error(err) << " key=" << hex(key);
+        LOG(WARNING) << __PRETTY_FUNCTION__
+                     << " failed to fdb_future_get_error err=" << fdb_get_error(err)
+                     << " key=" << hex(key);
         return -2;
     }
 
@@ -173,8 +176,9 @@ int Transaction::get(std::string_view key, std::string* val) {
     err = fdb_future_get_value(fut, &found, &ret, &len);
 
     if (err) {
-        LOG(WARNING) << __PRETTY_FUNCTION__ << " failed to fdb_future_get_value err="
-            << fdb_get_error(err) << " key=" << hex(key);
+        LOG(WARNING) << __PRETTY_FUNCTION__
+                     << " failed to fdb_future_get_value err=" << fdb_get_error(err)
+                     << " key=" << hex(key);
         return -1;
     }
 
