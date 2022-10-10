@@ -279,7 +279,7 @@ terminal String
     
     KW_IDENTIFIED, KW_IF, KW_IMMEDIATE, KW_IN, KW_INDEX, KW_INDEXES, KW_INFILE,
     KW_INNER, KW_INSERT, KW_INSTALL, KW_INT, KW_INTERMEDIATE, KW_INTERSECT,
-    KW_INTERVAL, KW_INTO, KW_IS, KW_ISNULL, KW_ISOLATION,
+    KW_INTERVAL, KW_INTO, KW_IS, KW_ISNULL, KW_ISOLATION, KW_INVERTED,
     
     KW_JOB, KW_JOIN, KW_JSON,
     
@@ -1576,9 +1576,9 @@ create_stmt ::=
     {:
         RESULT = new CreateMultiTableMaterializedViewStmt(mvName, buildMethod, refreshInfo, keyDesc, partitionDesc, distributionDesc, properties, query);
     :}
-    | KW_CREATE KW_INDEX opt_if_not_exists:ifNotExists ident:indexName KW_ON table_name:tableName LPAREN ident_list:cols RPAREN opt_index_type:indexType opt_comment:comment
+    | KW_CREATE KW_INDEX opt_if_not_exists:ifNotExists ident:indexName KW_ON table_name:tableName LPAREN ident_list:cols RPAREN opt_index_type:indexType opt_properties:properties opt_comment:comment
     {:
-        RESULT = new AlterTableStmt(tableName, Lists.newArrayList(new CreateIndexClause(tableName, new IndexDef(indexName, ifNotExists, cols, indexType, comment), false)));
+        RESULT = new AlterTableStmt(tableName, Lists.newArrayList(new CreateIndexClause(tableName, new IndexDef(indexName, ifNotExists, cols, indexType, properties, comment), false)));
     :}
     /* resource */
     | KW_CREATE opt_external:isExternal KW_RESOURCE ident_or_text:resourceName opt_properties:properties
@@ -2852,9 +2852,9 @@ column_definition ::=
     ;
 
 index_definition ::=
-    KW_INDEX opt_if_not_exists:ifNotExists ident:indexName LPAREN ident_list:cols RPAREN opt_index_type:indexType opt_comment:comment
+    KW_INDEX opt_if_not_exists:ifNotExists ident:indexName LPAREN ident_list:cols RPAREN opt_index_type:indexType opt_properties:properties opt_comment:comment
     {:
-        RESULT = new IndexDef(indexName, ifNotExists, cols, indexType, comment);
+        RESULT = new IndexDef(indexName, ifNotExists, cols, indexType, properties, comment);
     :}
     ;
 
@@ -2890,6 +2890,10 @@ opt_index_type ::=
     | KW_USING KW_BITMAP
     {:
         RESULT = IndexDef.IndexType.BITMAP;
+    :}
+    | KW_USING KW_INVERTED
+    {:
+        RESULT = IndexDef.IndexType.INVERTED;
     :}
     ;
 
@@ -5986,6 +5990,8 @@ keyword ::=
     | KW_BACKUP:id
     {: RESULT = id; :}
     | KW_BEGIN:id
+    {: RESULT = id; :}
+    | KW_INVERTED:id
     {: RESULT = id; :}
     | KW_BITMAP:id
     {: RESULT = id; :}

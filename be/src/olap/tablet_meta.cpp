@@ -169,6 +169,18 @@ TabletMeta::TabletMeta(int64_t table_id, int64_t partition_id, int64_t tablet_id
                         column->set_has_bitmap_index(true);
                         break;
                     }
+                } else if (index.index_type == TIndexType::type::INVERTED) {
+                    DCHECK_EQ(index.columns.size(), 1);
+                    if (boost::iequals(tcolumn.column_name, index.columns[0])) {
+                        column->set_has_inverted_index(true);
+                        std::string parser = "not_set";
+                        if (index.__isset.properties &&
+                            index.properties.find("parser") != index.properties.end()) {
+                            parser = index.properties.at("parser");
+                        }
+                        column->set_inverted_index_parser(parser);
+                        break;
+                    }
                 }
             }
         }
@@ -220,6 +232,8 @@ void TabletMeta::init_column_from_tcolumn(uint32_t unique_id, const TColumn& tco
     column->set_unique_id(unique_id);
     column->set_name(tcolumn.column_name);
     column->set_has_bitmap_index(tcolumn.has_bitmap_index);
+    column->set_has_inverted_index(tcolumn.has_inverted_index);
+    column->set_inverted_index_parser(tcolumn.inverted_index_parser);
     string data_type;
     EnumToString(TPrimitiveType, tcolumn.column_type.type, data_type);
     column->set_type(data_type);
