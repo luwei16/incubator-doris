@@ -50,6 +50,12 @@ Status sync_dir(const io::Path& dirname) {
 
 namespace io {
 
+LocalFileWriter::LocalFileWriter(Path path, FileSystem* fs)
+        : FileWriter(std::move(path)), _fs(fs) {
+    DorisMetrics::instance()->local_file_open_writing->increment(1);
+    DorisMetrics::instance()->local_file_writer_total->increment(1);
+}
+
 LocalFileWriter::LocalFileWriter(Path path) : FileWriter(std::move(path)) {
     DorisMetrics::instance()->local_file_open_writing->increment(1);
     DorisMetrics::instance()->local_file_writer_total->increment(1);

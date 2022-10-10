@@ -108,6 +108,8 @@ Status SegmentWriter::init(uint32_t write_mbytes_per_sec __attribute__((unused))
         opts.need_zone_map = column.is_key() || _tablet_schema->keys_type() != KeysType::AGG_KEYS;
         opts.need_bloom_filter = column.is_bf_column();
         opts.need_bitmap_index = column.has_bitmap_index();
+        opts.need_inverted_index = column.has_inverted_index();
+        opts.inverted_index_analyser_type = column.get_inverted_index_parser_type();
         if (column.type() == FieldType::OLAP_FIELD_TYPE_ARRAY) {
             opts.need_zone_map = false;
             if (opts.need_bloom_filter) {
@@ -371,6 +373,7 @@ Status SegmentWriter::finalize(uint64_t* segment_file_size, uint64_t* index_size
     RETURN_IF_ERROR(_write_ordinal_index());
     RETURN_IF_ERROR(_write_zone_map());
     RETURN_IF_ERROR(_write_bitmap_index());
+    RETURN_IF_ERROR(_write_inverted_index());
     RETURN_IF_ERROR(_write_bloom_filter_index());
     if (_tablet_schema->keys_type() == UNIQUE_KEYS && _opts.enable_unique_key_merge_on_write) {
         RETURN_IF_ERROR(_write_primary_key_index());
@@ -410,6 +413,13 @@ Status SegmentWriter::_write_zone_map() {
 Status SegmentWriter::_write_bitmap_index() {
     for (auto& column_writer : _column_writers) {
         RETURN_IF_ERROR(column_writer->write_bitmap_index());
+    }
+    return Status::OK();
+}
+
+Status SegmentWriter::_write_inverted_index() {
+    for (auto& column_writer : _column_writers) {
+        RETURN_IF_ERROR(column_writer->write_inverted_index());
     }
     return Status::OK();
 }

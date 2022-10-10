@@ -38,7 +38,7 @@ Path LocalFileSystem::absolute_path(const Path& path) const {
 
 Status LocalFileSystem::create_file(const Path& path, FileWriterPtr* writer) {
     auto fs_path = absolute_path(path);
-    *writer = std::make_unique<LocalFileWriter>(std::move(fs_path));
+    *writer = std::make_unique<LocalFileWriter>(std::move(fs_path), this);
     return (*writer)->open();
 }
 

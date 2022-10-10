@@ -19,6 +19,7 @@
 
 #include <cstddef>
 
+#include "io/fs/file_system.h"
 #include "io/fs/file_writer.h"
 
 namespace doris {
@@ -26,6 +27,7 @@ namespace io {
 
 class LocalFileWriter final : public FileWriter {
 public:
+    LocalFileWriter(Path path, FileSystem* fs);
     LocalFileWriter(Path path);
     ~LocalFileWriter() override;
 
@@ -45,11 +47,14 @@ public:
 
     size_t bytes_appended() const override { return _bytes_appended; }
 
+    FileSystem* fs() const override { return _fs; }
+
 private:
     Status _close(bool sync);
 
 private:
     int _fd = -1; // owned
+    FileSystem* _fs;
 
     size_t _bytes_appended = 0;
     bool _dirty = false;
