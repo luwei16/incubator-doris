@@ -42,7 +42,7 @@ int FdbTxnKv::create_txn(std::unique_ptr<Transaction>* txn) {
     txn->reset(t);
     int ret = t->init();
     if (ret != 0) {
-        LOG(WARNING) << "failed to init txn";
+        LOG(WARNING) << "failed to init txn, ret=" << ret;
         return ret;
     }
     return 0;

@@ -21,8 +21,8 @@ static int64_t current_time = 0;
 static int64_t cnt = 0;
 
 int main(int argc, char** argv) {
-    auto conf_file = "meta_service.conf";
-    if (!selectdb::config::init(conf_file, true)) {
+    const std::string conf_file = "selectdb_cloud.conf";
+    if (!selectdb::config::init(conf_file.c_str(), true)) {
         std::cerr << "failed to init config file, conf=" << conf_file << std::endl;
         return -1;
     }
