@@ -412,8 +412,8 @@ static void modify_snapshot_test(std::shared_ptr<selectdb::TxnKv> txn_kv) {
         ASSERT_EQ(txn_1->get("test", &get_val), 0);
         ASSERT_EQ(get_val, "version2");
 
-        // txn_2: commit all changes
-        ASSERT_EQ(txn_2->commit(), 0);
+        // txn_2: commit all changes, should conflict
+        ASSERT_NE(txn_2->commit(), 0);
 
         // txn_1: should not get <test, verison2>
         txn_kv->create_txn(&txn_1);

@@ -69,9 +69,14 @@ int Network::init() {
     // FDBNetworkOption opt;
     // fdb_network_set_option()
     (void)opt_;
+    // ATTN: Network can be configured only once,
+    //       even if fdb_stop_network() is called successfully
     err = fdb_setup_network(); // Must be called only once before any
                                // other functions of C-API
-    if (err) return 1;
+    if (err) {
+        LOG(WARNING) << "failed to setup fdb network, err: " << fdb_get_error(err);
+        return 1;
+    }
 
     // Network complete callback is optional, and useful for some cases
     //   std::function<void()> network_complete_callback =
@@ -87,14 +92,14 @@ int Network::init() {
             new std::thread([] {
                 // Will not return until fdb_stop_network() called
                 auto err = fdb_run_network();
-                if (!err) return;
-                LOG(WARNING) << "exit fdb_run_network error: " << fdb_get_error(err);
-            }),
+                LOG(WARNING) << "exit fdb_run_network"
+                    << (err ? std::string(", error: ") + fdb_get_error(err) : "");
+                }
+            ),
             [](auto* p) {
                 auto err = fdb_stop_network();
-                if (err) {
-                    LOG(WARNING) << "fdb_stop_network error: " << fdb_get_error(err);
-                }
+                LOG(WARNING) << "fdb_stop_network"
+                    << (err ? std::string(", error: ") + fdb_get_error(err) : "");
                 p->join();
                 delete p;
 
@@ -150,7 +155,7 @@ void Transaction::put(std::string_view key, std::string_view val) {
 }
 
 int Transaction::get(std::string_view key, std::string* val) {
-    auto fut = fdb_transaction_get(txn_, (uint8_t*)key.data(), key.size(), true /*snapshot read*/);
+    auto fut = fdb_transaction_get(txn_, (uint8_t*)key.data(), key.size(), false /*snapshot read*/);
 
     auto release_fut = [fut](int*) { fdb_future_destroy(fut); };
     std::unique_ptr<int, decltype(release_fut)> defer((int*)0x01, std::move(release_fut));
@@ -194,7 +199,7 @@ int Transaction::get(std::string_view begin, std::string_view end,
             FDB_KEYSEL_FIRST_GREATER_OR_EQUAL((uint8_t*)end.data(), end.size()), limit,
             0 /*target_bytes, unlimited*/, FDBStreamingMode::FDB_STREAMING_MODE_WANT_ALL,
             //       FDBStreamingMode::FDB_STREAMING_MODE_ITERATOR,
-            0 /*iteration*/, true /*snapshot*/, false /*reverse*/);
+            0 /*iteration*/, false /*snapshot*/, false /*reverse*/);
 
     auto err = fdb_future_block_until_ready(fut);
     if (err) {

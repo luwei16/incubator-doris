@@ -339,6 +339,7 @@ void process_compaction_job(MetaServiceCode& code, std::string& msg, std::string
     DCHECK(!stats_val.empty());
     txn->put(stats_key, stats_val);
     LOG(INFO) << "update tablet stats tabelt_id=" << tablet_id << " key=" << hex(stats_key);
+    VLOG_DEBUG << "update tablet stats tabelt_id=" << tablet_id << " key=" << hex(stats_key) << " stats=" << proto_to_json(stats);
 
     //==========================================================================
     //                    Move input rowsets to recycle

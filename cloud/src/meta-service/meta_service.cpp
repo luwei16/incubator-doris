@@ -868,6 +868,7 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
         }
         txn->put(k, val);
         LOG(INFO) << "xxx put tablet_stat_key key=" << hex(k) << " txn_id=" << txn_id;
+        VLOG_DEBUG << "xxx put tablet_stat_key key=" << hex(k) << " txn_id=" << txn_id << " stats=" << proto_to_json(v);
     }
 
     // Remove tmp rowset meta
@@ -2200,6 +2201,7 @@ void MetaServiceImpl::get_rowset(::google::protobuf::RpcController* controller,
     StatsTabletKeyInfo key_info {instance_id, table_id, index_id, partition_id, tablet_id};
     stats_tablet_key(key_info, &tablet_stat_key);
     ret = txn->get(tablet_stat_key, &tablet_stat_val);
+    LOG(INFO) << "get tablet stats, tablet_id=" << tablet_id << " key=" << hex(tablet_stat_key);
     if (ret != 0) {
         code = MetaServiceCode::KV_TXN_GET_ERR;
         ss << (ret == 1 ? " not_found" : " failed") << "_tablet_id=" << tablet_id;
@@ -2213,6 +2215,8 @@ void MetaServiceImpl::get_rowset(::google::protobuf::RpcController* controller,
         msg = "malformed tablet stat value";
         return;
     }
+    VLOG_DEBUG << "tablet_id=" << tablet_id << " stats=" << proto_to_json(tablet_stat);
+
     int64_t bc_cnt = tablet_stat.base_compaction_cnt();
     int64_t cc_cnt = tablet_stat.cumulative_compaction_cnt();
     int64_t cp = tablet_stat.cumulative_point();
