@@ -244,7 +244,8 @@ RowsetSharedPtr BetaRowsetWriter::build() {
     for (auto& file_writer : _file_writers) {
         status = file_writer->close();
         if (!status.ok()) {
-            LOG(WARNING) << status;
+            LOG(WARNING) << "failed to close file writer, path=" << file_writer->path()
+                         << " res=" << status;
             return nullptr;
         }
     }

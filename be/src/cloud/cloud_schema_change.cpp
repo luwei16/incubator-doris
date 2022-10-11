@@ -186,7 +186,7 @@ Status CloudSchemaChangeHandler::_convert_historical_rowsets(const SchemaChangeP
         }
 
         RETURN_IF_ERROR(sc_procedure->process(rs_reader, rowset_writer.get(), sc_params.new_tablet,
-                                              sc_params.base_tablet_schema));
+                                              sc_params.base_tablet, sc_params.base_tablet_schema));
 
         auto new_rowset = rowset_writer->build();
         if (!new_rowset) {

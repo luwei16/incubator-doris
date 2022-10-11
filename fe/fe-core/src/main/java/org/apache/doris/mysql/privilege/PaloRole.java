@@ -73,7 +73,7 @@ public class PaloRole implements Writable {
     }
 
     public PaloRole(String roleName, TablePattern tablePattern, PrivBitSet tablePrivs,
-                    ResourcePattern resourcePattern, PrivBitSet resourcePrivs) {
+            ResourcePattern resourcePattern, PrivBitSet resourcePrivs) {
         this.roleName = roleName;
         this.tblPatternToPrivs.put(tablePattern, tablePrivs);
         this.resourcePatternToPrivs.put(resourcePattern, resourcePrivs);
@@ -136,6 +136,10 @@ public class PaloRole implements Writable {
                 iter.remove();
             }
         }
+    }
+
+    public boolean containsUser(UserIdentity userIdent) {
+        return users.contains(userIdent);
     }
 
     public static PaloRole read(DataInput in) throws IOException {
