@@ -245,6 +245,24 @@ if [[ ! -f "${DORIS_THIRDPARTY}/installed/lib/libbacktrace.a" ]]; then
     "${DORIS_THIRDPARTY}/build-thirdparty.sh" -j "${PARALLEL}"
 fi
 
+# check clucene md5, if it changes, rebuild
+. ${DORIS_THIRDPARTY}/vars.sh
+if [ ! -f ${DORIS_THIRDPARTY}/installed/lib/libic.a ] || [ ! -d $DORIS_THIRDPARTY/src/$CLUCENE_SOURCE ];then
+    rm -rf ${DORIS_THIRDPARTY}/installed/include/CLucene.h
+    rm -rf ${DORIS_THIRDPARTY}/installed/include/CLucene
+    rm -rf ${DORIS_THIRDPARTY}/installed/lib64/libclucene-*
+    ${DORIS_THIRDPARTY}/build-thirdparty.sh -j $PARALLEL -c 1
+else
+    md5=`md5sum "$DORIS_THIRDPARTY/src/$CLUCENE_NAME"`
+    if [ "$md5" != "$CLUCENE_MD5SUM  $DORIS_THIRDPARTY/src/$CLUCENE_NAME" ]; then
+        rm -rf ${DORIS_THIRDPARTY}/installed/include/CLucene.h
+        rm -rf ${DORIS_THIRDPARTY}/installed/include/CLucene
+        rm -rf ${DORIS_THIRDPARTY}/installed/lib64/libclucene-*
+        rm -rf ${DORIS_THIRDPARTY}/src/$CLUCENE_NAME
+        ${DORIS_THIRDPARTY}/build-thirdparty.sh -j $PARALLEL -c 1
+    fi
+fi
+
 if [[ "${CLEAN}" -eq 1 && "${BUILD_BE}" -eq 0 && "${BUILD_FE}" -eq 0 && "${BUILD_SPARK_DPP}" -eq 0 && ${BUILD_CLOUD} -eq 0 ]]; then
     clean_gensrc
     clean_be

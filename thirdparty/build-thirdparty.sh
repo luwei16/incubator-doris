@@ -42,6 +42,7 @@ usage() {
 Usage: $0 <options>
   Optional options:
      -j                 build thirdparty parallel
+     -c                 build only clucene thirdparty
   "
     exit 1
 }
@@ -51,7 +52,7 @@ if ! OPTS="$(getopt \
     -o '' \
     -o 'h' \
     -l 'help' \
-    -o 'j:' \
+    -o 'j:c:' \
     -- "$@")"; then
     usage
 fi
@@ -77,6 +78,10 @@ if [[ "$#" -ne 1 ]]; then
             HELP=1
             shift
             ;;
+        -c) 
+           BUILDCLUCENE=$2
+           shift 2 
+           ;;
         --help)
             HELP=1
             shift
@@ -100,6 +105,7 @@ fi
 
 echo "Get params:
     PARALLEL            -- ${PARALLEL}
+    BUILDCLUCENE        -- $BUILDCLUCENE
 "
 
 # include custom environment variables
@@ -124,7 +130,11 @@ fi
 cd "${TP_DIR}"
 
 # Download thirdparties.
-"${TP_DIR}/download-thirdparty.sh"
+if [ $BUILDCLUCENE -gt 0 ];then
+    ${TP_DIR}/download-clucene.sh
+else
+    ${TP_DIR}/download-thirdparty.sh
+fi
 
 export LD_LIBRARY_PATH="${TP_DIR}/installed/lib:${LD_LIBRARY_PATH}"
 
@@ -282,6 +292,38 @@ build_libbacktrace() {
 
     make -j "${PARALLEL}"
     make install
+}
+
+#clucene
+build_clucene() {
+    #if [ ! -d $TP_DIR/clucene ] || [ ! -f $TP_DIR/clucene/CMakeLists ];then
+    #    echo "clucene does not exist, try to pull from git"
+    #    git submodule update --remote --init $TP_DIR/clucene
+    #fi
+    if [[ -z ${USE_AVX2} ]]; then
+        USE_AVX2=1
+    fi
+    if [[ -z ${BUILD_TYPE} ]]; then
+        BUILD_TYPE=Release
+    fi
+    check_if_source_exist $CLUCENE_SOURCE
+    cd $TP_SOURCE_DIR/$CLUCENE_SOURCE
+    mkdir -p $BUILD_DIR && cd $BUILD_DIR
+    rm -rf CMakeCache.txt CMakeFiles/
+
+if [[ "$CC" == *gcc ]]
+then
+    CPPFLAGS="-fno-omit-frame-pointer -g -Wno-narrowing" \
+    CXXFLAGS="-fno-omit-frame-pointer -g -Wno-narrowing" \
+    ${CMAKE_CMD} -G "${GENERATOR}" -DCMAKE_INSTALL_PREFIX=$TP_INSTALL_DIR -DBUILD_STATIC_LIBRARIES=ON -DUSE_AVX2=${USE_AVX2} -DCMAKE_BUILD_TYPE=${BUILD_TYPE} ..
+    ${BUILD_SYSTEM} -j $PARALLEL && ${BUILD_SYSTEM} install
+elif [[ "$CC" == *clang ]]
+then
+    CPPFLAGS="-fno-omit-frame-pointer -g -Wno-c++11-narrowing" \
+    CXXFLAGS="-fno-omit-frame-pointer -g -Wno-c++11-narrowing" \
+    ${CMAKE_CMD} -G "${GENERATOR}" -DCMAKE_INSTALL_PREFIX=$TP_INSTALL_DIR -DBUILD_STATIC_LIBRARIES=ON -DUSE_AVX2=${USE_AVX2} -DCMAKE_BUILD_TYPE=${BUILD_TYPE} ..
+    ${BUILD_SYSTEM} -j $PARALLEL && ${BUILD_SYSTEM} install
+fi
 }
 
 # libevent
@@ -1450,59 +1492,62 @@ build_xxhash() {
     cp libxxhash.a "${TP_INSTALL_DIR}/lib64"
 }
 
-build_libunixodbc
-build_openssl
-build_libevent
-build_zlib
-build_lz4
-build_bzip
-build_lzo2
-build_zstd
-build_boost # must before thrift
-build_protobuf
-build_gflags
-build_gtest
-build_glog
-build_rapidjson
-build_snappy
-build_gperftools
-build_curl
-build_re2
-build_hyperscan
-build_thrift
-build_leveldb
-build_brpc
-build_rocksdb
-build_cyrus_sasl
-build_librdkafka
-build_flatbuffers
-build_orc
-build_jemalloc
-build_arrow
-build_s2
-build_bitshuffle
-build_croaringbitmap
-build_fmt
-build_parallel_hashmap
-build_pdqsort
-build_libdivide
-build_cctz
-build_tsan_header
-build_mysql
-build_aws_sdk
-build_js_and_css
-build_lzma
-build_xml2
-build_idn
-build_krb5
-build_gsasl
-build_hdfs3
-build_benchmark
-build_simdjson
-build_nlohmann_json
-build_opentelemetry
-build_libbacktrace
-build_sse2neon
-build_xxhash
-
+if [ $BUILDCLUCENE -gt 0 ];then
+    build_clucene
+else
+    build_libunixodbc
+    build_openssl
+    build_libevent
+    build_zlib
+    build_lz4
+    build_bzip
+    build_lzo2
+    build_zstd
+    build_boost # must before thrift
+    build_protobuf
+    build_gflags
+    build_gtest
+    build_glog
+    build_rapidjson
+    build_snappy
+    build_gperftools
+    build_curl
+    build_re2
+    build_hyperscan
+    build_thrift
+    build_leveldb
+    build_brpc
+    build_rocksdb
+    build_cyrus_sasl
+    build_librdkafka
+    build_flatbuffers
+    build_orc
+    build_jemalloc
+    build_arrow
+    build_s2
+    build_bitshuffle
+    build_croaringbitmap
+    build_fmt
+    build_parallel_hashmap
+    build_pdqsort
+    build_libdivide
+    build_cctz
+    build_tsan_header
+    build_mysql
+    build_aws_sdk
+    build_js_and_css
+    build_lzma
+    build_xml2
+    build_idn
+    build_krb5
+    build_gsasl
+    build_hdfs3
+    build_benchmark
+    build_simdjson
+    build_nlohmann_json
+    build_opentelemetry
+    build_libbacktrace
+    build_sse2neon
+    build_xxhash
+fi
 echo "Finished to build all thirdparties"

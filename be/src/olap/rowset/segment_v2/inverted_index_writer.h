@@ -30,9 +30,7 @@ public:
     static Status create(const Field* field, std::unique_ptr<InvertedIndexColumnWriter>* res,
                          uint32_t uuid, const std::string& segment_file_name,
                          const std::string& dir, InvertedIndexParserType parser_type,
-                         io::FileSystem* fs) {
-        return Status::OK();
-    };
+                         io::FileSystem* fs);
     virtual Status init() = 0;
 
     InvertedIndexColumnWriter() = default;
