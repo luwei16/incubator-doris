@@ -114,9 +114,33 @@ public class ConnectProcessor {
         this.ctx = context;
     }
 
+    private String handleInitCloudCluster(String name) {
+        String[] res = name.split("@");
+        if (res.length != 1 && res.length != 2) {
+            ctx.getState().setError(ErrorCode.ERR_BAD_DB_ERROR,  "Invalid database name: " + name);
+            return null;
+        }
+
+        if (res.length == 1) {
+            return name;
+        }
+
+        String clusterName = res[1];
+        try {
+            Env.getCurrentSystemInfo().addCloudCluster(clusterName, "");
+        } catch (UserException e) {
+            ctx.getState().setError(e.getMysqlErrorCode(), e.getMessage());
+            return null;
+        }
+        ctx.setCloudCluster(clusterName);
+        ctx.getState().setOk();
+        return res[0];
+    }
+
     // COM_INIT_DB: change current database of this session.
     private void handleInitDb() {
         String fullDbName = new String(packetBuf.array(), 1, packetBuf.limit() - 1);
+        LOG.info("lw test fullDbname {}", fullDbName);
         if (Strings.isNullOrEmpty(ctx.getClusterName())) {
             ctx.getState().setError(ErrorCode.ERR_CLUSTER_NAME_NULL, "Please enter cluster");
             return;
@@ -133,6 +157,12 @@ public class ConnectProcessor {
             ctx.getState().setError(ErrorCode.ERR_BAD_DB_ERROR, "Only one dot can be in the name: " + fullDbName);
             return;
         }
+
+        dbName = handleInitCloudCluster(dbName);
+        if (dbName == null || dbName.isEmpty()) {
+            return;
+        }
+
         dbName = ClusterNamespace.getFullName(ctx.getClusterName(), dbName);
 
         // check catalog and db exists
