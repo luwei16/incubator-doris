@@ -2,6 +2,7 @@
 
 #include "cloud/utils.h"
 #include "common/config.h"
+#include "common/logging.h"
 #include "gen_cpp/selectdb_cloud.pb.h"
 #include "util/trace.h"
 #include "util/uuid_generator.h"
@@ -11,7 +12,9 @@ namespace doris {
 CloudCumulativeCompaction::CloudCumulativeCompaction(TabletSharedPtr tablet)
         : CumulativeCompaction(std::move(tablet)) {
     auto uuid = UUIDGenerator::instance()->next_uuid();
-    _uuid = std::string((char*)uuid.data, uuid.size());
+    std::stringstream ss;
+    ss << uuid;
+    _uuid = ss.str();
 }
 
 CloudCumulativeCompaction::~CloudCumulativeCompaction() = default;
@@ -31,7 +34,16 @@ Status CloudCumulativeCompaction::prepare_compact() {
     int64_t cumulative_compaction_cnt = _tablet->cumulative_compaction_cnt();
 
     // pick rowsets to compact
-    RETURN_NOT_OK(pick_rowsets_to_compact());
+    auto st = pick_rowsets_to_compact();
+    if (!st.ok()) {
+        if (_last_delete_version.first != -1) {
+            // we meet a delete version, should increase the cumulative point to let base compaction handle the delete version.
+            // plus 1 to skip the delete version.
+            // NOTICE: after that, the cumulative point may be larger than max version of this tablet, but it doesn't matter.
+            update_cumulative_point(base_compaction_cnt, cumulative_compaction_cnt);
+        }
+        return st;
+    }
     TRACE("rowsets picked");
     TRACE_COUNTER_INCREMENT("input_rowsets_count", _input_rowsets.size());
     VLOG_CRITICAL << "compaction range=[" << _input_rowsets.front()->start_version() << '-'
@@ -146,6 +158,90 @@ void CloudCumulativeCompaction::garbage_collection() {
     auto st = cloud::meta_mgr()->abort_tablet_job(job);
     if (!st.ok()) {
         LOG_WARNING("failed to gc compaction job").tag("tablet_id", _tablet->tablet_id()).error(st);
+    }
+}
+
+Status CloudCumulativeCompaction::pick_rowsets_to_compact() {
+    std::vector<RowsetSharedPtr> candidate_rowsets;
+    _tablet->pick_candidate_rowsets_to_cumulative_compaction(&candidate_rowsets);
+
+    if (candidate_rowsets.empty()) {
+        return Status::OLAPInternalError(OLAP_ERR_CUMULATIVE_NO_SUITABLE_VERSION);
+    }
+
+    // candidate_rowsets may not be continuous
+    // So we need to choose the longest continuous path from it.
+    std::vector<Version> missing_versions;
+    RETURN_NOT_OK(find_longest_consecutive_version(&candidate_rowsets, &missing_versions));
+    if (!missing_versions.empty()) {
+        DCHECK(missing_versions.size() == 2);
+        LOG(WARNING) << "There are missed versions among rowsets. "
+                     << "prev rowset verison=" << missing_versions[0]
+                     << ", next rowset version=" << missing_versions[1]
+                     << ", tablet=" << _tablet->full_name();
+    }
+
+    size_t compaction_score = 0;
+    _tablet->cumulative_compaction_policy()->pick_input_rowsets(
+            _tablet.get(), candidate_rowsets,
+            config::max_cumulative_compaction_num_singleton_deltas,
+            config::min_cumulative_compaction_num_singleton_deltas, &_input_rowsets,
+            &_last_delete_version, &compaction_score);
+
+    if (_input_rowsets.empty()) {
+        return Status::OLAPInternalError(OLAP_ERR_CUMULATIVE_NO_SUITABLE_VERSION);
+    } else if (_input_rowsets.size() == 1 &&
+               !_input_rowsets.front()->rowset_meta()->is_segments_overlapping()) {
+        VLOG_DEBUG << "there is only one rowset and not overlapping. tablet_id="
+                   << _tablet->tablet_id() << ", version=" << _input_rowsets.front()->version();
+        return Status::OLAPInternalError(OLAP_ERR_CUMULATIVE_NO_SUITABLE_VERSION);
+    }
+    return Status::OK();
+}
+
+void CloudCumulativeCompaction::update_cumulative_point(int64_t base_compaction_cnt,
+                                                        int64_t cumulative_compaction_cnt) {
+    selectdb::TabletJobInfoPB job;
+    job.set_id(_uuid);
+    auto idx = job.mutable_idx();
+    idx->set_tablet_id(_tablet->tablet_id());
+    idx->set_table_id(_tablet->table_id());
+    idx->set_index_id(_tablet->index_id());
+    idx->set_partition_id(_tablet->partition_id());
+    auto compaction_job = job.mutable_compaction();
+    compaction_job->set_initiator(BackendOptions::get_localhost() + ':' +
+                                  std::to_string(config::heartbeat_service_port));
+    compaction_job->set_type(selectdb::TabletCompactionJobPB::EMPTY_CUMULATIVE);
+    compaction_job->set_base_compaction_cnt(base_compaction_cnt);
+    compaction_job->set_cumulative_compaction_cnt(cumulative_compaction_cnt);
+    auto st = cloud::meta_mgr()->prepare_tablet_job(job);
+    if (!st.ok()) {
+        LOG_WARNING("failed to update cumulative point to meta srv")
+                .tag("tablet_id", _tablet->tablet_id())
+                .error(st);
+    }
+    int64_t input_cumulative_point = _tablet->cumulative_layer_point();
+    int64_t output_cumulative_point = _last_delete_version.first + 1;
+    compaction_job->set_input_cumulative_point(input_cumulative_point);
+    compaction_job->set_output_cumulative_point(output_cumulative_point);
+    st = cloud::meta_mgr()->commit_tablet_job(job);
+    if (!st.ok()) {
+        LOG_WARNING("failed to update cumulative point to meta srv")
+                .tag("tablet_id", _tablet->tablet_id())
+                .error(st);
+    }
+    LOG_INFO("do empty cumulative compaction to update cumulative point")
+            .tag("tablet_id", _tablet->tablet_id())
+            .tag("input_cumulative_point", input_cumulative_point)
+            .tag("output_cumulative_point", output_cumulative_point);
+    {
+        std::lock_guard wrlock(_tablet->get_header_lock());
+        if (_tablet->cumulative_compaction_cnt() > cumulative_compaction_cnt) {
+            // This could happen while calling `sync_tablet_rowsets` during `commit_tablet_job`
+            return;
+        }
+        _tablet->set_cumulative_compaction_cnt(cumulative_compaction_cnt + 1);
+        _tablet->set_cumulative_layer_point(output_cumulative_point);
     }
 }
 

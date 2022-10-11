@@ -1,5 +1,6 @@
 
 // clang-format off
+#include <gen_cpp/selectdb_cloud.pb.h>
 #include "meta_service.h"
 
 #include "meta-service/keys.h"
@@ -324,22 +325,33 @@ void process_compaction_job(MetaServiceCode& code, std::string& msg, std::string
     //==========================================================================
     TabletStatsPB stats;
     stats.ParseFromString(stats_val);
-    // clang-format off
-    stats.set_base_compaction_cnt(stats.base_compaction_cnt() + (compaction.type() == TabletCompactionJobPB::BASE));
-    stats.set_cumulative_compaction_cnt(stats.cumulative_compaction_cnt() + (compaction.type() == TabletCompactionJobPB::CUMULATIVE));
-    stats.set_cumulative_point(compaction.output_cumulative_point());
-    stats.set_num_rows(stats.num_rows() + (compaction.num_output_rows() - compaction.num_input_rows()));
-    stats.set_data_size(stats.data_size() + (compaction.size_output_rowsets() - compaction.size_input_rowsets()));
-    stats.set_num_rowsets(stats.num_rowsets() + (compaction.num_output_rowsets() - compaction.num_input_rowsets()));
-    stats.set_num_segments(stats.num_segments() + (compaction.num_output_segments() - compaction.num_input_segments()));
-    stats.set_last_compaction_time(now);
-    // clang-format on
+    if (recorded_job.compaction().type() == TabletCompactionJobPB::EMPTY_CUMULATIVE) {
+        stats.set_cumulative_compaction_cnt(stats.cumulative_compaction_cnt() + 1);
+        stats.set_cumulative_point(compaction.output_cumulative_point());
+    } else {
+        // clang-format off
+        stats.set_base_compaction_cnt(stats.base_compaction_cnt() + (compaction.type() == TabletCompactionJobPB::BASE));
+        stats.set_cumulative_compaction_cnt(stats.cumulative_compaction_cnt() + (compaction.type() == TabletCompactionJobPB::CUMULATIVE));
+        stats.set_cumulative_point(compaction.output_cumulative_point());
+        stats.set_num_rows(stats.num_rows() + (compaction.num_output_rows() - compaction.num_input_rows()));
+        stats.set_data_size(stats.data_size() + (compaction.size_output_rowsets() - compaction.size_input_rowsets()));
+        stats.set_num_rowsets(stats.num_rowsets() + (compaction.num_output_rowsets() - compaction.num_input_rowsets()));
+        stats.set_num_segments(stats.num_segments() + (compaction.num_output_segments() - compaction.num_input_segments()));
+        stats.set_last_compaction_time(now);
+        // clang-format on
+    }
 
     stats_val = stats.SerializeAsString();
     DCHECK(!stats_val.empty());
     txn->put(stats_key, stats_val);
-    LOG(INFO) << "update tablet stats tabelt_id=" << tablet_id << " key=" << hex(stats_key);
-    VLOG_DEBUG << "update tablet stats tabelt_id=" << tablet_id << " key=" << hex(stats_key) << " stats=" << proto_to_json(stats);
+    VLOG_DEBUG << "update tablet stats tabelt_id=" << tablet_id << " key=" << hex(stats_key)
+               << " stats=" << proto_to_json(stats);
+    if (recorded_job.compaction().type() == TabletCompactionJobPB::EMPTY_CUMULATIVE) {
+        txn->remove(job_key);
+        LOG(INFO) << "remove tablet job, tablet_id=" << tablet_id << " key=" << hex(job_key);
+        need_commit = true;
+        return;
+    }
 
     //==========================================================================
     //                    Move input rowsets to recycle

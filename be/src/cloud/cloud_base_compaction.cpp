@@ -11,7 +11,9 @@ namespace doris {
 CloudBaseCompaction::CloudBaseCompaction(TabletSharedPtr tablet)
         : BaseCompaction(std::move(tablet)) {
     auto uuid = UUIDGenerator::instance()->next_uuid();
-    _uuid = std::string((char*)uuid.data, uuid.size());
+    std::stringstream ss;
+    ss << uuid;
+    _uuid = ss.str();
 }
 
 CloudBaseCompaction::~CloudBaseCompaction() = default;

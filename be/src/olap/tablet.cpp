@@ -1332,18 +1332,27 @@ TabletInfo Tablet::get_tablet_info() const {
 }
 
 void Tablet::pick_candidate_rowsets_to_cumulative_compaction(
-        std::vector<RowsetSharedPtr>* candidate_rowsets,
-        std::shared_lock<std::shared_mutex>& /* meta lock*/) {
+        std::vector<RowsetSharedPtr>* candidate_rowsets) {
     if (_cumulative_point == K_INVALID_CUMULATIVE_POINT) {
         return;
     }
-    _cumulative_compaction_policy->pick_candidate_rowsets(_rs_version_map, _cumulative_point,
-                                                          candidate_rowsets);
+    {
+        std::shared_lock rlock(_meta_lock);
+        for (const auto& [version, rs] : _rs_version_map) {
+            if (version.first >= _cumulative_point
+#ifndef CLOUD_MODE
+                && rs->is_local()
+#endif
+            ) {
+                candidate_rowsets->push_back(rs);
+            }
+        }
+    }
+    std::sort(candidate_rowsets->begin(), candidate_rowsets->end(), Rowset::comparator);
 }
 
-void Tablet::pick_candidate_rowsets_to_base_compaction(
-        vector<RowsetSharedPtr>* candidate_rowsets,
-        std::shared_lock<std::shared_mutex>& /* meta lock*/) {
+void Tablet::pick_candidate_rowsets_to_base_compaction(vector<RowsetSharedPtr>* candidate_rowsets) {
+    std::shared_lock rlock(_meta_lock);
 #ifdef CLOUD_MODE
     for (auto& [v, rs] : _rs_version_map) {
         // MUST NOT compact rowset [0-1], otherwise alter tablet after base compaction will fail.

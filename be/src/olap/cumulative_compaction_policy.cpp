@@ -460,35 +460,16 @@ void NumBasedCumulativeCompactionPolicy::calculate_cumulative_point(
     }
 }
 
-void CumulativeCompactionPolicy::pick_candidate_rowsets(
-        const std::unordered_map<Version, RowsetSharedPtr, HashOfVersion>& rs_version_map,
-        int64_t cumulative_point, std::vector<RowsetSharedPtr>* candidate_rowsets) {
-#ifdef CLOUD_MODE
-    for (const auto& [version, rs] : rs_version_map) {
-        if (version.first >= cumulative_point) {
-            candidate_rowsets->push_back(rs);
-        }
-    }
-#else
-    for (const auto& [version, rs] : rs_version_map) {
-        if (version.first >= cumulative_point && rs->is_local()) {
-            candidate_rowsets->push_back(rs);
-        }
-    }
-#endif
-    std::sort(candidate_rowsets->begin(), candidate_rowsets->end(), Rowset::comparator);
-}
-
 std::shared_ptr<CumulativeCompactionPolicy>
 CumulativeCompactionPolicyFactory::create_cumulative_compaction_policy(std::string type) {
     CompactionPolicy policy_type;
     _parse_cumulative_compaction_policy(type, &policy_type);
 
     if (policy_type == NUM_BASED_POLICY) {
-        return std::unique_ptr<CumulativeCompactionPolicy>(
+        return std::shared_ptr<CumulativeCompactionPolicy>(
                 new NumBasedCumulativeCompactionPolicy());
     } else if (policy_type == SIZE_BASED_POLICY) {
-        return std::unique_ptr<CumulativeCompactionPolicy>(
+        return std::shared_ptr<CumulativeCompactionPolicy>(
                 new SizeBasedCumulativeCompactionPolicy());
     }
 
