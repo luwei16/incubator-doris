@@ -1,4 +1,4 @@
-package com.selectdb.cloud.objectsigner;
+package com.selectdb.cloud.storage;
 
 import com.baidubce.auth.DefaultBceCredentials;
 import com.baidubce.http.HttpMethodName;
@@ -9,13 +9,14 @@ import org.apache.logging.log4j.Logger;
 
 import java.net.URL;
 
-public class BosRemote extends RemoteBase {
+public class BosRemote extends DefaultRemote {
     private static final Logger LOG = LogManager.getLogger(BosRemote.class);
 
     public BosRemote(ObjectInfo obj) {
         super(obj);
     }
 
+    @Override
     public String getPresignedUrl(String fileName) {
         BosClientConfiguration config = new BosClientConfiguration();
         config.setCredentials(new DefaultBceCredentials(obj.getAk(), obj.getSk()));

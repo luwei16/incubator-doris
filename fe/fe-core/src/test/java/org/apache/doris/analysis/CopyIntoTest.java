@@ -41,6 +41,7 @@ public class CopyIntoTest extends TestWithFeService {
             + "\"provider\" = \"s3\", "
             + "\"region\" = \"ap-beijing\") ";
     private List<String> tableColumnNames = Lists.newArrayList("id", "name", "score");
+    private StagePB externalStagePB;
 
     @Override
     protected void runBeforeAll() throws Exception {
@@ -50,17 +51,20 @@ public class CopyIntoTest extends TestWithFeService {
                 + "DUPLICATE KEY(id, name)\n" + "DISTRIBUTED BY HASH(id) BUCKETS 1\n"
                 + "PROPERTIES ('replication_num' = '1');";
         createTable(varcharTable);
+
+        String query = "create stage if not exists ex_stage_1 " + OBJ_INFO
+                + "file_format = ('type' = 'csv', 'column_separator'=\",\") "
+                + "copy_option = ('on_error' = 'max_filter_ratio_0.4', 'size_limit' = '100')";
+        externalStagePB = ((CreateStageStmt) UtFrameUtils.parseAndAnalyzeStmt(query, connectContext)).toStageProto();
     }
 
     @Test
     public void testCopyFromInternalStage() throws Exception {
-        String query = "create stage if not exists in_stage_1 " + OBJ_INFO;
-        StagePB stagePB = ((CreateStageStmt) UtFrameUtils.parseAndAnalyzeStmt(query, connectContext)).toStageProto();
         String stageId = "test_in_stage_id";
         StagePB internalStagePB = StagePB.newBuilder().setType(StageType.INTERNAL).addMysqlUserName("test")
-                .setStageId(stageId).setObjInfo(stagePB.getObjInfo()).build();
+                .setStageId(stageId).setObjInfo(externalStagePB.getObjInfo()).build();
 
-        new Expectations(connectContext.getEnv(), connectContext.getEnv().getInternalCatalog()) {
+        new Expectations(connectContext.getEnv().getInternalCatalog()) {
             {
                 Env.getCurrentInternalCatalog().getStage(StageType.INTERNAL, anyString, null);
                 minTimes = 0;
@@ -84,16 +88,11 @@ public class CopyIntoTest extends TestWithFeService {
 
     @Test
     public void testCopyInto() throws Exception {
-        String query = "create stage if not exists ex_stage_1 " + OBJ_INFO
-                + "file_format = ('type' = 'csv', 'column_separator'=\",\") "
-                + "copy_option = ('on_error' = 'max_filter_ratio_0.4', 'size_limit' = '100')";
-        StagePB stagePB = ((CreateStageStmt) UtFrameUtils.parseAndAnalyzeStmt(query, connectContext)).toStageProto();
-
         new Expectations(connectContext.getEnv(), connectContext.getEnv().getInternalCatalog()) {
             {
                 Env.getCurrentInternalCatalog().getStage(StageType.EXTERNAL, anyString, "ex_stage_1");
                 minTimes = 0;
-                result = stagePB;
+                result = externalStagePB;
             }
         };
 
@@ -155,7 +154,6 @@ public class CopyIntoTest extends TestWithFeService {
                 Assert.assertEquals(filedColumns.get(i), slotRefs.get(1).getColumnName());
             }
         } catch (Exception e) {
-            e.printStackTrace();
             Assert.fail("must be success.");
         }
     }
@@ -193,7 +191,6 @@ public class CopyIntoTest extends TestWithFeService {
                 }
             }
         } catch (Exception e) {
-            e.printStackTrace();
             Assert.fail("must be success.");
         }
     }
@@ -228,5 +225,30 @@ public class CopyIntoTest extends TestWithFeService {
             }
             Assert.fail("must be AnalysisException.");
         } while (false);
+    }
+
+    @Test
+    public void testCopyWithPattern() throws Exception {
+        new Expectations(connectContext.getEnv(), connectContext.getEnv().getInternalCatalog()) {
+            {
+                Env.getCurrentInternalCatalog().getStage(StageType.EXTERNAL, anyString, "ex_stage_1");
+                minTimes = 0;
+                result = externalStagePB;
+            }
+        };
+
+        String sql1 = "copy into t2 from @ex_stage_1('/*.csv')";
+        String sql2 = "copy into t2 from (select $3, $1, $2 from @ex_stage_1('/*.csv'))";
+        for (String sql : Lists.newArrayList(sql1, sql2)) {
+            try {
+                CopyStmt copyStmt = (CopyStmt) UtFrameUtils.parseAndAnalyzeStmt(sql, connectContext);
+                System.out.println("original sql: " + sql);
+                System.out.println("parsed sql: " + copyStmt.toSql());
+                Assert.assertEquals("/*.csv", copyStmt.getPattern());
+            } catch (Exception e) {
+                e.printStackTrace();
+                Assert.fail("must be success.");
+            }
+        }
     }
 }

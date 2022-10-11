@@ -17,37 +17,26 @@
 
 package org.apache.doris.analysis;
 
-import com.google.common.base.Joiner;
 import lombok.Getter;
 
-import java.util.List;
-
-public class FilesOrPattern {
+public class StageAndPattern {
 
     @Getter
-    private List<String> files;
+    private String stageName;
     @Getter
     private String pattern;
 
-    public FilesOrPattern(List<String> files, String pattern) {
-        this.files = files;
+    public StageAndPattern(String stageName, String pattern) {
+        this.stageName = stageName;
         this.pattern = pattern;
     }
 
     public String toSql() {
         StringBuilder sb = new StringBuilder();
-        if (files != null) {
-            sb.append("FILES = (");
-            Joiner.on(", ").appendTo(sb, files).append(")");
-        }
+        sb.append("@").append(stageName);
         if (pattern != null) {
-            sb.append("PATTERN = '").append(pattern).append("'");
+            sb.append("('").append(pattern).append("')");
         }
         return sb.toString();
-    }
-
-    @Override
-    public String toString() {
-        return "FilesOrPattern{" + "files=" + files + ", pattern='" + pattern + '\'' + '}';
     }
 }

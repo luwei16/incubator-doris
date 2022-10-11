@@ -4324,7 +4324,8 @@ void MetaServiceImpl::begin_copy(google::protobuf::RpcController* controller,
             // TODO check if job is timeout
             for (const auto& file : copy_job.object_files()) {
                 for (auto i = 0; i < object_files.size(); ++i) {
-                    if (!remove_index.count(i) && object_files.at(i).key() == file.key() &&
+                    if (!remove_index.count(i) &&
+                        object_files.at(i).relative_path() == file.relative_path() &&
                         object_files.at(i).etag() == file.etag()) {
                         remove_index.insert(i);
                     }
@@ -4356,7 +4357,7 @@ void MetaServiceImpl::begin_copy(google::protobuf::RpcController* controller,
         copy_job.add_object_files()->CopyFrom(file);
         // copy file key
         CopyFileKeyInfo file_key_info {instance_id, request->stage_id(), request->table_id(),
-                                       file.key(), file.etag()};
+                                       file.relative_path(), file.etag()};
         std::string file_key;
         copy_file_key(file_key_info, &file_key);
         // copy file value
@@ -4465,7 +4466,7 @@ void MetaServiceImpl::finish_copy(google::protobuf::RpcController* controller,
     for (const auto& file : copy_job.object_files()) {
         // copy file key
         CopyFileKeyInfo file_key_info {instance_id, request->stage_id(), request->table_id(),
-                                       file.key(), file.etag()};
+                                       file.relative_path(), file.etag()};
         std::string file_key;
         copy_file_key(file_key_info, &file_key);
         copy_files.emplace_back(std::move(file_key));

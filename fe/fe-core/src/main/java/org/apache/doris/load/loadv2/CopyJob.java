@@ -18,7 +18,6 @@
 package org.apache.doris.load.loadv2;
 
 import org.apache.doris.analysis.BrokerDesc;
-import org.apache.doris.analysis.FilesOrPattern;
 import org.apache.doris.analysis.UserIdentity;
 import org.apache.doris.catalog.Env;
 import org.apache.doris.common.DdlException;
@@ -29,6 +28,7 @@ import org.apache.doris.load.FailMsg;
 import org.apache.doris.qe.OriginStatement;
 
 import com.selectdb.cloud.proto.SelectdbCloud.StagePB;
+import com.selectdb.cloud.storage.RemoteBase.ObjectInfo;
 import lombok.Getter;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -46,16 +46,19 @@ public class CopyJob extends BrokerLoadJob {
     @Getter
     private long sizeLimit;
     @Getter
-    private FilesOrPattern filesOrPattern;
+    private String pattern;
+    @Getter
+    private ObjectInfo objectInfo;
 
     public CopyJob(long dbId, String label, BrokerDesc brokerDesc, OriginStatement originStmt, UserIdentity userInfo,
-            String stageId, StagePB.StageType stageType, long sizeLimit, FilesOrPattern filesOrPattern)
-            throws MetaNotFoundException {
+            String stageId, StagePB.StageType stageType, long sizeLimit, String pattern,
+            ObjectInfo objectInfo) throws MetaNotFoundException {
         super(dbId, label, brokerDesc, originStmt, userInfo);
         this.stageId = stageId;
         this.stageType = stageType;
         this.sizeLimit =  sizeLimit;
-        this.filesOrPattern = filesOrPattern;
+        this.pattern = pattern;
+        this.objectInfo = objectInfo;
     }
 
     @Override

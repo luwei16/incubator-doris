@@ -816,7 +816,7 @@ TEST(MetaServiceTest, CopyJobTest) {
     begin_copy_request.set_timeout_time(300);
     for (int i = 0; i < 20; ++i) {
         ObjectFilePB object_file_pb;
-        object_file_pb.set_key("obj_" + std::to_string(i));
+        object_file_pb.set_relative_path("obj_" + std::to_string(i));
         object_file_pb.set_etag("obj_" + std::to_string(i) + "_etag");
         begin_copy_request.add_object_files()->CopyFrom(object_file_pb);
     }
@@ -859,7 +859,7 @@ TEST(MetaServiceTest, CopyJobTest) {
         begin_copy_request.clear_object_files();
         for (int i = 15; i < 30; ++i) {
             ObjectFilePB object_file_pb;
-            object_file_pb.set_key("obj_" + std::to_string(i));
+            object_file_pb.set_relative_path("obj_" + std::to_string(i));
             object_file_pb.set_etag("obj_" + std::to_string(i) + "_etag");
             begin_copy_request.add_object_files()->CopyFrom(object_file_pb);
         }

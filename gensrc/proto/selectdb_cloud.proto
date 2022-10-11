@@ -341,7 +341,7 @@ message TabletStatsPB {
 }
 
 message ObjectFilePB {
-    optional string key = 1;
+    optional string relative_path = 1;
     optional string etag = 2;
 }
 

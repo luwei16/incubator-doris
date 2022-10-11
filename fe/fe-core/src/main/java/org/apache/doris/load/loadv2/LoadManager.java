@@ -155,7 +155,7 @@ public class LoadManager implements Writable {
             }
             loadJob = new CopyJob(dbId, stmt.getLabel().getLabelName(), stmt.getBrokerDesc(), stmt.getOrigStmt(),
                     stmt.getUserInfo(), stmt.getStageId(), stmt.getStageType(), stmt.getSizeLimit(),
-                    stmt.getFilesOrPattern());
+                    stmt.getPattern(), stmt.getObjectInfo());
             loadJob.setJobProperties(stmt.getProperties());
             loadJob.checkAndSetDataSourceInfo(database, stmt.getDataDescriptions());
             createLoadJob(loadJob);

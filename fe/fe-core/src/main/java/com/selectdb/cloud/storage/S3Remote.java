@@ -1,4 +1,4 @@
-package com.selectdb.cloud.objectsigner;
+package com.selectdb.cloud.storage;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -14,13 +14,14 @@ import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignReques
 import java.net.URL;
 import java.time.Duration;
 
-public class S3Remote extends RemoteBase {
+public class S3Remote extends DefaultRemote {
     private static final Logger LOG = LogManager.getLogger(S3Remote.class);
 
     public S3Remote(ObjectInfo obj) {
         super(obj);
     }
 
+    @Override
     public String getPresignedUrl(String fileName) {
         try {
             PutObjectRequest objectRequest = PutObjectRequest.builder()

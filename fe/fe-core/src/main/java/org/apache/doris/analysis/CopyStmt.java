@@ -34,6 +34,7 @@ import com.google.common.collect.Lists;
 import com.selectdb.cloud.proto.SelectdbCloud.ObjectStoreInfoPB;
 import com.selectdb.cloud.proto.SelectdbCloud.StagePB;
 import com.selectdb.cloud.proto.SelectdbCloud.StagePB.StageType;
+import com.selectdb.cloud.storage.RemoteBase.ObjectInfo;
 import lombok.Getter;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -69,8 +70,6 @@ public class CopyStmt extends DdlStmt {
     @Getter
     private String stage;
     @Getter
-    private FilesOrPattern filesOrPattern;
-    @Getter
     private FileFormat fileFormat;
     @Getter
     private CopyOption copyOption;
@@ -87,17 +86,18 @@ public class CopyStmt extends DdlStmt {
     @Getter
     private StageType stageType;
     @Getter
+    private ObjectInfo objectInfo;
+    @Getter
     private long sizeLimit;
 
     /**
      * Use for cup.
      */
-    public CopyStmt(TableName tableName, CopyFromParam copyFromParam, FilesOrPattern filesOrPattern,
-            FileFormat fileFormat, CopyOption copyOption, boolean async) {
+    public CopyStmt(TableName tableName, CopyFromParam copyFromParam, FileFormat fileFormat, CopyOption copyOption,
+            boolean async) {
         this.tableName = tableName;
         this.copyFromParam = copyFromParam;
-        this.stage = copyFromParam.getStage();
-        this.filesOrPattern = filesOrPattern;
+        this.stage = copyFromParam.getStageAndPattern().getStageName();
         this.fileFormat = fileFormat;
         this.copyOption = copyOption;
         this.async = async;
@@ -169,13 +169,13 @@ public class CopyStmt extends DdlStmt {
     // after analyzeStagePB, fileFormat and copyOption is not null
     private void analyzeStagePB(StagePB stagePB) throws AnalysisException {
         ObjectStoreInfoPB objInfo = stagePB.getObjInfo();
-        brokerProperties.put(S3Storage.S3_ENDPOINT, "http://" + objInfo.getEndpoint());
-        // brokerProperties.put(S3Storage.S3_ENDPOINT, objInfo.getEndpoint());
+        brokerProperties.put(S3Storage.S3_ENDPOINT, objInfo.getEndpoint());
         brokerProperties.put(S3Storage.S3_REGION, objInfo.getRegion());
         brokerProperties.put(S3Storage.S3_AK, objInfo.getAk());
         brokerProperties.put(S3Storage.S3_SK, objInfo.getSk());
         brokerProperties.put(S3_BUCKET, objInfo.getBucket());
         brokerProperties.put(S3_PREFIX, objInfo.getPrefix());
+        objectInfo = new ObjectInfo(objInfo);
 
         stageType = stagePB.getType();
         stageId = stagePB.getStageId();
@@ -225,9 +225,6 @@ public class CopyStmt extends DdlStmt {
         StringBuilder sb = new StringBuilder();
         sb.append("COPY INTO ").append(tableName.toSql()).append(" \n");
         sb.append("from ").append(copyFromParam.toSql()).append("\n");
-        if (filesOrPattern != null) {
-            sb.append(filesOrPattern.toSql()).append(" \n");
-        }
         if (fileFormat != null) {
             sb.append(fileFormat.toSql()).append(" \n");
         }
@@ -242,5 +239,9 @@ public class CopyStmt extends DdlStmt {
 
     public ShowResultSetMetaData getMetaData() {
         return COPY_INTO_META_DATA;
+    }
+
+    public String getPattern() {
+        return this.copyFromParam.getStageAndPattern().getPattern();
     }
 }

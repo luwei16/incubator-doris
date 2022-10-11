@@ -604,8 +604,8 @@ nonterminal CopyOption copy_option;
 // copy into
 nonterminal CopyFromParam copy_from_param;
 nonterminal String stage_name;
+nonterminal StageAndPattern stage_and_pattern;
 nonterminal List<Expr> copy_select_expr_list;
-nonterminal FilesOrPattern files_or_pattern_option;
 nonterminal Boolean async_option;
 
 precedence nonassoc COMMA;
@@ -1618,19 +1618,6 @@ external_stage_param ::=
         RESULT = new StageParam(StagePB.StageType.EXTERNAL, properties);
   :};
 
-files_or_pattern_option ::=
-   {:
-        RESULT = null;
-   :}
-   |KW_FILES EQUAL LPAREN string_list:files RPAREN
-   {:
-        RESULT = new FilesOrPattern(files, null);
-   :}
-   |KW_PATTERN EQUAL STRING_LITERAL:pattern
-   {:
-        RESULT = new FilesOrPattern(null, pattern);
-   :};
-
 file_format ::=
    {:
         RESULT = null;
@@ -1776,20 +1763,19 @@ opt_user_role ::=
 // Copy Statement
 copy_stmt ::=
     KW_COPY KW_INTO table_name:name KW_FROM copy_from_param:copyFromParam
-    files_or_pattern_option:filesOrPatternOption
     file_format:fileFormat
     copy_option:copyOption
     async_option:asyncOption
     {:
-        RESULT = new CopyStmt(name, copyFromParam, filesOrPatternOption, fileFormat, copyOption, asyncOption);
+        RESULT = new CopyStmt(name, copyFromParam, fileFormat, copyOption, asyncOption);
     :};
 
 copy_from_param ::=
-    stage_name:stage
+    stage_and_pattern:stage
     {:
         RESULT = new CopyFromParam(stage);
     :}
-    | LPAREN KW_SELECT copy_select_expr_list:exprList KW_FROM stage_name:stage where_clause:whereExpr RPAREN
+    | LPAREN KW_SELECT copy_select_expr_list:exprList KW_FROM stage_and_pattern:stage where_clause:whereExpr RPAREN
     {:
         RESULT = new CopyFromParam(stage, exprList, whereExpr);
     :}
@@ -1803,6 +1789,17 @@ stage_name ::=
     | AT BITNOT
     {:
         RESULT = "~";
+    :}
+    ;
+
+stage_and_pattern ::=
+    stage_name:name
+    {:
+        RESULT = new StageAndPattern(name, null);
+    :}
+    | stage_name:name LPAREN STRING_LITERAL:pattern RPAREN
+    {:
+        RESULT = new StageAndPattern(name, pattern);
     :}
     ;
 

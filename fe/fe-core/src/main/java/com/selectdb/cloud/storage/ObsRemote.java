@@ -1,4 +1,4 @@
-package com.selectdb.cloud.objectsigner;
+package com.selectdb.cloud.storage;
 
 import com.obs.services.ObsClient;
 import com.obs.services.model.HttpMethodEnum;
@@ -9,13 +9,14 @@ import org.apache.logging.log4j.Logger;
 
 import java.util.HashMap;
 
-public class ObsRemote extends RemoteBase {
+public class ObsRemote extends DefaultRemote {
     private static final Logger LOG = LogManager.getLogger(ObsRemote.class);
 
     public ObsRemote(ObjectInfo obj) {
         super(obj);
     }
 
+    @Override
     public String getPresignedUrl(String fileName) {
         String endPoint = obj.getEndpoint();
         String ak = obj.getAk();

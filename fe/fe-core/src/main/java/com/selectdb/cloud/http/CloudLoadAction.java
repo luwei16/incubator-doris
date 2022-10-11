@@ -1,9 +1,9 @@
 package com.selectdb.cloud.http;
 
-import com.selectdb.cloud.objectsigner.RemoteBase;
-import com.selectdb.cloud.objectsigner.RemoteBase.ObjectInfo;
 import com.selectdb.cloud.proto.SelectdbCloud.StagePB;
 import com.selectdb.cloud.proto.SelectdbCloud.StagePB.StageType;
+import com.selectdb.cloud.storage.RemoteBase;
+import com.selectdb.cloud.storage.RemoteBase.ObjectInfo;
 
 import com.google.common.base.Strings;
 import org.apache.doris.analysis.CopyStmt;
@@ -61,10 +61,7 @@ public class CloudLoadAction extends RestBaseController {
             StagePB internalStage = Env.getCurrentInternalCatalog().getStage(StageType.INTERNAL,
                     mysqlUserName, fileName);
             // 2. call RemoteBase to get pre-signedUrl
-            RemoteBase rb = RemoteBase.newInstance(new ObjectInfo(internalStage.getObjInfo().getProvider(),
-                    internalStage.getObjInfo().getAk(), internalStage.getObjInfo().getSk(),
-                    internalStage.getObjInfo().getBucket(), internalStage.getObjInfo().getEndpoint(),
-                    internalStage.getObjInfo().getRegion(), internalStage.getObjInfo().getPrefix()));
+            RemoteBase rb = RemoteBase.newInstance(new ObjectInfo(internalStage.getObjInfo()));
             String signedUrl = rb.getPresignedUrl(fileName);
             LOG.info("get internal stage remote info: {}, and signedUrl: {}", rb.toString(), signedUrl);
             return redirectToObj(signedUrl);

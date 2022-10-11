@@ -1,4 +1,4 @@
-package com.selectdb.cloud.objectsigner;
+package com.selectdb.cloud.storage;
 
 import com.qcloud.cos.COSClient;
 import com.qcloud.cos.ClientConfig;
@@ -14,13 +14,14 @@ import java.net.URL;
 import java.util.Date;
 import java.util.HashMap;
 
-public class CosRemote extends RemoteBase {
+public class CosRemote extends DefaultRemote {
     private static final Logger LOG = LogManager.getLogger(CosRemote.class);
 
     public CosRemote(ObjectInfo obj) {
         super(obj);
     }
 
+    @Override
     public String getPresignedUrl(String fileName) {
         COSCredentials cred = new BasicCOSCredentials(obj.getAk(), obj.getSk());
         ClientConfig clientConfig = new ClientConfig();

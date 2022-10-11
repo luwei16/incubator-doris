@@ -39,7 +39,7 @@ public class CopyFromParam {
     private static final String DOLLAR = "$";
 
     @Getter
-    private String stage;
+    private StageAndPattern stageAndPattern;
     @Getter
     private List<Expr> exprList;
     @Getter
@@ -51,13 +51,13 @@ public class CopyFromParam {
     @Getter
     private List<Expr> columnMappingList = new ArrayList<>();
 
-    public CopyFromParam(String stage) {
-        this.stage = stage;
+    public CopyFromParam(StageAndPattern stageAndPattern) {
+        this.stageAndPattern = stageAndPattern;
         this.isSelect = false;
     }
 
-    public CopyFromParam(String stage, List<Expr> exprList, Expr whereExpr) {
-        this.stage = stage;
+    public CopyFromParam(StageAndPattern stageAndPattern, List<Expr> exprList, Expr whereExpr) {
+        this.stageAndPattern = stageAndPattern;
         this.exprList = exprList;
         this.fileFilterExpr = whereExpr;
         this.isSelect = true;
@@ -139,13 +139,13 @@ public class CopyFromParam {
                 Joiner.on(", ").appendTo(sb,
                         Lists.transform(columnMappingList, (Function<Expr, Object>) expr -> expr.toSql()));
             }
-            sb.append(" FROM @").append(stage);
+            sb.append(" FROM ").append(stageAndPattern.toSql());
             if (fileFilterExpr != null) {
                 sb.append(" WHERE ").append(fileFilterExpr.toSql());
             }
             sb.append(")");
         } else {
-            sb.append("@").append(stage);
+            sb.append(stageAndPattern.toSql());
         }
         return sb.toString();
     }
