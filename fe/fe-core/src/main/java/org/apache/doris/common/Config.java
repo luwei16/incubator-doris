@@ -1836,4 +1836,7 @@ public class Config extends ConfigBase {
 
     @ConfField(mutable = false)
     public static int statistic_task_scheduler_execution_interval_ms = 60 * 60 * 1000;
+
+    @ConfField(mutable = false)
+    public static int topn_two_phase_limit_threshold = 4096;
 }

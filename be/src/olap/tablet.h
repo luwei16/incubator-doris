@@ -418,6 +418,7 @@ public:
     bool is_in_memory() const { return _tablet_meta->is_in_memory(); }
     bool is_persistent() const { return _tablet_meta->is_persistent(); }
 
+    RowsetSharedPtr get_rowset(const RowsetId& rowset_id);
 private:
     Status _init_once_action();
     void _print_missed_versions(const std::vector<Version>& missed_versions) const;

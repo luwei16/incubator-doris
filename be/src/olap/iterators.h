@@ -26,6 +26,7 @@
 #include "olap/olap_common.h"
 #include "olap/tablet_schema.h"
 #include "vec/core/block.h"
+#include "runtime/runtime_state.h"
 
 namespace doris {
 
@@ -88,6 +89,8 @@ public:
 
     TabletSchemaSPtr tablet_schema = nullptr;
     bool record_rowids = false;
+    // flag for enable topn opt
+    bool use_topn_opt = false;
     // used for special optimization for query : ORDER BY key DESC LIMIT n
     bool read_orderby_key_reverse = false;
     // columns for orderby keys
@@ -96,6 +99,11 @@ public:
     bool kept_in_memory = false;
     bool is_persistent = false;
     bool use_disposable_cache = false;
+    // runtime state
+    RuntimeState* runtime_state = nullptr;
+
+    RowsetId rowset_id;
+    int32_t tablet_id = 0; 
 };
 
 // Used to read data in RowBlockV2 one by one
