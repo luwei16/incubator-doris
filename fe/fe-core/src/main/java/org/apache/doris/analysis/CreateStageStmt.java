@@ -118,6 +118,10 @@ public class CreateStageStmt extends DdlStmt {
         }
         sb.append(stageName).append(" ");
         sb.append(stageParam.toSql());
+        if ((fileFormat != null && fileFormat.getProperties().size() > 0) || (copyOption != null
+                && copyOption.getProperties().size() > 0)) {
+            sb.append("WITH ");
+        }
         if (fileFormat != null) {
             sb.append(fileFormat.toSql());
         }

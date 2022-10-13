@@ -53,9 +53,67 @@ public class CopyIntoTest extends TestWithFeService {
         createTable(varcharTable);
 
         String query = "create stage if not exists ex_stage_1 " + OBJ_INFO
-                + "file_format = ('type' = 'csv', 'column_separator'=\",\") "
+                + "with file_format = ('type' = 'csv', 'column_separator'=\",\") "
                 + "copy_option = ('on_error' = 'max_filter_ratio_0.4', 'size_limit' = '100')";
         externalStagePB = ((CreateStageStmt) UtFrameUtils.parseAndAnalyzeStmt(query, connectContext)).toStageProto();
+    }
+
+    @Test
+    public void testCopyInto() throws Exception {
+        String query = "create stage if not exists ex_stage_2 " + OBJ_INFO;
+        StagePB stagePB = ((CreateStageStmt) UtFrameUtils.parseAndAnalyzeStmt(query, connectContext)).toStageProto();
+
+        new Expectations(connectContext.getEnv(), connectContext.getEnv().getInternalCatalog()) {
+            {
+                Env.getCurrentInternalCatalog().getStage(StageType.EXTERNAL, anyString, "ex_stage_2");
+                minTimes = 0;
+                result = stagePB;
+            }
+        };
+
+        String copySqlPrefix = "copy into t2 from @ex_stage_2 ";
+        checkCopyInto(copySqlPrefix, null, 0, true);
+
+        String copySql = copySqlPrefix
+                + "with file_format = ('type' = 'json', 'fuzzy_parse'='true', 'json_root'=\"{\") "
+                + "copy_option= ('on_error' = 'continue', 'size_limit' = '200')"
+                + "async = false";
+        checkCopyInto(copySql, "json", 200, false);
+
+        copySql = copySqlPrefix + "with file_format = ('type' = 'csv', 'fuzzy_parse'='true', 'json_root'=\"{\") "
+                + "copy_option= ('on_error' = 'continue', 'size_limit' = '300')";
+        checkCopyInto(copySql, "csv", 300, true);
+
+        copySql = copySqlPrefix + "with file_format = ('type' = 'csv', 'fuzzy_parse'='true', 'json_root'=\"{\") ";
+        checkCopyInto(copySql, "csv", 0, true);
+
+        copySql = copySqlPrefix + "with copy_option= ('on_error' = 'continue', 'size_limit' = '400')";
+        checkCopyInto(copySql, null, 400, true);
+
+        copySql = copySqlPrefix + "with async = false";
+        checkCopyInto(copySql, null, 0, false);
+    }
+
+    private void checkCopyInto(String sql, String format, long sizeLimit, boolean async) {
+        try {
+            CopyStmt copyStmt = (CopyStmt) UtFrameUtils.parseAndAnalyzeStmt(sql, connectContext);
+            System.out.println("original sql: " + sql);
+            System.out.println("parsed sql: " + copyStmt.toSql());
+            if (format == null) {
+                Assert.assertEquals(0, copyStmt.getFileFormat().getProperties().size());
+            } else {
+                Assert.assertEquals(format, copyStmt.getFileFormat().getFormat());
+            }
+            if (sizeLimit == 0) {
+                Assert.assertEquals(0, copyStmt.getCopyOption().getProperties().size());
+            } else {
+                Assert.assertEquals(sizeLimit, copyStmt.getCopyOption().getSizeLimit());
+            }
+            Assert.assertEquals(async, copyStmt.isAsync());
+        } catch (Exception e) {
+            e.printStackTrace();
+            Assert.fail("must be success.");
+        }
     }
 
     @Test
@@ -87,7 +145,7 @@ public class CopyIntoTest extends TestWithFeService {
     }
 
     @Test
-    public void testCopyInto() throws Exception {
+    public void testCopyIntoWithSelect() throws Exception {
         new Expectations(connectContext.getEnv(), connectContext.getEnv().getInternalCatalog()) {
             {
                 Env.getCurrentInternalCatalog().getStage(StageType.EXTERNAL, anyString, "ex_stage_1");

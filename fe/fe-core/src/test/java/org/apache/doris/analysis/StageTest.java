@@ -71,7 +71,7 @@ public class StageTest extends TestWithFeService {
         // create stage with file format
         try {
             sql = "create stage if not exists ex_stage_1 " + OBJ_INFO
-                    + "file_format = ('type' = 'csv', 'column_separator'=\",\", 'line_delimiter'=\"\t\")";
+                    + "with file_format = ('type' = 'csv', 'column_separator'=\",\", 'line_delimiter'=\"\t\")";
             UtFrameUtils.parseAndAnalyzeStmt(sql, ctx);
         } catch (Exception e) {
             Assert.fail("must be success.");
@@ -79,13 +79,13 @@ public class StageTest extends TestWithFeService {
 
         // create stage with unknown file format property
         sql = "create stage if not exists ex_stage_1 " + OBJ_INFO
-                + "file_format = ('type' = 'csv', 'test_key'='test_value')";
+                + "with file_format = ('type' = 'csv', 'test_key'='test_value')";
         parseAndAnalyzeWithException(sql, "'test_key' is invalid in FileFormat");
 
         // create stage with copy option: on_error
         try {
             sql = "create stage if not exists ex_stage_1 " + OBJ_INFO
-                    + "copy_option= ('on_error' = 'continue')";
+                    + "with copy_option= ('on_error' = 'continue')";
             UtFrameUtils.parseAndAnalyzeStmt(sql, ctx);
         } catch (Exception e) {
             Assert.fail("must be success.");
@@ -94,7 +94,7 @@ public class StageTest extends TestWithFeService {
         // create stage with copy option: on_error and size_limit
         try {
             sql = "create stage if not exists ex_stage_1 " + OBJ_INFO
-                    + "copy_option= ('on_error' = 'max_filter_ratio_0.4', 'size_limit' = '100')";
+                    + "with copy_option= ('on_error' = 'max_filter_ratio_0.4', 'size_limit' = '100')";
             StatementBase statementBase = UtFrameUtils.parseAndAnalyzeStmt(sql, ctx);
             Assert.assertTrue(statementBase instanceof CreateStageStmt);
             Assert.assertEquals(0.4, ((CreateStageStmt) statementBase).getCopyOption().getMaxFilterRatio(), 0.02);
@@ -104,13 +104,13 @@ public class StageTest extends TestWithFeService {
 
         // create stage with copy option: invalid max_filter_ratio
         sql = "create stage if not exists ex_stage_1 " + OBJ_INFO
-                + "copy_option= ('on_error' = 'max_filter_ratio_a') ";
+                + "with copy_option= ('on_error' = 'max_filter_ratio_a') ";
         parseAndAnalyzeWithException(sql, "Property on_error with invalid value max_filter_ratio_a");
 
         // create an external stage with file format and copy option
         try {
             sql = "create stage ex_stage_1 " + OBJ_INFO
-                    + "file_format = (\"type\" = \"csv\", \"column_separator\" = \",\") "
+                    + "with file_format = (\"type\" = \"csv\", \"column_separator\" = \",\") "
                     + "copy_option = (\"on_error\" = \"max_filter_ratio_0.4\", \"size_limit\" = \"100\")";
             StatementBase statementBase = UtFrameUtils.parseAndAnalyzeStmt(sql, ctx);
             Assert.assertEquals(sql, statementBase.toSql().toLowerCase().trim());
@@ -137,12 +137,16 @@ public class StageTest extends TestWithFeService {
                 + "'provider' = 'abc', "
                 + "'ak'='tmp_ak', 'sk'='tmp_sk');";
         parseAndAnalyzeWithException(sql, "Property provider with invalid value abc");
+
+        // create stage with async
+        sql = "create stage ex_stage_1 " + OBJ_INFO + "with async = false;";
+        parseAndAnalyzeWithException(sql, "");
     }
 
     @Test
     public void testStagePB() throws Exception {
         String query = "create stage if not exists ex_stage_1 " + OBJ_INFO
-                + "file_format = ('type' = 'csv', 'column_separator'=\",\") "
+                + "with file_format = ('type' = 'csv', 'column_separator'=\",\") "
                 + "copy_option = ('on_error' = 'max_filter_ratio_0.4', 'size_limit' = '100')";
         StagePB stagePB = ((CreateStageStmt) UtFrameUtils.parseAndAnalyzeStmt(query, ctx)).toStageProto();
         String query2 = "create stage if not exists ex_stage_2 " + OBJ_INFO;
@@ -187,7 +191,7 @@ public class StageTest extends TestWithFeService {
         }
         try {
             String copyQuery = "copy into db.test_table from @ ex_stage_1 "
-                    + "file_format = ('type' = 'json', 'fuzzy_parse'='true', 'json_root'=\"{\") "
+                    + "with file_format = ('type' = 'json', 'fuzzy_parse'='true', 'json_root'=\"{\") "
                     + "copy_option= ('on_error' = 'continue', 'size_limit' = '200')";
             CopyStmt copyStmt = (CopyStmt) UtFrameUtils.parseAndAnalyzeStmt(copyQuery, ctx);
             // check file format

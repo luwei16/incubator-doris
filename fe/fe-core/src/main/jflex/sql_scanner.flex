@@ -464,8 +464,6 @@ import org.apache.doris.qe.SqlModeHelper;
         keywordMap.put("stage", new Integer(SqlParserSymbols.KW_STAGE));
         keywordMap.put("file_format", new Integer(SqlParserSymbols.KW_FILE_FORMAT));
         keywordMap.put("copy_option", new Integer(SqlParserSymbols.KW_COPY_OPTION));
-        keywordMap.put("files", new Integer(SqlParserSymbols.KW_FILES));
-        keywordMap.put("pattern", new Integer(SqlParserSymbols.KW_PATTERN));
         keywordMap.put("async", new Integer(SqlParserSymbols.KW_ASYNC));
    }
 

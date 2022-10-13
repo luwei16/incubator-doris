@@ -45,6 +45,7 @@ import org.apache.doris.catalog.StructField;
 import org.apache.doris.catalog.StructType;
 import org.apache.doris.catalog.View;
 import org.apache.doris.common.AnalysisException;
+import org.apache.doris.common.Pair;
 import org.apache.doris.common.Version;
 import org.apache.doris.mysql.MysqlPassword;
 import org.apache.doris.load.loadv2.LoadTask;
@@ -365,7 +366,6 @@ terminal String
     KW_FEATURE,
     KW_FIELDS,
     KW_FILE,
-    KW_FILES,
     KW_FILE_FORMAT,
     KW_FILTER,
     KW_FIRST,
@@ -479,7 +479,6 @@ terminal String
     KW_PASSWORD_LOCK_TIME,
     KW_PASSWORD_REUSE,
     KW_PATH,
-    KW_PATTERN,
     KW_PAUSE,
     KW_PIPE,
     KW_PLUGIN,
@@ -879,6 +878,10 @@ nonterminal MVRefreshInfo opt_mv_refersh_info;
 
 // stage
 nonterminal StageParam external_stage_param;
+// copy into params: 1. file_format; 2. copy_option;
+nonterminal Pair<FileFormat, CopyOption> create_stage_params;
+// copy into params: 1. file_format; 2. copy_option; 3. async
+nonterminal Pair<Pair<FileFormat, CopyOption>, Boolean> copy_into_params;
 // file_format
 nonterminal FileFormat file_format;
 // copy option
@@ -1881,9 +1884,9 @@ create_stmt ::=
     :}
     /* stage */
     | KW_CREATE KW_STAGE opt_if_not_exists:ifNotExists ident:stageName
-    external_stage_param:stageParam file_format:fileFormat copy_option:copyOption
+    external_stage_param:stageParam create_stage_params:createStageParams
     {:
-        RESULT = new CreateStageStmt(ifNotExists, stageName, stageParam, fileFormat, copyOption);
+        RESULT = new CreateStageStmt(ifNotExists, stageName, stageParam, createStageParams.key(), createStageParams.value());
     :}
     ;
 
@@ -1911,6 +1914,24 @@ external_stage_param ::=
   {:
         RESULT = new StageParam(StagePB.StageType.EXTERNAL, properties);
   :};
+
+create_stage_params ::=
+    {:
+        RESULT = Pair.of(null, null);
+    :}
+    | KW_WITH file_format:fileFormat copy_option:copyOption
+    {:
+        RESULT = Pair.of(fileFormat, copyOption);
+    :};
+
+copy_into_params ::=
+    {:
+        RESULT = Pair.of(Pair.of(null, null), true);
+    :}
+    | KW_WITH file_format:fileFormat copy_option:copyOption async_option:asyncOption
+    {:
+        RESULT = Pair.of(Pair.of(fileFormat, copyOption), asyncOption);
+    :};
 
 file_format ::=
    {:
@@ -2057,11 +2078,9 @@ opt_user_role ::=
 // Copy Statement
 copy_stmt ::=
     KW_COPY KW_INTO table_name:name KW_FROM copy_from_param:copyFromParam
-    file_format:fileFormat
-    copy_option:copyOption
-    async_option:asyncOption
+    copy_into_params:copyIntoParams
     {:
-        RESULT = new CopyStmt(name, copyFromParam, fileFormat, copyOption, asyncOption);
+        RESULT = new CopyStmt(name, copyFromParam, copyIntoParams.key().key(), copyIntoParams.key().value(), copyIntoParams.value());
     :};
 
 copy_from_param ::=

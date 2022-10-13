@@ -225,6 +225,10 @@ public class CopyStmt extends DdlStmt {
         StringBuilder sb = new StringBuilder();
         sb.append("COPY INTO ").append(tableName.toSql()).append(" \n");
         sb.append("from ").append(copyFromParam.toSql()).append("\n");
+        if ((fileFormat != null && fileFormat.getProperties().size() > 0) || (copyOption != null
+                && copyOption.getProperties().size() > 0) || async) {
+            sb.append("WITH ");
+        }
         if (fileFormat != null) {
             sb.append(fileFormat.toSql()).append(" \n");
         }
