@@ -231,7 +231,7 @@ private:
     roaring::Roaring _row_bitmap;
     // "column_name+operator+value-> <in_compound_query, rowid_result>
     std::unordered_map<std::string, std::pair<bool, roaring::Roaring> > _rowid_result_for_index;
-    std::vector<roaring::Roaring> _split_row_bitmaps;
+    std::vector<std::pair<uint32_t, uint32_t>> _split_row_ranges;
     std::vector<std::pair<uint32_t, uint32_t>> _ranges;
     size_t _range_idx = 0;
     size_t _range_rowid = 0;

@@ -1468,9 +1468,7 @@ Status SegmentIterator::_read_columns_by_index(uint32_t nrows_read_limit, uint32
             nrows_read += rows_to_read;
         }
 
-        auto next_range = RowRanges::create_single(range_from, range_to);
-        auto next_bm_in_row_bitmap = RowRanges::ranges_to_roaring(next_range);
-        _split_row_bitmaps.emplace_back(next_bm_in_row_bitmap);
+        _split_row_ranges.emplace_back(std::pair{range_from, range_to});
         // if _opts.read_orderby_key_reverse is true, only read one range for fast reverse purpose
     } while (nrows_read < nrows_read_limit && !_opts.read_orderby_key_reverse);
     return Status::OK();
@@ -1610,12 +1608,12 @@ Status SegmentIterator::next_batch(vectorized::Block* block) {
 
     _current_batch_rows_read = 0;
     uint32_t nrows_read_limit = _opts.block_row_max;
-    _split_row_bitmaps.clear();
     if (UNLIKELY(_estimate_row_size)) {
         // read 100 rows to estimate average row size
         nrows_read_limit = 100;
     }
-    _split_row_bitmaps.clear();
+    _split_row_ranges.clear();
+    _split_row_ranges.reserve(nrows_read_limit / 2);
     _read_columns_by_index(nrows_read_limit, _current_batch_rows_read,
                            _lazy_materialization_read || _opts.record_rowids);
 
@@ -1743,8 +1741,8 @@ void SegmentIterator::_build_index_return_column(vectorized::Block* block,
     vectorized::ColumnUInt8::Container& vec_match_pred = index_result_column->get_data();
     vec_match_pred.resize(block->rows());
     auto idx = 0;
-    for (auto origin_row_bitmap : _split_row_bitmaps) {
-        for (auto rowid : origin_row_bitmap) {
+    for (auto origin_row_range : _split_row_ranges) {
+        for (size_t rowid = origin_row_range.first; rowid < origin_row_range.second; ++rowid) {
             if (index_result.contains(rowid)) {
                 vec_match_pred[idx] = true;
             } else {
