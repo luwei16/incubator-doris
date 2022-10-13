@@ -19,8 +19,10 @@
 
 #include <roaring/roaring.hh>
 
+#include "olap/schema.h"
 #include "olap/column_block.h"
 #include "olap/rowset/segment_v2/bitmap_index_reader.h"
+#include "olap/rowset/segment_v2/inverted_index_reader.h"
 #include "olap/rowset/segment_v2/bloom_filter.h"
 #include "olap/selection_vector.h"
 #include "vec/columns/column.h"
@@ -29,8 +31,12 @@ using namespace doris::segment_v2;
 
 namespace doris {
 
-class Schema;
+// class Schema;
 class RowBlockV2;
+
+struct PredicateParams {
+    std::string value;
+};
 
 enum class PredicateType {
     UNKNOWN = 0,
@@ -45,6 +51,7 @@ enum class PredicateType {
     IS_NULL = 9,
     IS_NOT_NULL = 10,
     BF = 11, // BloomFilter
+    MATCH = 12, // fulltext match
 };
 
 struct PredicateTypeTraits {
@@ -69,7 +76,9 @@ struct PredicateTypeTraits {
 class ColumnPredicate {
 public:
     explicit ColumnPredicate(uint32_t column_id, bool opposite = false)
-            : _column_id(column_id), _opposite(opposite) {}
+            : _column_id(column_id), _opposite(opposite) {
+        _predicate_params = std::make_shared<PredicateParams>();
+    }
 
     virtual ~ColumnPredicate() = default;
 
@@ -85,6 +94,13 @@ public:
     //evaluate predicate on Bitmap
     virtual Status evaluate(BitmapIndexIterator* iterator, uint32_t num_rows,
                             roaring::Roaring* roaring) const = 0;
+
+    //evaluate predicate on inverted
+    virtual Status evaluate(const Schema& schema, InvertedIndexIterator* iterators,
+                            roaring::Roaring* bitmap) const {
+        return Status::NotSupported(
+                "Not Implemented evaluate with inverted index, please check the predicate");
+    }
 
     // evaluate predicate on IColumn
     // a short circuit eval way
@@ -117,9 +133,43 @@ public:
     }
     uint32_t column_id() const { return _column_id; }
 
+    std::shared_ptr<PredicateParams> predicate_params() { return _predicate_params; }
+
+    const std::string pred_type_string(PredicateType type) {
+        switch (type) {
+        case PredicateType::EQ:
+            return "eq";
+        case PredicateType::NE:
+            return "ne";
+        case PredicateType::LT:
+            return "lt";
+        case PredicateType::LE:
+            return "le";
+        case PredicateType::GT:
+            return "gt";
+        case PredicateType::GE:
+            return "ge";
+        case PredicateType::IN_LIST:
+            return "in_list";
+        case PredicateType::NOT_IN_LIST:
+            return "not_in_list";
+        case PredicateType::IS_NULL:
+            return "is_null";
+        case PredicateType::IS_NOT_NULL:
+            return "is_not_null";
+        case PredicateType::BF:
+            return "bf";
+        case PredicateType::MATCH:
+            return "match";
+        default:
+            return "unknown";
+        }
+    }
+
 protected:
     uint32_t _column_id;
     bool _opposite;
+    std::shared_ptr<PredicateParams> _predicate_params;
 };
 
 } //namespace doris

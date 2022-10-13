@@ -892,6 +892,12 @@ CONF_mBool(enable_new_load_scan_node, "false");
 CONF_mBool(enable_new_file_scanner, "false");
 
 CONF_Int32(multi_get_per_batch, "10");
+// Hide webserver page for safety.
+// Hide the be config page for webserver.
+CONF_Bool(hide_webserver_config_page, "false");
+
+// Temp config. True to use optimization for bitmap_index apply compound predicate.  Will remove after fully test.
+CONF_Bool(enable_index_apply_compound_predicates, "true");
 
 #ifdef BE_TEST
 // test s3
@@ -949,6 +955,8 @@ CONF_mInt32(index_searcher_cache_stale_sweep_time_sec, "1800");
 CONF_Int32(inverted_index_searcher_cache_capacity, "1000000");
 // Cache for inverted index cache size
 CONF_String(inverted_index_searcher_cache_limit, "10%");
+// inverted index
+CONF_Int32(query_bkd_inverted_index_limit_percent, "10"); // 10%
 
 } // namespace config
 

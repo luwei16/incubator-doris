@@ -67,6 +67,8 @@ private:
     std::vector<std::unique_ptr<TPaloScanRange>> _scan_ranges;
     OlapScanKeys _scan_keys;
     std::vector<TCondition> _olap_filters;
+    // compound filters in every conjunct, like: "(a or b) and (c or d)", (a or b) in conjuct[0], (c or d) in conjuct[1]
+    std::vector<std::vector<TCondition>> _compound_filters;
 
     std::unique_ptr<MemTracker> _scanner_mem_tracker;
 

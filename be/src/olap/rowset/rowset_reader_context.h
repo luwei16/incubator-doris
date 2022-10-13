@@ -21,6 +21,7 @@
 #include "olap/column_predicate.h"
 #include "olap/olap_common.h"
 #include "runtime/runtime_state.h"
+#include "vec/exprs/vexpr.h"
 
 namespace doris {
 
@@ -47,6 +48,7 @@ struct RowsetReaderContext {
     // column name -> column predicate
     // adding column_name for predicate to make use of column selectivity
     const std::vector<ColumnPredicate*>* predicates = nullptr;
+    const std::vector<ColumnPredicate*>* all_compound_predicates = nullptr;
     // value column predicate in UNIQUE table
     const std::vector<ColumnPredicate*>* value_predicates = nullptr;
     const std::vector<RowCursor>* lower_bound_keys = nullptr;
@@ -56,6 +58,7 @@ struct RowsetReaderContext {
     const DeleteHandler* delete_handler = nullptr;
     OlapReaderStatistics* stats = nullptr;
     RuntimeState* runtime_state = nullptr;
+    vectorized::VExpr* remaining_vconjunct_root = nullptr;
     bool use_page_cache = false;
     int sequence_id_idx = -1;
     int batch_size = 1024;
@@ -71,6 +74,8 @@ struct RowsetReaderContext {
     std::shared_ptr<Schema> reuse_input_schema;
     bool kept_in_memory = false;
     bool is_persistent = false;
+
+    int conjunct_ctxs_size = 0;
 };
 
 } // namespace doris

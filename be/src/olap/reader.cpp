@@ -20,6 +20,7 @@
 #include <parallel_hashmap/phmap.h>
 
 #include "common/status.h"
+#include "exprs/match_predicate.h"
 #include "olap/bloom_filter_predicate.h"
 #include "olap/collect_iterator.h"
 #include "olap/comparison_predicate.h"
@@ -88,6 +89,9 @@ TabletReader::~TabletReader() {
         delete pred;
     }
     for (auto pred : _value_col_predicates) {
+        delete pred;
+    }
+    for (auto pred : _all_compound_col_predicates) {
         delete pred;
     }
 }
@@ -206,6 +210,7 @@ Status TabletReader::_capture_rs_readers(const ReaderParams& read_params,
     _reader_context.read_orderby_key_columns =
             _orderby_key_columns.size() > 0 ? &_orderby_key_columns : nullptr;
     _reader_context.predicates = &_col_predicates;
+    _reader_context.all_compound_predicates = &_all_compound_col_predicates;
     _reader_context.value_predicates = &_value_col_predicates;
     _reader_context.lower_bound_keys = &_keys_param.start_keys;
     _reader_context.is_lower_keys_included = &_is_lower_keys_included;
@@ -224,6 +229,8 @@ Status TabletReader::_capture_rs_readers(const ReaderParams& read_params,
     _reader_context.record_rowids = read_params.record_rowids;
     _reader_context.kept_in_memory = _tablet->is_in_memory();
     _reader_context.is_persistent = _tablet->is_persistent();
+    _reader_context.conjunct_ctxs_size = read_params.conjunct_ctxs_size;
+    _reader_context.remaining_vconjunct_root = read_params.remaining_vconjunct_root;
 
     *valid_rs_readers = *rs_readers;
 
@@ -241,6 +248,7 @@ Status TabletReader::_init_params(const ReaderParams& read_params) {
     _tablet_schema = read_params.tablet_schema;
 
     _init_conditions_param(read_params);
+    _init_compound_conditions_param(read_params);
 
     Status res = _init_delete_condition(read_params);
     if (!res.ok()) {
@@ -469,6 +477,22 @@ void TabletReader::_init_conditions_param(const ReaderParams& read_params) {
         auto & runtime_predicate =
             read_params.runtime_state->get_query_fragments_ctx()->get_runtime_predicate();
         runtime_predicate.set_tablet_schema(_tablet_schema);
+    }
+}
+
+void TabletReader::_init_compound_conditions_param(const ReaderParams& read_params) {
+    for (const auto& conditions_per_conjunct : read_params.compound_conditions) {
+        for (const auto& condition : conditions_per_conjunct) {
+            TCondition tmp_cond = condition;
+            auto condition_col_uid = _tablet_schema->column(tmp_cond.column_name).unique_id();
+            tmp_cond.__set_column_unique_id(condition_col_uid);
+            ColumnPredicate* predicate = parse_to_predicate(_tablet_schema, tmp_cond, _predicate_mem_pool.get());
+            if (predicate != nullptr) {
+                auto predicate_params = predicate->predicate_params();
+                predicate_params->value = condition.condition_values[0];
+                _all_compound_col_predicates.push_back(predicate);
+            }
+        }
     }
 }
 

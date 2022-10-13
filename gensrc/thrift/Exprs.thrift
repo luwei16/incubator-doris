@@ -52,6 +52,9 @@ enum TExprNodeType {
 
   // only used in runtime filter
   BLOOM_PRED,
+
+  // for fulltext search
+  MATCH_PRED,
 }
 
 //enum TAggregationOp {

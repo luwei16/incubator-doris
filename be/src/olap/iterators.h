@@ -25,8 +25,9 @@
 #include "olap/column_predicate.h"
 #include "olap/olap_common.h"
 #include "olap/tablet_schema.h"
-#include "vec/core/block.h"
 #include "runtime/runtime_state.h"
+#include "vec/core/block.h"
+#include "vec/exprs/vexpr.h"
 
 namespace doris {
 
@@ -77,6 +78,7 @@ public:
     // reader's column predicate, nullptr if not existed
     // used to fiter rows in row block
     std::vector<ColumnPredicate*> column_predicates;
+    std::vector<ColumnPredicate*> all_compound_column_predicates;
     std::unordered_map<int32_t, std::shared_ptr<AndBlockColumnPredicate>> col_id_to_predicates;
     std::unordered_map<int32_t, std::vector<const ColumnPredicate*>> col_id_to_del_predicates;
     TPushAggOp::type push_down_agg_type_opt = TPushAggOp::NONE;
@@ -104,6 +106,10 @@ public:
 
     RowsetId rowset_id;
     int32_t tablet_id = 0; 
+
+    int32_t conjunct_ctxs_size = 0;
+    
+    vectorized::VExpr* remaining_vconjunct_root = nullptr;
 };
 
 // Used to read data in RowBlockV2 one by one

@@ -60,6 +60,7 @@ Status BetaRowsetReader::init(RowsetReaderContext* read_context) {
     read_options.push_down_agg_type_opt = _context->push_down_agg_type_opt;
     read_options.rowset_id = _rowset->rowset_id();
     read_options.tablet_id = _rowset->rowset_meta()->tablet_id();
+    read_options.remaining_vconjunct_root = _context->remaining_vconjunct_root;
     if (read_context->lower_bound_keys != nullptr) {
         for (int i = 0; i < read_context->lower_bound_keys->size(); ++i) {
             read_options.key_ranges.emplace_back(&read_context->lower_bound_keys->at(i),
@@ -122,6 +123,14 @@ Status BetaRowsetReader::init(RowsetReaderContext* read_context) {
                     single_column_block_predicate);
         }
     }
+    
+    if (read_context->all_compound_predicates != nullptr) {
+        read_options.all_compound_column_predicates.insert(
+                read_options.all_compound_column_predicates.end(),
+                read_context->all_compound_predicates->begin(),
+                read_context->all_compound_predicates->end());
+    }
+
     // Take a delete-bitmap for each segment, the bitmap contains all deletes
     // until the max read version, which is read_context->version.second
     if (read_context->delete_bitmap != nullptr) {
@@ -163,6 +172,7 @@ Status BetaRowsetReader::init(RowsetReaderContext* read_context) {
     read_options.kept_in_memory = read_context->kept_in_memory;
     read_options.is_persistent = read_context->is_persistent;
     read_options.runtime_state = read_context->runtime_state;
+    read_options.conjunct_ctxs_size = read_context->conjunct_ctxs_size;
 
     // load segments
     RETURN_NOT_OK(SegmentLoader::instance()->load_segments(

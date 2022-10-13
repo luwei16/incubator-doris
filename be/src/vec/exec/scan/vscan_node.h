@@ -199,6 +199,7 @@ protected:
             _slot_id_to_value_range;
     // column -> ColumnValueRange
     std::unordered_map<std::string, ColumnValueRangeType> _colname_to_value_range;
+    std::vector<std::vector<ColumnValueRangeType>> _compound_value_ranges;
     // We use _colname_to_value_range to store a column and its conresponding value ranges.
     // But if a col is with value range, eg: 1 < col < 10, which is "!is_fixed_range",
     // in this case we can not merge "1 < col < 10" with "col not in (2)".
@@ -286,10 +287,35 @@ private:
                                              SlotDescriptor* slot, ColumnValueRange<T>& range,
                                              PushDownType* pdt);
 
+    Status _normalize_compound_predicate(vectorized::VExpr* expr, 
+                    VExprContext* expr_ctx, 
+                    PushDownType* pdt,
+                    std::vector<ColumnValueRangeType>* column_value_rangs,
+                    const std::function<bool(const std::vector<VExpr*>&, const VSlotRef**, VExpr**)>& in_predicate_checker,
+                    const std::function<bool(const std::vector<VExpr*>&, const VSlotRef**, VExpr**)>& eq_predicate_checker);
+
+    template <PrimitiveType T>
+    Status _normalize_binary_in_compound_predicate(
+                vectorized::VExpr* expr, VExprContext* expr_ctx,
+                SlotDescriptor* slot, ColumnValueRange<T>& range,
+                PushDownType* pdt, const TCompoundType::type& compound_type);
+
+    template <PrimitiveType T>
+    Status _normalize_match_in_compound_predicate(vectorized::VExpr* expr, VExprContext* expr_ctx,
+                SlotDescriptor* slot, ColumnValueRange<T>& range,
+                PushDownType* pdt, const TCompoundType::type& compound_type);
+
+    TCompoundType::type _get_compound_type_by_fn_name(const std::string& fn_name);
+
     template <PrimitiveType T>
     Status _normalize_is_null_predicate(vectorized::VExpr* expr, VExprContext* expr_ctx,
                                         SlotDescriptor* slot, ColumnValueRange<T>& range,
                                         PushDownType* pdt);
+
+    template <PrimitiveType T>
+    Status _normalize_match_predicate(vectorized::VExpr* expr, VExprContext* expr_ctx,
+                                      SlotDescriptor* slot, ColumnValueRange<T>& range,
+                                      PushDownType* pdt);
 
     template <bool IsFixed, PrimitiveType PrimitiveType, typename ChangeFixedValueRangeFunc>
     static Status _change_value_range(ColumnValueRange<PrimitiveType>& range, void* value,

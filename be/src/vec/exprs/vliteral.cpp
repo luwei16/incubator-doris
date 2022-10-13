@@ -192,83 +192,88 @@ Status VLiteral::execute(VExprContext* context, vectorized::Block* block, int* r
     return Status::OK();
 }
 
-std::string VLiteral::debug_string() const {
-    std::stringstream out;
-    out << "VLiteral (name = " << _expr_name;
-    out << ", type = " << _data_type->get_name();
-    out << ", value = ";
-    if (_column_ptr.get()->size() > 0) {
-        StringRef ref = _column_ptr.get()->get_data_at(0);
+std::string VLiteral::value() const {
+    std::stringstream out_value;
+    if (_column_ptr->size() > 0) {
+        StringRef ref = _column_ptr->get_data_at(0);
         if (ref.data == nullptr) {
-            out << "null";
+            out_value << "null";
         } else {
             switch (_type.type) {
             case TYPE_BOOLEAN:
             case TYPE_TINYINT:
             case TYPE_SMALLINT:
             case TYPE_INT: {
-                out << *(reinterpret_cast<const int32_t*>(ref.data));
+                out_value << *(reinterpret_cast<const int32_t*>(ref.data));
                 break;
             }
             case TYPE_BIGINT: {
-                out << *(reinterpret_cast<const int64_t*>(ref.data));
+                out_value << *(reinterpret_cast<const int64_t*>(ref.data));
                 break;
             }
             case TYPE_LARGEINT: {
-                out << fmt::format("{}", *(reinterpret_cast<const __int128_t*>(ref.data)));
+                out_value << fmt::format("{}", *(reinterpret_cast<const __int128_t*>(ref.data)));
                 break;
             }
             case TYPE_FLOAT: {
-                out << *(reinterpret_cast<const float*>(ref.data));
+                out_value << *(reinterpret_cast<const float*>(ref.data));
                 break;
             }
             case TYPE_TIME:
             case TYPE_TIMEV2:
             case TYPE_DOUBLE: {
-                out << *(reinterpret_cast<const double_t*>(ref.data));
+                out_value << *(reinterpret_cast<const double_t*>(ref.data));
                 break;
             }
             case TYPE_DATE:
             case TYPE_DATETIME: {
                 auto value = *(reinterpret_cast<const int64_t*>(ref.data));
                 auto date_value = (VecDateTimeValue*)&value;
-                out << date_value;
+                out_value << date_value;
                 break;
             }
             case TYPE_STRING:
             case TYPE_CHAR:
             case TYPE_VARCHAR:
             case TYPE_JSONB: {
-                out << ref;
+                out_value << ref;
                 break;
             }
             case TYPE_DECIMALV2: {
                 DecimalV2Value value(*(reinterpret_cast<const int128_t*>(ref.data)));
-                out << value;
+                out_value << value;
                 break;
             }
             case TYPE_DECIMAL32: {
                 write_text<int32_t>(*(reinterpret_cast<const int32_t*>(ref.data)), _type.scale,
-                                    out);
+                                    out_value);
                 break;
             }
             case TYPE_DECIMAL64: {
                 write_text<int64_t>(*(reinterpret_cast<const int64_t*>(ref.data)), _type.scale,
-                                    out);
+                                    out_value);
                 break;
             }
             case TYPE_DECIMAL128: {
                 write_text<int128_t>(*(reinterpret_cast<const int128_t*>(ref.data)), _type.scale,
-                                     out);
+                                     out_value);
                 break;
             }
             default: {
-                out << "UNKNOWN TYPE: " << int(_type.type);
+                out_value << "UNKNOWN TYPE: " << int(_type.type);
                 break;
             }
             }
         }
     }
+    return out_value.str();
+}
+
+std::string VLiteral::debug_string() const {
+    std::stringstream out;
+    out << "VLiteral (name = " << _expr_name;
+    out << ", type = " << _data_type->get_name();
+    out << ", value = " << value();
     out << ")";
     return out.str();
 }

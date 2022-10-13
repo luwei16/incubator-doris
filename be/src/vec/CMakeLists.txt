@@ -214,6 +214,7 @@ set(VEC_FILES
   functions/function_convert_tz.cpp
   functions/least_greast.cpp
   functions/function_fake.cpp
+  functions/match.cpp
   olap/vgeneric_iterators.cpp
   olap/vcollect_iterator.cpp
   olap/block_reader.cpp
