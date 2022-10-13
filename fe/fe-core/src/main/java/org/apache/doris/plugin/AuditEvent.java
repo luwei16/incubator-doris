@@ -86,6 +86,8 @@ public class AuditEvent {
     public long peakMemoryBytes = -1;
     @AuditField(value = "SqlDigest")
     public String sqlDigest = "";
+    @AuditField(value = "cloudClusterName")
+    public String cloudClusterName = "";
 
     @AuditField(value = "TraceId")
     public String traceId = "";
@@ -123,6 +125,11 @@ public class AuditEvent {
 
         public AuditEventBuilder setDb(String db) {
             auditEvent.db = db;
+            return this;
+        }
+
+        public AuditEventBuilder setCloudCluster(String cloudClusterName) {
+            auditEvent.cloudClusterName = cloudClusterName;
             return this;
         }
 

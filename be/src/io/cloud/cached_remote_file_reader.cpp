@@ -55,9 +55,10 @@ std::pair<size_t, size_t> CachedRemoteFileReader::_align_size(size_t offset,
                                                               size_t read_size) const {
     size_t left = offset;
     size_t right = offset + read_size - 1;
-    size_t align_left = (left / config::max_file_segment_size) * config::max_file_segment_size;
-    size_t align_right =
-            (right / config::max_file_segment_size + 1) * config::max_file_segment_size;
+    size_t align_left = (left / config::file_cache_max_file_segment_size) *
+                        config::file_cache_max_file_segment_size;
+    size_t align_right = (right / config::file_cache_max_file_segment_size + 1) *
+                         config::file_cache_max_file_segment_size;
     align_right = align_right < size() ? align_right : size();
     size_t align_size = align_right - align_left;
     return std::make_pair(align_left, align_size);
@@ -98,7 +99,7 @@ Status CachedRemoteFileReader::read_at_impl(size_t offset, Slice result, size_t*
     ReadStatistics stats;
     stats.bytes_read = bytes_req;
     auto [align_left, align_size] = _align_size(offset, bytes_req);
-    DCHECK((align_left % config::max_file_segment_size) == 0);
+    DCHECK((align_left % config::file_cache_max_file_segment_size) == 0);
     // if state == nullptr, the method is called for read footer/index
     bool is_persistent = state ? state->is_persistent : true;
     TUniqueId query_id = state && state->query_id ? *state->query_id : TUniqueId();
