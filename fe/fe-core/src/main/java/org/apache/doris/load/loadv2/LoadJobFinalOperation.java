@@ -41,6 +41,9 @@ public class LoadJobFinalOperation extends TxnCommitAttachment implements Writab
     private JobState jobState;
     // optional
     private FailMsg failMsg;
+    // only used for copy into
+    private String copyId = "";
+    private String loadFilePaths = "";
 
     public LoadJobFinalOperation() {
         super(TransactionState.LoadJobSourceType.BATCH_LOAD_JOB);
@@ -56,6 +59,14 @@ public class LoadJobFinalOperation extends TxnCommitAttachment implements Writab
         this.finishTimestamp = finishTimestamp;
         this.jobState = jobState;
         this.failMsg = failMsg;
+    }
+
+    public LoadJobFinalOperation(long id, EtlStatus loadingStatus, int progress, long loadStartTimestamp,
+                                 long finishTimestamp, JobState jobState, FailMsg failMsg, String copyId,
+                                 String loadFilePaths) {
+        this(id, loadingStatus, progress, loadStartTimestamp, finishTimestamp, jobState, failMsg);
+        this.copyId = copyId;
+        this.loadFilePaths = loadFilePaths;
     }
 
     public long getId() {
@@ -86,6 +97,14 @@ public class LoadJobFinalOperation extends TxnCommitAttachment implements Writab
         return failMsg;
     }
 
+    public String getCopyId() {
+        return copyId;
+    }
+
+    public String getLoadFilePaths() {
+        return loadFilePaths;
+    }
+
     @Override
     public void write(DataOutput out) throws IOException {
         super.write(out);
@@ -101,6 +120,8 @@ public class LoadJobFinalOperation extends TxnCommitAttachment implements Writab
             out.writeBoolean(true);
             failMsg.write(out);
         }
+        Text.writeString(out, copyId);
+        Text.writeString(out, loadFilePaths);
     }
 
     public void readFields(DataInput in) throws IOException {
@@ -115,6 +136,8 @@ public class LoadJobFinalOperation extends TxnCommitAttachment implements Writab
             failMsg = new FailMsg();
             failMsg.readFields(in);
         }
+        copyId = Text.readString(in);
+        loadFilePaths = Text.readString(in);
     }
 
     @Override
@@ -127,6 +150,8 @@ public class LoadJobFinalOperation extends TxnCommitAttachment implements Writab
                 + ", finishTimestamp=" + finishTimestamp
                 + ", jobState=" + jobState
                 + ", failMsg=" + failMsg
+                + ", copyId=" + copyId
+                + ", loadFilePaths=" + loadFilePaths
                 + '}';
     }
 }

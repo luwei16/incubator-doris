@@ -37,6 +37,8 @@ public class LoadProcDir implements ProcDirInterface {
             .add("EtlStartTime").add("EtlFinishTime").add("LoadStartTime").add("LoadFinishTime")
             .add("URL").add("JobDetails").add("TransactionId").add("ErrorTablets")
             .build();
+    public static final ImmutableList<String> COPY_TITLE_NAMES = new ImmutableList.Builder<String>()
+            .add("CopyId").addAll(TITLE_NAMES).add("Files").build();
 
     // label and state column index of result
     public static final int LABEL_INDEX = 1;
@@ -67,8 +69,7 @@ public class LoadProcDir implements ProcDirInterface {
         LinkedList<List<Comparable>> loadJobInfos = load.getLoadJobInfosByDb(db.getId(), db.getFullName(),
                 null, false, null);
         loadJobInfos.addAll(Env.getCurrentEnv().getLoadManager().getLoadJobInfosByDb(db.getId(), null,
-                false,
-                null));
+                false, null, null, null, false));
         int counter = 0;
         Iterator<List<Comparable>> iterator = loadJobInfos.descendingIterator();
         while (iterator.hasNext()) {

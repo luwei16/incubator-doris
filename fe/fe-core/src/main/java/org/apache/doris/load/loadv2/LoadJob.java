@@ -388,6 +388,7 @@ public abstract class LoadJob extends AbstractTxnStateChangeCallback implements 
             case HADOOP:
                 timeout = Config.hadoop_load_default_timeout_second;
                 break;
+            case COPY:
             case BROKER:
                 timeout = Config.broker_load_default_timeout_second;
                 break;
@@ -729,73 +730,77 @@ public abstract class LoadJob extends AbstractTxnStateChangeCallback implements 
     public List<Comparable> getShowInfo() throws DdlException {
         readLock();
         try {
-            // check auth
-            checkAuth("SHOW LOAD");
-            List<Comparable> jobInfo = Lists.newArrayList();
-            // jobId
-            jobInfo.add(id);
-            // label
-            jobInfo.add(label);
-            // state
-            jobInfo.add(state.name());
-
-            // progress
-            switch (state) {
-                case PENDING:
-                    jobInfo.add("ETL:0%; LOAD:0%");
-                    break;
-                case CANCELLED:
-                    jobInfo.add("ETL:N/A; LOAD:N/A");
-                    break;
-                case ETL:
-                    jobInfo.add("ETL:" + progress + "%; LOAD:0%");
-                    break;
-                default:
-                    jobInfo.add("ETL:100%; LOAD:" + progress + "%");
-                    break;
-            }
-
-            // type
-            jobInfo.add(jobType);
-
-            // etl info
-            if (loadingStatus.getCounters().size() == 0) {
-                jobInfo.add(FeConstants.null_string);
-            } else {
-                jobInfo.add(Joiner.on("; ").withKeyValueSeparator("=").join(loadingStatus.getCounters()));
-            }
-
-            // task info
-            jobInfo.add("cluster:" + getResourceName() + "; timeout(s):" + getTimeout()
-                    + "; max_filter_ratio:" + getMaxFilterRatio());
-            // error msg
-            if (failMsg == null) {
-                jobInfo.add(FeConstants.null_string);
-            } else {
-                jobInfo.add("type:" + failMsg.getCancelType() + "; msg:" + failMsg.getMsg());
-            }
-
-            // create time
-            jobInfo.add(TimeUtils.longToTimeString(createTimestamp));
-            // etl start time
-            jobInfo.add(TimeUtils.longToTimeString(getEtlStartTimestamp()));
-            // etl end time
-            jobInfo.add(TimeUtils.longToTimeString(loadStartTimestamp));
-            // load start time
-            jobInfo.add(TimeUtils.longToTimeString(loadStartTimestamp));
-            // load end time
-            jobInfo.add(TimeUtils.longToTimeString(finishTimestamp));
-            // tracking url
-            jobInfo.add(loadingStatus.getTrackingUrl());
-            jobInfo.add(loadStatistic.toJson());
-            // transaction id
-            jobInfo.add(transactionId);
-            // error tablets
-            jobInfo.add(errorTabletsToJson());
-            return jobInfo;
+            return getShowInfoUnderLock();
         } finally {
             readUnlock();
         }
+    }
+
+    protected List<Comparable> getShowInfoUnderLock() throws DdlException {
+        // check auth
+        checkAuth("SHOW LOAD");
+        List<Comparable> jobInfo = Lists.newArrayList();
+        // jobId
+        jobInfo.add(id);
+        // label
+        jobInfo.add(label);
+        // state
+        jobInfo.add(state.name());
+
+        // progress
+        switch (state) {
+            case PENDING:
+                jobInfo.add("ETL:0%; LOAD:0%");
+                break;
+            case CANCELLED:
+                jobInfo.add("ETL:N/A; LOAD:N/A");
+                break;
+            case ETL:
+                jobInfo.add("ETL:" + progress + "%; LOAD:0%");
+                break;
+            default:
+                jobInfo.add("ETL:100%; LOAD:" + progress + "%");
+                break;
+        }
+
+        // type
+        jobInfo.add(jobType);
+
+        // etl info
+        if (loadingStatus.getCounters().size() == 0) {
+            jobInfo.add(FeConstants.null_string);
+        } else {
+            jobInfo.add(Joiner.on("; ").withKeyValueSeparator("=").join(loadingStatus.getCounters()));
+        }
+
+        // task info
+        jobInfo.add("cluster:" + getResourceName() + "; timeout(s):" + getTimeout()
+                + "; max_filter_ratio:" + getMaxFilterRatio());
+        // error msg
+        if (failMsg == null) {
+            jobInfo.add(FeConstants.null_string);
+        } else {
+            jobInfo.add("type:" + failMsg.getCancelType() + "; msg:" + failMsg.getMsg());
+        }
+
+        // create time
+        jobInfo.add(TimeUtils.longToTimeString(createTimestamp));
+        // etl start time
+        jobInfo.add(TimeUtils.longToTimeString(getEtlStartTimestamp()));
+        // etl end time
+        jobInfo.add(TimeUtils.longToTimeString(loadStartTimestamp));
+        // load start time
+        jobInfo.add(TimeUtils.longToTimeString(loadStartTimestamp));
+        // load end time
+        jobInfo.add(TimeUtils.longToTimeString(finishTimestamp));
+        // tracking url
+        jobInfo.add(loadingStatus.getTrackingUrl());
+        jobInfo.add(loadStatistic.toJson());
+        // transaction id
+        jobInfo.add(transactionId);
+        // error tablets
+        jobInfo.add(errorTabletsToJson());
+        return jobInfo;
     }
 
     public String errorTabletsToJson() {
@@ -830,6 +835,8 @@ public abstract class LoadJob extends AbstractTxnStateChangeCallback implements 
         EtlJobType type = EtlJobType.valueOf(Text.readString(in));
         if (type == EtlJobType.BROKER) {
             job = new BrokerLoadJob();
+        } else if (type == EtlJobType.COPY) {
+            job = new CopyJob();
         } else if (type == EtlJobType.SPARK) {
             job = new SparkLoadJob();
         } else if (type == EtlJobType.INSERT) {

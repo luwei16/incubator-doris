@@ -200,6 +200,8 @@ message TxnCommitAttachmentPB {
         optional int64 finish_timestamp = 5;
         optional JobStatePB job_state = 6;
         optional FailMsgPB fail_msg = 7;
+        optional string copy_id = 8;
+        optional string load_file_paths = 9;
     }
     optional Type type = 1;
     optional LoadJobFinalOperationPB load_job_final_operation = 2;

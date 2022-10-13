@@ -196,6 +196,8 @@ public class TxnUtil {
         if (loadJobFinalOperation.getFailMsg() != null) {
             builder.setFailMsg(TxnUtil.failMsgToPb(loadJobFinalOperation.getFailMsg()));
         }
+        // copy into
+        builder.setCopyId(loadJobFinalOperation.getCopyId()).setLoadFilePaths(loadJobFinalOperation.getLoadFilePaths());
 
         attachementBuilder.setLoadJobFinalOperation(builder.build());
         return attachementBuilder.build();
@@ -211,7 +213,7 @@ public class TxnUtil {
                 loadJobFinalOperationPB.getProgress(), loadJobFinalOperationPB.getLoadStartTimestamp(),
                 loadJobFinalOperationPB.getFinishTimestamp(),
                 TxnUtil.jobStateFromPb(loadJobFinalOperationPB.getJobState()),
-                failMsg);
+                failMsg, loadJobFinalOperationPB.getCopyId(), loadJobFinalOperationPB.getLoadFilePaths());
     }
 
     public static TxnCoordinatorPB txnCoordinatorToPb(TxnCoordinator txnCoordinator) {

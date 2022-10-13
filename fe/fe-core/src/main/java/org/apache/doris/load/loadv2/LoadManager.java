@@ -63,6 +63,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
@@ -489,15 +490,25 @@ public class LoadManager implements Writable {
      * @param labelValue    used to filter jobs which's label is or like labelValue.
      * @param accurateMatch true: filter jobs which's label is labelValue. false: filter jobs which's label like itself.
      * @param statesValue   used to filter jobs which's state within the statesValue set.
+     * @param jobTypes      used to filter jobs which's type within the jobTypes set.
+     * @param copyIdValue        used to filter jobs which's copyId is or like copyIdValue.
+     * @param copyIdAccurateMatch  true: filter jobs which's copyId is copyIdValue.
+     *                             false: filter jobs which's copyId like itself.
      * @return The result is the list of jobInfo.
      *         JobInfo is a list which includes the comparable object: jobId, label, state etc.
      *         The result is unordered.
      */
     public List<List<Comparable>> getLoadJobInfosByDb(long dbId, String labelValue, boolean accurateMatch,
-            Set<String> statesValue) throws AnalysisException {
+            Set<String> statesValue, Set<EtlJobType> jobTypes, String copyIdValue, boolean copyIdAccurateMatch)
+            throws AnalysisException {
         LinkedList<List<Comparable>> loadJobInfos = new LinkedList<List<Comparable>>();
         if (!dbIdToLabelToLoadJobs.containsKey(dbId)) {
             return loadJobInfos;
+        }
+
+        if (jobTypes == null || jobTypes.isEmpty()) {
+            jobTypes = new HashSet<>();
+            jobTypes.addAll(EnumSet.allOf(EtlJobType.class));
         }
 
         Set<JobState> states = Sets.newHashSet();
@@ -539,10 +550,37 @@ public class LoadManager implements Writable {
                 }
             }
 
+            List<LoadJob> loadJobList2 = Lists.newArrayList();
+            // check copy id
+            if (!Strings.isNullOrEmpty(copyIdValue)) {
+                for (LoadJob loadJob : loadJobList) {
+                    if (loadJob.getJobType() != EtlJobType.COPY) {
+                        continue;
+                    }
+                    CopyJob copyJob = (CopyJob) loadJob;
+                    if (copyIdAccurateMatch) {
+                        if (copyJob.getCopyId().equalsIgnoreCase(copyIdValue)) {
+                            loadJobList2.add(copyJob);
+                        }
+                    } else {
+                        // non-accurate match
+                        PatternMatcher matcher = PatternMatcher.createMysqlPattern(copyIdValue, false);
+                        if (matcher.match(copyJob.getCopyId())) {
+                            loadJobList2.add(copyJob);
+                        }
+                    }
+                }
+            } else {
+                loadJobList2 = loadJobList;
+            }
+
             // check state
-            for (LoadJob loadJob : loadJobList) {
+            for (LoadJob loadJob : loadJobList2) {
                 try {
                     if (!states.contains(loadJob.getState())) {
+                        continue;
+                    }
+                    if (!jobTypes.contains(loadJob.jobType)) {
                         continue;
                     }
                     // add load job info

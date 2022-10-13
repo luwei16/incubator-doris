@@ -51,9 +51,11 @@ public class ShowLoadStmt extends ShowStmt {
     private LimitElement limitElement;
     private List<OrderByElement> orderByElements;
 
-    private String labelValue;
-    private String stateValue;
-    private boolean isAccurateMatch;
+    protected String labelValue;
+    protected String stateValue;
+    protected boolean isAccurateMatch;
+    protected String copyIdValue;
+    protected boolean isCopyIdAccurateMatch;
 
     private ArrayList<OrderByPair> orderByPairs;
 
@@ -66,6 +68,8 @@ public class ShowLoadStmt extends ShowStmt {
         this.labelValue = null;
         this.stateValue = null;
         this.isAccurateMatch = false;
+        this.copyIdValue = null;
+        this.isCopyIdAccurateMatch = false;
     }
 
     public String getDbName() {
@@ -94,6 +98,10 @@ public class ShowLoadStmt extends ShowStmt {
         return this.labelValue;
     }
 
+    public String getCopyIdValue() {
+        return this.copyIdValue;
+    }
+
     public Set<JobState> getStates() {
         if (Strings.isNullOrEmpty(stateValue)) {
             return null;
@@ -111,6 +119,10 @@ public class ShowLoadStmt extends ShowStmt {
 
     public boolean isAccurateMatch() {
         return isAccurateMatch;
+    }
+
+    public boolean isCopyIdAccurateMatch() {
+        return isCopyIdAccurateMatch;
     }
 
     @Override
@@ -165,7 +177,7 @@ public class ShowLoadStmt extends ShowStmt {
         }
     }
 
-    private void analyzeSubPredicate(Expr subExpr) throws AnalysisException {
+    protected void analyzeSubPredicate(Expr subExpr) throws AnalysisException {
         if (subExpr == null) {
             return;
         }

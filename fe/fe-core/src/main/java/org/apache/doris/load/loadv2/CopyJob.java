@@ -22,19 +22,30 @@ import org.apache.doris.analysis.UserIdentity;
 import org.apache.doris.catalog.Env;
 import org.apache.doris.common.DdlException;
 import org.apache.doris.common.MetaNotFoundException;
+import org.apache.doris.common.io.Text;
 import org.apache.doris.load.BrokerFileGroup;
 import org.apache.doris.load.BrokerFileGroupAggInfo.FileGroupAggKey;
+import org.apache.doris.load.EtlJobType;
 import org.apache.doris.load.FailMsg;
 import org.apache.doris.qe.OriginStatement;
+import org.apache.doris.thrift.TBrokerFileStatus;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import com.selectdb.cloud.proto.SelectdbCloud.StagePB;
 import com.selectdb.cloud.storage.RemoteBase.ObjectInfo;
 import lombok.Getter;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import java.io.DataInput;
+import java.io.DataOutput;
+import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Map.Entry;
+import java.util.stream.Collectors;
 
 public class CopyJob extends BrokerLoadJob {
     private static final Logger LOG = LogManager.getLogger(CopyJob.class);
@@ -49,16 +60,25 @@ public class CopyJob extends BrokerLoadJob {
     private String pattern;
     @Getter
     private ObjectInfo objectInfo;
+    @Getter
+    private String copyId;
+    private String loadFilePaths = "";
+
+    public CopyJob() {
+        super(EtlJobType.COPY);
+    }
 
     public CopyJob(long dbId, String label, BrokerDesc brokerDesc, OriginStatement originStmt, UserIdentity userInfo,
             String stageId, StagePB.StageType stageType, long sizeLimit, String pattern,
             ObjectInfo objectInfo) throws MetaNotFoundException {
-        super(dbId, label, brokerDesc, originStmt, userInfo);
+        super(EtlJobType.COPY, dbId, label, brokerDesc, originStmt, userInfo);
         this.stageId = stageId;
         this.stageType = stageType;
         this.sizeLimit =  sizeLimit;
         this.pattern = pattern;
         this.objectInfo = objectInfo;
+        // FIXME(meiyi): specify copy id use: 1. label; 2. auto_increment job id from meta service...
+        this.copyId = label;
     }
 
     @Override
@@ -104,8 +124,62 @@ public class CopyJob extends BrokerLoadJob {
         }
     }
 
-    public String getCopyId() {
-        // FIXME(meiyi): specify copy id use: 1. label; 2. auto_increment job id from meta service...
-        return label;
+    @Override
+    protected List<Comparable> getShowInfoUnderLock() throws DdlException {
+        List<Comparable> showInfos = new ArrayList<>();
+        showInfos.add(getCopyId());
+        showInfos.addAll(super.getShowInfoUnderLock());
+        showInfos.add(loadFilePaths);
+        return showInfos;
+    }
+
+    @Override
+    protected void logFinalOperation() {
+        Env.getCurrentEnv().getEditLog().logEndLoadJob(getLoadJobFinalOperation());
+    }
+
+    @Override
+    public void unprotectReadEndOperation(LoadJobFinalOperation loadJobFinalOperation) {
+        super.unprotectReadEndOperation(loadJobFinalOperation);
+        this.copyId = loadJobFinalOperation.getCopyId();
+        this.loadFilePaths = loadJobFinalOperation.getLoadFilePaths();
+    }
+
+    @Override
+    protected LoadJobFinalOperation getLoadJobFinalOperation() {
+        return new LoadJobFinalOperation(id, loadingStatus, progress, loadStartTimestamp,
+                finishTimestamp, state, failMsg, copyId, loadFilePaths);
+    }
+
+    @Override
+    public void write(DataOutput out) throws IOException {
+        super.write(out);
+        Text.writeString(out, copyId);
+        Text.writeString(out, loadFilePaths);
+    }
+
+    @Override
+    public void readFields(DataInput in) throws IOException {
+        super.readFields(in);
+        copyId = Text.readString(in);
+        loadFilePaths = Text.readString(in);
+    }
+
+    protected void setSelectedFiles(Map<FileGroupAggKey, List<List<TBrokerFileStatus>>> fileStatusMap) {
+        this.loadFilePaths = selectedFilesToJson(fileStatusMap);
+    }
+
+    private String selectedFilesToJson(Map<FileGroupAggKey, List<List<TBrokerFileStatus>>> selectedFiles) {
+        if (selectedFiles == null) {
+            return "";
+        }
+        List<String> paths = new ArrayList<>();
+        for (Entry<FileGroupAggKey, List<List<TBrokerFileStatus>>> entry : selectedFiles.entrySet()) {
+            for (List<TBrokerFileStatus> fileStatuses : entry.getValue()) {
+                paths.addAll(fileStatuses.stream().map(e -> e.path).collect(Collectors.toList()));
+            }
+        }
+        Gson gson = new GsonBuilder().disableHtmlEscaping().create();
+        return gson.toJson(paths);
     }
 }

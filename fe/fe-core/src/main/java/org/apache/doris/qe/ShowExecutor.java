@@ -37,6 +37,7 @@ import org.apache.doris.analysis.ShowClusterStmt;
 import org.apache.doris.analysis.ShowCollationStmt;
 import org.apache.doris.analysis.ShowColumnStatsStmt;
 import org.apache.doris.analysis.ShowColumnStmt;
+import org.apache.doris.analysis.ShowCopyStmt;
 import org.apache.doris.analysis.ShowCreateDbStmt;
 import org.apache.doris.analysis.ShowCreateFunctionStmt;
 import org.apache.doris.analysis.ShowCreateMaterializedViewStmt;
@@ -161,6 +162,7 @@ import org.apache.doris.common.util.Util;
 import org.apache.doris.datasource.CatalogIf;
 import org.apache.doris.external.iceberg.IcebergTableCreationRecord;
 import org.apache.doris.load.DeleteHandler;
+import org.apache.doris.load.EtlJobType;
 import org.apache.doris.load.ExportJob;
 import org.apache.doris.load.ExportMgr;
 import org.apache.doris.load.Load;
@@ -203,6 +205,7 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -263,6 +266,8 @@ public class ShowExecutor {
             handleShowVariables();
         } else if (stmt instanceof ShowColumnStmt) {
             handleShowColumn();
+        } else if (stmt instanceof ShowCopyStmt) {
+            handleShowCopy();
         } else if (stmt instanceof ShowLoadStmt) {
             handleShowLoad();
         } else if (stmt instanceof ShowStreamLoadStmt) {
@@ -1045,8 +1050,21 @@ public class ShowExecutor {
         }
     }
 
+    // Show copy statement.
+    private void handleShowCopy() throws AnalysisException {
+        Set<EtlJobType> jobTypes = Sets.newHashSet(EtlJobType.COPY);
+        handleShowLoad(jobTypes);
+    }
+
     // Show load statement.
     private void handleShowLoad() throws AnalysisException {
+        Set<EtlJobType> jobTypes = Sets.newHashSet(EnumSet.allOf(EtlJobType.class));
+        jobTypes.remove(EtlJobType.COPY);
+        handleShowLoad(jobTypes);
+    }
+
+    // Show load statement.
+    private void handleShowLoad(Set<EtlJobType> jobTypes) throws AnalysisException {
         ShowLoadStmt showStmt = (ShowLoadStmt) stmt;
 
         Util.prohibitExternalCatalog(ctx.getDefaultCatalog(), stmt.getClass().getSimpleName());
@@ -1061,8 +1079,9 @@ public class ShowExecutor {
         Set<String> statesValue = showStmt.getStates() == null ? null : showStmt.getStates().stream()
                 .map(entity -> entity.name())
                 .collect(Collectors.toSet());
-        loadInfos.addAll(env.getLoadManager()
-                .getLoadJobInfosByDb(dbId, showStmt.getLabelValue(), showStmt.isAccurateMatch(), statesValue));
+        loadInfos.addAll(env.getLoadManager().getLoadJobInfosByDb(dbId, showStmt.getLabelValue(),
+                showStmt.isAccurateMatch(), statesValue, jobTypes,
+                showStmt.getCopyIdValue(), showStmt.isCopyIdAccurateMatch()));
 
         // order the result of List<LoadInfo> by orderByPairs in show stmt
         List<OrderByPair> orderByPairs = showStmt.getOrderByPairs();

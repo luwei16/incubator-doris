@@ -69,6 +69,7 @@ public class CopyLoadPendingTask extends BrokerLoadPendingTask {
     void executeTask() throws UserException {
         super.executeTask(); // get all files and begin txn
         beginCopy((BrokerPendingTaskAttachment) attachment);
+        ((CopyJob) callback).setSelectedFiles(((BrokerPendingTaskAttachment) attachment).getFileStatusMap());
     }
 
     @Override

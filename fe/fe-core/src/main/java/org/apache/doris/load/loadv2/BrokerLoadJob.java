@@ -78,13 +78,22 @@ public class BrokerLoadJob extends BulkLoadJob {
 
     // for log replay and unit test
     public BrokerLoadJob() {
-        super(EtlJobType.BROKER);
+        this(EtlJobType.BROKER);
     }
 
-    public BrokerLoadJob(long dbId, String label, BrokerDesc brokerDesc,
-                         OriginStatement originStmt, UserIdentity userInfo)
+    public BrokerLoadJob(long dbId, String label, BrokerDesc brokerDesc, OriginStatement originStmt,
+            UserIdentity userInfo) throws MetaNotFoundException {
+        this(EtlJobType.BROKER, dbId, label, brokerDesc, originStmt, userInfo);
+    }
+
+    public BrokerLoadJob(EtlJobType type) {
+        super(type);
+    }
+
+    public BrokerLoadJob(EtlJobType type, long dbId, String label, BrokerDesc brokerDesc,
+            OriginStatement originStmt, UserIdentity userInfo)
             throws MetaNotFoundException {
-        super(EtlJobType.BROKER, dbId, label, originStmt, userInfo);
+        super(type, dbId, label, originStmt, userInfo);
         this.brokerDesc = brokerDesc;
         if (ConnectContext.get() != null && ConnectContext.get().getSessionVariable().enableProfile()) {
             enableProfile = true;
@@ -297,9 +306,7 @@ public class BrokerLoadJob extends BulkLoadJob {
                     .add("msg", "Load job try to commit txn")
                     .build());
             Env.getCurrentGlobalTransactionMgr().commitTransaction(
-                    dbId, tableList, transactionId, commitInfos,
-                    new LoadJobFinalOperation(id, loadingStatus, progress, loadStartTimestamp,
-                            finishTimestamp, state, failMsg));
+                    dbId, tableList, transactionId, commitInfos, getLoadJobFinalOperation());
             afterCommit();
         } catch (UserException e) {
             LOG.warn(new LogBuilder(LogKey.LOAD_JOB, id)
@@ -310,6 +317,11 @@ public class BrokerLoadJob extends BulkLoadJob {
         } finally {
             MetaLockUtils.writeUnlockTables(tableList);
         }
+    }
+
+    protected LoadJobFinalOperation getLoadJobFinalOperation() {
+        return new LoadJobFinalOperation(id, loadingStatus, progress, loadStartTimestamp, finishTimestamp, state,
+                failMsg);
     }
 
     protected void afterCommit() throws DdlException {}
