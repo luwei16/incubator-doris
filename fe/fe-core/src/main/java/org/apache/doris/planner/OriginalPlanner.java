@@ -431,7 +431,8 @@ public class OriginalPlanner extends Planner {
             if (child instanceof OlapScanNode && sortNode.getLimit() > 0
                     && sortNode.getSortInfo().getOrderingExprs().size() > 0) {
                 Expr firstSortExpr = sortNode.getSortInfo().getOrderingExprs().get(0);
-                if (firstSortExpr instanceof SlotRef && !firstSortExpr.getType().isStringType()) {
+                if (firstSortExpr instanceof SlotRef && ((SlotRef) firstSortExpr).hasCol()
+                        && !firstSortExpr.getType().isStringType()) {
                     OlapScanNode scanNode = (OlapScanNode) child;
                     sortNode.setUseTopnOpt(true);
                     scanNode.setUseTopnOpt(true);

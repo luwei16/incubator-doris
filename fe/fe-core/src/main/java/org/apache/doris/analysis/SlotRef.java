@@ -405,6 +405,10 @@ public class SlotRef extends Expr {
         this.label = label;
     }
 
+    public boolean hasCol() {
+        return this.col != null;
+    }
+
     public String getColumnName() {
         return col;
     }

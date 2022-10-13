@@ -154,7 +154,7 @@ public class SortNode extends PlanNode {
     }
 
     public boolean isUseTopNTwoPhaseOptimize() {
-        return useTopN && VectorizedUtil.isVectorized()
+        return useTopN && useTopnOpt && VectorizedUtil.isVectorized()
                 && hasLimit() && getLimit()  <= Config.topn_two_phase_limit_threshold;
     }
 
