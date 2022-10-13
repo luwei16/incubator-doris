@@ -45,6 +45,10 @@ class Config {
     public String feHttpUser
     public String feHttpPassword
 
+    public String feCloudHttpAddress
+    public String feCloudHttpUser
+    public String feCloudHttpPassword
+
     public String metaServiceHttpAddress
 
     public String suitePath
@@ -77,6 +81,7 @@ class Config {
     public Set<String> excludeDirectorySet = new HashSet<>()
 
     public InetSocketAddress feHttpInetSocketAddress
+    public InetSocketAddress feCloudHttpInetSocketAddress
     public InetSocketAddress metaServiceHttpInetSocketAddress
     public Integer parallel
     public Integer suiteParallel
@@ -87,7 +92,8 @@ class Config {
     Config() {}
 
     Config(String defaultDb, String jdbcUrl, String jdbcUser, String jdbcPassword,
-           String feHttpAddress, String feHttpUser, String feHttpPassword, String metaServiceHttpAddress,
+           String feHttpAddress, String feHttpUser, String feHttpPassword,
+           String feCloudHttpAddress, String feCloudHttpUser, String feCloudHttpPassword, String metaServiceHttpAddress,
            String suitePath, String dataPath, String realDataPath, String sf1DataPath, String cacheDataPath,
            String testGroups, String excludeGroups, String testSuites, String excludeSuites,
            String testDirectories, String excludeDirectories, String pluginPath) {
@@ -98,6 +104,9 @@ class Config {
         this.feHttpAddress = feHttpAddress
         this.feHttpUser = feHttpUser
         this.feHttpPassword = feHttpPassword
+        this.feCloudHttpAddress = feCloudHttpAddress
+        this.feCloudHttpUser = feCloudHttpUser
+        this.feCloudHttpPassword = feCloudHttpPassword
         this.metaServiceHttpAddress = metaServiceHttpAddress
         this.suitePath = suitePath
         this.dataPath = dataPath
@@ -180,6 +189,16 @@ class Config {
             throw new IllegalStateException("Can not parse stream load address: ${config.feHttpAddress}", t)
         }
 
+        config.feCloudHttpAddress = cmd.getOptionValue(feCloudHttpAddressOpt, config.feCloudHttpAddress)
+        try {
+            Inet4Address host = Inet4Address.getByName(config.feCloudHttpAddress.split(":")[0]) as Inet4Address
+            int port = Integer.valueOf(config.feCloudHttpAddress.split(":")[1])
+            config.feCloudHttpInetSocketAddress = new InetSocketAddress(host, port)
+        } catch (Throwable t) {
+            throw new IllegalStateException("Can not parse fe cloud http address: ${config.feCloudHttpAddress}", t)
+        }
+        log.info("feCloudHttpAddress : $config.feCloudHttpAddress, socketAddr : $config.feCloudHttpInetSocketAddress")
+
         config.metaServiceHttpAddress = cmd.getOptionValue(metaServiceHttpAddressOpt, config.metaServiceHttpAddress)
         try {
             Inet4Address host = Inet4Address.getByName(config.metaServiceHttpAddress.split(":")[0]) as Inet4Address
@@ -196,6 +215,8 @@ class Config {
         config.jdbcPassword = cmd.getOptionValue(passwordOpt, config.jdbcPassword)
         config.feHttpUser = cmd.getOptionValue(feHttpUserOpt, config.feHttpUser)
         config.feHttpPassword = cmd.getOptionValue(feHttpPasswordOpt, config.feHttpPassword)
+        config.feCloudHttpUser = cmd.getOptionValue(feHttpUserOpt, config.feCloudHttpUser)
+        config.feCloudHttpPassword = cmd.getOptionValue(feHttpPasswordOpt, config.feCloudHttpPassword)
         config.generateOutputFile = cmd.hasOption(genOutOpt)
         config.forceGenerateOutputFile = cmd.hasOption(forceGenOutOpt)
         config.parallel = Integer.parseInt(cmd.getOptionValue(parallelOpt, "10"))
@@ -230,6 +251,9 @@ class Config {
             configToString(obj.feHttpAddress),
             configToString(obj.feHttpUser),
             configToString(obj.feHttpPassword),
+            configToString(obj.feCloudHttpAddress),
+            configToString(obj.feCloudHttpUser),
+            configToString(obj.feCloudHttpPassword),
             configToString(obj.metaServiceHttpAddress),
             configToString(obj.suitePath),
             configToString(obj.dataPath),
@@ -297,6 +321,21 @@ class Config {
         if (config.feHttpPassword == null) {
             config.feHttpPassword = ""
             log.info("Set feHttpPassword to empty because not specify.".toString())
+        }
+
+        if (config.feCloudHttpAddress == null) {
+            config.feCloudHttpAddress = "127.0.0.1:8035"
+            log.info("Set feCloudHttpAddress to '${config.feCloudHttpAddress}' because not specify.".toString())
+        }
+
+        if (config.feCloudHttpUser == null) {
+            config.feCloudHttpUser = "root"
+            log.info("Set feCloudHttpUser to '${config.feCloudHttpUser}' because not specify.".toString())
+        }
+
+        if (config.feCloudHttpPassword == null) {
+            config.feCloudHttpPassword = ""
+            log.info("Set feCloudHttpPassword to empty because not specify.".toString())
         }
 
         if (config.suitePath == null) {

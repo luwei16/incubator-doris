@@ -22,12 +22,14 @@ import org.apache.doris.common.util.PrintableMap;
 
 import com.google.common.collect.ImmutableSet;
 import lombok.Getter;
+import org.apache.commons.lang3.StringUtils;
 
 import java.util.Map;
 import java.util.Map.Entry;
 
 public class FileFormat {
     public static final String TYPE = "type";
+    public static final String COMPRESSION = "compression";
     private static final ImmutableSet<String> DATA_DESC_PROPERTIES_SET = new ImmutableSet.Builder<String>()
             .add(LoadStmt.KEY_IN_PARAM_LINE_DELIMITER)
             .add(LoadStmt.KEY_IN_PARAM_STRIP_OUTER_ARRAY)
@@ -37,7 +39,7 @@ public class FileFormat {
             .add(LoadStmt.KEY_IN_PARAM_JSONROOT)
             .build();
     private static final ImmutableSet<String> CONFIGURABLE_PROPERTIES_SET = new ImmutableSet.Builder<String>().addAll(
-            DATA_DESC_PROPERTIES_SET).add(TYPE).add(LoadStmt.KEY_IN_PARAM_COLUMN_SEPARATOR).build();
+            DATA_DESC_PROPERTIES_SET).add(TYPE).add(COMPRESSION).add(LoadStmt.KEY_IN_PARAM_COLUMN_SEPARATOR).build();
 
     @Getter
     private Map<String, String> properties;
@@ -47,21 +49,10 @@ public class FileFormat {
     }
 
     public void analyze() throws AnalysisException {
-        if (!properties.containsKey(TYPE)) {
-            throw new AnalysisException("Property '" + TYPE + "' is required in FileFormat");
-        }
         for (Entry<String, String> entry : properties.entrySet()) {
             String key = entry.getKey();
             if (!CONFIGURABLE_PROPERTIES_SET.contains(key)) {
                 throw new AnalysisException("Property '" + key + "' is invalid in FileFormat");
-            }
-            if (!DATA_DESC_PROPERTIES_SET.contains(TYPE)) {
-                continue;
-            }
-            try {
-                LoadStmt.PROPERTIES_MAP.get(key).apply(entry.getValue());
-            } catch (Exception e) {
-                throw new AnalysisException("Failed to parse property " + key + ". Error: " + e.getMessage());
             }
         }
     }
@@ -92,7 +83,13 @@ public class FileFormat {
     }
 
     public String getFormat() {
-        return properties.get(TYPE);
+        if (!StringUtils.isEmpty(properties.get(COMPRESSION))) {
+            // See {@link BrokerScanNode#formatType}, if file format is null, can judge by the file name.
+            return null;
+        }
+        // if file format type is set on stage, and we want to override by copy into, can set null
+        String type = properties.get(TYPE);
+        return (StringUtils.isEmpty(type) || type.equalsIgnoreCase("null")) ? null : type;
     }
 
     public String getColumnSeparator() {

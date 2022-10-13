@@ -72,38 +72,44 @@ public class CopyIntoTest extends TestWithFeService {
         };
 
         String copySqlPrefix = "copy into t2 from @ex_stage_2 ";
-        checkCopyInto(copySqlPrefix, null, 0, true);
+        checkCopyInto(copySqlPrefix, null, 0, 0, true);
 
         String copySql = copySqlPrefix
                 + "with file_format = ('type' = 'json', 'fuzzy_parse'='true', 'json_root'=\"{\") "
                 + "copy_option= ('on_error' = 'continue', 'size_limit' = '200')"
                 + "async = false";
-        checkCopyInto(copySql, "json", 200, false);
+        checkCopyInto(copySql, "json", 3, 200, false);
 
         copySql = copySqlPrefix + "with file_format = ('type' = 'csv', 'fuzzy_parse'='true', 'json_root'=\"{\") "
                 + "copy_option= ('on_error' = 'continue', 'size_limit' = '300')";
-        checkCopyInto(copySql, "csv", 300, true);
+        checkCopyInto(copySql, "csv", 3, 300, true);
 
         copySql = copySqlPrefix + "with file_format = ('type' = 'csv', 'fuzzy_parse'='true', 'json_root'=\"{\") ";
-        checkCopyInto(copySql, "csv", 0, true);
+        checkCopyInto(copySql, "csv", 3, 0, true);
 
         copySql = copySqlPrefix + "with copy_option= ('on_error' = 'continue', 'size_limit' = '400')";
-        checkCopyInto(copySql, null, 400, true);
+        checkCopyInto(copySql, null, 0, 400, true);
 
         copySql = copySqlPrefix + "with async = false";
-        checkCopyInto(copySql, null, 0, false);
+        checkCopyInto(copySql, null, 0, 0, false);
+
+        copySql = copySqlPrefix + "with file_format = ('compression' = 'gz') ";
+        checkCopyInto(copySql, null, 1, 0, true);
+
+        copySql = copySqlPrefix + "with file_format = ('type' = 'csv', 'compression' = 'gz') ";
+        checkCopyInto(copySql, null, 2, 0, true);
     }
 
-    private void checkCopyInto(String sql, String format, long sizeLimit, boolean async) {
+    private void checkCopyInto(String sql, String format, int fileFormatPropertySize, long sizeLimit, boolean async) {
         try {
             CopyStmt copyStmt = (CopyStmt) UtFrameUtils.parseAndAnalyzeStmt(sql, connectContext);
             System.out.println("original sql: " + sql);
             System.out.println("parsed sql: " + copyStmt.toSql());
-            if (format == null) {
-                Assert.assertEquals(0, copyStmt.getFileFormat().getProperties().size());
-            } else {
-                Assert.assertEquals(format, copyStmt.getFileFormat().getFormat());
-            }
+            Assert.assertTrue(fileFormatPropertySize == 0 ? (copyStmt.getFileFormat() == null
+                    || copyStmt.getFileFormat().getProperties().size() == 0)
+                    : (copyStmt.getFileFormat().getProperties().size() == fileFormatPropertySize));
+            Assert.assertEquals(fileFormatPropertySize, copyStmt.getFileFormat().getProperties().size());
+            Assert.assertEquals(format, copyStmt.getFileFormat().getFormat());
             if (sizeLimit == 0) {
                 Assert.assertEquals(0, copyStmt.getCopyOption().getProperties().size());
             } else {

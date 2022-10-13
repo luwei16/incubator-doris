@@ -35,6 +35,9 @@ class ConfigOptions {
     static Option feHttpAddressOpt
     static Option feHttpUserOpt
     static Option feHttpPasswordOpt
+    static Option feCloudHttpAddressOpt
+    static Option feCloudHttpUserOpt
+    static Option feCloudHttpPasswordOpt
     static Option metaServiceHttpAddressOpt
     static Option pathOpt
     static Option dataOpt
@@ -235,6 +238,30 @@ class ConfigOptions {
                 .longOpt("feHttpPassword")
                 .desc("the password of fe http server")
                 .build()
+        feCloudHttpAddressOpt = Option.builder("cha")
+                .argName("address")
+                .required(false)
+                .hasArg(true)
+                .type(String.class)
+                .longOpt("feCloudHttpAddress")
+                .desc("the fe cloud http address, format is ip:port")
+                .build()
+        feCloudHttpUserOpt = Option.builder("chu")
+                .argName("userName")
+                .required(false)
+                .hasArg(true)
+                .type(String.class)
+                .longOpt("feCloudHttpUser")
+                .desc("the user of fe cloud http server")
+                .build()
+        feCloudHttpPasswordOpt = Option.builder("chp")
+                .argName("password")
+                .required(false)
+                .hasArg(true)
+                .type(String.class)
+                .longOpt("feCloudHttpPassword")
+                .desc("the password of fe cloud http server")
+                .build()
         metaServiceHttpAddressOpt = Option.builder("hm")
                 .argName("address")
                 .required(false)
@@ -335,6 +362,9 @@ class ConfigOptions {
                 .addOption(feHttpAddressOpt)
                 .addOption(feHttpUserOpt)
                 .addOption(feHttpPasswordOpt)
+                .addOption(feCloudHttpAddressOpt)
+                .addOption(feCloudHttpUserOpt)
+                .addOption(feCloudHttpPasswordOpt)
                 .addOption(metaServiceHttpAddressOpt)
                 .addOption(genOutOpt)
                 .addOption(confFileOpt)

@@ -38,6 +38,10 @@ import mockit.Mocked;
 import org.junit.Assert;
 import org.junit.Test;
 
+import java.nio.file.FileSystems;
+import java.nio.file.Path;
+import java.nio.file.PathMatcher;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -52,6 +56,23 @@ public class CopyLoadPendingTaskTest extends TestWithFeService {
     @Override
     protected void runBeforeAll() throws Exception {
         FeConstants.runningUnitTest = true;
+    }
+
+    @Test
+    public void testGlob() {
+        // file name contains "," which is a special character in Glob
+        String fileName = "1,csv";
+        String globPrefix = "glob:";
+        Assert.assertEquals(true, matchGlob(fileName, globPrefix + "1,csv"));
+        Assert.assertEquals(false, matchGlob(fileName, globPrefix + "{1,csv}"));
+        Assert.assertEquals(true, matchGlob(fileName, globPrefix + "{1\\,csv}"));
+        Assert.assertEquals(true, matchGlob(fileName, globPrefix + "{1\\,csv,2\\,csv}"));
+    }
+
+    private boolean matchGlob(String file, String pattern) {
+        PathMatcher pathMatcher = FileSystems.getDefault().getPathMatcher(pattern);
+        Path path = Paths.get(file);
+        return pathMatcher.matches(path);
     }
 
     @Test
