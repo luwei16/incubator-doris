@@ -1118,6 +1118,7 @@ Status PInternalServiceImpl::_multi_get(const PMultiGetRequest *request, PMultiG
     } else {
         RETURN_IF_ERROR(point_get_fn(std::pair{0, request->rowids_size()}, &block));  
     }
+    LOG(INFO) << "dump block:" << block.dump_data(0, 10);
     
     [[unused]]size_t compressed_size = 0;
     [[unused]]size_t uncompressed_size = 0;
