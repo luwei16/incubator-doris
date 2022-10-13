@@ -121,7 +121,17 @@ public class CloudReplica extends Replica {
         }
 
         // TODO(luwei) list shoule be sorted
-        List<Backend> availableBes = Env.getCurrentSystemInfo().getBackendsByClusterName(cluster);
+        List<Backend> clusterBes = Env.getCurrentSystemInfo().getBackendsByClusterName(cluster);
+        // use alive be to exec sql
+        List<Backend> availableBes = new ArrayList<>();
+        for (Backend be : clusterBes) {
+            if (be.isAlive()) {
+                availableBes.add(be);
+            }
+        }
+        if (availableBes == null || availableBes.size() == 0) {
+            return -1;
+        }
         LOG.debug("availableBes={}", availableBes);
         long index = getId() % availableBes.size();
         long pickedBeId = availableBes.get((int) index).getId();

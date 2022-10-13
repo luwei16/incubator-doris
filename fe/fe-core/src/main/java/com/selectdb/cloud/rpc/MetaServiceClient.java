@@ -227,4 +227,8 @@ public class MetaServiceClient {
     public SelectdbCloud.GetCopyFilesResponse getCopyFiles(SelectdbCloud.GetCopyFilesRequest request) {
         return blockingStub.getCopyFiles(request);
     }
+
+    public SelectdbCloud.MetaServiceGenericResponse alterCluster(SelectdbCloud.AlterClusterRequest request) {
+        return blockingStub.alterCluster(request);
+    }
 }

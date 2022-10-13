@@ -902,8 +902,15 @@ public class Env {
             return null;
         }
         LOG.info("get cluster response from meta service {}", response);
-        List<SelectdbCloud.NodeInfoPB> allNodes = response.getCluster().getNodesList()
-                .stream().filter(i -> i.hasNodeType()).collect(Collectors.toList());
+        // Note: get_cluster interface cluster(option -> repeated), so it has at least one cluster.
+        if (response.getClusterCount() == 0) {
+            LOG.warn("meta service error , return cluster zero, plz check it, "
+                    + "cloud_unique_id={}, clusterId={}, response={}",
+                    Config.cloud_unique_id, Config.cloud_sql_server_cluster_id, response);
+            return null;
+        }
+        List<SelectdbCloud.NodeInfoPB> allNodes = response.getCluster(0).getNodesList()
+                .stream().filter(NodeInfoPB::hasNodeType).collect(Collectors.toList());
 
         helperNodes.clear();
         helperNodes.addAll(allNodes.stream()

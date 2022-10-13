@@ -184,7 +184,9 @@ import com.google.common.collect.Sets;
 import com.selectdb.cloud.catalog.CloudPartition;
 import com.selectdb.cloud.catalog.CloudReplica;
 import com.selectdb.cloud.proto.SelectdbCloud;
+import com.selectdb.cloud.proto.SelectdbCloud.AlterClusterRequest.Operation;
 import com.selectdb.cloud.proto.SelectdbCloud.FinishCopyRequest.Action;
+import com.selectdb.cloud.proto.SelectdbCloud.MetaServiceResponseStatus;
 import com.selectdb.cloud.proto.SelectdbCloud.ObjectFilePB;
 import com.selectdb.cloud.proto.SelectdbCloud.StagePB;
 import com.selectdb.cloud.rpc.MetaServiceProxy;
@@ -3895,6 +3897,27 @@ public class InternalCatalog implements CatalogIf<Database> {
                 throw new DdlException(response.getStatus().getMsg());
             }
             return response.getObjectFilesList();
+        } catch (RpcException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public MetaServiceResponseStatus alterCluster(String clusterId, Set<String> userNames)
+            throws DdlException {
+        SelectdbCloud.ClusterPB.Builder builderCluster = SelectdbCloud.ClusterPB.newBuilder()
+                .setClusterId(clusterId).addAllMysqlUserName(userNames);
+
+        SelectdbCloud.AlterClusterRequest.Builder builder = SelectdbCloud.AlterClusterRequest.newBuilder()
+                .setCloudUniqueId(Config.cloud_unique_id).setOp(Operation.UPDATE_CLUSTER_MYSQL_USER_NAME)
+                .setCluster(builderCluster.build());
+        SelectdbCloud.MetaServiceGenericResponse response;
+        try {
+            response = MetaServiceProxy.getInstance().alterCluster(builder.build());
+            if (response.getStatus().getCode() != SelectdbCloud.MetaServiceCode.OK) {
+                LOG.warn("getCopyFiles response: {} ", response);
+                throw new DdlException(response.getStatus().getMsg());
+            }
+            return response.getStatus();
         } catch (RpcException e) {
             throw new RuntimeException(e);
         }

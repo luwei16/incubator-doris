@@ -31,9 +31,11 @@ public:
         return std::make_pair(MetaServiceCode::OK, "");
     }
 
-    std::string update_cluster(const std::string& instance_id, const ClusterInfo& cluster,
-                               std::function<std::string(::selectdb::ClusterPB&)> action,
-                               std::function<bool(const ::selectdb::ClusterPB&)> filter) override {
+    std::string update_cluster(
+            const std::string& instance_id, const ClusterInfo& cluster,
+            std::function<bool(const ::selectdb::ClusterPB&)> filter,
+            std::function<std::string(::selectdb::ClusterPB&, std::set<std::string>& cluster_names)>
+                    action) override {
         return "";
     }
 

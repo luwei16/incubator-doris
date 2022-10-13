@@ -21,7 +21,9 @@ import org.apache.doris.catalog.Replica.ReplicaState;
 import org.apache.doris.clone.TabletSchedCtx;
 import org.apache.doris.clone.TabletSchedCtx.Priority;
 import org.apache.doris.common.Config;
+import org.apache.doris.common.InternalErrorCode;
 import org.apache.doris.common.Pair;
+import org.apache.doris.common.UserException;
 import org.apache.doris.common.io.Writable;
 import org.apache.doris.resource.Tag;
 import org.apache.doris.system.Backend;
@@ -197,7 +199,7 @@ public class Tablet extends MetaObject implements Writable {
 
     // return map of (BE id -> path hash) of normal replicas
     // for load plan.
-    public Multimap<Long, Long> getNormalReplicaBackendPathMap() {
+    public Multimap<Long, Long> getNormalReplicaBackendPathMap() throws UserException {
         Multimap<Long, Long> map = HashMultimap.create();
         SystemInfoService infoService = Env.getCurrentSystemInfo();
         for (Replica replica : replicas) {
@@ -206,8 +208,13 @@ public class Tablet extends MetaObject implements Writable {
             }
 
             ReplicaState state = replica.getState();
-            if (infoService.checkBackendLoadAvailable(replica.getBackendId()) && state.canLoad()) {
-                map.put(replica.getBackendId(), replica.getPathHash());
+            long backendId = replica.getBackendId();
+            if (backendId == -1 && !Config.cloud_unique_id.isEmpty()) {
+                throw new UserException(InternalErrorCode.META_NOT_FOUND_ERR, "Not using any cloud clusters, "
+                    + "please use a cluster before issuing any queries");
+            }
+            if (infoService.checkBackendLoadAvailable(backendId) && state.canLoad()) {
+                map.put(backendId, replica.getPathHash());
             }
         }
         return map;

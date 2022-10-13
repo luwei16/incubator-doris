@@ -47,8 +47,10 @@ import org.apache.doris.catalog.PartitionType;
 import org.apache.doris.catalog.Replica;
 import org.apache.doris.catalog.Tablet;
 import org.apache.doris.common.AnalysisException;
+import org.apache.doris.common.Config;
 import org.apache.doris.common.ErrorCode;
 import org.apache.doris.common.ErrorReport;
+import org.apache.doris.common.InternalErrorCode;
 import org.apache.doris.common.UserException;
 import org.apache.doris.common.util.Util;
 import org.apache.doris.qe.ConnectContext;
@@ -635,7 +637,12 @@ public class OlapScanNode extends ScanNode {
             boolean collectedStat = false;
             List<String> errs = Lists.newArrayList();
             for (Replica replica : replicas) {
-                Backend backend = Env.getCurrentSystemInfo().getBackend(replica.getBackendId());
+                long backendId = replica.getBackendId();
+                if (backendId == -1 && !Config.cloud_unique_id.isEmpty()) {
+                    throw new UserException(InternalErrorCode.META_NOT_FOUND_ERR, "Not using any cloud clusters, "
+                            + "please use a cluster before issuing any queries");
+                }
+                Backend backend = Env.getCurrentSystemInfo().getBackend(backendId);
                 if (backend == null || !backend.isAlive()) {
                     LOG.debug("backend {} not exists or is not alive for replica {}", replica.getBackendId(),
                             replica.getId());

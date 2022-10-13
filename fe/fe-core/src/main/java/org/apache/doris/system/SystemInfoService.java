@@ -47,6 +47,7 @@ import com.google.common.collect.Maps;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.Sets;
 import com.selectdb.cloud.proto.SelectdbCloud;
+import com.selectdb.cloud.proto.SelectdbCloud.ClusterPB;
 import com.selectdb.cloud.rpc.MetaServiceProxy;
 import org.apache.commons.validator.routines.InetAddressValidator;
 import org.apache.logging.log4j.LogManager;
@@ -83,6 +84,10 @@ public class SystemInfoService {
     // TODO(gavin): use {clusterId -> List<BackendId>} instead to reduce risk of inconsistency
     // use exclusive lock to make sure only one thread can change clusterIdToBackend and clusterNameToId
     private ReentrantLock lock = new ReentrantLock();
+
+    // for show cluster and cache user owned cluster
+    // mysqlUserName -> List of ClusterPB
+    private Map<String, List<ClusterPB>> mysqlUserNameToClusterPB = ImmutableMap.of();
     // clusterId -> List<Backend>
     private Map<String, List<Backend>> clusterIdToBackend = new ConcurrentHashMap<>();
     // clusterName -> clusterId
@@ -109,7 +114,10 @@ public class SystemInfoService {
     };
 
     public List<Backend> getBackendsByClusterName(final String clusterName) {
-        String clusterId = clusterNameToId.get(clusterName);
+        String clusterId = clusterNameToId.getOrDefault(clusterName, "");
+        if (clusterId.isEmpty()) {
+            return new ArrayList<>();
+        }
         return clusterIdToBackend.get(clusterId);
     }
 
@@ -118,6 +126,24 @@ public class SystemInfoService {
         lock.lock();
         clusterNameToId.remove(originalName);
         clusterNameToId.put(newName, clusterId);
+        lock.unlock();
+    }
+
+    public String getClusterNameByClusterId(final String clusterId) {
+        String clusterName = "";
+        for (Map.Entry<String, String> entry : clusterNameToId.entrySet()) {
+            if (entry.getValue().equals(clusterId)) {
+                clusterName = entry.getKey();
+                break;
+            }
+        }
+        return clusterName;
+    }
+
+    public void dropCluster(final String clusterId, final String clusterName) {
+        lock.lock();
+        clusterNameToId.remove(clusterName);
+        clusterIdToBackend.remove(clusterId);
         lock.unlock();
     }
 
@@ -172,15 +198,24 @@ public class SystemInfoService {
             throw new UserException("no cluster clusterName: " + clusterName + " or userName: " + userName + " found");
         }
 
-        clusterId = response.getCluster().getClusterId();
-        String clusterNameMeta = response.getCluster().getClusterName();
+        // Note: get_cluster interface cluster(option -> repeated), so it has at least one cluster.
+        if (response.getClusterCount() == 0) {
+            LOG.warn("meta service error , return cluster zero, plz check it, "
+                    + "cloud_unique_id={}, clusterId={}, response={}",
+                    Config.cloud_unique_id, Config.cloud_sql_server_cluster_id, response);
+            throw new UserException("get cluster return zero cluster info");
+        }
+
+        ClusterPB cpb = response.getCluster(0);
+        clusterId = cpb.getClusterId();
+        String clusterNameMeta = cpb.getClusterName();
 
         // Prepare backends
         Map<String, String> newTagMap = Tag.DEFAULT_BACKEND_TAG.toMap();
         newTagMap.put(Tag.CLOUD_CLUSTER_NAME, clusterNameMeta);
         newTagMap.put(Tag.CLOUD_CLUSTER_ID, clusterId);
         List<Backend> backends = new ArrayList<>();
-        for (SelectdbCloud.NodeInfoPB node : response.getCluster().getNodesList()) {
+        for (SelectdbCloud.NodeInfoPB node : cpb.getNodesList()) {
             Backend b = new Backend(Env.getCurrentEnv().getNextId(), node.getIp(), node.getHeartbeatPort());
             b.setTagMap(newTagMap);
             backends.add(b);
@@ -267,6 +302,14 @@ public class SystemInfoService {
     // reference: https://stackoverflow.com/questions/3768554/is-iterating-concurrenthashmap-values-thread-safe
     public Map<String, String> getCloudClusterNameToId() {
         return clusterNameToId;
+    }
+
+    public Map<String, List<ClusterPB>> getMysqlUserNameToClusterPb() {
+        return mysqlUserNameToClusterPB;
+    }
+
+    public void updateMysqlUserNameToClusterPb(Map<String, List<ClusterPB>> m) {
+        mysqlUserNameToClusterPB = m;
     }
 
     public List<Pair<String, Integer>> getCurrentObFrontends() {

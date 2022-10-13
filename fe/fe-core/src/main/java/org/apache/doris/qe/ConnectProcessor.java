@@ -52,6 +52,7 @@ import org.apache.doris.mysql.MysqlPacket;
 import org.apache.doris.mysql.MysqlProto;
 import org.apache.doris.mysql.MysqlSerializer;
 import org.apache.doris.mysql.MysqlServerStatusFlag;
+import org.apache.doris.mysql.privilege.PrivPredicate;
 import org.apache.doris.nereids.glue.LogicalPlanAdapter;
 import org.apache.doris.nereids.parser.NereidsParser;
 import org.apache.doris.plugin.AuditEvent.EventType;
@@ -126,6 +127,34 @@ public class ConnectProcessor {
         }
 
         String clusterName = res[1];
+
+        // check resource usage privilege
+        if (!Env.getCurrentEnv().getAuth().checkCloudClusterPriv(ConnectContext.get().getCurrentUserIdentity(),
+                clusterName, PrivPredicate.USAGE)) {
+            ctx.getState().setError(ErrorCode.ERR_CLUSTER_NO_PERMISSIONS, "USAGE denied to user"
+                    + ConnectContext.get().getQualifiedUser() + "'@'" + ConnectContext.get().getRemoteIP()
+                    + "' for cloud cluster '" + clusterName + "'");
+            return null;
+        }
+
+        // check the privilege of the cluster to be used
+        String user = ClusterNamespace.getNameFromFullName(
+                ConnectContext.get().getCurrentUserIdentity().getQualifiedUser());
+
+        if (!Env.getCurrentSystemInfo().getMysqlUserNameToClusterPb().containsKey(user)) {
+            LOG.debug("mysql user to cluster map can not get user: {}, can't use this cluster {}", user, clusterName);
+            ctx.getState().setError(ErrorCode.ERR_CLUSTER_NO_PERMISSIONS,
+                    "You can not use this cluster, Please switch a cluster which you have permission");
+            return null;
+        }
+
+        if (Env.getCurrentSystemInfo().getMysqlUserNameToClusterPb()
+                    .get(user).stream().noneMatch(cpb -> cpb.getClusterName().equals(clusterName))) {
+            LOG.debug("user: {}, can't use this cluster {}", user, clusterName);
+            ctx.getState().setError(ErrorCode.ERR_CLUSTER_NO_PERMISSIONS,
+                    "You can not use this cluster, Please switch a cluster which you have permission");
+            return null;
+        }
         try {
             Env.getCurrentSystemInfo().addCloudCluster(clusterName, "");
         } catch (UserException e) {
@@ -140,7 +169,7 @@ public class ConnectProcessor {
     // COM_INIT_DB: change current database of this session.
     private void handleInitDb() {
         String fullDbName = new String(packetBuf.array(), 1, packetBuf.limit() - 1);
-        LOG.info("lw test fullDbname {}", fullDbName);
+        LOG.info("handleInitDb fullDbname {}", fullDbName);
         if (Strings.isNullOrEmpty(ctx.getClusterName())) {
             ctx.getState().setError(ErrorCode.ERR_CLUSTER_NAME_NULL, "Please enter cluster");
             return;

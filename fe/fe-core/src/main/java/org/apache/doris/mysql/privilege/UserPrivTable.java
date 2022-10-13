@@ -19,6 +19,7 @@ package org.apache.doris.mysql.privilege;
 
 import org.apache.doris.analysis.UserIdentity;
 import org.apache.doris.catalog.Env;
+import org.apache.doris.cluster.ClusterNamespace;
 import org.apache.doris.common.AuthenticationException;
 import org.apache.doris.common.DdlException;
 import org.apache.doris.common.ErrorCode;
@@ -33,6 +34,8 @@ import java.io.DataOutput;
 import java.io.IOException;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /*
  * UserPrivTable saves all global privs and also password for users
@@ -181,6 +184,11 @@ public class UserPrivTable extends PrivTable {
             }
         }
         return null;
+    }
+
+    public Set<String> getAllMysqlUserName() {
+        return entries.stream().map(PrivEntry::getUserIdent)
+            .map(UserIdentity::getUser).map(ClusterNamespace::getNameFromFullName).collect(Collectors.toSet());
     }
 
     @Override

@@ -590,8 +590,9 @@ message AlterClusterRequest {
         UPDATE_CLUSTER_MYSQL_USER_NAME = 6; // just for update cluster's mysql_user_name
     }
     optional string instance_id = 1;
-    optional ClusterPB cluster = 2;
-    optional Operation op = 3;
+    optional string cloud_unique_id = 2; // For auth
+    optional ClusterPB cluster = 3;
+    optional Operation op = 4;
 }
 
 message GetClusterRequest {
@@ -604,7 +605,7 @@ message GetClusterRequest {
 
 message GetClusterResponse {
     optional MetaServiceResponseStatus status = 1;
-    optional ClusterPB cluster = 2;
+    repeated ClusterPB cluster = 2;
 }
 
 message GetTabletStatsRequest {

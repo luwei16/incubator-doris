@@ -3751,7 +3751,19 @@ void MetaServiceImpl::alter_cluster(google::protobuf::RpcController* controller,
                           << ctrl->remote_side() << " " << msg;
             });
 
-    if (!request->has_instance_id() || !request->has_cluster()) {
+    std::string cloud_unique_id = request->has_cloud_unique_id() ? request->cloud_unique_id() : "";
+    std::string instance_id = request->has_instance_id() ? request->instance_id() : "";
+    if (!cloud_unique_id.empty() && instance_id.empty()) {
+        instance_id = get_instance_id(resource_mgr_, cloud_unique_id);
+        if (instance_id.empty()) {
+            code = MetaServiceCode::INVALID_ARGUMENT;
+            msg = "empty instance_id";
+            LOG(INFO) << msg << ", cloud_unique_id=" << cloud_unique_id;
+            return;
+        }
+    }
+
+    if (instance_id.empty() || !request->has_cluster()) {
         msg = "invalid request instance_id or cluster not given";
         code = MetaServiceCode::INVALID_ARGUMENT;
         return;
@@ -3763,7 +3775,6 @@ void MetaServiceImpl::alter_cluster(google::protobuf::RpcController* controller,
         return;
     }
 
-    std::string instance_id = request->instance_id();
     LOG(INFO) << "alter cluster instance_id=" << instance_id << " op=" << request->op();
     ClusterInfo cluster;
     cluster.cluster.CopyFrom(request->cluster());
@@ -3782,20 +3793,14 @@ void MetaServiceImpl::alter_cluster(google::protobuf::RpcController* controller,
     case AlterClusterRequest::UPDATE_CLUSTER_MYSQL_USER_NAME: {
         msg = resource_mgr_->update_cluster(
                 instance_id, cluster,
-                [&](::selectdb::ClusterPB& c) {
+                [&](const ::selectdb::ClusterPB& i) {
+                    return i.cluster_id() == cluster.cluster.cluster_id();
+                },
+                [&](::selectdb::ClusterPB& c, std::set<std::string>& cluster_names) {
                     std::string msg = "";
-                    if (0 == cluster.cluster.mysql_user_name_size()) {
-                        msg = "no mysql user name to change";
-                        code = MetaServiceCode::INVALID_ARGUMENT;
-                        LOG(WARNING) << "update cluster's mysql user name, " << msg;
-                        return msg;
-                    }
                     auto& mysql_user_names = cluster.cluster.mysql_user_name();
                     c.mutable_mysql_user_name()->CopyFrom(mysql_user_names);
                     return msg;
-                },
-                [&](const ::selectdb::ClusterPB& i) {
-                    return i.cluster_id() == cluster.cluster.cluster_id();
                 });
     } break;
     case AlterClusterRequest::ADD_NODE: {
@@ -3847,8 +3852,25 @@ void MetaServiceImpl::alter_cluster(google::protobuf::RpcController* controller,
     case AlterClusterRequest::RENAME_CLUSTER: {
         msg = resource_mgr_->update_cluster(
                 instance_id, cluster,
-                [&](::selectdb::ClusterPB& c) {
+                [&](const ::selectdb::ClusterPB& i) {
+                    return i.cluster_id() == cluster.cluster.cluster_id();
+                },
+                [&](::selectdb::ClusterPB& c, std::set<std::string>& cluster_names) {
                     std::string msg = "";
+                    auto it = cluster_names.find(cluster.cluster.cluster_name());
+                    LOG(INFO) << "cluster.cluster.cluster_name(): "
+                              << cluster.cluster.cluster_name();
+                    for (auto itt : cluster_names) {
+                        LOG(INFO) << "itt : " << itt;
+                    }
+                    if (it != cluster_names.end()) {
+                        code = MetaServiceCode::INVALID_ARGUMENT;
+                        ss << "failed to rename cluster, a cluster with the same name already "
+                              "exists in this instance "
+                           << proto_to_json(c);
+                        msg = ss.str();
+                        return msg;
+                    }
                     if (c.cluster_name() == cluster.cluster.cluster_name()) {
                         code = MetaServiceCode::INVALID_ARGUMENT;
                         ss << "failed to rename cluster, name eq original name, original cluster "
@@ -3859,9 +3881,6 @@ void MetaServiceImpl::alter_cluster(google::protobuf::RpcController* controller,
                     }
                     c.set_cluster_name(cluster.cluster.cluster_name());
                     return msg;
-                },
-                [&](const ::selectdb::ClusterPB& i) {
-                    return i.cluster_id() == cluster.cluster.cluster_id();
                 });
     } break;
     default: {
@@ -3930,13 +3949,12 @@ void MetaServiceImpl::get_cluster(google::protobuf::RpcController* controller,
         mysql_user_name = "";
     }
 
+    bool get_all_cluster_info = false;
+    // if cluster_id、cluster_name、mysql_user_name all empty, get this instance's all cluster info.
     if (cluster_id.empty() && cluster_name.empty() && mysql_user_name.empty()) {
-        code = MetaServiceCode::INVALID_ARGUMENT;
-        msg = "cluster_name or cluster_id or mysql_user_name must be given";
-        return;
+        get_all_cluster_info = true;
     }
 
-    // TODO: get instance_id with cloud_unique_id
     if (instance_id.empty()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
         msg = "failed to get instance_id with cloud_unique_id=" + cloud_unique_id;
@@ -3957,7 +3975,7 @@ void MetaServiceImpl::get_cluster(google::protobuf::RpcController* controller,
         return;
     }
     ret = txn->get(key, &val);
-    LOG(INFO) << "get instnace_key=" << hex(key);
+    LOG(INFO) << "get instance_key=" << hex(key);
 
     if (ret != 0) {
         code = MetaServiceCode::KV_TXN_GET_ERR;
@@ -3980,23 +3998,30 @@ void MetaServiceImpl::get_cluster(google::protobuf::RpcController* controller,
         }
     };
 
-    for (int i = 0; i < instance.clusters_size(); ++i) {
-        auto& c = instance.clusters(i);
-        std::set<std::string> mysql_users;
-        get_cluster_mysql_user(c, &mysql_users);
-        // The last wins if add_cluster() does not ensure uniqueness of
-        // cluster_id and cluster_name respectively
-        if ((c.has_cluster_name() && c.cluster_name() == cluster_name) ||
-            (c.has_cluster_id() && c.cluster_id() == cluster_id) ||
-            mysql_users.count(mysql_user_name)) {
-            response->mutable_cluster()->CopyFrom(c);
-            msg = proto_to_json(response->cluster());
-            LOG(INFO) << "found a cluster, instance_id=" << instance.instance_id()
-                      << " cluster=" << msg;
+    if (get_all_cluster_info) {
+        response->mutable_cluster()->CopyFrom(instance.clusters());
+        msg = proto_to_json(*response);
+        LOG(INFO) << "get all cluster info, " << msg;
+    } else {
+        for (int i = 0; i < instance.clusters_size(); ++i) {
+            auto& c = instance.clusters(i);
+            std::set<std::string> mysql_users;
+            get_cluster_mysql_user(c, &mysql_users);
+            // The last wins if add_cluster() does not ensure uniqueness of
+            // cluster_id and cluster_name respectively
+            if ((c.has_cluster_name() && c.cluster_name() == cluster_name) ||
+                (c.has_cluster_id() && c.cluster_id() == cluster_id) ||
+                mysql_users.count(mysql_user_name)) {
+                // just one cluster
+                response->add_cluster()->CopyFrom(c);
+                msg = proto_to_json(response->cluster().at(0));
+                LOG(INFO) << "found a cluster, instance_id=" << instance.instance_id()
+                          << " cluster=" << msg;
+            }
         }
     }
 
-    if (!response->has_cluster()) {
+    if (response->cluster().size() == 0) {
         ss << "fail to get cluster with " << request->DebugString();
         msg = ss.str();
         std::replace(msg.begin(), msg.end(), '\n', ' ');

@@ -56,6 +56,9 @@ suite("cloud_cluster_test", "cloud_cluster") {
     def cloudUniqueId = "cloud_unique_id_compute_node0"
     def ip = "172.0.0.10"
     def heartbeatPort = 9050
+    def ip2 = "172.0.0.11"
+    def clusterName2 = "cluster_name2"
+    def clusterId2 = "cluster_id2"
     def nodeMap = [cloud_unique_id: "${cloudUniqueId}", ip: "${ip}", heartbeat_port: "${heartbeatPort}"]
     def nodeList = [nodeMap]
     def clusterMap = [cluster_name: "${clusterName}", cluster_id:"${clusterId}", nodes:nodeList]
@@ -552,6 +555,50 @@ suite("cloud_cluster_test", "cloud_cluster") {
             }
     }
 
+    nodeMap1 = [cloud_unique_id: "${cloudUniqueId}", ip: "${ip2}", heartbeat_port: "${heartbeatPort}"]
+    nodeList1 = [nodeMap1]
+    clusterMap1 = [cluster_name: "${clusterName2}", cluster_id:"${clusterId2}", type:"COMPUTE", nodes:nodeList1]
+    instance = [instance_id: "${instance_id}", cluster: clusterMap1]
+    jsonOutput = new JsonOutput()
+    js2 = jsonOutput.toJson(instance)
+    // add_cluster has one node
+    /*
+         curl '127.0.0.1:5000/MetaService/http/add_cluster?token=greedisgood9999' -d '{
+             "instance_id":"instance_id_deadbeef",
+             "cluster":{
+                 "cluster_name":"cluster_name2",
+                 "cluster_id":"cluster_id2",
+                 "type" : "COMPUTE",
+                 "nodes":[
+                     {
+                         "cloud_unique_id":"cloud_unique_id_compute_node0",
+                         "ip":"172.0.0.11",
+                         "heartbeat_port":9050
+                     }
+                 ]
+             }
+         }'
+     */
+
+    add_cluster_api.call(js2) {
+        respCode, body ->
+            log.info("http cli result: ${body} ${respCode}".toString())
+            def json = parseJson(body)
+            assertTrue(json.code.equalsIgnoreCase("OK") || json.code.equalsIgnoreCase("INTERANAL_ERROR"))
+    }
+
+    // failed, failed to rename cluster, a cluster with the same name already exists in this instance
+    clusterMap = [cluster_name: "${clusterName}", cluster_id:"${clusterId2}"]
+    instance = [instance_id: "${instance_id}", cluster: clusterMap]
+    jsonOutput = new JsonOutput()
+    js = jsonOutput.toJson(instance)
+    rename_node_api.call(js) {
+        respCode, body ->
+            def json = parseJson(body)
+            log.info("http cli result: ${body} ${respCode} ${json}".toString())
+            assertTrue(json.code.equalsIgnoreCase("INVALID_ARGUMENT"))
+    }
+
     // drop cluster
     /*
          curl '127.0.0.1:5000/MetaService/http/drop_cluster?token=greedisgood9999' -d '{
@@ -563,6 +610,18 @@ suite("cloud_cluster_test", "cloud_cluster") {
          }'
      */
     clusterMap = [cluster_name: "${clusterName}", cluster_id:"${clusterId}"]
+    instance = [instance_id: "${instance_id}", cluster: clusterMap]
+    jsonOutput = new JsonOutput()
+    js = jsonOutput.toJson(instance)
+    drop_cluster_api.call(js) {
+        respCode, body ->
+            log.info("http cli result: ${body} ${respCode}".toString())
+            def json = parseJson(body)
+            assertTrue(json.code.equalsIgnoreCase("OK") || json.code.equalsIgnoreCase("INTERANAL_ERROR"))
+    }
+
+    // drop cluster_id2
+    clusterMap = [cluster_id:"${clusterId2}"]
     instance = [instance_id: "${instance_id}", cluster: clusterMap]
     jsonOutput = new JsonOutput()
     js = jsonOutput.toJson(instance)

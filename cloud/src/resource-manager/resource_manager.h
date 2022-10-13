@@ -75,9 +75,11 @@ public:
      * @filter filter condition
      * @return empty string for success, otherwise failure reason returned
      */
-    virtual std::string update_cluster(const std::string& instance_id, const ClusterInfo& cluster,
-                                       std::function<std::string(::selectdb::ClusterPB&)> action,
-                                       std::function<bool(const ::selectdb::ClusterPB&)> filter);
+    virtual std::string update_cluster(
+            const std::string& instance_id, const ClusterInfo& cluster,
+            std::function<bool(const ::selectdb::ClusterPB&)> filter,
+            std::function<std::string(::selectdb::ClusterPB&, std::set<std::string>& cluster_names)>
+                    action);
 
     /**
      * Get instance from underlying storage with given transaction.

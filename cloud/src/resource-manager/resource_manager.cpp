@@ -350,8 +350,9 @@ std::pair<MetaServiceCode, std::string> ResourceManager::drop_cluster(
 
 std::string ResourceManager::update_cluster(
         const std::string& instance_id, const ClusterInfo& cluster,
-        std::function<std::string(::selectdb::ClusterPB&)> action,
-        std::function<bool(const ::selectdb::ClusterPB&)> filter) {
+        std::function<bool(const ::selectdb::ClusterPB&)> filter,
+        std::function<std::string(::selectdb::ClusterPB&, std::set<std::string>& cluster_names)>
+                action) {
     std::stringstream ss;
     std::string err;
 
@@ -386,6 +387,12 @@ std::string ResourceManager::update_cluster(
         return err;
     }
 
+    std::set<std::string> cluster_names;
+    // collect cluster_names
+    for (auto& i : instance.clusters()) {
+        cluster_names.emplace(i.cluster_name());
+    }
+
     bool found = false;
     int idx = -1;
     // Check id and name, they need to be unique
@@ -413,7 +420,7 @@ std::string ResourceManager::update_cluster(
 
     // do update
     ClusterPB original = clusters[idx];
-    err = action(clusters[idx]);
+    err = action(clusters[idx], cluster_names);
     if (!err.empty()) {
         return err;
     }
