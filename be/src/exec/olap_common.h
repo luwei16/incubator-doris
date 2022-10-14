@@ -241,7 +241,7 @@ public:
         for (const auto& value : _match_values) {
             TCondition condition;
             condition.__set_column_name(_column_name);
-            // condition.__set_in_compound_query(_in_compound_query);
+            condition.__set_compound_type(_compound_type);
 
             if (value.first == MatchType::MATCH_ANY) {
                 condition.__set_condition_op("match_any");
@@ -1010,6 +1010,20 @@ Status OlapScanKeys::extend_scan_key(ColumnValueRange<primitive_type>& range,
         }
     }
 
+    // extend ScanKey with MatchValueRange
+    if (range.is_match_value_range() && _begin_scan_keys.empty()) {
+        _begin_scan_keys.emplace_back();
+        _begin_scan_keys.back().add_value(
+            cast_to_string<primitive_type, CppType>(type_limit<CppType>::min(), 0));
+        _end_scan_keys.emplace_back();
+        _end_scan_keys.back().add_value(
+            cast_to_string<primitive_type, CppType>(type_limit<CppType>::max(), 0));
+        _begin_include = true;
+        _end_include = true;
+        *exact_value = false;
+        // not empty, do nothing
+    }
+
     // 3.1 extend ScanKey with FixedValueRange
     if (range.is_fixed_value_range()) {
         // 3.1.1 construct num of fixed value ScanKey (begin_key == end_key)
@@ -1099,20 +1113,6 @@ Status OlapScanKeys::extend_scan_key(ColumnValueRange<primitive_type>& range,
 
         _begin_include = range.is_begin_include();
         _end_include = range.is_end_include();
-    }
-
-    // 3.2  extend ScanKey with MatchValueRange
-    if (range.is_match_value_range() && _begin_scan_keys.empty()) {
-        _begin_scan_keys.emplace_back();
-        _begin_scan_keys.back().add_value(
-            cast_to_string<primitive_type, CppType>(type_limit<CppType>::min(), 0));
-        _end_scan_keys.emplace_back();
-        _end_scan_keys.back().add_value(
-            cast_to_string<primitive_type, CppType>(type_limit<CppType>::max(), 0));
-        _begin_include = true;
-        _end_include = true;
-
-        // not empty, do nothing
     }
 
     return Status::OK();

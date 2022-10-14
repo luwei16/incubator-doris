@@ -493,6 +493,10 @@ public class Column implements Writable {
                 if (index.getIndexType() == IndexDef.IndexType.BITMAP) {
                     builder.setHasBitmapIndex(true);
                     break;
+                } else if (index.getIndexType() == IndexDef.IndexType.INVERTED) {
+                    builder.setHasInvertedIndex(true);
+                    builder.setInvertedIndexParser(index.getInvertedIndexParser());
+                    break;
                 }
             }
         }

@@ -779,13 +779,6 @@ Status SegmentIterator::_apply_inverted_index_in_compound(ColumnPredicate* pred,
 
 Status SegmentIterator::_apply_index_in_compound() {
     for (auto pred : _all_compound_col_predicates) {
-        bool apply_by_bitmap_index = _check_apply_by_bitmap_index(pred);
-        bool apply_by_inverted_index = _check_apply_by_inverted_index(pred);
-        if (!apply_by_bitmap_index &&
-            !apply_by_inverted_index) {
-            continue;
-        }
-
         auto pred_type = pred->type();
         bool is_support_in_compound = 
                 pred_type == PredicateType::EQ || pred_type == PredicateType::NE ||
@@ -796,12 +789,16 @@ Status SegmentIterator::_apply_index_in_compound() {
             continue;
         }
 
+        bool apply_by_bitmap_index = _check_apply_by_bitmap_index(pred);
+        bool apply_by_inverted_index = _check_apply_by_inverted_index(pred);
         roaring::Roaring bitmap = _row_bitmap;
         Status res = Status::OK();
         if (apply_by_bitmap_index) {
             res = _apply_bitmap_index_in_compound(pred, &bitmap);
         } else if (apply_by_inverted_index) {
             res = _apply_inverted_index_in_compound(pred, &bitmap);
+        } else {
+            continue;
         }
 
         if (!res.ok()) {
@@ -1019,7 +1016,7 @@ Status SegmentIterator::_lookup_ordinal_from_pk_index(const RowCursor& key, bool
         *rowid += 1;
     }
     return Status::OK();
-}
+}   
 
 // seek to the row and load that row to _key_cursor
 Status SegmentIterator::_seek_and_peek(rowid_t rowid) {

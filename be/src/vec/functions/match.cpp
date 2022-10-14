@@ -54,7 +54,7 @@ public:
             if (!config::enable_storage_vectorization) {
                 return Status::Cancelled("please check whether turn on the configuration 'enable_storage_vectorization'");
             }
-            LOG(WARNING) << "execute match query meet error";
+            LOG(WARNING) << "execute match query meet error, block no column: " << match_pred_name;
             return Status::InternalError("match query meet error");
         }
         auto match_pred_column = block.get_by_name(match_pred_name).column->convert_to_full_column_if_const();

@@ -423,9 +423,10 @@ VExpr* VScanNode::_normalize_predicate(VExpr* conjunct_expr_root) {
                             RETURN_IF_PUSH_DOWN(_normalize_noneq_binary_predicate(
                                     cur_expr, *(_vconjunct_ctx_ptr.get()), slot, value_range,
                                     &pdt));
+                            RETURN_IF_PUSH_DOWN(_normalize_match_predicate(
+                                    cur_expr, *(_vconjunct_ctx_ptr.get()), slot, value_range, 
+                                    &pdt));
                             if (_is_key_column(slot->col_name())) {
-                                RETURN_IF_PUSH_DOWN(_normalize_match_predicate(
-                                        cur_expr, *(_vconjunct_ctx_ptr.get()), slot, value_range, &pdt));
                                 RETURN_IF_PUSH_DOWN(_normalize_bloom_filter(
                                         cur_expr, *(_vconjunct_ctx_ptr.get()), slot, &pdt));
                                 if (_state->enable_function_pushdown()) {
@@ -802,7 +803,9 @@ Status VScanNode::_normalize_match_predicate(VExpr* expr, VExprContext* expr_ctx
         // Normalize match conjuncts like 'where col match value'
 
         auto match_checker = [](const std::string& fn_name) {
-            return true; // TODO xk fn_name == "match";
+            return fn_name == "match_any" || 
+                    fn_name == "match_all" ||
+                    fn_name == "match_phrase";
         };
         StringRef value;
         int slot_ref_child = -1;
