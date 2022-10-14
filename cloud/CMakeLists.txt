@@ -559,7 +559,6 @@ install(FILES
     DESTINATION ${OUTPUT_DIR}/bin)
 
 install(FILES
-    ${BASE_DIR}/conf/fdb.cluster
     ${BASE_DIR}/conf/selectdb_cloud.conf
     DESTINATION ${OUTPUT_DIR}/conf)
 
