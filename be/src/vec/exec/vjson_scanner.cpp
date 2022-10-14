@@ -425,7 +425,9 @@ Status VJsonReader::_write_data_to_column(rapidjson::Value::ConstValueIterator v
                     slot_desc->col_name(), valid));
             return Status::OK();
         }
-        break;
+        // return immediately to prevent from repeatedly insert_data
+        *valid = true;
+        return Status::OK();
     default:
         // for other type like array or object. we convert it to string to save
         json_str = JsonReader::_print_json_value(*value);
