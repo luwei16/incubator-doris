@@ -919,7 +919,8 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
         }
         txn->put(k, val);
         LOG(INFO) << "xxx put tablet_stat_key key=" << hex(k) << " txn_id=" << txn_id;
-        VLOG_DEBUG << "xxx put tablet_stat_key key=" << hex(k) << " txn_id=" << txn_id << " stats=" << proto_to_json(v);
+        VLOG_DEBUG << "xxx put tablet_stat_key key=" << hex(k) << " txn_id=" << txn_id
+                   << " stats=" << proto_to_json(v);
     }
 
     // Remove tmp rowset meta
@@ -3797,10 +3798,9 @@ void MetaServiceImpl::alter_cluster(google::protobuf::RpcController* controller,
                     return i.cluster_id() == cluster.cluster.cluster_id();
                 },
                 [&](::selectdb::ClusterPB& c, std::set<std::string>& cluster_names) {
-                    std::string msg = "";
                     auto& mysql_user_names = cluster.cluster.mysql_user_name();
                     c.mutable_mysql_user_name()->CopyFrom(mysql_user_names);
-                    return msg;
+                    return "";
                 });
     } break;
     case AlterClusterRequest::ADD_NODE: {

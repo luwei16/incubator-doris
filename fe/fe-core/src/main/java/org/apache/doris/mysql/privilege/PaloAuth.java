@@ -75,6 +75,7 @@ import org.apache.logging.log4j.Logger;
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -302,7 +303,7 @@ public class PaloAuth implements Writable {
 
         String user = ClusterNamespace.getNameFromFullName(userIdentity.getUser());
         // root has all cluster's info
-        Optional<ClusterPB> clusterPB = mysqlUserNameToClusterPb.get("root")
+        Optional<ClusterPB> clusterPB = mysqlUserNameToClusterPb.getOrDefault("root", new ArrayList<>())
                 .stream().filter(pb -> pb.getClusterId().equals(clusterId)).findAny();
         if (!clusterPB.isPresent()) {
             LOG.warn("mysqlUserNameToClusterPb cant find clusterId, clusterName {}, clusterId {}, userName {}",
@@ -368,7 +369,7 @@ public class PaloAuth implements Writable {
             return;
         }
         // root has all cluster's info
-        Optional<ClusterPB> clusterPB = mysqlUserNameToClusterPb.get("root")
+        Optional<ClusterPB> clusterPB = mysqlUserNameToClusterPb.getOrDefault("root", new ArrayList<>())
                 .stream().filter(pb -> pb.getClusterId().equals(clusterId)).findAny();
         // if failed notify, ignore it
         if (!clusterPB.isPresent()) {

@@ -39,7 +39,7 @@ public class ShowFrontendsStmt extends ShowStmt {
         // ATTN: root has admin and operator Privileges
         if (!Config.cloud_unique_id.isEmpty()
                 && !Env.getCurrentEnv().getAuth().checkGlobalPriv(ConnectContext.get(), PrivPredicate.OPERATOR)) {
-            ErrorReport.reportAnalysisException(ErrorCode.ERR_SPECIFIC_ACCESS_DENIED_ERROR, "OPERATOR");
+            ErrorReport.reportAnalysisException(ErrorCode.ERR_UNSUPPORTED_OPERATION_ERROR);
         }
         if (!Env.getCurrentEnv().getAuth().checkGlobalPriv(ConnectContext.get(), PrivPredicate.ADMIN)
                 && !Env.getCurrentEnv().getAuth().checkGlobalPriv(ConnectContext.get(),
