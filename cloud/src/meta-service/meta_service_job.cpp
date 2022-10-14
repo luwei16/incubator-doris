@@ -232,6 +232,7 @@ void MetaServiceImpl::start_tablet_job(::google::protobuf::RpcController* contro
 void process_compaction_job(MetaServiceCode& code, std::string& msg, std::stringstream& ss,
                             int& ret, std::unique_ptr<Transaction>& txn,
                             const ::selectdb::FinishTabletJobRequest* request,
+                            ::selectdb::FinishTabletJobResponse* response,
                             TabletJobInfoPB& recorded_job, std::string& instance_id,
                             int64_t& table_id, int64_t& index_id, int64_t& partition_id,
                             int64_t& tablet_id, std::string& job_key, int64_t& now,
@@ -340,6 +341,7 @@ void process_compaction_job(MetaServiceCode& code, std::string& msg, std::string
         stats.set_last_compaction_time(now);
         // clang-format on
     }
+    response->mutable_stats()->CopyFrom(stats);
 
     stats_val = stats.SerializeAsString();
     DCHECK(!stats_val.empty());

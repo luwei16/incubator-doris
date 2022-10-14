@@ -118,7 +118,8 @@ Status CloudBaseCompaction::update_tablet_meta() {
     compaction_job->add_output_rowset_ids(_output_rowset->rowset_id().to_string());
 
     int64_t base_compaction_cnt = _tablet->base_compaction_cnt();
-    RETURN_IF_ERROR(cloud::meta_mgr()->commit_tablet_job(job));
+    selectdb::TabletStatsPB stats;
+    RETURN_IF_ERROR(cloud::meta_mgr()->commit_tablet_job(job, &stats));
 
     {
         std::lock_guard wrlock(_tablet->get_header_lock());
@@ -126,9 +127,13 @@ Status CloudBaseCompaction::update_tablet_meta() {
             // This could happen while calling `sync_tablet_rowsets` during `commit_tablet_job`
             return Status::OK();
         }
-        _tablet->set_base_compaction_cnt(base_compaction_cnt + 1);
         _tablet->cloud_delete_rowsets(_input_rowsets);
         _tablet->cloud_add_rowsets({_output_rowset}, false);
+        _tablet->set_base_compaction_cnt(stats.base_compaction_cnt());
+        _tablet->set_cumulative_compaction_cnt(stats.cumulative_compaction_cnt());
+        _tablet->set_cumulative_layer_point(stats.cumulative_point());
+        _tablet->reset_approximate_stats(stats.num_rowsets(), stats.num_segments(),
+                                         stats.num_rows(), stats.data_size());
     }
     return Status::OK();
 }

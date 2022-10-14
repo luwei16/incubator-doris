@@ -10,7 +10,8 @@
 
 namespace selectdb {
 class TabletJobInfoPB;
-}
+class TabletStatsPB;
+} // namespace selectdb
 
 namespace doris::cloud {
 
@@ -60,7 +61,8 @@ public:
         return Status::NotSupported("not supported");
     }
 
-    virtual Status commit_tablet_job(const selectdb::TabletJobInfoPB& job) {
+    virtual Status commit_tablet_job(const selectdb::TabletJobInfoPB& job,
+                                     selectdb::TabletStatsPB* stats) {
         return Status::NotSupported("not supported");
     }
 

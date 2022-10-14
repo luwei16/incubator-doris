@@ -4,7 +4,7 @@
 
 namespace selectdb {
 class MetaService_Stub;
-}
+} // namespace selectdb
 
 namespace doris::cloud {
 
@@ -36,7 +36,8 @@ public:
 
     Status prepare_tablet_job(const selectdb::TabletJobInfoPB& job) override;
 
-    Status commit_tablet_job(const selectdb::TabletJobInfoPB& job) override;
+    Status commit_tablet_job(const selectdb::TabletJobInfoPB& job,
+                             selectdb::TabletStatsPB* stats) override;
 
     Status abort_tablet_job(const selectdb::TabletJobInfoPB& job) override;
 

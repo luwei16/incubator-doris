@@ -2,16 +2,15 @@
 
 #include <brpc/channel.h>
 #include <brpc/controller.h>
-#include <gen_cpp/olap_file.pb.h>
 
 #include <chrono>
 
 #include "common/config.h"
 #include "common/logging.h"
+#include "gen_cpp/olap_file.pb.h"
 #include "gen_cpp/selectdb_cloud.pb.h"
 #include "olap/rowset/rowset_factory.h"
 #include "util/s3_util.h"
-#include "utils.h"
 
 namespace doris::cloud {
 
@@ -305,7 +304,8 @@ Status CloudMetaMgr::prepare_tablet_job(const selectdb::TabletJobInfoPB& job) {
     return check_rpc_response(res, cntl, __FUNCTION__);
 }
 
-Status CloudMetaMgr::commit_tablet_job(const selectdb::TabletJobInfoPB& job) {
+Status CloudMetaMgr::commit_tablet_job(const selectdb::TabletJobInfoPB& job,
+                                       selectdb::TabletStatsPB* stats) {
     brpc::Controller cntl;
     cntl.set_timeout_ms(config::meta_service_brpc_timeout_ms);
     selectdb::FinishTabletJobRequest req;
@@ -314,7 +314,14 @@ Status CloudMetaMgr::commit_tablet_job(const selectdb::TabletJobInfoPB& job) {
     req.set_action(selectdb::FinishTabletJobRequest::COMMIT);
     req.set_cloud_unique_id(config::cloud_unique_id);
     _stub->finish_tablet_job(&cntl, &req, &res, nullptr);
-    return check_rpc_response(res, cntl, __FUNCTION__);
+    if (cntl.Failed()) {
+        return Status::RpcError("failed to commit_tablet_job: {}", cntl.ErrorText());
+    }
+    if (res.status().code() == selectdb::MetaServiceCode::OK) {
+        stats->CopyFrom(res.stats());
+        return Status::OK();
+    }
+    return Status::InternalError("failed to commit_tablet_job: {}", res.status().msg());
 }
 
 Status CloudMetaMgr::abort_tablet_job(const selectdb::TabletJobInfoPB& job) {
