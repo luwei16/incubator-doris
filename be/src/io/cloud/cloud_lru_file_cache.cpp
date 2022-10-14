@@ -334,10 +334,12 @@ bool LRUFileCache::try_reserve(const Key& key, const TUniqueId& query_id, bool i
     std::vector<FileSegmentCell*> trash;
     std::vector<FileSegmentCell*> to_evict;
 
+    size_t max_size = is_persistent ? _persistent_max_size : _max_size;
+    size_t max_element_size = is_persistent ? _persistent_max_element_size : _max_element_size;
     auto is_overflow = [&] {
-        return (_max_size != 0 &&
-                queue->get_total_cache_size(cache_lock) + size - removed_size > _max_size) ||
-               (_max_element_size != 0 && queue_size > _max_element_size) ||
+        return (max_size != 0 &&
+                queue->get_total_cache_size(cache_lock) + size - removed_size > max_size) ||
+               (max_element_size != 0 && queue_size > max_element_size) ||
                (query_context->get_cache_size(cache_lock) + size - removed_size >
                 query_context->get_max_cache_size());
     };
@@ -414,11 +416,13 @@ bool LRUFileCache::try_reserve_for_main_list(const Key& key, QueryContextPtr que
     auto removed_size = 0;
     size_t queue_size = queue->get_elements_num(cache_lock);
 
+    size_t max_size = is_persistent ? _persistent_max_size : _max_size;
+    size_t max_element_size = is_persistent ? _persistent_max_element_size : _max_element_size;
     auto is_overflow = [&] {
         /// max_size == 0 means unlimited cache size, max_element_size means unlimited number of cache elements.
-        return (_max_size != 0 &&
-                queue->get_total_cache_size(cache_lock) + size - removed_size > _max_size) ||
-               (_max_element_size != 0 && queue_size >= _max_element_size);
+        return (max_size != 0 &&
+                queue->get_total_cache_size(cache_lock) + size - removed_size > max_size) ||
+               (max_element_size != 0 && queue_size >= max_element_size);
     };
 
     std::vector<FileSegmentCell*> to_evict;
