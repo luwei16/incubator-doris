@@ -3878,7 +3878,7 @@ public class InternalCatalog implements CatalogIf<Database> {
         try {
             response = MetaServiceProxy.getInstance().finishCopy(builder.build());
             if (response.getStatus().getCode() != SelectdbCloud.MetaServiceCode.OK) {
-                LOG.warn("beginCopy response: {} ", response);
+                LOG.warn("finishCopy response: {} ", response);
                 throw new DdlException(response.getStatus().getMsg());
             }
         } catch (RpcException e) {

@@ -4276,6 +4276,8 @@ void MetaServiceImpl::get_stage(google::protobuf::RpcController* controller,
                 response->mutable_stage()->mutable_obj_info()->set_region(old_obj.region());
                 response->mutable_stage()->mutable_obj_info()->set_provider(old_obj.provider());
                 response->mutable_stage()->mutable_obj_info()->set_prefix(s.obj_info().prefix());
+                response->mutable_stage()->set_stage_id(s.stage_id());
+                response->mutable_stage()->set_type(s.type());
                 msg = proto_to_json(response->stage());
                 return;
             }
@@ -4318,6 +4320,8 @@ void MetaServiceImpl::get_stage(google::protobuf::RpcController* controller,
             response->mutable_stage()->mutable_obj_info()->set_endpoint(lastest_obj.endpoint());
             response->mutable_stage()->mutable_obj_info()->set_region(lastest_obj.region());
             response->mutable_stage()->mutable_obj_info()->set_provider(lastest_obj.provider());
+            response->mutable_stage()->set_stage_id(stage_id);
+            response->mutable_stage()->set_type(StagePB::INTERNAL);
             msg = proto_to_json(response->stage());
             return;
         }

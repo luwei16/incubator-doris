@@ -968,7 +968,7 @@ TEST(MetaServiceTest, CopyJobTest) {
     auto cloud_unique_id = "test_cloud_unique_id";
     auto stage_id = "test_stage_id";
     int64_t table_id = 100;
-    std::string instance_id = "tablet_job_test_instance_id";
+    std::string instance_id = "copy_job_test_instance_id";
     [[maybe_unused]] auto sp = SyncPoint::get_instance();
     sp->set_call_back("get_instance_id::pred", [](void* p) { *((bool*)p) = true; });
     sp->set_call_back("get_instance_id", [&](void* p) { *((std::string*)p) = instance_id; });
@@ -1275,6 +1275,62 @@ TEST(MetaServiceTest, CalcSyncVersionsTest) {
                                                             req_cp, cp, req_start, req_end);
         // [0, 4] v [5, max] v [8, 12]
         ASSERT_EQ(versions, (Versions {{0, std::numeric_limits<int64_t>::max() - 1}}));
+    }
+}
+
+TEST(MetaServiceTest, StageTest) {
+    auto meta_service = get_meta_service();
+    brpc::Controller cntl;
+    auto cloud_unique_id = "test_cloud_unique_id";
+    std::string instance_id = "stage_test_instance_id";
+    [[maybe_unused]] auto sp = SyncPoint::get_instance();
+    sp->set_call_back("get_instance_id::pred", [](void* p) { *((bool*)p) = true; });
+    sp->set_call_back("get_instance_id", [&](void* p) { *((std::string*)p) = instance_id; });
+    sp->enable_processing();
+
+    // create instance
+    {
+        CreateInstanceRequest req;
+        req.set_instance_id(instance_id);
+        req.set_user_id("test_user");
+        req.set_name("test_name");
+        ObjectStoreInfoPB obj;
+        obj.set_ak("123");
+        obj.set_sk("321");
+        obj.set_bucket("456");
+        obj.set_prefix("654");
+        obj.set_endpoint("789");
+        obj.set_region("987");
+        obj.set_provider(ObjectStoreInfoPB::BOS);
+        req.mutable_obj_info()->CopyFrom(obj);
+
+        MetaServiceGenericResponse res;
+        meta_service->create_instance(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
+                                      &req, &res, nullptr);
+        ASSERT_EQ(res.status().code(), MetaServiceCode::OK);
+    }
+
+    // test create and get internal stage
+    {
+        GetStageRequest get_stage_req;
+        get_stage_req.set_cloud_unique_id(cloud_unique_id);
+        get_stage_req.set_type(StagePB::INTERNAL);
+        get_stage_req.set_mysql_user_name("root");
+
+        // get a non-existent internal stage, will create and return
+        GetStageResponse res;
+        meta_service->get_stage(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
+                                &get_stage_req, &res, nullptr);
+        ASSERT_EQ(res.status().code(), MetaServiceCode::OK);
+        ASSERT_FALSE(res.stage().stage_id().empty());
+        auto stage_id = res.stage().stage_id();
+
+        // get existent internal stage
+        GetStageResponse res2;
+        meta_service->get_stage(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
+                                &get_stage_req, &res2, nullptr);
+        ASSERT_EQ(res2.status().code(), MetaServiceCode::OK);
+        ASSERT_EQ(stage_id, res2.stage().stage_id());
     }
 }
 

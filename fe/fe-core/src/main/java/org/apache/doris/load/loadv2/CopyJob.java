@@ -116,7 +116,7 @@ public class CopyJob extends BrokerLoadJob {
             long tableId = entry.getKey().getTableId();
             LOG.debug("Start cancel copy for stage={}, table={}", stageId, tableId);
             try {
-                Env.getCurrentInternalCatalog().finishCopy(stageId, stageType, tableId, "copy" + label, 0, false);
+                Env.getCurrentInternalCatalog().finishCopy(stageId, stageType, tableId, getCopyId(), 0, false);
             } catch (DdlException e) {
                 // if cancel copy failed, kvs in fdb will be cleaned when expired
                 LOG.warn("Failed to cancel copy for stage={}, table={}", stageId, tableId, e);

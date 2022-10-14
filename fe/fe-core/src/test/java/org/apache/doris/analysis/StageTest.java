@@ -141,6 +141,11 @@ public class StageTest extends TestWithFeService {
         // create stage with async
         sql = "create stage ex_stage_1 " + OBJ_INFO + "with async = false;";
         parseAndAnalyzeWithException(sql, "");
+
+        // create stage with invalid type and compression
+        sql = "create stage if not exists ex_stage_1 " + OBJ_INFO
+                + "with file_format = ('type' = 'json', 'compression'='gz')";
+        parseAndAnalyzeWithException(sql, "Compression only support CSV file type, but input type is json");
     }
 
     @Test

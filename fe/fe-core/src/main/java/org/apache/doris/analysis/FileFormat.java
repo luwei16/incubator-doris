@@ -55,6 +55,12 @@ public class FileFormat {
                 throw new AnalysisException("Property '" + key + "' is invalid in FileFormat");
             }
         }
+        // analyze type and compression: See {@link BrokerScanNode#formatType}, we only support COMPRESSION on CSV
+        String compression = properties.get(COMPRESSION);
+        String type = properties.get(TYPE);
+        if (!StringUtils.isEmpty(compression) && !isTypeEmpty(type) && !type.equalsIgnoreCase("csv")) {
+            throw new AnalysisException("Compression only support CSV file type, but input type is " + type);
+        }
     }
 
     public String toSql() {
@@ -89,7 +95,11 @@ public class FileFormat {
         }
         // if file format type is set on stage, and we want to override by copy into, can set null
         String type = properties.get(TYPE);
-        return (StringUtils.isEmpty(type) || type.equalsIgnoreCase("null")) ? null : type;
+        return isTypeEmpty(type) ? null : type;
+    }
+
+    private boolean isTypeEmpty(String type) {
+        return StringUtils.isEmpty(type) || type.equalsIgnoreCase("null");
     }
 
     public String getColumnSeparator() {
