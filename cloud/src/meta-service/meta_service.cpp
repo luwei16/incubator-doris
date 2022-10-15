@@ -1,7 +1,6 @@
 
 // clang-format off
 #include "meta_service.h"
-#include <gen_cpp/selectdb_cloud.pb.h>
 #include "meta-service/doris_txn.h"
 #include "meta-service/keys.h"
 #include "common/config.h"
@@ -9,25 +8,40 @@
 #include "common/util.h"
 #include "common/sync_point.h"
 
+#include "brpc/channel.h"
 #include "brpc/closure_guard.h"
 #include "brpc/controller.h"
+#include "bthread/bthread.h"
 #include "google/protobuf/util/json_util.h"
 #include "rapidjson/prettywriter.h"
 #include "rapidjson/schema.h"
 
 #include <chrono>
+#include <iomanip>
+#include <ios>
 #include <limits>
 #include <memory>
-#include <string>
 #include <sstream>
+#include <string>
 #include <type_traits>
-#include <ios>
-#include <iomanip>
+#include <unordered_map>
 // clang-format on
 
 using namespace std::chrono;
 
 namespace selectdb {
+
+/**
+ * Nodtifies other metaservice to refresh instance
+ */
+void notify_refresh_instance(std::shared_ptr<TxnKv> txn_kv, const std::string& instance_id);
+
+static void* run_bthread_work(void* arg) {
+    auto f = reinterpret_cast<std::function<void()>*>(arg);
+    (*f)();
+    delete f;
+    return nullptr;
+}
 
 MetaServiceImpl::MetaServiceImpl(std::shared_ptr<TxnKv> txn_kv,
                                  std::shared_ptr<ResourceManager> resource_mgr) {
@@ -3633,30 +3647,42 @@ void MetaServiceImpl::alter_instance(google::protobuf::RpcController* controller
     auto ctrl = static_cast<brpc::Controller*>(controller);
     LOG(INFO) << "rpc from " << ctrl->remote_side() << " request=" << request->DebugString();
     brpc::ClosureGuard closure_guard(done);
-    int ret = 0;
     MetaServiceCode code = MetaServiceCode::OK;
     std::string msg = "OK";
     [[maybe_unused]] std::stringstream ss;
     std::unique_ptr<int, std::function<void(int*)>> defer_status(
-            (int*)0x01, [&ret, &code, &msg, &response, &ctrl](int*) {
+            (int*)0x01, [&code, &msg, &response, &ctrl](int*) {
                 response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
-                LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
-                          << ctrl->remote_side() << " " << msg;
+                LOG(INFO) << (code == MetaServiceCode::OK ? "succ to " : "failed to ")
+                          << __PRETTY_FUNCTION__ << " " << ctrl->remote_side() << " " << msg;
             });
 
+    std::pair<MetaServiceCode, std::string> ret;
     switch (request->op()) {
     case AlterInstanceRequest::DROP: {
-        auto r = drop_instance(request);
-        code = r.first;
-        msg = r.second;
+        ret = drop_instance(request);
+    } break;
+    case AlterInstanceRequest::REFRESH: {
+        ret = resource_mgr_->refresh_instance(request->instance_id());
     } break;
     default: {
-        code = MetaServiceCode::INVALID_ARGUMENT;
         ss << "invalid request op, op=" << request->op();
-        msg = ss.str();
-        return;
+        ret = std::make_pair(MetaServiceCode::INVALID_ARGUMENT, ss.str());
     }
+    }
+    code = ret.first;
+    msg = ret.second;
+
+    if (request->op() == AlterInstanceRequest::REFRESH) return;
+
+    auto f = new std::function<void()>([instance_id = request->instance_id(), txn_kv = txn_kv_] {
+        notify_refresh_instance(txn_kv, instance_id);
+    });
+    bthread_t bid;
+    if (bthread_start_background(&bid, nullptr, run_bthread_work, f) != 0) {
+        LOG(WARNING) << "notify refresh instance inplace, instance_id=" << request->instance_id();
+        run_bthread_work(f);
     }
 }
 
@@ -3892,6 +3918,17 @@ void MetaServiceImpl::alter_cluster(google::protobuf::RpcController* controller,
     }
     if (!msg.empty() && code == MetaServiceCode::OK) {
         code = MetaServiceCode::UNDEFINED_ERR;
+    }
+
+    if (code != MetaServiceCode::OK) return;
+
+    auto f = new std::function<void()>([instance_id = request->instance_id(), txn_kv = txn_kv_] {
+        notify_refresh_instance(txn_kv, instance_id);
+    });
+    bthread_t bid;
+    if (bthread_start_background(&bid, nullptr, run_bthread_work, f) != 0) {
+        LOG(WARNING) << "notify refresh instance inplace, instance_id=" << request->instance_id();
+        run_bthread_work(f);
     }
 } // alter cluster
 
@@ -4687,6 +4724,89 @@ void MetaServiceImpl::get_copy_files(google::protobuf::RpcController* controller
         }
         key0.push_back('\x00');
     } while (it->more());
+}
+
+void notify_refresh_instance(std::shared_ptr<TxnKv> txn_kv, const std::string& instance_id) {
+    LOG(INFO) << "begin notify_refresh_instance";
+    std::unique_ptr<Transaction> txn;
+    int ret = txn_kv->create_txn(&txn);
+    if (ret != 0) {
+        LOG(WARNING) << "failed to create txn"
+                     << " ret=" << ret;
+        return;
+    }
+    std::string key = system_meta_service_registry_key();
+    std::string val;
+    ret = txn->get(key, &val);
+    if (ret != 0) {
+        LOG(WARNING) << "failed to get server registry"
+                     << " ret=" << ret;
+        return;
+    }
+    std::string self_endpoint =
+            std::string(butil::my_ip_cstr()) + ":" + std::to_string(config::brpc_listen_port);
+    ServiceRegistryPB reg;
+    reg.ParseFromString(val);
+    brpc::ChannelOptions options;
+    static std::unordered_map<std::string, std::shared_ptr<MetaService_Stub>> stubs;
+    static std::mutex mtx;
+    std::vector<bthread_t> btids;
+    btids.reserve(reg.items_size());
+    for (int i = 0; i < reg.items_size(); ++i) {
+        ret = 0;
+        auto& e = reg.items(i);
+        auto endpoint = e.ip() + ":" + std::to_string(e.port());
+        if (endpoint == self_endpoint) continue;
+
+        // Prepare stub
+        std::shared_ptr<MetaService_Stub> stub;
+        do {
+            std::lock_guard l(mtx);
+            if (auto it = stubs.find(endpoint); it != stubs.end()) {
+                stub = it->second;
+                break;
+            }
+            auto channel = std::make_unique<brpc::Channel>();
+            ret = channel->Init(endpoint.c_str(), &options);
+            if (ret != 0) {
+                LOG(WARNING) << "fail to init brpc channel, endpoint=" << endpoint;
+                break;
+            }
+            stub = std::make_shared<MetaService_Stub>(channel.release(),
+                                                      google::protobuf::Service::STUB_OWNS_CHANNEL);
+        } while (false);
+        if (ret != 0) continue;
+
+        // Issue RPC
+        auto f = new std::function<void()>([instance_id, stub, endpoint] {
+            int num_try = 0;
+            bool succ = false;
+            while (num_try++ < 3) {
+                brpc::Controller cntl;
+                cntl.set_timeout_ms(3000);
+                AlterInstanceRequest req;
+                MetaServiceGenericResponse res;
+                req.set_instance_id(instance_id);
+                req.set_op(AlterInstanceRequest::REFRESH);
+                stub->alter_instance(&cntl, &req, &res, nullptr);
+                succ = res.status().code() == MetaServiceCode::OK;
+                LOG(INFO) << (succ ? "succ" : "failed")
+                          << " to issue refresh_instance rpc, num_try=" << num_try
+                          << " endpoint=" << endpoint << " response=" << proto_to_json(res);
+                if (succ) return;
+                bthread_usleep(300000);
+            }
+            if (succ) return;
+            LOG(WARNING) << "failed to refresh finally, it may left the system inconsistent,"
+                         << " tired=" << num_try;
+        });
+        bthread_t bid;
+        ret = bthread_start_background(&bid, nullptr, run_bthread_work, f);
+        if (ret != 0) continue;
+        btids.emplace_back(bid);
+    } // for
+    for (auto& i : btids) bthread_join(i, nullptr);
+    LOG(INFO) << "finish notify_refresh_instance, num_items=" << reg.items_size();
 }
 
 } // namespace selectdb

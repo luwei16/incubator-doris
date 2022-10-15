@@ -69,7 +69,7 @@ TEST(KeysTest, KeysTest) {
         std::string_view key_sv(encoded_rowset_key0);
         std::string dec_meta_prefix;
         std::string dec_rowset_prefix;
-        key_sv.remove_prefix(1); // Remove CLOUD_KEY_SPACE01
+        key_sv.remove_prefix(1); // Remove CLOUD_USER_KEY_SPACE01
         ASSERT_EQ(decode_bytes(&key_sv, &dec_meta_prefix), 0);
         ASSERT_EQ(decode_bytes(&key_sv, &dec_instance_id), 0);
         ASSERT_EQ(decode_bytes(&key_sv, &dec_rowset_prefix), 0);
@@ -109,7 +109,7 @@ TEST(KeysTest, KeysTest) {
         std::string_view key_sv(encoded_rowset_key0);
         std::string dec_meta_prefix;
         std::string dec_tablet_prefix;
-        key_sv.remove_prefix(1); // Remove CLOUD_KEY_SPACE01
+        key_sv.remove_prefix(1); // Remove CLOUD_USER_KEY_SPACE01
         ASSERT_EQ(decode_bytes(&key_sv, &dec_meta_prefix), 0);
         ASSERT_EQ(decode_bytes(&key_sv, &dec_instance_id), 0);
         ASSERT_EQ(decode_bytes(&key_sv, &dec_tablet_prefix), 0);
@@ -145,7 +145,7 @@ TEST(KeysTest, KeysTest) {
         std::string_view key_sv(encoded_rowset_key0);
         std::string dec_meta_prefix;
         std::string dec_tablet_prefix;
-        key_sv.remove_prefix(1); // Remove CLOUD_KEY_SPACE01
+        key_sv.remove_prefix(1); // Remove CLOUD_USER_KEY_SPACE01
         ASSERT_EQ(decode_bytes(&key_sv, &dec_meta_prefix), 0);
         ASSERT_EQ(decode_bytes(&key_sv, &dec_instance_id), 0);
         ASSERT_EQ(decode_bytes(&key_sv, &dec_tablet_prefix), 0);
@@ -180,7 +180,7 @@ TEST(KeysTest, KeysTest) {
         std::string_view key_sv(encoded_version_key0);
         std::string dec_version_prefix;
         std::string dec_version_infix;
-        key_sv.remove_prefix(1); // Remove CLOUD_KEY_SPACE01
+        key_sv.remove_prefix(1); // Remove CLOUD_USER_KEY_SPACE01
         ASSERT_EQ(decode_bytes(&key_sv, &dec_version_prefix), 0);
         ASSERT_EQ(decode_bytes(&key_sv, &dec_instance_id), 0);
         ASSERT_EQ(decode_bytes(&key_sv, &dec_version_infix), 0);
@@ -222,7 +222,7 @@ TEST(KeysTest, TxnKeysTest) {
         std::string_view key_sv(encoded_txn_index_key0);
         std::string dec_txn_prefix;
         std::string dec_txn_infix;
-        key_sv.remove_prefix(1); // Remove CLOUD_KEY_SPACE01
+        key_sv.remove_prefix(1); // Remove CLOUD_USER_KEY_SPACE01
         ASSERT_EQ(decode_bytes(&key_sv, &dec_txn_prefix), 0);
         ASSERT_EQ(decode_bytes(&key_sv, &dec_instance_id), 0);
         ASSERT_EQ(decode_bytes(&key_sv, &dec_txn_infix), 0);
@@ -257,7 +257,7 @@ TEST(KeysTest, TxnKeysTest) {
         std::string_view key_sv(encoded_txn_info_key0);
         std::string dec_txn_prefix;
         std::string dec_txn_infix;
-        key_sv.remove_prefix(1); // Remove CLOUD_KEY_SPACE01
+        key_sv.remove_prefix(1); // Remove CLOUD_USER_KEY_SPACE01
         ASSERT_EQ(decode_bytes(&key_sv, &dec_txn_prefix), 0);
         ASSERT_EQ(decode_bytes(&key_sv, &dec_instance_id), 0);
         ASSERT_EQ(decode_bytes(&key_sv, &dec_txn_infix), 0);
@@ -290,7 +290,7 @@ TEST(KeysTest, TxnKeysTest) {
         std::string_view key_sv(encoded_txn_index_key0);
         std::string dec_txn_prefix;
         std::string dec_txn_infix;
-        key_sv.remove_prefix(1); // Remove CLOUD_KEY_SPACE01
+        key_sv.remove_prefix(1); // Remove CLOUD_USER_KEY_SPACE01
         ASSERT_EQ(decode_bytes(&key_sv, &dec_txn_prefix), 0);
         ASSERT_EQ(decode_bytes(&key_sv, &dec_instance_id), 0);
         ASSERT_EQ(decode_bytes(&key_sv, &dec_txn_infix), 0);
@@ -323,7 +323,7 @@ TEST(KeysTest, TxnKeysTest) {
         std::string_view key_sv(encoded_txn_running_key0);
         std::string dec_txn_prefix;
         std::string dec_txn_infix;
-        key_sv.remove_prefix(1); // Remove CLOUD_KEY_SPACE01
+        key_sv.remove_prefix(1); // Remove CLOUD_USER_KEY_SPACE01
         ASSERT_EQ(decode_bytes(&key_sv, &dec_txn_prefix), 0);
         ASSERT_EQ(decode_bytes(&key_sv, &dec_instance_id), 0);
         ASSERT_EQ(decode_bytes(&key_sv, &dec_txn_infix), 0);
@@ -358,7 +358,7 @@ TEST(KeysTest, TxnKeysTest) {
         std::string_view key_sv(encoded_recycle_txn_key0);
         std::string dec_txn_prefix;
         std::string dec_txn_infix;
-        key_sv.remove_prefix(1); // Remove CLOUD_KEY_SPACE01
+        key_sv.remove_prefix(1); // Remove CLOUD_USER_KEY_SPACE01
         ASSERT_EQ(decode_bytes(&key_sv, &dec_txn_prefix), 0);
         ASSERT_EQ(decode_bytes(&key_sv, &dec_instance_id), 0);
         ASSERT_EQ(decode_bytes(&key_sv, &dec_txn_infix), 0);

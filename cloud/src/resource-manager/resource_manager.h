@@ -98,6 +98,15 @@ public:
     bool check_cluster_params_valid(const ClusterPB& cluster, std::string* err,
                                     bool check_master_num);
 
+    /**
+     * Refreshes the cache of given instance. This process removes the instance in cache
+     * and then replaces it with persisted instance state read from underlying KV storage.
+     *
+     * @param instance_id insntance to manipulate
+     * @return a pair of code and msg
+     */
+    std::pair<MetaServiceCode, std::string> refresh_instance(const std::string& instance_id);
+
 private:
     void add_cluster_to_index(const std::string& instance_id, const ClusterPB& cluster);
 

@@ -33,11 +33,14 @@
 // 0x01 "recycle" ${instance_id} "txn" ${db_id} ${txn_id}                                    -> RecycleTxnKeyInfo
 //
 // 0x01 "job" ${instance_id} "tablet" ${tablet_id}                                           -> TabletJobInfoPB
+//
+// 0x01 "system" "meta-service" "registry"                                                   -> MetaServiceRegistryPB
 // clang-format on
 
 namespace selectdb {
 
-static const constexpr unsigned char CLOUD_KEY_SPACE01 = 0x01;
+static const constexpr unsigned char CLOUD_USER_KEY_SPACE01 = 0x01;
+static const constexpr unsigned char CLOUD_SYS_KEY_SPACE02 = 0x02;
 static constexpr uint32_t VERSION_STAMP_LEN = 10;
 
 // clang-format off
@@ -53,6 +56,7 @@ template<size_t N, typename Base>
 struct BasicKeyInfo : Base {
     template<typename... Args>
     BasicKeyInfo(Args&&... args) : Base(std::forward<Args>(args)...) {}
+    constexpr static size_t n = N;
 };
 
 // ATTN: newly added key must have different type number
@@ -146,6 +150,10 @@ static inline std::string job_tablet_key(const JobTabletKeyInfo& in) { std::stri
 
 void copy_job_key(const CopyJobKeyInfo& in, std::string* out);
 void copy_file_key(const CopyFileKeyInfo& in, std::string* out);
+[[maybe_unused]] static std::string copy_job_key(const CopyJobKeyInfo& in) { std::string s; copy_job_key(in, &s); return s; }
+[[maybe_unused]] static std::string copy_file_key(const CopyFileKeyInfo& in) { std::string s; copy_file_key(in, &s); return s; }
+
+std::string system_meta_service_registry_key();
 // clang-format on
 // TODO: add a family of decoding functions if needed
 

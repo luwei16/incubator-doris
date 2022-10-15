@@ -31,6 +31,8 @@ CONF_String(fdb_cluster_file_path, "./conf/fdb.cluster");
 CONF_String(http_token, "greedisgood9999");
 // use volatile mem kv for test. MUST NOT be `true` in production environment.
 CONF_Bool(use_mem_kv, "false");
+CONF_Int32(meta_server_register_interval_ms, "20000");
+CONF_Int32(meta_server_lease_ms, "60000");
 
 // logging
 CONF_String(log_dir, "./log/");

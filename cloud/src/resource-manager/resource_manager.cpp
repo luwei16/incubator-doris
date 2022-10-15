@@ -87,6 +87,9 @@ int ResourceManager::init() {
 
 std::string ResourceManager::get_node(const std::string& cloud_unique_id,
                                       std::vector<NodeInfo>* nodes) {
+    // FIXME(gavin): refresh the all instance if there is a miss?
+    //               Or we can refresh all instances regularly to reduce
+    //               read amplification.
     std::shared_lock l(mtx_);
     auto [s, e] = node_info_.equal_range(cloud_unique_id);
     if (s == node_info_.end() || s->first != cloud_unique_id) {
@@ -821,6 +824,52 @@ std::string ResourceManager::modify_nodes(const std::string& instance_id,
     }
 
     return "";
+}
+
+std::pair<MetaServiceCode, std::string> ResourceManager::refresh_instance(
+        const std::string& instance_id) {
+    LOG(INFO) << "begin to refresh instance, instance_id=" << instance_id;
+    std::pair<MetaServiceCode, std::string> ret0 {MetaServiceCode::OK, "OK"};
+    auto& [code, msg] = ret0;
+    std::unique_ptr<int, std::function<void(int*)>> defer_log(
+            (int*)0x01, [&ret0, &instance_id](int*) {
+                LOG(INFO) << (std::get<0>(ret0) == MetaServiceCode::OK ? "succ to " : "failed to ")
+                          << "refresh_instance, instance_id=" << instance_id
+                          << " code=" << std::get<0>(ret0) << " msg=" << std::get<1>(ret0);
+            });
+
+    std::unique_ptr<Transaction> txn0;
+    int ret = txn_kv_->create_txn(&txn0);
+    if (ret != 0) {
+        code = MetaServiceCode::KV_TXN_CREATE_ERR;
+        msg = "failed to create txn";
+        LOG(WARNING) << msg << " ret=" << ret;
+        return ret0;
+    }
+    std::shared_ptr<Transaction> txn(txn0.release());
+    InstanceInfoPB instance;
+    auto [c0, m0] = get_instance(txn, instance_id, &instance);
+    if (c0 != 0) {
+        code = MetaServiceCode::KV_TXN_GET_ERR;
+        msg = m0;
+        return ret0;
+    }
+    std::vector<ClusterInfo> clusters;
+    clusters.reserve(instance.clusters_size());
+
+    std::lock_guard l(mtx_);
+    for (auto i = node_info_.begin(); i != node_info_.end();) {
+        if (i->second.instance_id != instance_id) {
+            ++i;
+            continue;
+        }
+        i = node_info_.erase(i);
+    }
+    for (int i = 0; i < instance.clusters_size(); ++i) {
+        add_cluster_to_index_no_lock(instance_id, instance.clusters(i));
+    }
+
+    return ret0;
 }
 
 } // namespace selectdb

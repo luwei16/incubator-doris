@@ -9,5 +9,5 @@ if [ ! -f ${process}.pid ]; then
 fi
 
 pid=`cat ${process}.pid`
-kill ${pid}
+kill -2 ${pid}
 rm -f ${process}.pid

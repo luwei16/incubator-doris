@@ -94,7 +94,7 @@ static void encode_prefix(const T& t, std::string* key) {
         RecycleIndexKeyInfo, RecyclePartKeyInfo, RecycleRowsetKeyInfo, RecycleTxnKeyInfo,
         StatsTabletKeyInfo, JobTabletKeyInfo, CopyJobKeyInfo, CopyFileKeyInfo>);
 
-    key->push_back(CLOUD_KEY_SPACE01);
+    key->push_back(CLOUD_USER_KEY_SPACE01);
     // Prefixes for key families
     if        constexpr (std::is_same_v<T, InstanceKeyInfo>) {
         encode_bytes(INSTANCE_KEY_PREFIX, key);
@@ -277,6 +277,16 @@ void copy_file_key(const CopyFileKeyInfo& in, std::string* out) {
     encode_int64(std::get<2>(in), out);     // table_id
     encode_bytes(std::get<3>(in), out);     // obj_key
     encode_bytes(std::get<4>(in), out);     // obj_etag
+}
+
+// 0x02 0:"system"  1:"meta-service"  2:"registry"
+std::string system_meta_service_registry_key() {
+    std::string ret;
+    ret.push_back(CLOUD_SYS_KEY_SPACE02);
+    encode_bytes("system", &ret);
+    encode_bytes("meta-service", &ret);
+    encode_bytes("registry", &ret);
+    return ret;
 }
 
 //==============================================================================

@@ -366,6 +366,18 @@ message CopyFilePB {
     optional int32 group_id = 2;
 }
 
+message ServiceRegistryPB {
+    message Item {
+        optional string id = 1;
+        optional string ip = 2;
+        optional int32 port = 3;
+        optional int64 ctime_ms = 4;
+        optional int64 mtime_ms = 5;
+        optional int64 expiration_time_ms = 6;
+    }
+    repeated Item items = 1;
+}
+
 //==============================================================================
 // Rpc structures
 //==============================================================================
@@ -576,6 +588,7 @@ message AlterInstanceRequest {
     enum Operation {
         UNKNOWN        = 0;
         DROP           = 1;
+        REFRESH        = 2;
     }
     optional string instance_id = 1;
     optional Operation op = 2;
@@ -754,18 +767,6 @@ enum MetaServiceCode {
 
     UNDEFINED_ERR = 100000;
 }
-
-service ResourceManagerService {
-//     rpc get_obj_store_info(GetObjStoreInfoRequest) returns (GetObjStoreInfoResponse);
-//     rpc create_instance(CreateInstanceRequest) returns (MetaServiceGenericResponse);
-//     rpc alter_cluster(AlterClusterRequest) returns (MetaServiceGenericResponse);
-//     rpc get_cluster(GetClusterRequest) returns (GetClusterResponse);
-
-    // TODO:
-    // add_sql_server
-    // add_compute_server
-};
-
 
 service MetaService {
     rpc begin_txn(BeginTxnRequest) returns (BeginTxnResponse);
