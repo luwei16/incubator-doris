@@ -92,7 +92,6 @@ import org.apache.doris.qe.SqlModeHelper;
     static {
         keywordMap.put("&&", new Integer(SqlParserSymbols.KW_AND));
         keywordMap.put("||", new Integer(SqlParserSymbols.KW_PIPE));
-        keywordMap.put("access", new Integer(SqlParserSymbols.KW_ACCESS));
         keywordMap.put("account_lock", new Integer(SqlParserSymbols.KW_ACCOUNT_LOCK));
         keywordMap.put("account_unlock", new Integer(SqlParserSymbols.KW_ACCOUNT_UNLOCK));
         keywordMap.put("add", new Integer(SqlParserSymbols.KW_ADD));

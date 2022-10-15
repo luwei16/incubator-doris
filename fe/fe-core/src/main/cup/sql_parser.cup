@@ -242,7 +242,6 @@ parser code {:
 
 // Total keywords of doris
 terminal String
-    KW_ACCESS,
     KW_ACCOUNT_LOCK,
     KW_ACCOUNT_UNLOCK,
     KW_ADD,
@@ -4250,9 +4249,17 @@ use_stmt ::=
 
 // Change cloud cluster
 use_cloud_cluster_stmt ::=
-    KW_ACCESS ident:cluster
+    KW_USE AT ident:cluster
     {:
         RESULT = new UseCloudClusterStmt(cluster);
+    :}
+    | KW_USE ident:db AT ident:cluster
+    {:
+        RESULT = new UseCloudClusterStmt(cluster, db);
+    :}
+    | KW_USE ident:ctl DOT ident:db AT ident:cluster
+    {:
+        RESULT = new UseCloudClusterStmt(cluster, db, ctl);
     :}
     ;
 

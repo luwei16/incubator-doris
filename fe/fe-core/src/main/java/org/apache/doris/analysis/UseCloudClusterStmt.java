@@ -18,6 +18,7 @@
 package org.apache.doris.analysis;
 
 import org.apache.doris.catalog.Env;
+import org.apache.doris.cluster.ClusterNamespace;
 import org.apache.doris.common.AnalysisException;
 import org.apache.doris.common.ErrorCode;
 import org.apache.doris.common.ErrorReport;
@@ -35,13 +36,34 @@ import org.apache.logging.log4j.Logger;
 public class UseCloudClusterStmt extends StatementBase {
     private static final Logger LOG = LogManager.getLogger(UseCloudClusterStmt.class);
     private String cluster;
+    private String database;
+    private String catalogName;
 
     public UseCloudClusterStmt(String cluster) {
         this.cluster = cluster;
     }
 
+    public UseCloudClusterStmt(String cluster, String db) {
+        this.cluster = cluster;
+        this.database = db;
+    }
+
+    public UseCloudClusterStmt(String cluster, String db, String catalogName) {
+        this.cluster = cluster;
+        this.database = db;
+        this.catalogName = catalogName;
+    }
+
     public String getCluster() {
         return cluster;
+    }
+
+    public String getDatabase() {
+        return database;
+    }
+
+    public String getCatalogName() {
+        return catalogName;
     }
 
     @Override
@@ -65,6 +87,15 @@ public class UseCloudClusterStmt extends StatementBase {
             throw new AnalysisException("USAGE denied to user '" + ConnectContext.get().getQualifiedUser()
                 + "'@'" + ConnectContext.get().getRemoteIP()
                 + "' for cloud cluster '" + cluster + "'");
+        }
+
+        if (Strings.isNullOrEmpty(database)) {
+            return;
+        }
+        database = ClusterNamespace.getFullName(getClusterName(), database);
+        if (!Env.getCurrentEnv().getAuth().checkDbPriv(ConnectContext.get(), database, PrivPredicate.SHOW)) {
+            ErrorReport.reportAnalysisException(ErrorCode.ERR_DBACCESS_DENIED_ERROR,
+                    analyzer.getQualifiedUser(), database);
         }
     }
 
