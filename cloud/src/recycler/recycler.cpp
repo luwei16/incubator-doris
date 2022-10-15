@@ -7,6 +7,7 @@
 #include <string>
 #include <string_view>
 
+#include "../test/mock_accessor.h"
 #include "common/config.h"
 #include "common/logging.h"
 #include "common/util.h"
@@ -195,7 +196,11 @@ InstanceRecycler::InstanceRecycler(std::shared_ptr<TxnKv> txn_kv, const Instance
         s3_conf.region = obj_info.region();
         s3_conf.bucket = obj_info.bucket();
         s3_conf.prefix = obj_info.prefix();
+#ifdef UNIT_TEST
+        auto accessor = std::make_shared<MockAccessor>(s3_conf);
+#else
         auto accessor = std::make_shared<S3Accessor>(std::move(s3_conf));
+#endif
         accessor->init();
         accessor_map_.emplace(obj_info.id(), std::move(accessor));
     }
@@ -409,12 +414,14 @@ int InstanceRecycler::delete_rowset_data(const doris::RowsetMetaPB& rs_meta_pb) 
     }
     LOG_INFO("begin to delete rowset data")
             .tag("s3_path", accessor->path())
+            .tag("tablet_id", tablet_id)
             .tag("rowset_id", rowset_id)
             .tag("num_segments", num_segments);
     int ret = accessor->delete_objects(segment_paths);
     if (ret != 0) {
         LOG_INFO("failed to delete rowset data")
                 .tag("s3_path", accessor->path())
+                .tag("tablet_id", tablet_id)
                 .tag("rowset_id", rowset_id)
                 .tag("num_segments", num_segments);
     }
@@ -433,12 +440,14 @@ int InstanceRecycler::delete_rowset_data(const std::string& rowset_id,
     auto& accessor = it->second;
     LOG_INFO("begin to delete rowset data")
             .tag("s3_path", accessor->path())
+            .tag("tablet_id", recycl_rs_pb.tablet_id())
             .tag("rowset_id", rowset_id);
     int ret = accessor->delete_objects_by_prefix(
             fmt::format("data/{}/{}", recycl_rs_pb.tablet_id(), rowset_id));
     if (ret != 0) {
         LOG_INFO("failed to delete rowset data")
                 .tag("s3_path", accessor->path())
+                .tag("tablet_id", recycl_rs_pb.tablet_id())
                 .tag("rowset_id", rowset_id);
     }
     return ret;

@@ -110,7 +110,7 @@ private:
 private:
     std::shared_ptr<TxnKv> txn_kv_;
     std::string instance_id_;
-    std::unordered_map<std::string, std::shared_ptr<S3Accessor>> accessor_map_;
+    std::unordered_map<std::string, std::shared_ptr<ObjStoreAccessor>> accessor_map_;
 };
 
 } // namespace selectdb
