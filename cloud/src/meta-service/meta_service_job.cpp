@@ -623,9 +623,9 @@ void MetaServiceImpl::finish_tablet_job(::google::protobuf::RpcController* contr
 
     // Process compaction commit
     if (request->job().has_compaction()) {
-        process_compaction_job(code, msg, ss, ret, txn, request, recorded_job, instance_id,
-                               table_id, index_id, partition_id, tablet_id, job_key, now,
-                               need_commit, obj_pool);
+        process_compaction_job(code, msg, ss, ret, txn, request, response, recorded_job,
+                               instance_id, table_id, index_id, partition_id, tablet_id, job_key,
+                               now, need_commit, obj_pool);
         return;
     }
 
