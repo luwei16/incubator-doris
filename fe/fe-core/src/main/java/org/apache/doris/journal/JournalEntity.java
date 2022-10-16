@@ -93,6 +93,7 @@ import org.apache.doris.persist.TableAddOrDropColumnsInfo;
 import org.apache.doris.persist.TableInfo;
 import org.apache.doris.persist.TablePropertyInfo;
 import org.apache.doris.persist.TruncateTableInfo;
+import org.apache.doris.persist.UpdateCloudReplicaInfo;
 import org.apache.doris.plugin.PluginInfo;
 import org.apache.doris.policy.DropPolicyLog;
 import org.apache.doris.policy.Policy;
@@ -685,6 +686,11 @@ public class JournalEntity implements Writable {
             }
             case OperationType.OP_CLEAN_LABEL: {
                 data = CleanLabelOperationLog.read(in);
+                isRead = true;
+                break;
+            }
+            case OperationType.OP_UPDATE_CLOUD_REPLICA: {
+                data = UpdateCloudReplicaInfo.read(in);
                 isRead = true;
                 break;
             }

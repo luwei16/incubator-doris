@@ -192,6 +192,7 @@ import org.apache.doris.persist.StorageInfoV2;
 import org.apache.doris.persist.TableInfo;
 import org.apache.doris.persist.TablePropertyInfo;
 import org.apache.doris.persist.TruncateTableInfo;
+import org.apache.doris.persist.UpdateCloudReplicaInfo;
 import org.apache.doris.persist.meta.MetaHeader;
 import org.apache.doris.persist.meta.MetaReader;
 import org.apache.doris.persist.meta.MetaWriter;
@@ -238,6 +239,7 @@ import com.google.common.collect.Multimap;
 import com.google.common.collect.Queues;
 import com.selectdb.cloud.catalog.CloudClusterChecker;
 import com.selectdb.cloud.catalog.CloudReplica;
+import com.selectdb.cloud.catalog.CloudTabletRebalancer;
 import com.selectdb.cloud.proto.SelectdbCloud;
 import com.selectdb.cloud.proto.SelectdbCloud.NodeInfoPB;
 import com.sleepycat.je.rep.InsufficientLogException;
@@ -413,6 +415,8 @@ public class Env {
     private TabletScheduler tabletScheduler;
 
     private TabletChecker tabletChecker;
+
+    private CloudTabletRebalancer cloudTabletRebalancer;
 
     // Thread pools for pending and loading task, separately
     private MasterTaskExecutor pendingLoadTaskScheduler;
@@ -602,6 +606,7 @@ public class Env {
         this.tabletScheduler = new TabletScheduler(this, systemInfo, tabletInvertedIndex, stat,
                 Config.tablet_rebalancer_type);
         this.tabletChecker = new TabletChecker(this, systemInfo, tabletScheduler, stat);
+        this.cloudTabletRebalancer = new CloudTabletRebalancer();
 
         // The pendingLoadTaskScheduler's queue size should not less than Config.desired_max_waiting_jobs.
         // So that we can guarantee that all submitted load jobs can be scheduled without being starved.
@@ -1474,6 +1479,8 @@ public class Env {
             // Tablet checker and scheduler
             tabletChecker.start();
             tabletScheduler.start();
+        } else {
+            cloudTabletRebalancer.start();
         }
         // Colocate tables checker and balancer
         ColocateTableCheckerAndBalancer.getInstance().start();
@@ -3334,6 +3341,10 @@ public class Env {
 
     public void replayUpdateReplica(ReplicaPersistInfo info) throws MetaNotFoundException {
         getInternalCatalog().replayUpdateReplica(info);
+    }
+
+    public void replayUpdateCloudReplica(UpdateCloudReplicaInfo info) throws MetaNotFoundException {
+        getInternalCatalog().replayUpdateCloudReplica(info);
     }
 
     public void unprotectDeleteReplica(OlapTable olapTable, ReplicaPersistInfo info) {

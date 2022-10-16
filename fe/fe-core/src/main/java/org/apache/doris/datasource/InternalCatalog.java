@@ -155,6 +155,7 @@ import org.apache.doris.persist.PartitionPersistInfo;
 import org.apache.doris.persist.RecoverInfo;
 import org.apache.doris.persist.ReplicaPersistInfo;
 import org.apache.doris.persist.TruncateTableInfo;
+import org.apache.doris.persist.UpdateCloudReplicaInfo;
 import org.apache.doris.proto.OlapCommon;
 import org.apache.doris.proto.OlapFile;
 import org.apache.doris.proto.Types;
@@ -962,6 +963,17 @@ public class InternalCatalog implements CatalogIf<Database> {
         replica.setBad(false);
     }
 
+    private void unprotectUpdateCloudReplica(OlapTable olapTable, UpdateCloudReplicaInfo info) {
+        LOG.debug("replay update a cloud replica {}", info);
+        Partition partition = olapTable.getPartition(info.getPartitionId());
+        MaterializedIndex materializedIndex = partition.getIndex(info.getIndexId());
+        Tablet tablet = materializedIndex.getTablet(info.getTabletId());
+        Replica replica = tablet.getReplicaById(info.getReplicaId());
+        Preconditions.checkNotNull(replica, info);
+
+        ((CloudReplica) replica).updateClusterToBe(info.getClusterId(), info.getBeId());
+    }
+
     public void replayAddReplica(ReplicaPersistInfo info) throws MetaNotFoundException {
         Database db = (Database) getDbOrMetaException(info.getDbId());
         OlapTable olapTable = (OlapTable) db.getTableOrMetaException(info.getTableId(), TableType.OLAP);
@@ -979,6 +991,17 @@ public class InternalCatalog implements CatalogIf<Database> {
         olapTable.writeLock();
         try {
             unprotectUpdateReplica(olapTable, info);
+        } finally {
+            olapTable.writeUnlock();
+        }
+    }
+
+    public void replayUpdateCloudReplica(UpdateCloudReplicaInfo info) throws MetaNotFoundException {
+        Database db = (Database) getDbOrMetaException(info.getDbId());
+        OlapTable olapTable = (OlapTable) db.getTableOrMetaException(info.getTableId(), TableType.OLAP);
+        olapTable.writeLock();
+        try {
+            unprotectUpdateCloudReplica(olapTable, info);
         } finally {
             olapTable.writeUnlock();
         }

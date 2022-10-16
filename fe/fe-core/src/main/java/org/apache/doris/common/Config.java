@@ -1784,6 +1784,18 @@ public class Config extends ConfigBase {
     @ConfField
     public static int cloud_txn_tablet_batch_size = 50;
 
+    @ConfField
+    public static long tablet_rebalancer_interval_second = 20;
+
+    @ConfField
+    public static int balance_tablet_num_per_run = 5;
+
+    @ConfField
+    public static double cloud_rebalance_percent_threshold = 0.1;
+
+    @ConfField
+    public static double cloud_rebalance_number_threshold = 0.1;
+
     /**
      * if set to false, auth check will be disable,  in case something goes wrong with the new privilege system.
      */

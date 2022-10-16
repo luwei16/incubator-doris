@@ -41,6 +41,7 @@ import org.apache.doris.load.loadv2.LoadJob.LoadJobStateUpdateInfo;
 import org.apache.doris.load.loadv2.SparkLoadJob.SparkLoadJobStateUpdateInfo;
 import org.apache.doris.load.sync.SyncJob;
 import org.apache.doris.load.sync.canal.CanalSyncJob;
+import org.apache.doris.persist.UpdateCloudReplicaInfo;
 import org.apache.doris.policy.Policy;
 import org.apache.doris.policy.RowPolicy;
 import org.apache.doris.policy.StoragePolicy;
@@ -154,11 +155,14 @@ public class GsonUtils {
             .registerSubtype(HMSExternalCatalog.class, HMSExternalCatalog.class.getSimpleName())
             .registerSubtype(EsExternalCatalog.class, EsExternalCatalog.class.getSimpleName());
 
-
     private static RuntimeTypeAdapterFactory<Replica> replicaTypeAdapterFactory = RuntimeTypeAdapterFactory
             .of(Replica.class, "clazz")
             .registerSubtype(Replica.class, Replica.class.getSimpleName())
             .registerSubtype(CloudReplica.class, CloudReplica.class.getSimpleName());
+
+    private static RuntimeTypeAdapterFactory<UpdateCloudReplicaInfo> updateCloudReplicaInfoTypeAdapterFactory
+            = RuntimeTypeAdapterFactory.of(UpdateCloudReplicaInfo.class, "clazz")
+            .registerSubtype(UpdateCloudReplicaInfo.class, UpdateCloudReplicaInfo.class.getSimpleName());
 
     // the builder of GSON instance.
     // Add any other adapters if necessary.
@@ -176,6 +180,7 @@ public class GsonUtils {
             .registerTypeAdapterFactory(policyTypeAdapterFactory)
             .registerTypeAdapterFactory(dsTypeAdapterFactory)
             .registerTypeAdapterFactory(replicaTypeAdapterFactory)
+            .registerTypeAdapterFactory(updateCloudReplicaInfoTypeAdapterFactory)
             .registerTypeAdapter(ImmutableMap.class, new ImmutableMapDeserializer())
             .registerTypeAdapter(AtomicBoolean.class, new AtomicBooleanAdapter());
 

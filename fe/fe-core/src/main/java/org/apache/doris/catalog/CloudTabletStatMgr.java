@@ -48,7 +48,7 @@ public class CloudTabletStatMgr extends MasterDaemon {
 
     @Override
     protected void runAfterCatalogReady() {
-        LOG.info("lw test cloud tablet stat begin");
+        LOG.info("cloud tablet stat begin");
         long start = System.currentTimeMillis();
         List<SelectdbCloud.GetTabletStatsRequest> reqList =
                 new ArrayList<SelectdbCloud.GetTabletStatsRequest>();
@@ -103,7 +103,6 @@ public class CloudTabletStatMgr extends MasterDaemon {
                 LOG.info("lw test get exception {} ", e);
                 continue;
             }
-            LOG.info("lw test get rpc resp msg : {} ", resp.getStatus().getMsg());
 
             if (resp.getStatus().getCode() != SelectdbCloud.MetaServiceCode.OK) {
                 continue;
@@ -134,14 +133,12 @@ public class CloudTabletStatMgr extends MasterDaemon {
                 }
                 try {
                     for (Partition partition : olapTable.getAllPartitions()) {
-                        long version = partition.getVisibleVersion();
                         for (MaterializedIndex index : partition.getMaterializedIndices(IndexExtState.VISIBLE)) {
                             long indexRowCount = 0L;
                             for (Tablet tablet : index.getTablets()) {
                                 long tabletRowCount = 0L;
                                 for (Replica replica : tablet.getReplicas()) {
-                                    if (replica.checkVersionCatchUp(version, false)
-                                            && replica.getRowCount() > tabletRowCount) {
+                                    if (replica.getRowCount() > tabletRowCount) {
                                         tabletRowCount = replica.getRowCount();
                                     }
                                 }
@@ -179,7 +176,7 @@ public class CloudTabletStatMgr extends MasterDaemon {
         try {
             response = MetaServiceProxy.getInstance().getTabletStats(req);
         } catch (RpcException e) {
-            LOG.info("lw test get exception {}", e);
+            LOG.info("get tablet stat get exception {}", e);
             throw e;
         }
 

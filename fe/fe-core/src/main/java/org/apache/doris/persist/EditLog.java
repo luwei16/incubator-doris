@@ -383,6 +383,11 @@ public class EditLog {
                     env.replayUpdateReplica(info);
                     break;
                 }
+                case OperationType.OP_UPDATE_CLOUD_REPLICA: {
+                    UpdateCloudReplicaInfo info = (UpdateCloudReplicaInfo) journal.getData();
+                    env.replayUpdateCloudReplica(info);
+                    break;
+                }
                 case OperationType.OP_DELETE_REPLICA: {
                     ReplicaPersistInfo info = (ReplicaPersistInfo) journal.getData();
                     env.replayDeleteReplica(info);
@@ -1148,6 +1153,10 @@ public class EditLog {
 
     public void logUpdateReplica(ReplicaPersistInfo info) {
         logEdit(OperationType.OP_UPDATE_REPLICA, info);
+    }
+
+    public void logUpdateCloudReplica(UpdateCloudReplicaInfo info) {
+        logEdit(OperationType.OP_UPDATE_CLOUD_REPLICA, info);
     }
 
     public void logDeleteReplica(ReplicaPersistInfo info) {
