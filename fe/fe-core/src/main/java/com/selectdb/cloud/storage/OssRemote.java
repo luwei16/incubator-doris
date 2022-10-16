@@ -78,7 +78,7 @@ public class OssRemote extends DefaultRemote {
             for (OSSObjectSummary s : result.getObjectSummaries()) {
                 objectFiles.add(new ObjectFile(s.getKey(), getRelativePath(s.getKey()), s.getETag(), s.getSize()));
             }
-            return new ListObjectsResult(objectFiles, result.isTruncated(), request.getContinuationToken());
+            return new ListObjectsResult(objectFiles, result.isTruncated(), result.getNextContinuationToken());
         } catch (OSSException e) {
             LOG.warn("Failed to list objects for OSS", e);
             throw new DdlException("Failed to list objects for OSS, Error code=" + e.getErrorCode() + ", Error message="
