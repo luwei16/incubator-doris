@@ -4446,6 +4446,56 @@ public class Env {
         this.alter.getClusterHandler().cancel(stmt);
     }
 
+    public String changeCloudCluster(String name, ConnectContext ctx) throws DdlException {
+        if (Config.cloud_unique_id.isEmpty()) {
+            return name;
+        }
+
+        String[] res = name.split("@");
+        if (res.length != 1 && res.length != 2) {
+            throw new DdlException("Invalid database name: " + name, ErrorCode.ERR_BAD_DB_ERROR);
+        }
+
+        if (res.length == 1) {
+            return name;
+        }
+
+        String clusterName = res[1];
+
+        // check resource usage privilege
+        if (!Env.getCurrentEnv().getAuth().checkCloudClusterPriv(ConnectContext.get().getCurrentUserIdentity(),
+                clusterName, PrivPredicate.USAGE)) {
+            throw new DdlException("USAGE denied to user"
+                    + ConnectContext.get().getQualifiedUser() + "'@'" + ConnectContext.get().getRemoteIP()
+                    + "' for cloud cluster '" + clusterName + "'", ErrorCode.ERR_CLUSTER_NO_PERMISSIONS);
+        }
+
+        // check the privilege of the cluster to be used
+        String user = ClusterNamespace.getNameFromFullName(
+                ConnectContext.get().getCurrentUserIdentity().getQualifiedUser());
+
+        if (!Env.getCurrentSystemInfo().getMysqlUserNameToClusterPb().containsKey(user)) {
+            LOG.info("mysql user to cluster map can not get user: {}, can't use this cluster {}", user, clusterName);
+            throw new DdlException("You can not use this cluster, Please switch a cluster which you have permission",
+                    ErrorCode.ERR_CLUSTER_NO_PERMISSIONS);
+        }
+
+        if (Env.getCurrentSystemInfo().getMysqlUserNameToClusterPb()
+                    .get(user).stream().noneMatch(cpb -> cpb.getClusterName().equals(clusterName))) {
+            LOG.info("user: {}, can't use this cluster {}", user, clusterName);
+            throw new DdlException("You can not use this cluster, Please switch a cluster which you have permission",
+                    ErrorCode.ERR_CLUSTER_NO_PERMISSIONS);
+        }
+        try {
+            Env.getCurrentSystemInfo().addCloudCluster(clusterName, "");
+        } catch (UserException e) {
+            throw new DdlException(e.getMessage(), e.getMysqlErrorCode());
+        }
+        ctx.setCloudCluster(clusterName);
+        ctx.getState().setOk();
+        return res[0];
+    }
+
     // Switch catalog of this sesseion.
     public void changeCatalog(ConnectContext ctx, String catalogName) throws DdlException {
         CatalogIf catalogIf = catalogMgr.getCatalogNullable(catalogName);

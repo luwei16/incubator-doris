@@ -187,7 +187,13 @@ public class ConnectProcessor {
             return;
         }
 
-        dbName = handleInitCloudCluster(dbName);
+        try {
+            //dbName = handleInitCloudCluster(dbName);
+            dbName = ctx.getEnv().changeCloudCluster(dbName, ctx);
+        } catch (DdlException e) {
+            ctx.getState().setError(e.getMysqlErrorCode(), e.getMessage());
+            return;
+        }
         if (dbName == null || dbName.isEmpty()) {
             return;
         }

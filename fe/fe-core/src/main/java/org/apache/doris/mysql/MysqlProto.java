@@ -277,12 +277,23 @@ public class MysqlProto {
         String db = authPacket.getDb();
         if (!Strings.isNullOrEmpty(db)) {
             try {
-                String dbFullName = ClusterNamespace.getFullName(context.getClusterName(), db);
-                Env.getCurrentEnv().changeDb(context, dbFullName);
+                //dbName = handleInitCloudCluster(dbName);
+                db = context.getEnv().changeCloudCluster(db, context);
             } catch (DdlException e) {
                 context.getState().setError(e.getMysqlErrorCode(), e.getMessage());
                 sendResponsePacket(context);
                 return false;
+            }
+
+            if (!Strings.isNullOrEmpty(db)) {
+                try {
+                    String dbFullName = ClusterNamespace.getFullName(context.getClusterName(), db);
+                    Env.getCurrentEnv().changeDb(context, dbFullName);
+                } catch (DdlException e) {
+                    context.getState().setError(e.getMysqlErrorCode(), e.getMessage());
+                    sendResponsePacket(context);
+                    return false;
+                }
             }
         }
 
