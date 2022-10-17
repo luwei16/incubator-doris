@@ -594,18 +594,16 @@ Status SegmentIterator::_apply_inverted_index() {
             roaring::Roaring bitmap = _row_bitmap;
             _inverted_index_iterators[unique_id]->set_segment_num_rows(num_rows());
             Status res = pred->evaluate(_schema, _inverted_index_iterators[unique_id], &bitmap);
-            if ((res.precise_code() == OLAP_ERR_INVERTED_INDEX_FILE_NOT_FOUND && pred->type() != PredicateType::MATCH)
-                    || res.precise_code() == OLAP_ERR_INVERTED_INDEX_HIT_LIMIT) {
-                remaining_predicates.push_back(pred);
-                continue;
-            } else {
-                if (!res.ok()) {
-                    LOG(WARNING) << "failed to evaluate inverted index"
-                                 << ", column predicate type: "
-                                 << pred->pred_type_string(pred->type())
-                                 << ", error msg: " << res.get_error_msg();
+            if (!res.ok()) {
+                if ((res.precise_code() == OLAP_ERR_INVERTED_INDEX_FILE_NOT_FOUND && pred->type() != PredicateType::MATCH)
+                        || res.precise_code() == OLAP_ERR_INVERTED_INDEX_HIT_LIMIT) {
+                    remaining_predicates.push_back(pred);
+                    continue;
                 }
-                RETURN_IF_ERROR(res);
+                LOG(WARNING) << "failed to evaluate index"
+                             << ", column predicate type: " << pred->pred_type_string(pred->type())
+                             << ", error msg: " << res.get_error_msg();
+                return res;
             }
 
             if (_opts.conjunct_ctxs_size == _col_predicates.size()) {
@@ -802,11 +800,15 @@ Status SegmentIterator::_apply_index_in_compound() {
         }
 
         if (!res.ok()) {
+            if ((res.precise_code() == OLAP_ERR_INVERTED_INDEX_FILE_NOT_FOUND && pred->type() != PredicateType::MATCH)
+                    || res.precise_code() == OLAP_ERR_INVERTED_INDEX_HIT_LIMIT) {
+                continue;
+            }
             LOG(WARNING) << "failed to evaluate index"
                          << ", column predicate type: " << pred->pred_type_string(pred->type())
                          << ", error msg: " << res.get_error_msg();
+            return res;
         }
-        RETURN_IF_ERROR(res);
 
         std::string pred_sign = _gen_predicate_sign(pred);
         _rowid_result_for_index.emplace(
