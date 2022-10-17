@@ -96,6 +96,7 @@ Status FullTextIndexReader::query(const std::string& column_name, const void* qu
                 get_analyse_result(field_ws, search_str_ws, query_type, analyser_type);
 
         if (analyse_result.empty()) {
+            LOG(WARNING) << "invalid input query_str: " << search_str << ", please check your query sql";
             return Status::OLAPInternalError(
                     OLAP_ERR_INVERTED_INDEX_INVALID_PARAMETERS,
                     fmt::format("invalid input query_str '{}', please check your query sql",

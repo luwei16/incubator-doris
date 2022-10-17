@@ -49,7 +49,7 @@ public:
         auto match_query_str = column_with_name.to_string(0);
         //std::string match_query_str = match_query_col->get_data_at(0).to_string();
         std::string column_name = block.get_by_position(arguments[0]).name;
-        auto match_pred_name = column_name + "_match_" + match_query_str;
+        auto match_pred_name = BeConsts::BLOCK_TEMP_COLUMN_PREFIX + column_name + "_match_" + match_query_str;
         if (!block.has(match_pred_name)) {
             if (!config::enable_storage_vectorization) {
                 return Status::Cancelled("please check whether turn on the configuration 'enable_storage_vectorization'");

@@ -19,6 +19,7 @@
 
 #include "exprs/hybrid_set.h"
 #include "runtime/runtime_filter_mgr.h"
+#include "util/defer_op.h"
 #include "util/stack_util.h"
 #include "util/threadpool.h"
 #include "vec/columns/column_const.h"
@@ -110,6 +111,15 @@ Status VScanNode::get_next(RuntimeState* state, vectorized::Block* block, bool* 
                                      "VScanNode::get_next");
     SCOPED_TIMER(_runtime_profile->total_time_counter());
     SCOPED_CONSUME_MEM_TRACKER(mem_tracker());
+    Defer drop_block_temp_column {[&]() {
+        auto all_column_names = block->get_names();
+        for (auto& name : all_column_names) {
+            if (name.rfind(BeConsts::BLOCK_TEMP_COLUMN_PREFIX, 0) == 0) {
+                block->erase(name);
+            }
+        }
+    }};
+
     if (state->is_cancelled()) {
         _scanner_ctx->set_status_on_error(Status::Cancelled("query cancelled"));
         return _scanner_ctx->status();
@@ -841,7 +851,6 @@ Status VScanNode::_normalize_compound_predicate(vectorized::VExpr* expr,
                     const std::function<bool(const std::vector<VExpr*>&, const VSlotRef**, VExpr**)>& in_predicate_checker,
                     const std::function<bool(const std::vector<VExpr*>&, const VSlotRef**, VExpr**)>& eq_predicate_checker) {
     if (TExprNodeType::COMPOUND_PRED == expr->node_type()) {
-        DCHECK(expr->children().size() == 2);
         auto compound_fn_name = expr->fn().name.function_name;
         auto children_num = expr->children().size();
         for (auto i = 0; i < children_num; ++i) {

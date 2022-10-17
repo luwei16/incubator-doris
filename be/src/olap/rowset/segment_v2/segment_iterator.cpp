@@ -822,16 +822,18 @@ std::string SegmentIterator::_gen_predicate_sign(ColumnPredicate* predicate) {
     auto column_desc = _schema.column(predicate->column_id());
     auto pred_type = predicate->type();
     auto predicate_params = predicate->predicate_params();
-    pred_sign = column_desc->name() + "_" + predicate->pred_type_string(pred_type) + "_" +
-                predicate_params->value;
+    pred_sign = BeConsts::BLOCK_TEMP_COLUMN_PREFIX + column_desc->name() + "_"
+                + predicate->pred_type_string(pred_type) + "_"
+                + predicate_params->value;
 
     return pred_sign;
 }
 
 std::string SegmentIterator::_gen_predicate_sign(ColumnPredicateInfo* predicate_info) {
     std::string pred_sign;
-    pred_sign = predicate_info->column_name + "_" + predicate_info->query_op + "_" +
-                predicate_info->query_value;
+    pred_sign = BeConsts::BLOCK_TEMP_COLUMN_PREFIX + predicate_info->column_name + "_" 
+                + predicate_info->query_op + "_"
+                + predicate_info->query_value;
     return pred_sign;
 }
 
