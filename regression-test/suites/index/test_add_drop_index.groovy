@@ -143,7 +143,7 @@ suite("test_index", "add_drop_index"){
         syntax_error = sql "create index age_idx on ${indexTbName1}(`age`) USING INVERTED PROPERTIES("parser"="standard")"
         create_string_index_on_int_colume_result = "success"
     } catch(Exception ex) {
-        logger.info("sql: create index age_idx on" + indexTbName1 + "(`age`) USING INVERTED PROPERTIES("parser"="standard")")
+        logger.info("sql: create index age_idx on" + indexTbName1 + "(`age`) USING INVERTED PROPERTIES(\"parser\"=\"standard\")")
         logger.info("create string inverted index for int colume, result: " + ex)
     }
     assertEquals(create_string_index_on_int_colume_result, "fail")
@@ -153,38 +153,38 @@ suite("test_index", "add_drop_index"){
     sql "create index name_idx on ${indexTbName1}(`name`)"
     wait_for_latest_op_on_table_finish(indexTbName1, timeout)
     show_result = sql "show index from ${indexTbName1}"
-    assertTrue(show_result[0][2] == "name_idx" && show_result[0][10] == "INVERTED")
+    assertTrue(show_result[0][2] == "name_idx" && show_result[0][10] == "BITMAP")
     logger.info("create index name_idx for " + indexTbName1 + "(`name`)")
     logger.info("show index result: " + show_result)
     sql "drop index name_idx on ${indexTbName1}"
     wait_for_latest_op_on_table_finish(indexTbName1, timeout)
 
     // case5: create none inverted index for char colume
-    sql "create index name_idx on ${indexTbName1}(`name`) USING INVERTED PROPERTIES("parser"="none")"
+    sql "create index name_idx on ${indexTbName1}(`name`) USING INVERTED PROPERTIES(\"parser\"=\"none\")"
     wait_for_latest_op_on_table_finish(indexTbName1, timeout)
     show_result = sql "show index from ${indexTbName1}"
-    assertEquals(show_result[0][10], "INVERTED_NONE")
-    logger.info("create index name_idx for " + indexTbName1 + "(`name`) USING INVERTED PROPERTIES("parser"="none")")
+    assertEquals(show_result[0][10], "INVERTED")
+    logger.info("create index name_idx for " + indexTbName1 + "(`name`) USING INVERTED PROPERTIES(\"parser\"=\"none\")")
     logger.info("show index result: " + show_result)
     sql "drop index name_idx on ${indexTbName1}"
     wait_for_latest_op_on_table_finish(indexTbName1, timeout)
 
     // case5：create simple inverted index for char colume
-    sql "create index studentInfo_idx on ${indexTbName1}(`studentInfo`) USING INVERTED PROPERTIES("parser"="english")"
+    sql "create index studentInfo_idx on ${indexTbName1}(`studentInfo`) USING INVERTED PROPERTIES(\"parser\"=\"english\")"
     wait_for_latest_op_on_table_finish(indexTbName1, timeout)
     show_result = sql "show index from ${indexTbName1}"
-    assertTrue(show_result[0][2] == "studentInfo_idx" && show_result[0][10] == "INVERTED_SIMPLE")
-    logger.info("create index studentInfo_idx for " + indexTbName1 + "(`studentInfo`) USING INVERTED PROPERTIES("parser"="english")")
+    assertTrue(show_result[0][2] == "studentInfo_idx" && show_result[0][10] == "INVERTED")
+    logger.info("create index studentInfo_idx for " + indexTbName1 + "(`studentInfo`) USING INVERTED PROPERTIES(\"parser\"=\"english\")")
     logger.info("show index result: " + show_result)
     sql "drop index studentInfo_idx on ${indexTbName1}"
     wait_for_latest_op_on_table_finish(indexTbName1, timeout)
 
     // case6: create standard inverted index for text colume
-    sql "create index tearchComment_idx on ${indexTbName1}(`tearchComment`) USING INVERTED PROPERTIES("parser"="standard")"
+    sql "create index tearchComment_idx on ${indexTbName1}(`tearchComment`) USING INVERTED PROPERTIES(\"parser\"=\"standard\")"
     wait_for_latest_op_on_table_finish(indexTbName1, timeout)
     show_result = sql "show index from ${indexTbName1}"
-    assertTrue(show_result[0][2] == "tearchComment_idx" && show_result[0][10] == "INVERTED_STANDARD")
-    logger.info("create index tearchComment_idx for " + indexTbName1 + "(`tearchComment`) USING INVERTED PROPERTIES("parser"="standard")")
+    assertTrue(show_result[0][2] == "tearchComment_idx" && show_result[0][10] == "INVERTED")
+    logger.info("create index tearchComment_idx for " + indexTbName1 + "(`tearchComment`) USING INVERTED PROPERTIES(\"parser\"=\"standard\")")
     logger.info("show index result: " + show_result)
     sql "drop index tearchComment_idx on ${indexTbName1}"
     wait_for_latest_op_on_table_finish(indexTbName1, timeout)
@@ -201,38 +201,38 @@ suite("test_index", "add_drop_index"){
 
     // case8: create，drop, create index
     // case8.0: create, drop, create same index with same name
-    sql "create index tearchComment_idx on ${indexTbName1}(`tearchComment`) USING INVERTED PROPERTIES("parser"="standard")"
+    sql "create index tearchComment_idx on ${indexTbName1}(`tearchComment`) USING INVERTED PROPERTIES(\"parser\"=\"standard\")"
     wait_for_latest_op_on_table_finish(indexTbName1, timeout)
     sql "drop index tearchComment_idx on ${indexTbName1}"
     wait_for_latest_op_on_table_finish(indexTbName1, timeout)
-    sql "create index tearchComment_idx on ${indexTbName1}(`tearchComment`) USING INVERTED PROPERTIES("parser"="standard")"
+    sql "create index tearchComment_idx on ${indexTbName1}(`tearchComment`) USING INVERTED PROPERTIES(\"parser\"=\"standard\")"
     wait_for_latest_op_on_table_finish(indexTbName1, timeout)
     show_result = sql "show index from ${indexTbName1}"
-    assertTrue(show_result[0][2] == "tearchComment_idx" && show_result[0][10] == "INVERTED_STANDARD")
+    assertTrue(show_result[0][2] == "tearchComment_idx" && show_result[0][10] == "INVERTED")
     sql "drop index tearchComment_idx on ${indexTbName1}"
     wait_for_latest_op_on_table_finish(indexTbName1, timeout)
 
     // case8.1: create, drop, create other index with same name
-    sql "create index tearchComment_idx on ${indexTbName1}(`tearchComment`) USING INVERTED PROPERTIES("parser"="standard")"
+    sql "create index tearchComment_idx on ${indexTbName1}(`tearchComment`) USING INVERTED PROPERTIES(\"parser\"=\"standard\")"
     wait_for_latest_op_on_table_finish(indexTbName1, timeout)
     sql "drop index tearchComment_idx on ${indexTbName1}"
     wait_for_latest_op_on_table_finish(indexTbName1, timeout)
-    sql "create index tearchComment_idx on ${indexTbName1}(`tearchComment`) USING INVERTED PROPERTIES("parser"="none")"
+    sql "create index tearchComment_idx on ${indexTbName1}(`tearchComment`) USING INVERTED PROPERTIES(\"parser\"=\"none\")"
     wait_for_latest_op_on_table_finish(indexTbName1, timeout)
     show_result = sql "show index from ${indexTbName1}"
-    assertTrue(show_result[0][2] == "tearchComment_idx" && show_result[0][10] == "INVERTED_NONE")
+    assertTrue(show_result[0][2] == "tearchComment_idx" && show_result[0][10] == "INVERTED")
     sql "drop index tearchComment_idx on ${indexTbName1}"
     wait_for_latest_op_on_table_finish(indexTbName1, timeout)
 
     // case8.2: create, drop, create same index with other name
-    sql "create index tearchComment_idx on ${indexTbName1}(`tearchComment`) USING INVERTED PROPERTIES("parser"="standard")"
+    sql "create index tearchComment_idx on ${indexTbName1}(`tearchComment`) USING INVERTED PROPERTIES(\"parser\"=\"standard\")"
     wait_for_latest_op_on_table_finish(indexTbName1, timeout)
     sql "drop index tearchComment_idx on ${indexTbName1}"
     wait_for_latest_op_on_table_finish(indexTbName1, timeout)
-    sql "create index tearchComment_idx_2 on ${indexTbName1}(`tearchComment`) USING INVERTED PROPERTIES("parser"="standard")"
+    sql "create index tearchComment_idx_2 on ${indexTbName1}(`tearchComment`) USING INVERTED PROPERTIES(\"parser\"=\"standard\")"
     wait_for_latest_op_on_table_finish(indexTbName1, timeout)
     show_result = sql "show index from ${indexTbName1}"
-    assertTrue(show_result[0][2] == "tearchComment_idx_2" && show_result[0][10] == "INVERTED_STANDARD")
+    assertTrue(show_result[0][2] == "tearchComment_idx_2" && show_result[0][10] == "INVERTED")
     sql "drop index tearchComment_idx_2 on ${indexTbName1}"
     wait_for_latest_op_on_table_finish(indexTbName1, timeout)
 
