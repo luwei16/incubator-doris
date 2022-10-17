@@ -192,15 +192,17 @@ public class CloudClusterChecker extends MasterDaemon {
                         .filter(c -> c.getType() != Type.SQL).collect(Collectors.toList());
                 // root and admin user can access all clusters
                 userOwnedClusterMap.put("root", computeClusters);
-                userOwnedClusterMap.put("admin", computeClusters);
-                // selectdb cloud default users
-                userOwnedClusterMap.put("selectdbAdmin", computeClusters);
-                userOwnedClusterMap.put("selectdbView", computeClusters);
+                // get meta service configured user name
                 allMysqlUserName.stream().filter(user -> !user.equals("root")).forEach(user -> {
                     List<ClusterPB> userOwnedCluster = computeClusters.stream()
                             .filter(c -> c.getMysqlUserNameList().contains(user)).collect(Collectors.toList());
                     userOwnedClusterMap.put(user, userOwnedCluster);
                 });
+                // default user has the same cluster access rights as root user
+                userOwnedClusterMap.put("admin", computeClusters);
+                // selectdb cloud default users
+                userOwnedClusterMap.put("selectdbAdmin", computeClusters);
+                userOwnedClusterMap.put("selectdbView", computeClusters);
                 // clusterId -> clusterPB
                 Map<String, ClusterPB> remoteClusterIdToPB = new HashMap<>();
                 userOwnedClusterMap.values().forEach(upbList ->
