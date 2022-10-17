@@ -29,6 +29,7 @@
 #include "vec/data_types/data_type_nullable.h"
 #include "vec/data_types/data_type_number.h"
 #include "vec/data_types/data_type_string.h"
+#include "vec/data_types/data_type_time_v2.h"
 
 namespace doris::vectorized {
 
@@ -298,6 +299,24 @@ Status get_least_supertype(const DataTypes& types, DataTypePtr* type, bool compa
             }
 
             *type = std::make_shared<DataTypeDateTime>();
+            return Status::OK();
+        }
+    }
+
+    {
+        UInt32 have_date_v2 = type_ids.count(TypeIndex::DateV2);
+
+        UInt32 have_datetime_v2 = type_ids.count(TypeIndex::DateTimeV2);
+
+        if (have_date_v2 || have_datetime_v2) {
+            bool all_datev2_or_datetimev2 = type_ids.size() == (have_date_v2 + have_datetime_v2);
+            if (!all_datev2_or_datetimev2) {
+                LOG(FATAL)
+                        << get_exception_message_prefix(types)
+                        << " because some of them are DateV2/DateTimeV2 and some of them are not";
+            }
+
+            *type = std::make_shared<DataTypeDateTimeV2>();
             return Status::OK();
         }
     }
