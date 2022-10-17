@@ -1107,18 +1107,18 @@ Status PInternalServiceImpl::_multi_get(const PMultiGetRequest *request, PMultiG
             }
         }
         RETURN_IF_ERROR(st);
-        LOG(INFO) << "multiget_data get, cost(us):" << watch.elapsed_time() / 1000;
+        VLOG_DEBUG << "multiget_data get, cost(us):" << watch.elapsed_time() / 1000;
         // merge blocks
         vectorized::MutableBlock final_block(&block);
         for (size_t i = 0; i < parallel_n; ++i) {
             final_block.merge(sub_blocks[i]);
         }
         block.swap(final_block.to_block());
-        LOG(INFO) << "multiget_data merge, cost(us):" << watch.elapsed_time() / 1000;
+        VLOG_DEBUG << "multiget_data merge, cost(us):" << watch.elapsed_time() / 1000;
     } else {
         RETURN_IF_ERROR(point_get_fn(std::pair{0, request->rowids_size()}, &block));  
     }
-    LOG(INFO) << "dump block:" << block.dump_data(0, 10);
+    VLOG_DEBUG << "dump block:" << block.dump_data(0, 10);
     
     [[unused]]size_t compressed_size = 0;
     [[unused]]size_t uncompressed_size = 0;
