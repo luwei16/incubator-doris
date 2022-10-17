@@ -284,7 +284,8 @@ Status VOlapScanner::_init_tablet_reader_params(
     }
 
     if (!_runtime_state->skip_storage_engine_merge()) {
-        if (_parent->_olap_scan_node.__isset.sort_info &&
+        if (_parent->_olap_scan_node.use_topn_opt &&
+            _parent->_olap_scan_node.__isset.sort_info &&
             _parent->_olap_scan_node.sort_info.is_asc_order.size() > 0) {
             _limit = _parent->_limit_per_scanner;
             _tablet_reader_params.read_orderby_key = true;
@@ -293,6 +294,8 @@ Status VOlapScanner::_init_tablet_reader_params(
             }
             _tablet_reader_params.read_orderby_key_num_prefix_columns =
                     _parent->_olap_scan_node.sort_info.is_asc_order.size();
+            _tablet_reader_params.read_orderby_key_limit = _limit;
+            _tablet_reader_params.filter_block_vconjunct_ctx_ptr = &_vconjunct_ctx;
         }
     }
 
@@ -380,8 +383,11 @@ Status VOlapScanner::get_block(RuntimeState* state, vectorized::Block* block, bo
             }
             _num_rows_read += block->rows();
             _update_realtime_counter();
-            RETURN_IF_ERROR(
+            // skip filter_block if read_orderby_key_limit > 0, since it's called inside tablet_reader
+            if (_tablet_reader_params.read_orderby_key_limit == 0) {
+                RETURN_IF_ERROR(
                     VExprContext::filter_block(_vconjunct_ctx, block, block->columns()));
+            }
             // record rows return (after filter) for _limit check
             _num_rows_return += block->rows();
         } while (block->rows() == 0 && !(*eof) && raw_rows_read() < raw_rows_threshold);
@@ -393,7 +399,7 @@ Status VOlapScanner::get_block(RuntimeState* state, vectorized::Block* block, bo
 
     // set eof to true if per scanner limit is reached
     // currently for query: ORDER BY key LIMIT n
-    if (_limit > 0 && _num_rows_return > _limit) {
+    if (_limit > 0 && _num_rows_return >= _limit) {
         *eof = true;
     }
 

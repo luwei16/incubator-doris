@@ -169,6 +169,15 @@ Status BetaRowsetReader::init(RowsetReaderContext* read_context) {
     read_options.use_topn_opt = read_context->use_topn_opt;
     read_options.read_orderby_key_reverse = read_context->read_orderby_key_reverse;
     read_options.read_orderby_key_columns = read_context->read_orderby_key_columns;
+    if (read_context->read_orderby_key_limit > 0) {
+        size_t limit = read_context->read_orderby_key_limit;
+        if (read_context->predicates != nullptr) {
+            limit = limit * 2;
+        }
+        if (read_options.block_row_max > limit) {
+            read_options.block_row_max = limit;
+        }
+    }
     read_options.kept_in_memory = read_context->kept_in_memory;
     read_options.is_persistent = read_context->is_persistent;
     read_options.runtime_state = read_context->runtime_state;
@@ -188,7 +197,15 @@ Status BetaRowsetReader::init(RowsetReaderContext* read_context) {
             LOG(WARNING) << "failed to create iterator[" << seg_ptr->id() << "]: " << s.to_string();
             return Status::OLAPInternalError(OLAP_ERR_ROWSET_READER_INIT);
         }
+        if (iter->empty()) {
+            continue;
+        }
         seg_iterators.push_back(std::move(iter));
+    }
+
+    if (seg_iterators.empty() && read_context->is_vec) {
+        _empty = true;
+        return Status::OK();
     }
 
     std::vector<RowwiseIterator*> iterators;
@@ -295,6 +312,9 @@ Status BetaRowsetReader::next_block(RowBlock** block) {
 
 Status BetaRowsetReader::next_block(vectorized::Block* block) {
     SCOPED_RAW_TIMER(&_stats->block_fetch_ns);
+
+    if (_empty) return Status::OLAPInternalError(OLAP_ERR_DATA_EOF);
+
     if (config::enable_storage_vectorization && _context->is_vec) {
         do {
             auto s = _iterator->next_batch(block);

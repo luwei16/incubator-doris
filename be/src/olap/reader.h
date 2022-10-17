@@ -28,6 +28,7 @@
 #include "olap/tablet_schema.h"
 #include "util/date_func.h"
 #include "util/runtime_profile.h"
+#include "vec/exprs/vexpr_context.h"
 
 namespace doris {
 
@@ -106,6 +107,10 @@ public:
         bool read_orderby_key_reverse = false;
         // num of columns for orderby key
         size_t read_orderby_key_num_prefix_columns = 0;
+        // limit of rows for read_orderby_key
+        size_t read_orderby_key_limit = 0;
+        // filter_block arguments
+        vectorized::VExprContext** filter_block_vconjunct_ctx_ptr = nullptr;
 
         int conjunct_ctxs_size = 0;
 

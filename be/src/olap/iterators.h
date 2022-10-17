@@ -156,6 +156,9 @@ public:
     // Return the data id such as segment id, used for keep the insert order when do
     // merge sort in priority queue
     virtual uint64_t data_id() const { return 0; }
+
+    // return if it's an empty iterator
+    virtual bool empty() const { return false; }
 };
 
 } // namespace doris
