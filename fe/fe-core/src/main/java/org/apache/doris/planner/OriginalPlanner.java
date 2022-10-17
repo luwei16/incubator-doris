@@ -434,8 +434,10 @@ public class OriginalPlanner extends Planner {
                 if (firstSortExpr instanceof SlotRef && ((SlotRef) firstSortExpr).hasCol()
                         && !firstSortExpr.getType().isStringType()) {
                     OlapScanNode scanNode = (OlapScanNode) child;
-                    sortNode.setUseTopnOpt(true);
-                    scanNode.setUseTopnOpt(true);
+                    if (scanNode.isDupKeysOrMergeOnWrite()) {
+                        sortNode.setUseTopnOpt(true);
+                        scanNode.setUseTopnOpt(true);
+                    }
                 }
             }
         }
