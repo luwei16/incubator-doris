@@ -33,22 +33,12 @@ public class OssRemote extends DefaultRemote {
         String objectName = obj.getPrefix() + fileName;
         initClient();
         try {
-            int count = 0;
-            while (true) {
-                GeneratePresignedUrlRequest request
-                        = new GeneratePresignedUrlRequest(bucketName, objectName, HttpMethod.PUT);
-                Date expiration = new Date(new Date().getTime() + 3600 * 1000 + count * 500L);
-                request.setExpiration(expiration);
-                URL signedUrl = ossClient.generatePresignedUrl(request);
-                LOG.debug("before change url: {}, count: {}", signedUrl.toString(), count);
-                // fix oss bug, curl redirect deal "%2B" has bug.
-                String sign = signedUrl.toString();
-                if (sign.contains("%2B")) {
-                    ++count;
-                    continue;
-                }
-                return signedUrl.toString();
-            }
+            GeneratePresignedUrlRequest request
+                    = new GeneratePresignedUrlRequest(bucketName, objectName, HttpMethod.PUT);
+            Date expiration = new Date(new Date().getTime() + 3600 * 1000);
+            request.setExpiration(expiration);
+            URL signedUrl = ossClient.generatePresignedUrl(request);
+            return signedUrl.toString();
         } catch (OSSException oe) {
             LOG.warn("Caught an OSSException, which means your request made it to OSS, "
                     + "but was rejected with an error response for some reason. "
