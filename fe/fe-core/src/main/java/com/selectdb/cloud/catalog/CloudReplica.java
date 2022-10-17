@@ -70,7 +70,17 @@ public class CloudReplica extends Replica {
     }
 
     private long getColocatedBeId(String cluster) {
-        List<Backend> availableBes = Env.getCurrentSystemInfo().getBackendsByClusterName(cluster);
+        List<Backend> bes = Env.getCurrentSystemInfo().getBackendsByClusterName(cluster);
+        List<Backend> availableBes = new ArrayList<>();
+        for (Backend be : bes) {
+            if (be.isAlive()) {
+                availableBes.add(be);
+            }
+        }
+        if (availableBes == null || availableBes.size() == 0) {
+            LOG.warn("failed to get available be, clusterName: {}", cluster);
+            return -1;
+        }
 
         // Tablets with the same idx will be hashed to the same BE, which
         // meets the requirements of colocated table.
@@ -104,7 +114,7 @@ public class CloudReplica extends Replica {
 
         // No cluster right now
         if (cluster == null || cluster.isEmpty()) {
-            LOG.warn("lw test get backend, return -1");
+            LOG.warn("failed to get available be, clusterName: {}", cluster);
             return -1;
         }
 
@@ -131,6 +141,7 @@ public class CloudReplica extends Replica {
             }
         }
         if (availableBes == null || availableBes.size() == 0) {
+            LOG.warn("failed to get available be, clusterName: {}", cluster);
             return -1;
         }
         LOG.debug("availableBes={}", availableBes);
