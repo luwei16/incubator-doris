@@ -123,6 +123,18 @@ private:
 
     // for debugging or profiling, record any info as you want
     RuntimeProfile::Counter* _general_debug_timer[GENERAL_DEBUG_COUNT] = {};
+
+    // file cache
+    RuntimeProfile::Counter* _num_io_total = nullptr;
+    RuntimeProfile::Counter* _num_io_hit_cache = nullptr;
+    RuntimeProfile::Counter* _num_io_bytes_read_total = nullptr;
+    RuntimeProfile::Counter* _num_io_bytes_read_from_file_cache = nullptr;
+    RuntimeProfile::Counter* _num_io_bytes_read_from_write_cache = nullptr;
+    RuntimeProfile::Counter* _num_io_written_in_file_cache = nullptr;
+    RuntimeProfile::Counter* _num_io_bytes_written_in_file_cache = nullptr;
+    RuntimeProfile::Counter* _num_io_bytes_skip_cache = nullptr;
+
+    RuntimeProfile::Counter* _cloud_get_rowset_version_timer = nullptr;
 };
 
 } // namespace doris::vectorized

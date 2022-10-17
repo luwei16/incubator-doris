@@ -20,6 +20,7 @@
 #include "olap/storage_engine.h"
 #include "vec/exec/scan/new_olap_scan_node.h"
 #include "vec/olap/block_reader.h"
+#include "cloud/utils.h"
 
 namespace doris::vectorized {
 
@@ -56,6 +57,16 @@ Status NewOlapScanner::prepare(
     TTabletId tablet_id = scan_range.tablet_id;
     _version = strtoul(scan_range.version.c_str(), nullptr, 10);
     {
+#ifdef CLOUD_MODE
+        {
+            NewOlapScanNode* olap_parent = (NewOlapScanNode*)_parent;
+            SCOPED_TIMER(olap_parent->_cloud_get_rowset_version_timer);
+            RETURN_IF_ERROR(cloud::tablet_mgr()->get_tablet(tablet_id, &_tablet));
+            RETURN_IF_ERROR(_tablet->cloud_sync_rowsets(_version));
+        }
+        RETURN_IF_ERROR(_tablet->cloud_capture_rs_readers({0, _version},
+                                                          &_tablet_reader_params.rs_readers));
+#else
         std::string err;
         _tablet = StorageEngine::instance()->tablet_manager()->get_tablet(tablet_id, true, &err);
         if (_tablet.get() == nullptr) {
@@ -63,20 +74,6 @@ Status NewOlapScanner::prepare(
             ss << "failed to get tablet. tablet_id=" << tablet_id << ", reason=" << err;
             LOG(WARNING) << ss.str();
             return Status::InternalError(ss.str());
-        }
-        _tablet_schema->copy_from(*_tablet->tablet_schema());
-
-        TOlapScanNode& olap_scan_node = ((NewOlapScanNode*)_parent)->_olap_scan_node;
-        if (olap_scan_node.__isset.columns_desc && !olap_scan_node.columns_desc.empty() &&
-            olap_scan_node.columns_desc[0].col_unique_id >= 0) {
-            // Originally scanner get TabletSchema from tablet object in BE.
-            // To support lightweight schema change for adding / dropping columns,
-            // tabletschema is bounded to rowset and tablet's schema maybe outdated,
-            //  so we have to use schema from a query plan witch FE puts it in query plans.
-            _tablet_schema->clear_columns();
-            for (const auto& column_desc : olap_scan_node.columns_desc) {
-                _tablet_schema->append_column(TabletColumn(column_desc));
-            }
         }
         {
             std::shared_lock rdlock(_tablet->get_header_lock());
@@ -102,14 +99,24 @@ Status NewOlapScanner::prepare(
                    << ", backend=" << BackendOptions::get_localhost();
                 return Status::InternalError(ss.str());
             }
-
-            // Initialize tablet_reader_params
-            RETURN_IF_ERROR(_init_tablet_reader_params(key_ranges, filters, bloom_filters,
-                                                       function_filters));
+        }
+#endif
+        _tablet_schema->copy_from(*_tablet->tablet_schema());
+        TOlapScanNode& olap_scan_node = ((NewOlapScanNode*)_parent)->_olap_scan_node;
+        if (olap_scan_node.__isset.columns_desc && !olap_scan_node.columns_desc.empty() &&
+            olap_scan_node.columns_desc[0].col_unique_id >= 0) {
+            // Originally scanner get TabletSchema from tablet object in BE.
+            // To support lightweight schema change for adding / dropping columns,
+            // tabletschema is bounded to rowset and tablet's schema maybe outdated,
+            //  so we have to use schema from a query plan witch FE puts it in query plans.
+            _tablet_schema->clear_columns();
+            for (const auto& column_desc : olap_scan_node.columns_desc) {
+                _tablet_schema->append_column(TabletColumn(column_desc));
+            }
         }
     }
-
-    return Status::OK();
+    // Initialize tablet_reader_params
+    return _init_tablet_reader_params(key_ranges, filters, bloom_filters, function_filters);
 }
 
 Status NewOlapScanner::open(RuntimeState* state) {
@@ -409,6 +416,21 @@ void NewOlapScanner::_update_counters_before_close() {
 
     COUNTER_UPDATE(olap_parent->_filtered_segment_counter, stats.filtered_segment_number);
     COUNTER_UPDATE(olap_parent->_total_segment_counter, stats.total_segment_number);
+
+    COUNTER_UPDATE(olap_parent->_num_io_total, stats.file_cache_stats.num_io_total);
+    COUNTER_UPDATE(olap_parent->_num_io_hit_cache, stats.file_cache_stats.num_io_hit_cache);
+    COUNTER_UPDATE(olap_parent->_num_io_bytes_read_total,
+                   stats.file_cache_stats.num_io_bytes_read_total);
+    COUNTER_UPDATE(olap_parent->_num_io_bytes_read_from_file_cache,
+                   stats.file_cache_stats.num_io_bytes_read_from_file_cache);
+    COUNTER_UPDATE(olap_parent->_num_io_bytes_read_from_write_cache,
+                   stats.file_cache_stats.num_io_bytes_read_from_write_cache);
+    COUNTER_UPDATE(olap_parent->_num_io_written_in_file_cache,
+                   stats.file_cache_stats.num_io_written_in_file_cache);
+    COUNTER_UPDATE(olap_parent->_num_io_bytes_written_in_file_cache,
+                   stats.file_cache_stats.num_io_bytes_written_in_file_cache);
+    COUNTER_UPDATE(olap_parent->_num_io_bytes_skip_cache,
+                   stats.file_cache_stats.num_io_bytes_skip_cache);
 
     // Update metrics
     DorisMetrics::instance()->query_scan_bytes->increment(_compressed_bytes_read);
