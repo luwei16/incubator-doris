@@ -168,6 +168,7 @@ public:
     }
     bool disable_auto_compaction() const { return _disable_auto_compaction; }
     bool is_dynamic_schema() const { return _is_dynamic_schema; }
+    bool is_inverted_index(int32_t column_unique_id) const { return _inverted_index_column.count(column_unique_id); }
     int32_t delete_sign_idx() const { return _delete_sign_idx; }
     void set_delete_sign_idx(int32_t delete_sign_idx) { _delete_sign_idx = delete_sign_idx; }
     bool has_sequence_col() const { return _sequence_col_idx != -1; }
@@ -231,6 +232,7 @@ private:
     int32_t _schema_version = -1;
     int32_t _table_id = -1;
     bool _disable_auto_compaction = false;
+    std::set<int32_t> _inverted_index_column;
 };
 
 bool operator==(const TabletSchema& a, const TabletSchema& b);

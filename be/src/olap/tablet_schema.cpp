@@ -492,6 +492,9 @@ void TabletSchema::append_column(TabletColumn column, bool is_dropped_column) {
     if (column.is_nullable()) {
         _num_null_columns++;
     }
+    if (column.has_inverted_index()) {
+        _inverted_index_column.insert(column.unique_id());
+    }
     if (UNLIKELY(column.name() == DELETE_SIGN)) {
         _delete_sign_idx = _num_columns;
     } else if (UNLIKELY(column.name() == SEQUENCE_COL)) {
@@ -510,6 +513,7 @@ void TabletSchema::append_column(TabletColumn column, bool is_dropped_column) {
 void TabletSchema::clear_columns() {
     _field_name_to_index.clear();
     _field_id_to_index.clear();
+    _inverted_index_column.clear();
     _num_columns = 0;
     _num_null_columns = 0;
     _num_key_columns = 0;
@@ -524,6 +528,7 @@ void TabletSchema::init_from_pb(const TabletSchemaPB& schema) {
     _cols.clear();
     _field_name_to_index.clear();
     _field_id_to_index.clear();
+    _inverted_index_column.clear();
     for (auto& column_pb : schema.column()) {
         TabletColumn column;
         column.init_from_pb(column_pb);
@@ -532,6 +537,9 @@ void TabletSchema::init_from_pb(const TabletSchemaPB& schema) {
         }
         if (column.is_nullable()) {
             _num_null_columns++;
+        }
+        if (column.has_inverted_index()) {
+            _inverted_index_column.insert(column.unique_id());
         }
         _field_name_to_index[column.name()] = _num_columns;
         _field_id_to_index[column.unique_id()] = _num_columns;
@@ -595,6 +603,7 @@ void TabletSchema::build_current_tablet_schema(int64_t index_id, int32_t version
     _cols.clear();
     _field_name_to_index.clear();
     _field_id_to_index.clear();
+    _inverted_index_column.clear();
 
     for (auto& pcolumn : index.columns_desc()) {
         TabletColumn column;
@@ -604,6 +613,9 @@ void TabletSchema::build_current_tablet_schema(int64_t index_id, int32_t version
         }
         if (column.is_nullable()) {
             _num_null_columns++;
+        }
+        if (column.has_inverted_index()) {
+            _inverted_index_column.insert(column.unique_id());
         }
         if (column.is_bf_column()) {
             has_bf_columns = true;
