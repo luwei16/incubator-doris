@@ -30,5 +30,5 @@ FROM
 )  ms
 , customer
 WHERE (ss_customer_sk = c_customer_sk)
-ORDER BY c_last_name ASC, c_first_name ASC, substr(s_city, 1, 30) ASC, profit ASC
+ORDER BY c_last_name ASC, c_first_name ASC, substr(s_city, 1, 30) ASC, profit ASC, ss_ticket_number, amt
 LIMIT 100
