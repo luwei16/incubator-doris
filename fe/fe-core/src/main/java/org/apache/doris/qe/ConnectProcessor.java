@@ -259,7 +259,8 @@ public class ConnectProcessor {
         if (ctx.getState().isQuery()) {
             MetricRepo.COUNTER_QUERY_ALL.increase(1L);
             if (!Config.cloud_unique_id.isEmpty() && ctx.cloudCluster != null) {
-                MetricRepo.CLOUD_CLUSTER_COUNTER_QUERY_ALL.computeIfAbsent(ctx.cloudCluster, key -> {
+                String clusterId = Env.getCurrentSystemInfo().getCloudClusterNameToId().get(ctx.cloudCluster);
+                MetricRepo.CLOUD_CLUSTER_COUNTER_QUERY_ALL.computeIfAbsent(clusterId, key -> {
                     LongCounterMetric counterQueryAll = new LongCounterMetric("query_total", MetricUnit.REQUESTS,
                             "total query");
                     counterQueryAll.addLabel(new MetricLabel("cluster", key));
@@ -268,7 +269,7 @@ public class ConnectProcessor {
                 }).increase(1L);
 
                 // registered metrics
-                MetricRepo.CLOUD_CLUSTER_COUNTER_QUERY_ERR.computeIfAbsent(ctx.cloudCluster, key -> {
+                MetricRepo.CLOUD_CLUSTER_COUNTER_QUERY_ERR.computeIfAbsent(clusterId, key -> {
                     LongCounterMetric counterQueryErr = new LongCounterMetric("query_err", MetricUnit.REQUESTS,
                             "total error query");
                     counterQueryErr.addLabel(new MetricLabel("cluster", key));
@@ -276,7 +277,7 @@ public class ConnectProcessor {
                     return counterQueryErr;
                 });
 
-                MetricRepo.CLOUD_CLUSTER_HISTO_QUERY_LATENCY.computeIfAbsent(ctx.cloudCluster, key -> {
+                MetricRepo.CLOUD_CLUSTER_HISTO_QUERY_LATENCY.computeIfAbsent(clusterId, key -> {
                     Histogram histoQueryLatency = MetricRepo.METRIC_REGISTER.histogram(
                             MetricRegistry.name("query", "latency", "ms", key));
                     return histoQueryLatency;
@@ -337,7 +338,8 @@ public class ConnectProcessor {
     private void handleQuery() {
         MetricRepo.COUNTER_REQUEST_ALL.increase(1L);
         if (!Config.cloud_unique_id.isEmpty() && ctx.cloudCluster != null) {
-            MetricRepo.CLOUD_CLUSTER_COUNTER_REQUEST_ALL.computeIfAbsent(ctx.cloudCluster, key -> {
+            String clusterId = Env.getCurrentSystemInfo().getCloudClusterNameToId().get(ctx.cloudCluster);
+            MetricRepo.CLOUD_CLUSTER_COUNTER_REQUEST_ALL.computeIfAbsent(clusterId, key -> {
                 LongCounterMetric counterRequestAll = new LongCounterMetric("request_total", MetricUnit.REQUESTS,
                         "total request");
                 counterRequestAll.addLabel(new MetricLabel("cluster", key));
