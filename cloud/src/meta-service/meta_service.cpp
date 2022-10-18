@@ -4460,6 +4460,7 @@ void MetaServiceImpl::begin_copy(google::protobuf::RpcController* controller,
 
         while (it->has_next()) {
             auto [k, v] = it->next();
+            if (!it->has_next()) key0 = k;
             CopyJobPB copy_job;
             if (!copy_job.ParseFromArray(v.data(), v.size())) {
                 code = MetaServiceCode::PROTOBUF_PARSE_ERR;
@@ -4711,6 +4712,7 @@ void MetaServiceImpl::get_copy_files(google::protobuf::RpcController* controller
 
         while (it->has_next()) {
             auto [k, v] = it->next();
+            if (!it->has_next()) key0 = k;
             CopyJobPB copy_job;
             if (!copy_job.ParseFromArray(v.data(), v.size())) {
                 code = MetaServiceCode::PROTOBUF_PARSE_ERR;
