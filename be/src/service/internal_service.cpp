@@ -1102,7 +1102,6 @@ void PInternalServiceImpl::multiget_data(google::protobuf::RpcController* contro
     // multi get data by rowid
     MonotonicStopWatch watch;
     watch.start();
-    SCOPED_SWITCH_BTHREAD_TLS();
     brpc::ClosureGuard closure_guard(done);
     response->mutable_status()->set_status_code(0);
     Status st = _multi_get(request, response); 
