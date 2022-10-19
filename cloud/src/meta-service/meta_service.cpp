@@ -592,6 +592,11 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
             (int*)0x01, [&code, &msg, &response, &ctrl](int*) {
                 response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
+                if (code != MetaServiceCode::OK) {
+                    response->clear_table_ids();
+                    response->clear_partition_ids();
+                    response->clear_versions();
+                }
                 LOG(INFO) << __PRETTY_FUNCTION__ << " finish " << ctrl->remote_side()
                           << " response:\n"
                           << response->DebugString();
@@ -682,6 +687,7 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
         code = MetaServiceCode::TXN_ALREADY_VISIBLE;
         ss << "transaction is already visible: db_id=" << db_id << " txn_id=" << txn_id;
         msg = ss.str();
+        return;
     }
 
     if (request->has_is_2pc() && request->is_2pc() && TxnStatusPB::TXN_STATUS_PREPARED) {
@@ -776,6 +782,8 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
                 msg = ss.str();
                 return;
             }
+            VLOG_DEBUG << "tablet_id:" << tablet_id
+                       << " value:" << table_ids[tablet_id].DebugString();
         }
 
         int64_t table_id = table_ids[tablet_id].table_id();
@@ -897,6 +905,28 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
         txn->put(i.first, ver_val);
         LOG(INFO) << "xxx put version_key=" << hex(i.first) << " version:" << i.second
                   << " txn_id=" << txn_id;
+
+        std::string_view ver_key = i.first;
+        //VersionKeyInfo  {instance_id, db_id, table_id, partition_id}
+        ver_key.remove_prefix(1); // Remove key space
+        std::vector<std::tuple<std::variant<int64_t, std::string>, int, int>> out;
+        ret = decode_key(&ver_key, &out);
+        if (ret != 0) [[unlikely]] {
+            // decode version key error means this is something wrong,
+            // we can not continue this txn
+            LOG(WARNING) << "failed to decode key, ret=" << ret << " key=" << hex(ver_key);
+            code = MetaServiceCode::UNDEFINED_ERR;
+            msg = "decode version key error";
+            return;
+        }
+
+        int64_t table_id = std::get<int64_t>(std::get<0>(out[4]));
+        int64_t partition_id = std::get<int64_t>(std::get<0>(out[5]));
+        VLOG_DEBUG << " table_id=" << table_id << " partition_id=" << partition_id;
+
+        response->add_table_ids(table_id);
+        response->add_partition_ids(partition_id);
+        response->add_versions(i.second);
     }
 
     LOG(INFO) << " before update txn_info:\n" << txn_info.DebugString();

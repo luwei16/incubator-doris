@@ -374,6 +374,7 @@ static void create_tmp_rowset_and_meta_tablet(TxnKv* txn_kv, int64_t txn_id, int
     rowset_pb.set_rowset_id_v2(rowset_id);
     rowset_pb.set_tablet_id(tablet_id);
     rowset_pb.set_num_segments(num_segments);
+    rowset_pb.set_partition_id(897614);
     rowset_pb.SerializeToString(&val);
 
     std::unique_ptr<Transaction> txn;
@@ -387,9 +388,9 @@ static void create_tmp_rowset_and_meta_tablet(TxnKv* txn_kv, int64_t txn_id, int
     MetaTabletIdxKeyInfo key_info1 {instance_id, tablet_id};
     meta_tablet_idx_key(key_info1, &key1);
     TabletIndexPB tablet_table;
-    tablet_table.set_table_id(1);
+    tablet_table.set_table_id(123456);
     tablet_table.set_index_id(2);
-    tablet_table.set_partition_id(3);
+    tablet_table.set_partition_id(3241);
     tablet_table.SerializeToString(&val1);
 
     txn->put(key1, val1);
