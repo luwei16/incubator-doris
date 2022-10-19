@@ -133,74 +133,6 @@ set(HTTP_TEST_FILES
     # http/stream_load_test.cpp
     # http/metrics_action_test.cpp
 )
-set(OLAP_TEST_FILES
-    olap/engine_storage_migration_task_test.cpp
-    olap/timestamped_version_tracker_test.cpp
-    olap/tablet_schema_helper.cpp
-    olap/delta_writer_test.cpp
-    olap/delete_handler_test.cpp
-    olap/row_block_test.cpp
-    olap/row_block_v2_test.cpp
-    olap/byte_buffer_test.cpp
-    olap/lru_cache_test.cpp
-    olap/bloom_filter_test.cpp
-    olap/bloom_filter_column_predicate_test.cpp
-    olap/comparison_predicate_test.cpp
-    olap/in_list_predicate_test.cpp
-    olap/null_predicate_test.cpp
-    olap/file_helper_test.cpp
-    olap/file_utils_test.cpp
-    olap/cumulative_compaction_policy_test.cpp
-    olap/row_cursor_test.cpp
-    olap/skiplist_test.cpp
-    olap/olap_meta_test.cpp
-    olap/decimal12_test.cpp
-    olap/column_vector_test.cpp
-    olap/storage_types_test.cpp
-    olap/aggregate_func_test.cpp
-    olap/rowset/segment_v2/bitshuffle_page_test.cpp
-    olap/rowset/segment_v2/plain_page_test.cpp
-    olap/rowset/segment_v2/bitmap_index_test.cpp
-    olap/rowset/segment_v2/binary_plain_page_test.cpp
-    olap/rowset/segment_v2/binary_prefix_page_test.cpp
-    olap/rowset/segment_v2/column_reader_writer_test.cpp
-    olap/rowset/segment_v2/encoding_info_test.cpp
-    olap/rowset/segment_v2/ordinal_page_index_test.cpp
-    olap/rowset/segment_v2/rle_page_test.cpp
-    olap/rowset/segment_v2/binary_dict_page_test.cpp
-    olap/rowset/segment_v2/segment_test.cpp
-    olap/rowset/segment_v2/row_ranges_test.cpp
-    olap/rowset/segment_v2/frame_of_reference_page_test.cpp
-    olap/rowset/segment_v2/block_bloom_filter_test.cpp
-    olap/rowset/segment_v2/bloom_filter_index_reader_writer_test.cpp
-    olap/rowset/segment_v2/zone_map_index_test.cpp
-    olap/tablet_meta_test.cpp
-    olap/tablet_meta_manager_test.cpp
-    olap/tablet_mgr_test.cpp
-    olap/tablet_test.cpp
-    olap/rowset/rowset_meta_manager_test.cpp
-    olap/rowset/rowset_meta_test.cpp
-    olap/rowset/beta_rowset_test.cpp
-    olap/rowset/unique_rowset_id_generator_test.cpp
-    olap/rowset/rowset_tree_test.cpp
-    olap/txn_manager_test.cpp
-    olap/generic_iterators_test.cpp
-    olap/key_coder_test.cpp
-    olap/short_key_index_test.cpp
-    olap/primary_key_index_test.cpp
-    olap/page_cache_test.cpp
-    olap/hll_test.cpp
-    olap/selection_vector_test.cpp
-    olap/block_column_predicate_test.cpp
-    olap/options_test.cpp
-    olap/common_test.cpp
-    olap/primary_key_index_test.cpp
-    # olap/memtable_flush_executor_test.cpp
-    # olap/push_handler_test.cpp
-    olap/tablet_cooldown_test.cpp
-    olap/rowid_conversion_test.cpp
-    olap/remote_rowset_gc_test.cpp
-)
 
 set(RUNTIME_TEST_FILES
     # runtime/buffered_tuple_stream_test.cpp
@@ -368,6 +300,129 @@ set(IO_TEST_FILES
     io/s3_file_writer_test.cpp
 )
 
+if (CLOUD_MODE)
+    set(OLAP_TEST_FILES
+        olap/tablet_schema_helper.cpp
+        olap/row_block_test.cpp
+        olap/row_block_v2_test.cpp
+        olap/byte_buffer_test.cpp
+        olap/lru_cache_test.cpp
+        olap/bloom_filter_test.cpp
+        olap/bloom_filter_column_predicate_test.cpp
+        olap/comparison_predicate_test.cpp
+        olap/in_list_predicate_test.cpp
+        olap/null_predicate_test.cpp
+        olap/file_helper_test.cpp
+        olap/file_utils_test.cpp
+        olap/row_cursor_test.cpp
+        olap/skiplist_test.cpp
+        olap/olap_meta_test.cpp
+        olap/decimal12_test.cpp
+        olap/column_vector_test.cpp
+        olap/storage_types_test.cpp
+        olap/aggregate_func_test.cpp
+        olap/rowset/segment_v2/bitshuffle_page_test.cpp
+        olap/rowset/segment_v2/plain_page_test.cpp
+        olap/rowset/segment_v2/bitmap_index_test.cpp
+        olap/rowset/segment_v2/binary_plain_page_test.cpp
+        olap/rowset/segment_v2/binary_prefix_page_test.cpp
+        olap/rowset/segment_v2/column_reader_writer_test.cpp
+        olap/rowset/segment_v2/encoding_info_test.cpp
+        olap/rowset/segment_v2/ordinal_page_index_test.cpp
+        olap/rowset/segment_v2/rle_page_test.cpp
+        olap/rowset/segment_v2/binary_dict_page_test.cpp
+        olap/rowset/segment_v2/row_ranges_test.cpp
+        olap/rowset/segment_v2/frame_of_reference_page_test.cpp
+        olap/rowset/segment_v2/block_bloom_filter_test.cpp
+        olap/rowset/segment_v2/bloom_filter_index_reader_writer_test.cpp
+        olap/rowset/segment_v2/zone_map_index_test.cpp
+        olap/tablet_meta_test.cpp
+        olap/rowset/rowset_meta_manager_test.cpp
+        olap/rowset/rowset_meta_test.cpp
+        olap/rowset/rowset_tree_test.cpp
+        olap/generic_iterators_test.cpp
+        olap/key_coder_test.cpp
+        olap/short_key_index_test.cpp
+        olap/primary_key_index_test.cpp
+        olap/page_cache_test.cpp
+        olap/hll_test.cpp
+        olap/selection_vector_test.cpp
+        olap/block_column_predicate_test.cpp
+        olap/options_test.cpp
+        olap/common_test.cpp
+        olap/primary_key_index_test.cpp
+    )
+else()  
+    set(OLAP_TEST_FILES
+        olap/engine_storage_migration_task_test.cpp
+        olap/timestamped_version_tracker_test.cpp
+        olap/tablet_schema_helper.cpp
+        olap/delta_writer_test.cpp
+        olap/delete_handler_test.cpp
+        olap/row_block_test.cpp
+        olap/row_block_v2_test.cpp
+        olap/byte_buffer_test.cpp
+        olap/lru_cache_test.cpp
+        olap/bloom_filter_test.cpp
+        olap/bloom_filter_column_predicate_test.cpp
+        olap/comparison_predicate_test.cpp
+        olap/in_list_predicate_test.cpp
+        olap/null_predicate_test.cpp
+        olap/file_helper_test.cpp
+        olap/file_utils_test.cpp
+        olap/cumulative_compaction_policy_test.cpp
+        olap/row_cursor_test.cpp
+        olap/skiplist_test.cpp
+        olap/olap_meta_test.cpp
+        olap/decimal12_test.cpp
+        olap/column_vector_test.cpp
+        olap/storage_types_test.cpp
+        olap/aggregate_func_test.cpp
+        olap/rowset/segment_v2/bitshuffle_page_test.cpp
+        olap/rowset/segment_v2/plain_page_test.cpp
+        olap/rowset/segment_v2/bitmap_index_test.cpp
+        olap/rowset/segment_v2/binary_plain_page_test.cpp
+        olap/rowset/segment_v2/binary_prefix_page_test.cpp
+        olap/rowset/segment_v2/column_reader_writer_test.cpp
+        olap/rowset/segment_v2/encoding_info_test.cpp
+        olap/rowset/segment_v2/ordinal_page_index_test.cpp
+        olap/rowset/segment_v2/rle_page_test.cpp
+        olap/rowset/segment_v2/binary_dict_page_test.cpp
+        olap/rowset/segment_v2/segment_test.cpp
+        olap/rowset/segment_v2/row_ranges_test.cpp
+        olap/rowset/segment_v2/frame_of_reference_page_test.cpp
+        olap/rowset/segment_v2/block_bloom_filter_test.cpp
+        olap/rowset/segment_v2/bloom_filter_index_reader_writer_test.cpp
+        olap/rowset/segment_v2/zone_map_index_test.cpp
+        olap/tablet_meta_test.cpp
+        olap/tablet_meta_manager_test.cpp
+        olap/tablet_mgr_test.cpp
+        olap/tablet_test.cpp
+        olap/rowset/rowset_meta_manager_test.cpp
+        olap/rowset/rowset_meta_test.cpp
+        olap/rowset/beta_rowset_test.cpp
+        olap/rowset/unique_rowset_id_generator_test.cpp
+        olap/rowset/rowset_tree_test.cpp
+        olap/txn_manager_test.cpp
+        olap/generic_iterators_test.cpp
+        olap/key_coder_test.cpp
+        olap/short_key_index_test.cpp
+        olap/primary_key_index_test.cpp
+        olap/page_cache_test.cpp
+        olap/hll_test.cpp
+        olap/selection_vector_test.cpp
+        olap/block_column_predicate_test.cpp
+        olap/options_test.cpp
+        olap/common_test.cpp
+        olap/primary_key_index_test.cpp
+        # olap/memtable_flush_executor_test.cpp
+        # olap/push_handler_test.cpp
+        olap/tablet_cooldown_test.cpp
+        olap/rowid_conversion_test.cpp
+        olap/remote_rowset_gc_test.cpp
+    )   
+endif()
+
 if (NOT CLOUD_MODE)
     add_executable(doris_be_test
         ${AGENT_TEST_FILES}
@@ -391,8 +446,6 @@ if (NOT CLOUD_MODE)
 endif()
 
 set(CLOUD_TEST_FILES
-    cloud/cloud_meta_mgr_test.cpp
-    cloud/cloud_tablet_mgr_test.cpp
     cloud/cloud_tablet_test.cpp
 )
 
@@ -401,6 +454,19 @@ if (CLOUD_MODE)
         ${CLOUD_TEST_FILES}
         ${TESTUTIL_TEST_FILES}
         ${IO_TEST_FILES}
+        ${AGENT_TEST_FILES}
+        ${COMMON_TEST_FILES}
+        ${ENV_TEST_FILES}
+        ${EXPRS_TEST_FILES}
+        ${GEO_TEST_FILES}
+        ${GUTIL_TEST_FILES}
+        ${HTTP_TEST_FILES}
+        ${RUNTIME_TEST_FILES}
+        ${UDF_TEST_FILES}
+        ${EXEC_TEST_FILES}
+        ${VEC_TEST_FILES}
+        ${UTIL_TEST_FILES}
+        ${OLAP_TEST_FILES}
     )
 
     target_link_libraries(cloud_be_test ${TEST_LINK_LIBS})

@@ -109,8 +109,8 @@ public:
     TabletMetaSharedPtr new_tablet_meta(TTabletSchema schema, bool enable_merge_on_write = false) {
         return static_cast<TabletMetaSharedPtr>(
                 new TabletMeta(1, 2, 15673, 15674, 4, 5, schema, 6, {{7, 8}}, UniqueId(9, 10),
-                               TTabletType::TABLET_TYPE_DISK, TCompressionType::LZ4F, std::string(),
-                               enable_merge_on_write));
+                               TTabletType::TABLET_TYPE_DISK, TCompressionType::LZ4F, false, false,
+                               std::string(), enable_merge_on_write));
     }
 
     void init_rs_meta(RowsetMetaSharedPtr& pb1, int64_t start, int64_t end) {
