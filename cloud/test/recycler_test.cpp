@@ -489,6 +489,7 @@ TEST(RecyclerTest, abort_timeout_txn) {
     ASSERT_EQ(txn_kv->init(), 0);
 
     int64_t db_id = 666;
+    int64_t table_id = 1234;
     int64_t txn_id = -1;
     {
         brpc::Controller cntl;
@@ -498,6 +499,7 @@ TEST(RecyclerTest, abort_timeout_txn) {
         TxnInfoPB txn_info_pb;
         txn_info_pb.set_db_id(db_id);
         txn_info_pb.set_label("abort_timeout_txn");
+        txn_info_pb.add_table_ids(table_id);
         req.mutable_txn_info()->CopyFrom(txn_info_pb);
         BeginTxnResponse res;
         meta_service->begin_txn(reinterpret_cast<::google::protobuf::RpcController*>(&cntl), &req,
@@ -527,6 +529,7 @@ TEST(RecyclerTest, recycle_expired_txn_label) {
     ASSERT_EQ(txn_kv->init(), 0);
 
     int64_t db_id = 888;
+    int64_t table_id = 1234;
     int64_t txn_id = -1;
     {
         brpc::Controller cntl;
@@ -536,6 +539,7 @@ TEST(RecyclerTest, recycle_expired_txn_label) {
         TxnInfoPB txn_info_pb;
         txn_info_pb.set_db_id(db_id);
         txn_info_pb.set_label("recycle_expired_txn_label");
+        txn_info_pb.add_table_ids(table_id);
         req.mutable_txn_info()->CopyFrom(txn_info_pb);
         BeginTxnResponse res;
         meta_service->begin_txn(reinterpret_cast<::google::protobuf::RpcController*>(&cntl), &req,
@@ -560,6 +564,7 @@ TEST(RecyclerTest, recycle_expired_txn_label) {
         TxnInfoPB txn_info_pb;
         txn_info_pb.set_db_id(db_id);
         txn_info_pb.set_label("recycle_expired_txn_label");
+        txn_info_pb.add_table_ids(table_id);
         req.mutable_txn_info()->CopyFrom(txn_info_pb);
         BeginTxnResponse res;
         meta_service->begin_txn(reinterpret_cast<::google::protobuf::RpcController*>(&cntl), &req,

@@ -1069,7 +1069,7 @@ void MetaServiceImpl::abort_txn(::google::protobuf::RpcController* controller,
     //there two ways to abort txn:
     //1. abort txn by txn id
     //2. abort txn by label and db_id
-    if (db_id < 0) {
+    if (txn_id > 0) {
         VLOG_DEBUG << "abort_txn by txn_id";
         //abort txn by txn id
         // Get db id with txn id
