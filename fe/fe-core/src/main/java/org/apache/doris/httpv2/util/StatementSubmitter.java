@@ -78,6 +78,15 @@ public class StatementSubmitter {
 
     private ThreadPoolExecutor executor = ThreadPoolManager.newDaemonCacheThreadPool(2, "SQL submitter", true);
 
+    private ThreadPoolExecutor executorBlockPolicy = ThreadPoolManager.newDaemonCacheThreadPoolUseBlockedPolicy(
+            Config.statement_submitter_threads_num, "SQL submitter with block policy", true);
+
+    public Future<ExecutionResultSet> submitBlock(StmtContext queryCtx) {
+        LOG.debug("submitBlock {}", queryCtx);
+        Worker worker = new Worker(ConnectContext.get(), queryCtx);
+        return executorBlockPolicy.submit(worker);
+    }
+
     public Future<ExecutionResultSet> submit(StmtContext queryCtx) {
         Worker worker = new Worker(ConnectContext.get(), queryCtx);
         return executor.submit(worker);

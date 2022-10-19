@@ -126,16 +126,16 @@ public class CloudLoadAction extends RestBaseController {
                                         String copyIntoStmt, HttpServletResponse response) {
         StatementSubmitter.StmtContext stmtCtx = new StatementSubmitter.StmtContext(copyIntoStmt,
                 authInfo.fullUserName, authInfo.password, 1000, false, response);
-        Future<ExecutionResultSet> future = stmtSubmitter.submit(stmtCtx);
+        Future<ExecutionResultSet> future = stmtSubmitter.submitBlock(stmtCtx);
 
         try {
             ExecutionResultSet resultSet = future.get();
             return ResponseEntityBuilder.ok(resultSet.getResult());
         } catch (InterruptedException e) {
-            LOG.warn("failed to execute stmt", e);
+            LOG.warn("failed to execute stmt {}, ", copyIntoStmt, e);
             return ResponseEntityBuilder.okWithCommonError("Failed to execute sql: " + e.getMessage());
         } catch (ExecutionException e) {
-            LOG.warn("failed to execute stmt", e);
+            LOG.warn("failed to execute stmt {}", copyIntoStmt, e);
             return ResponseEntityBuilder.okWithCommonError("Failed to execute sql: " + e.getMessage());
         }
     }

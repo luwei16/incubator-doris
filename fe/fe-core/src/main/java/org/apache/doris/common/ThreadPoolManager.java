@@ -60,6 +60,7 @@ import java.util.concurrent.TimeUnit;
  */
 
 public class ThreadPoolManager {
+    private static final Logger LOG = LogManager.getLogger(ThreadPoolManager.class);
 
     private static Map<String, ThreadPoolExecutor> nameToThreadPoolMap = Maps.newConcurrentMap();
 
@@ -96,6 +97,14 @@ public class ThreadPoolManager {
             gauge.addLabel(new MetricLabel("name", poolName)).addLabel(new MetricLabel("type", poolMetricType));
             MetricRepo.DORIS_METRIC_REGISTER.addMetrics(gauge);
         }
+    }
+
+    public static ThreadPoolExecutor newDaemonCacheThreadPoolUseBlockedPolicy(int maxNumThread,
+                                                              String poolName, boolean needRegisterMetric) {
+        LOG.debug("newDaemonCacheThreadPoolUseBlockedPolicy");
+        return newDaemonThreadPool(0, maxNumThread, KEEP_ALIVE_TIME,
+            TimeUnit.SECONDS, new SynchronousQueue(),
+            new BlockedPolicy(poolName, 10), poolName, needRegisterMetric);
     }
 
     public static ThreadPoolExecutor newDaemonCacheThreadPool(int maxNumThread,
@@ -198,10 +207,12 @@ public class ThreadPoolManager {
             try {
                 boolean ret = executor.getQueue().offer(r, timeoutSeconds, TimeUnit.SECONDS);
                 if (!ret) {
+                    LOG.debug("rejectedExecution ret: false");
                     throw new RejectedExecutionException("submit task failed, queue size is full: "
                             + this.threadPoolName);
                 }
             } catch (InterruptedException e) {
+                LOG.debug("InterruptedException ", e);
                 String errMsg = String.format("Task %s wait to enqueue in %s %s failed",
                         r.toString(), threadPoolName, executor.toString());
                 LOG.warn(errMsg);
