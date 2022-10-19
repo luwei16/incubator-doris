@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <list>
 #include <memory>
 #include <map>
 #include <set>
@@ -29,8 +30,9 @@ public:
     int init() override;
 
 private:
-    int update(std::vector<std::tuple<memkv::ModifyOpType, std::string, std::string>> &op_list,
-                int64_t* version);
+    using OpTuple = std::tuple<memkv::ModifyOpType, std::string, std::string>;
+    int update(const std::set<std::string>& read_set, const std::vector<OpTuple> &op_list,
+                    int64_t read_version, int64_t* committed_version);
  
     int get_kv(std::map<std::string, std::string> *kv, int64_t* version);
 
@@ -41,7 +43,23 @@ private:
 
 
 private:
+    struct LogItem {
+        memkv::ModifyOpType op_;
+        int64_t commit_version_;
+
+        // for get's op: key=key, value=""
+        // for range get's op: key=begin, value=end
+        // for atomic_set_ver_key/atomic_set_ver_value's op: key=key, value=value
+        // for atomic_add's op: key=key, value=to_add
+        // for remove's op: key=key, value=""
+        // for range remove's op: key=begin, value=end
+        std::string key;
+        std::string value;
+    };
+
+private:
     std::map<std::string, std::string> mem_kv_;
+    std::map<std::string, std::list<LogItem>> log_kv_;
     std::mutex lock_;
     int64_t committed_version_ = 0;
     int64_t read_version_ = 0;
@@ -150,6 +168,7 @@ private:
     std::mutex lock_;
     std::map<std::string, std::string> inner_kv_;
     std::set<std::string> unreadable_keys_;
+    std::set<std::string> read_set_;
     std::vector<std::tuple<ModifyOpType, std::string, std::string>> op_list_;
 
     int64_t committed_version_ = -1;

@@ -1,10 +1,13 @@
+#include "common/logging.h"
 #include "mem_txn_kv.h"
+#include "txn_kv.h"
+
 #include <cstdint>
 #include <memory>
 #include <mutex>
 #include <cstring>
+#include <ostream>
 #include <string>
-#include "txn_kv.h"
 
 
 namespace selectdb {
@@ -19,14 +22,28 @@ int MemTxnKv::create_txn(std::unique_ptr<Transaction>* txn) {
     return 0;
 }
 
-int MemTxnKv::update(std::vector<std::tuple<memkv::ModifyOpType, std::string, std::string>> &op_list,
-                        int64_t* committed_version) {
+int MemTxnKv::update(const std::set<std::string>& read_set,
+            const std::vector<OpTuple> &op_list, int64_t read_version, int64_t* committed_version) {
     std::lock_guard<std::mutex> l(lock_);
 
-    int64_t version = committed_version_ + 1;
+    // check_confict
+    for (const auto& k: read_set) {
+        auto iter = log_kv_.find(k);
+        if (iter != log_kv_.end()) {
+            auto log_item = iter->second;
+            if (log_item.front().commit_version_ > read_version) {
+                LOG(WARNING) << "commit confict";
+                return -1;
+            }
+        }
+    }
+
+    ++committed_version_;;
     int16_t seq = 0;
     for (const auto& vec: op_list) {
         auto [op_type, k, v] = vec;
+        LogItem log_item{op_type, committed_version_, k, v};
+        log_kv_[k].push_front(log_item);
         switch (op_type) {
             case memkv::ModifyOpType::PUT: {
                 mem_kv_[k] = v;
@@ -34,13 +51,13 @@ int MemTxnKv::update(std::vector<std::tuple<memkv::ModifyOpType, std::string, st
             }
             case memkv::ModifyOpType::ATOMIC_SET_VER_KEY: {
                 std::string ver_key(k);
-                gen_version_timestamp(version, seq, &ver_key);
+                gen_version_timestamp(committed_version_, seq, &ver_key);
                 mem_kv_[ver_key] = v;
                 break;
             }
             case memkv::ModifyOpType::ATOMTC_SET_VER_VAL: {
                 std::string ver_val(v);
-                gen_version_timestamp(version, seq, &ver_val);
+                gen_version_timestamp(committed_version_, seq, &ver_val);
                 mem_kv_[k] = ver_val;
                 break;
             }
@@ -75,7 +92,6 @@ int MemTxnKv::update(std::vector<std::tuple<memkv::ModifyOpType, std::string, st
 
     }
 
-    committed_version_++;
     *committed_version = committed_version_;
     return 0;
 }
@@ -154,6 +170,7 @@ int Transaction::get(std::string_view key, std::string* val) {
     // if it is read, the txn will not be able to commit. 
     if (unreadable_keys_.count(k) != 0) {
         aborted_ = true;
+        LOG(WARNING) << "read unreadable key, abort";
         return -2;
     }
     return inner_get(k, val);
@@ -167,6 +184,7 @@ int Transaction::get(std::string_view begin, std::string_view end,
     // TODO: figure out what happen if range_get has part of unreadable_keys
     if (unreadable_keys_.count(begin_k) != 0) {
         aborted_ = true;
+        LOG(WARNING) << "read unreadable key, abort";
         return -2;
     }
     return inner_get(begin_k, end_k, iter, limit);
@@ -174,7 +192,8 @@ int Transaction::get(std::string_view begin, std::string_view end,
 
 
 int Transaction::inner_get(const std::string& key, std::string* val) {
-    auto iter = inner_kv_.find(std::string(key.data(), key.size()));
+    auto iter = inner_kv_.find(key);
+    read_set_.emplace(key);
     if (iter == inner_kv_.end()) { return 1;}
     *val = iter->second;
     return 0;
@@ -199,7 +218,7 @@ int Transaction::inner_get(const std::string& begin, const std::string& end,
     auto end_iter = inner_kv_.lower_bound(end);
     for (; begin_iter != inner_kv_.end() && begin_iter != end_iter; begin_iter++) {
         kv_list.push_back({begin_iter->first, begin_iter->second});
-
+        read_set_.emplace(begin_iter->first);
         if (use_limit) {
             limit--;
             if (limit == 0) { break;}
@@ -259,12 +278,13 @@ void Transaction::remove(std::string_view begin, std::string_view end) {
 
 int Transaction::commit() {
     std::lock_guard<std::mutex> l(lock_);
-    if (aborted_ || kv_->update(op_list_, &committed_version_) != 0) {
+    if (aborted_ || kv_->update(read_set_, op_list_, read_version_, &committed_version_) != 0) {
         return -2;
     }
     commited_ = true;
     op_list_.clear();
     inner_kv_.clear();
+    read_set_.clear();
     return 0;
 }
 
