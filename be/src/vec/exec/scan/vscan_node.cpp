@@ -977,7 +977,6 @@ Status VScanNode::_normalize_binary_in_compound_predicate(
             auto not_in_range = ColumnValueRange<T>::create_empty_column_value_range(range.column_name());
             auto fn_name = std::string("");
             if (value.data != nullptr) {
-                auto fn_name = std::string("");
                 if constexpr (T == TYPE_CHAR || T == TYPE_VARCHAR || T == TYPE_STRING ||
                               T == TYPE_HLL) {
                     auto val = StringValue(value.data, value.size);
@@ -1001,15 +1000,9 @@ Status VScanNode::_normalize_binary_in_compound_predicate(
                                 ColumnValueRange<T>::add_fixed_value_range, fn_name));
                     }
                 }
+                range.intersection(not_in_range);
             }
-
-            if (is_fixed_range ||
-                not_in_range.get_fixed_value_size() <= _max_pushdown_conditions_per_column) {
-                if (!is_fixed_range) {
-                    _not_in_value_ranges.push_back(not_in_range);
-                }
-                *pdt = ne_pdt;
-            }
+            *pdt = ne_pdt;
             range.set_compound_type(compound_type);
         }
 

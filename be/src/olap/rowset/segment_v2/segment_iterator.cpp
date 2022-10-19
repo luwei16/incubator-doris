@@ -405,8 +405,8 @@ Status SegmentIterator::_get_row_ranges_by_column_conditions() {
     if (config::enable_index_apply_compound_predicates) {
         RETURN_IF_ERROR(_apply_index_in_compound());
         if (_is_index_for_compound_predicate()) {
-            _execute_all_compound_predicates(_remaining_vconjunct_root);
-            if (_compound_predicate_execute_result.size() == 1) {
+            auto res = _execute_all_compound_predicates(_remaining_vconjunct_root);
+            if (res.ok() && _compound_predicate_execute_result.size() == 1) {
                 _row_bitmap &= _compound_predicate_execute_result[0];
             }
         }
@@ -725,8 +725,9 @@ Status SegmentIterator::_execute_compound_fn(const std::string& function_name) {
 
 bool SegmentIterator::_is_index_for_compound_predicate() {
     for (auto pred : _all_compound_col_predicates) {
-        if (!_check_apply_by_bitmap_index(pred) && 
-                !_check_apply_by_inverted_index(pred)) {
+        if (_not_apply_index_pred.count(pred->column_id()) ||
+            (!_check_apply_by_bitmap_index(pred) && 
+            !_check_apply_by_inverted_index(pred))) {
             return false;
         }
     }
@@ -802,6 +803,7 @@ Status SegmentIterator::_apply_index_in_compound() {
         if (!res.ok()) {
             if ((res.precise_code() == OLAP_ERR_INVERTED_INDEX_FILE_NOT_FOUND && pred->type() != PredicateType::MATCH)
                     || res.precise_code() == OLAP_ERR_INVERTED_INDEX_HIT_LIMIT) {
+                _not_apply_index_pred.insert(pred->column_id());
                 continue;
             }
             LOG(WARNING) << "failed to evaluate index"
