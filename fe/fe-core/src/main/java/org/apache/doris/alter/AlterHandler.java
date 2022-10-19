@@ -35,6 +35,7 @@ import org.apache.doris.common.util.MasterDaemon;
 import org.apache.doris.common.util.TimeUtils;
 import org.apache.doris.persist.RemoveAlterJobV2OperationLog;
 import org.apache.doris.persist.ReplicaPersistInfo;
+import org.apache.doris.task.AlterInvertedIndexTask;
 import org.apache.doris.task.AlterReplicaTask;
 
 import com.google.common.base.Preconditions;
@@ -237,6 +238,24 @@ public abstract class AlterHandler extends MasterDaemon {
             }
 
             LOG.info("after handle alter task tablet: {}, replica: {}", task.getSignature(), replica);
+        } finally {
+            tbl.writeUnlock();
+        }
+    }
+
+    public void handleFinishAlterInvertedIndexTask(AlterInvertedIndexTask task) throws MetaNotFoundException {
+        Database db = Env.getCurrentInternalCatalog().getDbOrMetaException(task.getDbId());
+
+        OlapTable tbl = (OlapTable) db.getTableOrMetaException(task.getTableId(), Table.TableType.OLAP);
+        tbl.writeLockOrMetaException();
+        try {
+            Partition partition = tbl.getPartition(task.getPartitionId());
+            if (partition == null) {
+                throw new MetaNotFoundException("partition " + task.getPartitionId() + " does not exist");
+            }
+            // TODO: more check
+
+            LOG.info("after handle alter inverted index task tablet: {}", task.getSignature());
         } finally {
             tbl.writeUnlock();
         }

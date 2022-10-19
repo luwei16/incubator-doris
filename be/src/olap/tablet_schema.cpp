@@ -738,6 +738,21 @@ const TabletColumn& TabletSchema::column_by_uid(int32_t col_unique_id) const {
     return _cols.at(_field_id_to_index.at(col_unique_id));
 }
 
+void TabletSchema::update_column_from(const TabletSchema& tablet_schema) {
+    TabletSchemaPB new_tablet_schema_pb;
+    tablet_schema.to_schema_pb(&new_tablet_schema_pb);
+    DCHECK(new_tablet_schema_pb.column().size() == _num_columns) 
+            << "new tablet_schema column size:" << new_tablet_schema_pb.column().size() 
+            << ", _num_columns:" << _num_columns;
+    
+    for (auto i = 0; i < new_tablet_schema_pb.column().size(); ++i) {
+        auto new_column_pb = new_tablet_schema_pb.column()[i];
+        TabletColumn new_column;
+        new_column.init_from_pb(new_column_pb);
+        _cols[i] = std::move(new_column);
+    }
+}
+
 const TabletColumn& TabletSchema::column(const std::string& field_name) const {
     const auto& found = _field_name_to_index.find(field_name);
     return _cols[found->second];
