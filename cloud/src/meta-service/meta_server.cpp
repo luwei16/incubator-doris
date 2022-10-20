@@ -122,7 +122,7 @@ void MetaServerRegister::prepare_registry(ServiceRegistryPB* reg) {
 }
 
 MetaServerRegister::MetaServerRegister(std::shared_ptr<TxnKv> txn_kv)
-        : txn_kv_(std::move(txn_kv)), running_(false) {
+        : running_(false), txn_kv_(std::move(txn_kv)) {
     register_thread_.reset(new std::thread([this] {
         while (!running_.load()) {
             LOG(INFO) << "register thread wait for start";

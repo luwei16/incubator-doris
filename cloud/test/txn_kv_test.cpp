@@ -100,7 +100,7 @@ TEST(TxnKvTest, ConflictTest) {
     val1 = "yyyyyyyyyyyyyyy";
     txn1->put(key, val1);
     ret = txn1->commit();
-    EXPECT_NE(ret, 0);
+    EXPECT_EQ(ret, -1);
 
     ret = txn_kv->create_txn(&txn);
     ASSERT_EQ(ret, 0);

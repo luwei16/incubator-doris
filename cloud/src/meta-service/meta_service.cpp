@@ -175,7 +175,7 @@ void MetaServiceImpl::begin_txn(::google::protobuf::RpcController* controller,
 
     ret = txn->commit();
     if (ret != 0) {
-        code = MetaServiceCode::KV_TXN_COMMIT_ERR;
+        code = ret == -1 ? MetaServiceCode::KV_TXN_CONFLICT : MetaServiceCode::KV_TXN_COMMIT_ERR;
         std::stringstream ss;
         ss << "txn->commit failed(), label=" << label << " ret=" << label;
         msg = ss.str();
@@ -381,7 +381,7 @@ void MetaServiceImpl::begin_txn(::google::protobuf::RpcController* controller,
 
     ret = txn->commit();
     if (ret != 0) {
-        code = MetaServiceCode::KV_TXN_COMMIT_ERR;
+        code = ret == -1 ? MetaServiceCode::KV_TXN_CONFLICT : MetaServiceCode::KV_TXN_COMMIT_ERR;
         ss << "failed to commit txn kv, label=" << label << " txn_id=" << txn_id << " ret=" << ret;
         msg = ss.str();
         return;
@@ -555,7 +555,7 @@ void MetaServiceImpl::precommit_txn(::google::protobuf::RpcController* controlle
 
     ret = txn->commit();
     if (ret != 0) {
-        code = MetaServiceCode::KV_TXN_COMMIT_ERR;
+        code = ret == -1 ? MetaServiceCode::KV_TXN_CONFLICT : MetaServiceCode::KV_TXN_COMMIT_ERR;
         ss << "failed to commit txn kv, txn_id=" << txn_id;
         msg = ss.str();
         return;
@@ -1008,7 +1008,7 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
     // Finally we are done...
     ret = txn->commit();
     if (ret != 0) {
-        code = MetaServiceCode::KV_TXN_COMMIT_ERR;
+        code = ret == -1 ? MetaServiceCode::KV_TXN_CONFLICT : MetaServiceCode::KV_TXN_COMMIT_ERR;
         ss << "failed to commit kv txn, txn_id=" << txn_id << " ret=" << ret;
         msg = ss.str();
         return;
@@ -1274,7 +1274,7 @@ void MetaServiceImpl::abort_txn(::google::protobuf::RpcController* controller,
 
     ret = txn->commit();
     if (ret != 0) {
-        code = MetaServiceCode::KV_TXN_COMMIT_ERR;
+        code = ret == -1 ? MetaServiceCode::KV_TXN_CONFLICT : MetaServiceCode::KV_TXN_COMMIT_ERR;
         ss << "failed to commit kv txn, txn_id=" << txn_info.txn_id();
         msg = ss.str();
         return;
@@ -1758,7 +1758,7 @@ void MetaServiceImpl::create_tablet(::google::protobuf::RpcController* controlle
 
     ret = txn->commit();
     if (ret != 0) {
-        code = MetaServiceCode::KV_TXN_COMMIT_ERR;
+        code = ret == -1 ? MetaServiceCode::KV_TXN_CONFLICT : MetaServiceCode::KV_TXN_COMMIT_ERR;
         msg = "failed to save tablet meta";
         return;
     }
@@ -2007,7 +2007,7 @@ void MetaServiceImpl::prepare_rowset(::google::protobuf::RpcController* controll
               << hex(prepare_key);
     ret = txn->commit();
     if (ret != 0) {
-        code = MetaServiceCode::KV_TXN_COMMIT_ERR;
+        code = ret == -1 ? MetaServiceCode::KV_TXN_CONFLICT : MetaServiceCode::KV_TXN_COMMIT_ERR;
         msg = "failed to save recycle rowset";
         return;
     }
@@ -2126,7 +2126,7 @@ void MetaServiceImpl::commit_rowset(::google::protobuf::RpcController* controlle
               << hex(prepare_key);
     ret = txn->commit();
     if (ret != 0) {
-        code = MetaServiceCode::KV_TXN_COMMIT_ERR;
+        code = ret == -1 ? MetaServiceCode::KV_TXN_CONFLICT : MetaServiceCode::KV_TXN_COMMIT_ERR;
         msg = "failed to save rowset meta";
         return;
     }
@@ -2545,7 +2545,7 @@ void MetaServiceImpl::put_recycle_index_kv(const ::selectdb::IndexRequest* reque
 
     ret = txn->commit();
     if (ret != 0) {
-        code = MetaServiceCode::KV_TXN_COMMIT_ERR;
+        code = ret == -1 ? MetaServiceCode::KV_TXN_CONFLICT : MetaServiceCode::KV_TXN_COMMIT_ERR;
         msg = "failed to save recycle index kv";
         return;
     }
@@ -2601,7 +2601,7 @@ void MetaServiceImpl::remove_recycle_index_kv(const ::selectdb::IndexRequest* re
 
     ret = txn->commit();
     if (ret != 0) {
-        code = MetaServiceCode::KV_TXN_COMMIT_ERR;
+        code = ret == -1 ? MetaServiceCode::KV_TXN_CONFLICT : MetaServiceCode::KV_TXN_COMMIT_ERR;
         msg = "failed to remove recycle index kv";
         return;
     }
@@ -2762,7 +2762,7 @@ void MetaServiceImpl::put_recycle_partition_kv(const ::selectdb::PartitionReques
 
     ret = txn->commit();
     if (ret != 0) {
-        code = MetaServiceCode::KV_TXN_COMMIT_ERR;
+        code = ret == -1 ? MetaServiceCode::KV_TXN_CONFLICT : MetaServiceCode::KV_TXN_COMMIT_ERR;
         msg = "failed to save recycle partition kv";
         return;
     }
@@ -2819,7 +2819,7 @@ void MetaServiceImpl::remove_recycle_partition_kv(
 
     ret = txn->commit();
     if (ret != 0) {
-        code = MetaServiceCode::KV_TXN_COMMIT_ERR;
+        code = ret == -1 ? MetaServiceCode::KV_TXN_CONFLICT : MetaServiceCode::KV_TXN_COMMIT_ERR;
         msg = "failed to remove recycle partition kv";
         return;
     }
@@ -3573,7 +3573,7 @@ void MetaServiceImpl::alter_obj_store_info(google::protobuf::RpcController* cont
     LOG(INFO) << "put instance_id=" << instance_id << " instance_key=" << hex(key);
     ret = txn->commit();
     if (ret != 0) {
-        code = MetaServiceCode::KV_TXN_COMMIT_ERR;
+        code = ret == -1 ? MetaServiceCode::KV_TXN_CONFLICT : MetaServiceCode::KV_TXN_COMMIT_ERR;
         msg = "failed to commit kv txn";
         LOG(WARNING) << msg << " ret=" << ret;
     }
@@ -3682,7 +3682,7 @@ void MetaServiceImpl::create_instance(google::protobuf::RpcController* controlle
     LOG(INFO) << "put instance_id=" << request->instance_id() << " instance_key=" << hex(key);
     ret = txn->commit();
     if (ret != 0) {
-        code = MetaServiceCode::KV_TXN_COMMIT_ERR;
+        code = ret == -1 ? MetaServiceCode::KV_TXN_CONFLICT : MetaServiceCode::KV_TXN_COMMIT_ERR;
         msg = "failed to commit kv txn";
         LOG(WARNING) << msg << " ret=" << ret;
     }
@@ -3799,9 +3799,10 @@ std::pair<MetaServiceCode, std::string> MetaServiceImpl::drop_instance(
     txn->put(key, val);
     ret = txn->commit();
     if (ret != 0) {
+        code = ret == -1 ? MetaServiceCode::KV_TXN_CONFLICT : MetaServiceCode::KV_TXN_COMMIT_ERR;
         msg = "failed to commit kv txn";
         LOG(WARNING) << msg << " ret=" << ret;
-        return std::make_pair(MetaServiceCode::KV_TXN_COMMIT_ERR, msg);
+        return std::make_pair(code, msg);
     }
     return std::make_pair(code, msg);
 }
@@ -4241,7 +4242,7 @@ void MetaServiceImpl::create_stage(::google::protobuf::RpcController* controller
     LOG(INFO) << "put instance_id=" << instance_id << " instance_key=" << hex(key);
     ret = txn->commit();
     if (ret != 0) {
-        code = MetaServiceCode::KV_TXN_COMMIT_ERR;
+        code = ret == -1 ? MetaServiceCode::KV_TXN_CONFLICT : MetaServiceCode::KV_TXN_COMMIT_ERR;
         msg = "failed to commit kv txn";
         LOG(WARNING) << msg << " ret=" << ret;
     }
@@ -4393,7 +4394,7 @@ void MetaServiceImpl::get_stage(google::protobuf::RpcController* controller,
                       << " json=" << proto_to_json(instance);
             ret = txn->commit();
             if (ret != 0) {
-                code = MetaServiceCode::KV_TXN_COMMIT_ERR;
+                code = ret == -1 ? MetaServiceCode::KV_TXN_CONFLICT : MetaServiceCode::KV_TXN_COMMIT_ERR;
                 msg = "failed to commit kv txn";
                 LOG(WARNING) << msg << " ret=" << ret;
                 return;
@@ -4585,7 +4586,7 @@ void MetaServiceImpl::begin_copy(google::protobuf::RpcController* controller,
 
     ret = txn->commit();
     if (ret != 0) {
-        code = MetaServiceCode::KV_TXN_COMMIT_ERR;
+        code = ret == -1 ? MetaServiceCode::KV_TXN_CONFLICT : MetaServiceCode::KV_TXN_COMMIT_ERR;
         msg = "failed to commit kv txn";
         LOG(WARNING) << msg << " ret=" << ret;
     }
@@ -4694,7 +4695,7 @@ void MetaServiceImpl::finish_copy(google::protobuf::RpcController* controller,
 
     ret = txn->commit();
     if (ret != 0) {
-        code = MetaServiceCode::KV_TXN_COMMIT_ERR;
+        code = ret == -1 ? MetaServiceCode::KV_TXN_CONFLICT : MetaServiceCode::KV_TXN_COMMIT_ERR;
         msg = "failed to commit kv txn";
         LOG(WARNING) << msg << " ret=" << ret;
     }

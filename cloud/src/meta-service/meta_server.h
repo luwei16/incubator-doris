@@ -68,12 +68,14 @@ private:
     void prepare_registry(ServiceRegistryPB* reg);
 
 private:
-    std::shared_ptr<TxnKv> txn_kv_;
     std::unique_ptr<std::thread> register_thread_;
     std::atomic<bool> running_;
     std::mutex mtx_;
     std::condition_variable cv_;
     std::string id_;
+
+    std::shared_ptr<TxnKv> txn_kv_; // Relies on other members, must be the
+                                    // first to destruct
 };
 
 } // namespace selectdb
