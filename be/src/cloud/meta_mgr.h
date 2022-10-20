@@ -33,11 +33,13 @@ public:
         return Status::NotSupported("not supported");
     }
 
-    virtual Status prepare_rowset(const RowsetMetaSharedPtr& rs_meta, bool is_tmp) {
+    virtual Status prepare_rowset(const RowsetMetaSharedPtr& rs_meta, bool is_tmp,
+                                  RowsetMetaSharedPtr* existed_rs_meta = nullptr) {
         return Status::NotSupported("not supported");
     }
 
-    virtual Status commit_rowset(const RowsetMetaSharedPtr& rs_meta, bool is_tmp) {
+    virtual Status commit_rowset(const RowsetMetaSharedPtr& rs_meta, bool is_tmp,
+                                 RowsetMetaSharedPtr* existed_rs_meta = nullptr) {
         return Status::NotSupported("not supported");
     }
 

@@ -176,13 +176,14 @@ Status CloudMetaMgr::write_tablet_meta(const TabletMetaSharedPtr& tablet_meta) {
     return Status::OK();
 }
 
-Status CloudMetaMgr::prepare_rowset(const RowsetMetaSharedPtr& rs_meta, bool is_tmp) {
+Status CloudMetaMgr::prepare_rowset(const RowsetMetaSharedPtr& rs_meta, bool is_tmp,
+                                    RowsetMetaSharedPtr* existed_rs_meta) {
     VLOG_DEBUG << "prepare rowset, tablet_id: " << rs_meta->tablet_id()
                << ", rowset_id: " << rs_meta->rowset_id() << ", is_tmp: " << is_tmp;
     brpc::Controller cntl;
     cntl.set_timeout_ms(config::meta_service_brpc_timeout_ms);
     selectdb::CreateRowsetRequest req;
-    selectdb::MetaServiceGenericResponse resp;
+    selectdb::CreateRowsetResponse resp;
     req.set_cloud_unique_id(config::cloud_unique_id);
     rs_meta->to_rowset_pb(req.mutable_rowset_meta());
     req.set_temporary(is_tmp);
@@ -193,18 +194,24 @@ Status CloudMetaMgr::prepare_rowset(const RowsetMetaSharedPtr& rs_meta, bool is_
     if (resp.status().code() == selectdb::MetaServiceCode::OK) {
         return Status::OK();
     } else if (resp.status().code() == selectdb::MetaServiceCode::ALREADY_EXISTED) {
+        if (existed_rs_meta != nullptr && resp.has_existed_rowset_meta()) {
+            *existed_rs_meta =
+                    std::make_shared<RowsetMeta>(rs_meta->table_id(), rs_meta->index_id());
+            (*existed_rs_meta)->init_from_pb(resp.existed_rowset_meta());
+        }
         return Status::AlreadyExist("failed to prepare rowset: {}", resp.status().msg());
     }
     return Status::InternalError("failed to prepare rowset: {}", resp.status().msg());
 }
 
-Status CloudMetaMgr::commit_rowset(const RowsetMetaSharedPtr& rs_meta, bool is_tmp) {
+Status CloudMetaMgr::commit_rowset(const RowsetMetaSharedPtr& rs_meta, bool is_tmp,
+                                   RowsetMetaSharedPtr* existed_rs_meta) {
     VLOG_DEBUG << "commit rowset, tablet_id: " << rs_meta->tablet_id()
                << ", rowset_id: " << rs_meta->rowset_id() << ", is_tmp: " << is_tmp;
     brpc::Controller cntl;
     cntl.set_timeout_ms(config::meta_service_brpc_timeout_ms);
     selectdb::CreateRowsetRequest req;
-    selectdb::MetaServiceGenericResponse resp;
+    selectdb::CreateRowsetResponse resp;
     req.set_cloud_unique_id(config::cloud_unique_id);
     rs_meta->to_rowset_pb(req.mutable_rowset_meta());
     req.set_temporary(is_tmp);
@@ -215,6 +222,11 @@ Status CloudMetaMgr::commit_rowset(const RowsetMetaSharedPtr& rs_meta, bool is_t
     if (resp.status().code() == selectdb::MetaServiceCode::OK) {
         return Status::OK();
     } else if (resp.status().code() == selectdb::MetaServiceCode::ALREADY_EXISTED) {
+        if (existed_rs_meta != nullptr && resp.has_existed_rowset_meta()) {
+            *existed_rs_meta =
+                    std::make_shared<RowsetMeta>(rs_meta->table_id(), rs_meta->index_id());
+            (*existed_rs_meta)->init_from_pb(resp.existed_rowset_meta());
+        }
         return Status::AlreadyExist("failed to commit rowset: {}", resp.status().msg());
     }
     return Status::InternalError("failed to commit rowset: {}", resp.status().msg());
@@ -294,6 +306,7 @@ Status CloudMetaMgr::get_s3_info(std::vector<std::tuple<std::string, S3Conf>>* s
 }
 
 Status CloudMetaMgr::prepare_tablet_job(const selectdb::TabletJobInfoPB& job) {
+    VLOG_DEBUG << "prepare_tablet_job: " << job.DebugString();
     brpc::Controller cntl;
     cntl.set_timeout_ms(config::meta_service_brpc_timeout_ms);
     selectdb::StartTabletJobRequest req;
@@ -301,11 +314,20 @@ Status CloudMetaMgr::prepare_tablet_job(const selectdb::TabletJobInfoPB& job) {
     req.mutable_job()->CopyFrom(job);
     req.set_cloud_unique_id(config::cloud_unique_id);
     _stub->start_tablet_job(&cntl, &req, &res, nullptr);
-    return check_rpc_response(res, cntl, __FUNCTION__);
+    if (cntl.Failed()) {
+        return Status::RpcError("failed to prepare_tablet_job: {}", cntl.ErrorText());
+    }
+    if (res.status().code() == selectdb::MetaServiceCode::OK) {
+        return Status::OK();
+    } else if (res.status().code() == selectdb::MetaServiceCode::JOB_ALREADY_SUCCESS) {
+        return Status::OLAPInternalError(JOB_ALREADY_SUCCESS);
+    }
+    return Status::InternalError("failed to prepare_tablet_job: {}", res.status().msg());
 }
 
 Status CloudMetaMgr::commit_tablet_job(const selectdb::TabletJobInfoPB& job,
                                        selectdb::TabletStatsPB* stats) {
+    VLOG_DEBUG << "commit_tablet_job: " << job.DebugString();
     brpc::Controller cntl;
     cntl.set_timeout_ms(config::meta_service_brpc_timeout_ms);
     selectdb::FinishTabletJobRequest req;
@@ -320,11 +342,14 @@ Status CloudMetaMgr::commit_tablet_job(const selectdb::TabletJobInfoPB& job,
     if (res.status().code() == selectdb::MetaServiceCode::OK) {
         stats->CopyFrom(res.stats());
         return Status::OK();
+    } else if (res.status().code() == selectdb::MetaServiceCode::JOB_ALREADY_SUCCESS) {
+        return Status::OLAPInternalError(JOB_ALREADY_SUCCESS);
     }
     return Status::InternalError("failed to commit_tablet_job: {}", res.status().msg());
 }
 
 Status CloudMetaMgr::abort_tablet_job(const selectdb::TabletJobInfoPB& job) {
+    VLOG_DEBUG << "abort_tablet_job: " << job.DebugString();
     brpc::Controller cntl;
     cntl.set_timeout_ms(config::meta_service_brpc_timeout_ms);
     selectdb::FinishTabletJobRequest req;

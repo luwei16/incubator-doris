@@ -326,7 +326,7 @@ public class RollupJobV2 extends AlterJobV2 implements GsonPostProcessable {
                                 rollupKeysType, rollupShortKeyColumnCount, tbl.getCopiedBfColumns(),
                                 tbl.getBfFpp(), tbl.getCopiedIndexes(), rollupSchema,
                                 tbl.getDataSortInfo(), tbl.getCompressionType(), tbl.getStoragePolicy(),
-                                tbl.isInMemory(), tbl.isPersistent());
+                                tbl.isInMemory(), tbl.isPersistent(), true);
                     } // end for rollupTablets
                 }
             } catch (Exception e) {

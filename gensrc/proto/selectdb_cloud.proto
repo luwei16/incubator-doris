@@ -314,16 +314,30 @@ message TabletCompactionJobPB {
     optional int64 txn_id = 18;
     optional int64 base_compaction_cnt = 19;        // prepare
     optional int64 cumulative_compaction_cnt = 20;  // prepare
+    optional string id = 21; // prepare
+    // Expiration time, unix timestamp, -1 for no expiration
+    optional int64 expiration = 22; // prepare
 }
 
 message TabletSchemaChangeJobPB {
-    // TODO(zhanglei): add as needed
+    // IP and port of the node which initiates this job
+    optional string initiator = 1; // prepare
+    optional string id = 2; // prepare
+    // Expiration time, unix timestamp, -1 for no expiration
+    optional int64 expiration = 3; // prepare
+    optional TabletIndexPB new_tablet_idx = 4; // prepare
+    repeated int64 txn_ids = 5; 
+    optional int64 alter_version = 6;
+    optional int64 num_output_rowsets = 7;
+    optional int64 num_output_segments = 8;
+    optional int64 size_output_rowsets = 9;
+    optional int64 num_output_rows = 10; 
+    repeated int64 output_versions = 11;
+    optional int64 output_cumulative_point = 12; 
 }
 
 message TabletJobInfoPB {
     optional TabletIndexPB idx = 1;
-    optional string id = 2;
-    optional int64 expiration = 3; // Expiration time, unix timestamp, -1 for no expiration
     optional TabletCompactionJobPB compaction = 4;
     optional TabletSchemaChangeJobPB schema_change = 5;
 }
@@ -534,6 +548,11 @@ message CreateRowsetRequest {
     optional string cloud_unique_id = 1; // For auth
     optional doris.RowsetMetaPB rowset_meta = 2;
     optional bool temporary = 3;
+}
+
+message CreateRowsetResponse {
+    optional MetaServiceResponseStatus status = 1;
+    optional doris.RowsetMetaPB existed_rowset_meta = 2;
 }
 
 message GetRowsetRequest {
@@ -768,6 +787,7 @@ enum MetaServiceCode {
     // Job
     JOB_EXPIRED = 1000;
     JOB_TABLET_BUSY = 1001;
+    JOB_ALREADY_SUCCESS = 1002;
 
     UNDEFINED_ERR = 100000;
 }
@@ -786,8 +806,8 @@ service MetaService {
     rpc create_tablet(CreateTabletRequest) returns (MetaServiceGenericResponse);
     rpc update_tablet(UpdateTabletRequest) returns (MetaServiceGenericResponse);
     rpc get_tablet(GetTabletRequest) returns (GetTabletResponse);
-    rpc prepare_rowset(CreateRowsetRequest) returns (MetaServiceGenericResponse);
-    rpc commit_rowset(CreateRowsetRequest) returns (MetaServiceGenericResponse);
+    rpc prepare_rowset(CreateRowsetRequest) returns (CreateRowsetResponse);
+    rpc commit_rowset(CreateRowsetRequest) returns (CreateRowsetResponse);
     rpc get_rowset(GetRowsetRequest) returns (GetRowsetResponse);
     rpc prepare_index(IndexRequest) returns (MetaServiceGenericResponse);
     rpc commit_index(IndexRequest) returns (MetaServiceGenericResponse);

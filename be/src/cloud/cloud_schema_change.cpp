@@ -1,10 +1,9 @@
 #include "cloud/cloud_schema_change.h"
 
 #include "cloud/utils.h"
-#include "common/status.h"
-#include "olap/olap_define.h"
+#include "olap/rowset/rowset_factory.h"
 #include "olap/tablet.h"
-#include "vec/olap/block_reader.h"
+#include "olap/tablet_meta.h"
 
 namespace doris::cloud {
 
@@ -19,10 +18,24 @@ static std::unique_ptr<SchemaChange> get_sc_procedure(const RowBlockChanger& rb_
     return std::make_unique<VSchemaChangeDirectly>(rb_changer);
 }
 
-Status CloudSchemaChangeHandler::process_alter_tablet(const TAlterTabletReqV2& request) {
+CloudSchemaChange::CloudSchemaChange(std::string job_id) : _job_id(std::move(job_id)) {}
+
+CloudSchemaChange::~CloudSchemaChange() = default;
+
+Status CloudSchemaChange::process_alter_tablet(const TAlterTabletReqV2& request) {
     LOG(INFO) << "Begin to alter tablet. base_tablet_id=" << request.base_tablet_id
               << ", new_tablet_id=" << request.new_tablet_id
               << ", alter_version=" << request.alter_version;
+
+    // new tablet has to exist
+    TabletSharedPtr new_tablet;
+    RETURN_IF_ERROR(cloud::tablet_mgr()->get_tablet(request.new_tablet_id, &new_tablet));
+    if (new_tablet->tablet_state() == TABLET_RUNNING) {
+        LOG(INFO) << "schema change job has already finished. base_tablet_id="
+                  << request.base_tablet_id << ", new_tablet_id=" << request.new_tablet_id
+                  << ", alter_version=" << request.alter_version;
+        return Status::OK();
+    }
 
     TabletSharedPtr base_tablet;
     RETURN_IF_ERROR(cloud::tablet_mgr()->get_tablet(request.base_tablet_id, &base_tablet));
@@ -34,24 +47,17 @@ Status CloudSchemaChangeHandler::process_alter_tablet(const TAlterTabletReqV2& r
         return Status::OLAPInternalError(OLAP_ERR_TRY_LOCK_FAILED);
     }
 
-    // new tablet has to exist
-    TabletSharedPtr new_tablet;
-    RETURN_IF_ERROR(cloud::tablet_mgr()->get_tablet(request.new_tablet_id, &new_tablet));
-
-    auto missed_versions = new_tablet->cloud_calc_missed_versions(request.alter_version);
-    if (missed_versions.empty()) {
-        LOG(INFO) << "The convert job has already finished. base_tablet_id="
-                  << request.base_tablet_id << ", new_tablet_id=" << request.new_tablet_id
-                  << ", alter_version=" << request.alter_version;
-        return Status::OK();
-    }
-
-    std::vector<RowsetReaderSharedPtr> rs_readers;
     // MUST sync rowsets before capturing rowset readers and building DeleteHandler
     RETURN_IF_ERROR(base_tablet->cloud_sync_rowsets(request.alter_version));
-    for (auto& v : missed_versions) {
-        RETURN_IF_ERROR(base_tablet->cloud_capture_rs_readers(v, &rs_readers));
+    _output_cumulative_point = base_tablet->cumulative_layer_point();
+
+    std::vector<RowsetReaderSharedPtr> rs_readers;
+    if (request.alter_version > 1) {
+        // [0-1] is a placeholder rowset, no need to convert
+        RETURN_IF_ERROR(base_tablet->cloud_capture_rs_readers({2, base_tablet->local_max_version()},
+                                                              &rs_readers));
     }
+    // FIXME(cyx): Should trigger compaction on base_tablet if there are too many rowsets to convert.
 
     // Create a new tablet schema, should merge with dropped columns in light weight schema change
     TabletSchemaSPtr base_tablet_schema = std::make_shared<TabletSchema>();
@@ -131,14 +137,16 @@ Status CloudSchemaChangeHandler::process_alter_tablet(const TAlterTabletReqV2& r
     return _convert_historical_rowsets(sc_params);
 }
 
-Status CloudSchemaChangeHandler::_convert_historical_rowsets(const SchemaChangeParams& sc_params) {
+Status CloudSchemaChange::_convert_historical_rowsets(const SchemaChangeParams& sc_params) {
     LOG(INFO) << "Begin to convert historical rowsets for new_tablet from base_tablet. base_tablet="
               << sc_params.base_tablet->tablet_id()
               << ", new_tablet=" << sc_params.new_tablet->tablet_id();
 
+    auto& new_tablet = sc_params.new_tablet;
+
     // Add filter information in change, and filter column information will be set in _parse_request
     // And filter some data every time the row block changes
-    RowBlockChanger rb_changer(sc_params.new_tablet->tablet_schema(), sc_params.delete_handler,
+    RowBlockChanger rb_changer(new_tablet->tablet_schema(), sc_params.delete_handler,
                                *sc_params.desc_tbl);
 
     bool sc_sorting = false;
@@ -151,11 +159,38 @@ Status CloudSchemaChangeHandler::_convert_historical_rowsets(const SchemaChangeP
     // 2. Generate historical data converter
     auto sc_procedure = get_sc_procedure(rb_changer, sc_sorting, sc_directly);
 
+    selectdb::TabletJobInfoPB job;
+    auto idx = job.mutable_idx();
+    idx->set_tablet_id(sc_params.base_tablet->tablet_id());
+    idx->set_table_id(sc_params.base_tablet->table_id());
+    idx->set_index_id(sc_params.base_tablet->index_id());
+    idx->set_partition_id(sc_params.base_tablet->partition_id());
+    auto sc_job = job.mutable_schema_change();
+    sc_job->set_id(_job_id);
+    sc_job->set_initiator(BackendOptions::get_localhost() + ':' +
+                          std::to_string(config::heartbeat_service_port));
+    auto new_tablet_idx = sc_job->mutable_new_tablet_idx();
+    new_tablet_idx->set_tablet_id(new_tablet->tablet_id());
+    new_tablet_idx->set_table_id(new_tablet->table_id());
+    new_tablet_idx->set_index_id(new_tablet->index_id());
+    new_tablet_idx->set_partition_id(new_tablet->partition_id());
+    auto st = cloud::meta_mgr()->prepare_tablet_job(job);
+    if (!st.ok()) {
+        if (st.precise_code() == JOB_ALREADY_SUCCESS) {
+            st = new_tablet->cloud_sync_rowsets();
+            if (!st.ok()) {
+                LOG_WARNING("failed to sync new tablet")
+                        .tag("tablet_id", new_tablet->tablet_id())
+                        .error(st);
+            }
+            return Status::OK();
+        }
+        return st;
+    }
+
     // 3. Convert historical data
     for (auto& rs_reader : sc_params.ref_rowset_readers) {
         VLOG_TRACE << "Begin to convert a history rowset. version=" << rs_reader->version();
-
-        auto& new_tablet = sc_params.new_tablet;
 
         std::unique_ptr<RowsetWriter> rowset_writer;
         RowsetWriterContext context;
@@ -169,16 +204,19 @@ Status CloudSchemaChangeHandler::_convert_historical_rowsets(const SchemaChangeP
         context.fs = cloud::latest_fs();
         RETURN_IF_ERROR(new_tablet->create_rowset_writer(&context, &rowset_writer));
 
-        auto st = meta_mgr()->prepare_rowset(rowset_writer->rowset_meta(), false);
+        RowsetMetaSharedPtr existed_rs_meta;
+        auto st = meta_mgr()->prepare_rowset(rowset_writer->rowset_meta(), true, &existed_rs_meta);
         if (!st.ok()) {
             if (st.is_already_exist()) {
-                // This should only occur when:
-                // 1. BE restarts during `_convert_historical_rowsets`,
-                //    and the last `commit_rowset` request is not completed before calling `get_tablet`.
-                // 2. `commit_rowset` timeout but succeeded, and FE retries alter task.
                 LOG(INFO) << "Rowset " << rs_reader->version() << " has already existed in tablet "
-                          << sc_params.new_tablet->tablet_id();
-                // TODO(cyx): Add already committed rowset to tablet.
+                          << new_tablet->tablet_id();
+                // Add already committed rowset to _output_rowsets.
+                DCHECK(existed_rs_meta != nullptr);
+                RowsetSharedPtr rowset;
+                // schema is nullptr implies using RowsetMeta.tablet_schema
+                RowsetFactory::create_rowset(nullptr, sc_params.new_tablet->tablet_path(),
+                                             std::move(existed_rs_meta), &rowset);
+                _output_rowsets.push_back(std::move(rowset));
                 continue;
             } else {
                 return st;
@@ -194,25 +232,72 @@ Status CloudSchemaChangeHandler::_convert_historical_rowsets(const SchemaChangeP
                                          rs_reader->version().first, rs_reader->version().second);
         }
 
-        st = meta_mgr()->commit_rowset(rowset_writer->rowset_meta(), false);
-        if (st.ok()) {
-            std::lock_guard wlock(sc_params.new_tablet->get_header_lock());
-            sc_params.new_tablet->cloud_add_rowsets({new_rowset}, false);
-        } else {
+        st = meta_mgr()->commit_rowset(rowset_writer->rowset_meta(), true, &existed_rs_meta);
+        if (!st.ok()) {
             if (st.is_already_exist()) {
-                // This should only occur when:
-                // 1. BE restarts during `_convert_historical_rowsets`,
-                //    and the last `commit_rowset` request is not completed before calling `get_tablet`.
-                // 2. `commit_rowset` timeout but succeeded, and FE retries alter task.
                 LOG(INFO) << "Rowset " << rs_reader->version() << " has already existed in tablet "
-                          << sc_params.new_tablet->tablet_id();
-                // TODO(cyx): Add already committed rowset to tablet.
+                          << new_tablet->tablet_id();
+                // Add already committed rowset to _output_rowsets.
+                DCHECK(existed_rs_meta != nullptr);
+                RowsetSharedPtr rowset;
+                // schema is nullptr implies using RowsetMeta.tablet_schema
+                RowsetFactory::create_rowset(nullptr, sc_params.new_tablet->tablet_path(),
+                                             std::move(existed_rs_meta), &rowset);
+                _output_rowsets.push_back(std::move(rowset));
+                continue;
             } else {
                 return st;
             }
         }
+        _output_rowsets.push_back(std::move(new_rowset));
 
         VLOG_TRACE << "Successfully convert a history version " << rs_reader->version();
+    }
+
+    if (sc_params.ref_rowset_readers.empty()) {
+        sc_job->set_alter_version(1); // no rowset to convert implies alter_version == 1
+    } else {
+        int64_t num_output_rows = 0;
+        int64_t size_output_rowsets = 0;
+        int64_t num_output_segments = 0;
+        for (auto& rs : _output_rowsets) {
+            sc_job->add_txn_ids(rs->txn_id());
+            sc_job->add_output_versions(rs->end_version());
+            num_output_rows += rs->num_rows();
+            size_output_rowsets += rs->data_disk_size();
+            num_output_segments += rs->num_segments();
+        }
+        sc_job->set_num_output_rows(num_output_rows);
+        sc_job->set_size_output_rowsets(size_output_rowsets);
+        sc_job->set_num_output_segments(num_output_segments);
+        sc_job->set_num_output_rowsets(_output_rowsets.size());
+        sc_job->set_alter_version(_output_rowsets.back()->end_version());
+    }
+    _output_cumulative_point = std::min(_output_cumulative_point, sc_job->alter_version() + 1);
+    sc_job->set_output_cumulative_point(_output_cumulative_point);
+
+    selectdb::TabletStatsPB stats;
+    st = cloud::meta_mgr()->commit_tablet_job(job, &stats);
+    if (!st.ok()) {
+        if (st.precise_code() == JOB_ALREADY_SUCCESS) {
+            st = new_tablet->cloud_sync_rowsets();
+            if (!st.ok()) {
+                LOG_WARNING("failed to sync new tablet")
+                        .tag("tablet_id", new_tablet->tablet_id())
+                        .error(st);
+            }
+            return Status::OK();
+        }
+        return st;
+    }
+
+    {
+        std::lock_guard wlock(new_tablet->get_header_lock());
+        new_tablet->cloud_add_rowsets(std::move(_output_rowsets), true);
+        new_tablet->set_cumulative_layer_point(_output_cumulative_point);
+        new_tablet->reset_approximate_stats(stats.num_rowsets(), stats.num_segments(),
+                                            stats.num_rows(), stats.data_size());
+        new_tablet->set_tablet_state(TABLET_RUNNING);
     }
     return Status::OK();
 }

@@ -3490,7 +3490,7 @@ public class InternalCatalog implements CatalogIf<Database> {
                 TTabletType tabletType, int schemaHash, KeysType keysType, short shortKeyColumnCount,
                 Set<String> bfColumns, double bfFpp, List<Index> indexes, List<Column> schemaColumns,
                 DataSortInfo dataSortInfo, TCompressionType compressionType, String storagePolicy,
-                boolean isInMemory, boolean isPersistent) throws DdlException {
+                boolean isInMemory, boolean isPersistent, boolean isShadow) throws DdlException {
         OlapFile.TabletMetaPB.Builder builder = OlapFile.TabletMetaPB.newBuilder();
         builder.setTableId(tableId);
         builder.setIndexId(indexId);
@@ -3499,7 +3499,7 @@ public class InternalCatalog implements CatalogIf<Database> {
         builder.setSchemaHash(schemaHash);
         builder.setCreationTime(System.currentTimeMillis() / 1000);
         builder.setCumulativeLayerPoint(-1);
-        builder.setTabletState(OlapFile.TabletStatePB.PB_RUNNING);
+        builder.setTabletState(isShadow ? OlapFile.TabletStatePB.PB_NOTREADY : OlapFile.TabletStatePB.PB_RUNNING);
         builder.setIsInMemory(isInMemory);
         builder.setIsPersistent(isPersistent);
 
@@ -3671,7 +3671,7 @@ public class InternalCatalog implements CatalogIf<Database> {
             for (Tablet tablet : index.getTablets()) {
                 createCloudTabletMeta(tableId, indexId, partitionId, tablet, tabletType, schemaHash,
                         keysType, shortKeyColumnCount, bfColumns, bfFpp, indexes, columns, dataSortInfo,
-                        compressionType, storagePolicy, isInMemory, isPersistent);
+                        compressionType, storagePolicy, isInMemory, isPersistent, false);
             }
 
             if (index.getId() != baseIndexId) {

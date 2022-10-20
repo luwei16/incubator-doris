@@ -160,6 +160,7 @@ public:
                                     std::vector<RowsetReaderSharedPtr>* rs_readers);
 
     // Synchronize the rowsets from meta service.
+    // If tablet state is not `TABLET_RUNNING`, sync tablet meta and all visible rowsets.
     // If `query_version` > 0 and local max_version of the tablet >= `query_version`, do nothing.
     Status cloud_sync_rowsets(int64_t query_version = -1);
 

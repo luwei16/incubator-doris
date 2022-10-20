@@ -1,7 +1,7 @@
 import org.codehaus.groovy.runtime.IOGroovyMethods
 
-suite("test_compaction") {
-    def tableName = "test_compaction"
+suite("test_compaction_with_delete") {
+    def tableName = "test_compaction_with_delete"
 
     try {
         //BackendId,Cluster,IP,HeartbeatPort,BePort,HttpPort,BrpcPort,LastStartTime,LastHeartbeat,Alive,SystemDecommissioned,ClusterDecommissioned,TabletNum,DataUsedCapacity,AvailCapacity,TotalCapacity,UsedPct,MaxDiskUsedPct,RemoteUsedCapacity,Tag,ErrMsg,Version,Status
@@ -47,7 +47,7 @@ suite("test_compaction") {
         //TabletId,ReplicaId,BackendId,SchemaHash,Version,LstSuccessVersion,LstFailedVersion,LstFailedTime,LocalDataSize,RemoteDataSize,RowCount,State,LstConsistencyCheckTime,CheckVersion,VersionCount,PathHash,MetaUrl,CompactionStatus
         String[][] tablets = sql """ show tablets from ${tableName}; """
 
-        def doCompaction = { backend_id, compact_type ->
+        def doCompaction = { backend_id, compact_type, should_success ->
             // trigger compactions for all tablets in ${tableName}
             for (String[] tablet in tablets) {
                 String tablet_id = tablet[0]
@@ -68,7 +68,12 @@ suite("test_compaction") {
                 logger.info("Run compaction: code=" + code + ", out=" + out + ", err=" + err)
                 assertEquals(code, 0)
                 def compactJson = parseJson(out.trim())
-                assertEquals("success", compactJson.status.toLowerCase())
+                if (should_success) {
+                    assertEquals("success", compactJson.status.toLowerCase())
+                }
+            }
+            if (!should_success) {
+                return
             }
 
             // wait for all compactions done
@@ -123,41 +128,29 @@ suite("test_compaction") {
             assert (rowCount < 8)
         }
 
+        // cluster0 do base compaction
         sql """ use @${cluster0}; """
         sql """ INSERT INTO ${tableName} VALUES (1, "a", 100); """
         sql """ INSERT INTO ${tableName} VALUES (1, "a", 100); """
         sql """ INSERT INTO ${tableName} VALUES (1, "a", 100); """
-
-        sql """ use @${cluster1}; """
+        sql """ INSERT INTO ${tableName} VALUES (1, "a", 100); """
+        sql """ INSERT INTO ${tableName} VALUES (1, "a", 100); """
+        sql """ INSERT INTO ${tableName} VALUES (1, "a", 100); """
+        doCompaction.call(backend_id0, "cumulative", true)
+        sql """ INSERT INTO ${tableName} VALUES (2, "a", 100); """
+        sql """ DELETE FROM ${tableName} WHERE id = 1; """
+        doCompaction.call(backend_id0, "cumulative", false) // no suitable version
+        // TODO(cyx): check cumulative point
+        sql """ INSERT INTO ${tableName} VALUES (3, "a", 100); """
+        sql """ INSERT INTO ${tableName} VALUES (3, "a", 100); """
+        sql """ INSERT INTO ${tableName} VALUES (3, "a", 100); """
+        sql """ INSERT INTO ${tableName} VALUES (3, "a", 100); """
+        sql """ INSERT INTO ${tableName} VALUES (3, "a", 100); """
+        sql """ INSERT INTO ${tableName} VALUES (3, "a", 100); """
+        doCompaction.call(backend_id0, "cumulative", true)
         qt_select_default """ SELECT * FROM ${tableName}; """
 
-        sql """ use @${cluster0}; """
-        sql """ INSERT INTO ${tableName} VALUES (1, "a", 100); """
-        sql """ INSERT INTO ${tableName} VALUES (1, "a", 100); """
-        sql """ INSERT INTO ${tableName} VALUES (1, "a", 100); """
-        doCompaction.call(backend_id0, "cumulative")
-        qt_select_default """ SELECT * FROM ${tableName}; """
-
-        sql """ use @${cluster1}; """
-        qt_select_default """ SELECT * FROM ${tableName}; """
-        sql """ INSERT INTO ${tableName} VALUES (1, "a", 100); """
-        sql """ INSERT INTO ${tableName} VALUES (1, "a", 100); """
-        sql """ INSERT INTO ${tableName} VALUES (1, "a", 100); """
-
-        sql """ use @${cluster0}; """
-        qt_select_default """ SELECT * FROM ${tableName}; """
-
-        sql """ use @${cluster1}; """
-        sql """ INSERT INTO ${tableName} VALUES (1, "a", 100); """
-        sql """ INSERT INTO ${tableName} VALUES (1, "a", 100); """
-        sql """ INSERT INTO ${tableName} VALUES (1, "a", 100); """
-        doCompaction.call(backend_id1, "cumulative")
-        doCompaction.call(backend_id1, "base")
-        qt_select_default """ SELECT * FROM ${tableName}; """
-
-        sql """ use @${cluster0}; """
-        qt_select_default """ SELECT * FROM ${tableName}; """
     } finally {
         try_sql("DROP TABLE IF EXISTS ${tableName}")
-    }
+    }    
 }

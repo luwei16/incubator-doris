@@ -361,7 +361,7 @@ public class SchemaChangeJobV2 extends AlterJobV2 {
                                     shadowTablet, tbl.getPartitionInfo().getTabletType(partitionId), shadowSchemaHash,
                                     originKeysType, shadowShortKeyColumnCount, bfColumns, bfFpp, indexes, shadowSchema,
                                     tbl.getDataSortInfo(), tbl.getCompressionType(), tbl.getStoragePolicy(),
-                                    tbl.isInMemory(), tbl.isPersistent());
+                                    tbl.isInMemory(), tbl.isPersistent(), true);
                         } // end for rollupTablets
                     }
                 }

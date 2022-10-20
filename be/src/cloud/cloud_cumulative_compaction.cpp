@@ -20,6 +20,9 @@ CloudCumulativeCompaction::CloudCumulativeCompaction(TabletSharedPtr tablet)
 CloudCumulativeCompaction::~CloudCumulativeCompaction() = default;
 
 Status CloudCumulativeCompaction::prepare_compact() {
+    if (_tablet->tablet_state() != TABLET_RUNNING) {
+        return Status::InternalError("invalid tablet state. tablet_id={}", _tablet->tablet_id());
+    }
     std::unique_lock lock(_tablet->get_cumulative_compaction_lock(), std::try_to_lock);
     if (!lock.owns_lock()) {
         return Status::OLAPInternalError(OLAP_ERR_BE_TRY_BE_LOCK_ERROR);
@@ -51,18 +54,22 @@ Status CloudCumulativeCompaction::prepare_compact() {
 
     // prepare compaction job
     selectdb::TabletJobInfoPB job;
-    job.set_id(_uuid);
     auto idx = job.mutable_idx();
     idx->set_tablet_id(_tablet->tablet_id());
     idx->set_table_id(_tablet->table_id());
     idx->set_index_id(_tablet->index_id());
     idx->set_partition_id(_tablet->partition_id());
     auto compaction_job = job.mutable_compaction();
+    compaction_job->set_id(_uuid);
     compaction_job->set_initiator(BackendOptions::get_localhost() + ':' +
                                   std::to_string(config::heartbeat_service_port));
     compaction_job->set_type(selectdb::TabletCompactionJobPB::CUMULATIVE);
     compaction_job->set_base_compaction_cnt(base_compaction_cnt);
     compaction_job->set_cumulative_compaction_cnt(cumulative_compaction_cnt);
+    using namespace std::chrono;
+    int64_t expiration =
+            duration_cast<seconds>(system_clock::now().time_since_epoch()).count() + 21600; // 6h
+    compaction_job->set_expiration(expiration); // FIXME(cyx): estimate according to data size
     return cloud::meta_mgr()->prepare_tablet_job(job);
 }
 
@@ -100,13 +107,13 @@ Status CloudCumulativeCompaction::update_tablet_meta() {
         input_data_size += rs->data_disk_size();
     }
     selectdb::TabletJobInfoPB job;
-    job.set_id(_uuid);
     auto idx = job.mutable_idx();
     idx->set_tablet_id(_tablet->tablet_id());
     idx->set_table_id(_tablet->table_id());
     idx->set_index_id(_tablet->index_id());
     idx->set_partition_id(_tablet->partition_id());
     auto compaction_job = job.mutable_compaction();
+    compaction_job->set_id(_uuid);
     compaction_job->set_initiator(BackendOptions::get_localhost() + ':' +
                                   std::to_string(config::heartbeat_service_port));
     compaction_job->set_type(selectdb::TabletCompactionJobPB::CUMULATIVE);
@@ -142,20 +149,20 @@ Status CloudCumulativeCompaction::update_tablet_meta() {
         _tablet->set_cumulative_compaction_cnt(stats.cumulative_compaction_cnt());
         _tablet->set_cumulative_layer_point(stats.cumulative_point());
         _tablet->reset_approximate_stats(stats.num_rowsets(), stats.num_segments(),
-                                         stats.num_rows(), stats.data_size());        
+                                         stats.num_rows(), stats.data_size());
     }
     return Status::OK();
 }
 
 void CloudCumulativeCompaction::garbage_collection() {
     selectdb::TabletJobInfoPB job;
-    job.set_id(_uuid);
     auto idx = job.mutable_idx();
     idx->set_tablet_id(_tablet->tablet_id());
     idx->set_table_id(_tablet->table_id());
     idx->set_index_id(_tablet->index_id());
     idx->set_partition_id(_tablet->partition_id());
     auto compaction_job = job.mutable_compaction();
+    compaction_job->set_id(_uuid);
     compaction_job->set_initiator(BackendOptions::get_localhost() + ':' +
                                   std::to_string(config::heartbeat_service_port));
     compaction_job->set_type(selectdb::TabletCompactionJobPB::CUMULATIVE);
@@ -206,13 +213,13 @@ Status CloudCumulativeCompaction::pick_rowsets_to_compact() {
 void CloudCumulativeCompaction::update_cumulative_point(int64_t base_compaction_cnt,
                                                         int64_t cumulative_compaction_cnt) {
     selectdb::TabletJobInfoPB job;
-    job.set_id(_uuid);
     auto idx = job.mutable_idx();
     idx->set_tablet_id(_tablet->tablet_id());
     idx->set_table_id(_tablet->table_id());
     idx->set_index_id(_tablet->index_id());
     idx->set_partition_id(_tablet->partition_id());
     auto compaction_job = job.mutable_compaction();
+    compaction_job->set_id(_uuid);
     compaction_job->set_initiator(BackendOptions::get_localhost() + ':' +
                                   std::to_string(config::heartbeat_service_port));
     compaction_job->set_type(selectdb::TabletCompactionJobPB::EMPTY_CUMULATIVE);
@@ -234,6 +241,7 @@ void CloudCumulativeCompaction::update_cumulative_point(int64_t base_compaction_
         LOG_WARNING("failed to update cumulative point to meta srv")
                 .tag("tablet_id", _tablet->tablet_id())
                 .error(st);
+        return;
     }
     LOG_INFO("do empty cumulative compaction to update cumulative point")
             .tag("tablet_id", _tablet->tablet_id())

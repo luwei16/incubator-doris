@@ -21,7 +21,7 @@
 // 0x01 "version" ${instance_id} "partition" ${db_id} ${tbl_id} ${partition_id}              -> VersionPB
 //
 // 0x01 "meta" ${instance_id} "rowset" ${tablet_id} ${version}                               -> RowsetMetaPB
-// 0x01 "meta" ${instance_id} "rowset_tmp" ${txn_id} ${rowset_id}                            -> RowsetMetaPB
+// 0x01 "meta" ${instance_id} "rowset_tmp" ${txn_id} ${tablet_id}                            -> RowsetMetaPB
 // 0x01 "meta" ${instance_id} "tablet" ${table_id} ${index_id} ${partition_id} ${tablet_id}  -> TabletMetaPB
 // 0x01 "meta" ${instance_id} "tablet_index" ${tablet_id}                                    -> TabletIndexPB
 //

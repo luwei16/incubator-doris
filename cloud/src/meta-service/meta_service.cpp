@@ -1920,7 +1920,7 @@ void MetaServiceImpl::get_tablet(::google::protobuf::RpcController* controller,
  */
 void MetaServiceImpl::prepare_rowset(::google::protobuf::RpcController* controller,
                                      const ::selectdb::CreateRowsetRequest* request,
-                                     ::selectdb::MetaServiceGenericResponse* response,
+                                     ::selectdb::CreateRowsetResponse* response,
                                      ::google::protobuf::Closure* done) {
     auto ctrl = static_cast<brpc::Controller*>(controller);
     LOG(INFO) << "rpc from " << ctrl->remote_side() << " request=" << request->DebugString();
@@ -1977,6 +1977,11 @@ void MetaServiceImpl::prepare_rowset(::google::protobuf::RpcController* controll
     // Check if commit key already exists.
     ret = txn->get(commit_key, &commit_val);
     if (ret == 0) {
+        if (!response->mutable_existed_rowset_meta()->ParseFromString(commit_val)) {
+            code = MetaServiceCode::PROTOBUF_PARSE_ERR;
+            msg = fmt::format("malformed rowset meta value. key={}", hex(commit_key));
+            return;
+        }
         code = MetaServiceCode::ALREADY_EXISTED;
         msg = "rowset already exists";
         return;
@@ -2022,7 +2027,7 @@ void MetaServiceImpl::prepare_rowset(::google::protobuf::RpcController* controll
  */
 void MetaServiceImpl::commit_rowset(::google::protobuf::RpcController* controller,
                                     const ::selectdb::CreateRowsetRequest* request,
-                                    ::selectdb::MetaServiceGenericResponse* response,
+                                    ::selectdb::CreateRowsetResponse* response,
                                     ::google::protobuf::Closure* done) {
     auto ctrl = static_cast<brpc::Controller*>(controller);
     LOG(INFO) << "rpc from " << ctrl->remote_side() << " request=" << request->DebugString();
@@ -2090,6 +2095,11 @@ void MetaServiceImpl::commit_rowset(::google::protobuf::RpcController* controlle
             // Same request, return OK
             return;
         }
+        if (!response->mutable_existed_rowset_meta()->ParseFromString(commit_val)) {
+            code = MetaServiceCode::PROTOBUF_PARSE_ERR;
+            msg = fmt::format("malformed rowset meta value. key={}", hex(commit_key));
+            return;
+        }        
         code = MetaServiceCode::ALREADY_EXISTED;
         msg = "rowset already exists";
         return;

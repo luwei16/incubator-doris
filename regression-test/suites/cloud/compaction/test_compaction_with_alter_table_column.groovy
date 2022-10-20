@@ -1,7 +1,7 @@
 import org.codehaus.groovy.runtime.IOGroovyMethods
 
-suite("test_alter_table_after_compaction") {
-    def tableName = "test_alter_table_after_compaction"
+suite("test_compaction_with_alter_table_column") {
+    def tableName = "test_compaction_with_alter_table_column"
 
     try {
         //BackendId,Cluster,IP,HeartbeatPort,BePort,HttpPort,BrpcPort,LastStartTime,LastHeartbeat,Alive,SystemDecommissioned,ClusterDecommissioned,TabletNum,DataUsedCapacity,AvailCapacity,TotalCapacity,UsedPct,MaxDiskUsedPct,RemoteUsedCapacity,Tag,ErrMsg,Version,Status
@@ -40,11 +40,9 @@ suite("test_alter_table_after_compaction") {
                 "persistent" = "false",
                 "storage_format" = "V2",
                 "light_schema_change" = "true",
-                "disable_auto_compaction" = "false"
+                "disable_auto_compaction" = "true"
             );
         """
-
-        // TODO(cyx): disableAutoCompaction        
 
         //TabletId,ReplicaId,BackendId,SchemaHash,Version,LstSuccessVersion,LstFailedVersion,LstFailedTime,LocalDataSize,RemoteDataSize,RowCount,State,LstConsistencyCheckTime,CheckVersion,VersionCount,PathHash,MetaUrl,CompactionStatus
         String[][] tablets = sql """ show tablets from ${tableName}; """
@@ -126,7 +124,7 @@ suite("test_alter_table_after_compaction") {
         }
 
         // cluster0 do base compaction
-        sql """ access ${cluster0}; """
+        sql """ use @${cluster0}; """
         sql """ INSERT INTO ${tableName} VALUES (1, "a", 100); """
         sql """ INSERT INTO ${tableName} VALUES (1, "a", 100); """
         sql """ INSERT INTO ${tableName} VALUES (1, "a", 100); """
@@ -140,23 +138,23 @@ suite("test_alter_table_after_compaction") {
         sql """ INSERT INTO ${tableName} VALUES (2, "a", 100); """
         sql """ INSERT INTO ${tableName} VALUES (2, "a", 100); """
         sql """ INSERT INTO ${tableName} VALUES (2, "a", 100); """
-        doCompaction.call(backend_id0, "cumulative") 
+        doCompaction.call(backend_id0, "cumulative")
         doCompaction.call(backend_id0, "base")
         qt_select_default """ SELECT * FROM ${tableName}; """
 
         // cluster1 get compacted rowset metas
-        sql """ access ${cluster1}; """
+        sql """ use @${cluster1}; """
         qt_select_default """ SELECT * FROM ${tableName}; """
 
-        def getJobRollupState = {
-            def jobStateResult = sql """  SHOW ALTER TABLE ROLLUP WHERE TableName='${tableName}' ORDER BY CreateTime DESC LIMIT 1; """
-            return jobStateResult[0][8]
+        def getJobState = {
+            def jobStateResult = sql """  SHOW ALTER TABLE COLUMN WHERE TableName='${tableName}' ORDER BY CreateTime DESC LIMIT 1; """
+            return jobStateResult[0][9]
         }
 
-        def waitUntilRollupJobFinished = {
+        def waitUntilJobFinished = {
             int max_try = 60
             while (max_try--) {
-                String res = getJobRollupState()
+                String res = getJobState()
                 if (res == "FINISHED") {
                     break
                 } else {
@@ -169,10 +167,21 @@ suite("test_alter_table_after_compaction") {
             }
         }
 
-        // cluster1 add rollup
-        sql """ALTER TABLE ${tableName} ADD ROLLUP rollup_index(name, score); """
-        waitUntilRollupJobFinished()
-        qt_select_default """ SELECT sum(score) FROM ${tableName} GROUP BY name; """
+        // cluster1 alter table column 
+        sql """ALTER TABLE ${tableName} MODIFY COLUMN name string; """
+        waitUntilJobFinished()
+        qt_select_default """ SELECT * FROM ${tableName}; """
+
+        // compaction on new tablet
+        tablets = sql """ show tablets from ${tableName}; """
+        sql """ INSERT INTO ${tableName} VALUES (1, "a", 100); """
+        sql """ INSERT INTO ${tableName} VALUES (1, "a", 100); """
+        sql """ INSERT INTO ${tableName} VALUES (1, "a", 100); """
+        sql """ INSERT INTO ${tableName} VALUES (1, "a", 100); """
+        sql """ INSERT INTO ${tableName} VALUES (1, "a", 100); """
+        sql """ INSERT INTO ${tableName} VALUES (1, "a", 100); """
+        doCompaction.call(backend_id1, "cumulative")
+        qt_select_default """ SELECT * FROM ${tableName}; """
 
     } finally {
         try_sql("DROP TABLE IF EXISTS ${tableName}")

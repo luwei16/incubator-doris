@@ -622,7 +622,8 @@ std::vector<TabletSharedPtr> StorageEngine::_generate_cloud_compaction_tasks(
         // Return true for skipping compaction
         auto filter_out = [data_dir, &copied_base_map, &copied_cumu_map](Tablet* t) {
             return !!copied_base_map[data_dir].count(t->tablet_id()) ||
-                   !!copied_cumu_map[data_dir].count(t->tablet_id());
+                   !!copied_cumu_map[data_dir].count(t->tablet_id()) ||
+                   t->tablet_state() != TABLET_RUNNING;
         };
 
         // Even if need_pick_tablet is false, we still need to call find_best_tablet_to_compaction(),

@@ -72,12 +72,12 @@ public:
 
     void prepare_rowset(::google::protobuf::RpcController* controller,
                         const ::selectdb::CreateRowsetRequest* request,
-                        ::selectdb::MetaServiceGenericResponse* response,
+                        ::selectdb::CreateRowsetResponse* response,
                         ::google::protobuf::Closure* done) override;
 
     void commit_rowset(::google::protobuf::RpcController* controller,
                        const ::selectdb::CreateRowsetRequest* request,
-                       ::selectdb::MetaServiceGenericResponse* response,
+                       ::selectdb::CreateRowsetResponse* response,
                        ::google::protobuf::Closure* done) override;
 
     void get_rowset(::google::protobuf::RpcController* controller,

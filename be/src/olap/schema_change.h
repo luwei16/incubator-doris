@@ -29,7 +29,7 @@
 
 namespace doris {
 namespace cloud {
-class CloudSchemaChangeHandler;
+class CloudSchemaChange;
 }
 
 bool to_bitmap(RowCursor* read_helper, RowCursor* write_helper, const TabletColumn& ref_column,
@@ -299,7 +299,7 @@ public:
     static bool tablet_in_converting(int64_t tablet_id);
 
 private:
-    friend class cloud::CloudSchemaChangeHandler;
+    friend class cloud::CloudSchemaChange;
 
     // Check the status of schema change and clear information between "a pair" of Schema change tables
     // Since A->B's schema_change information for A will be overwritten in subsequent processing (no extra cleanup here)

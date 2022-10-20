@@ -1,12 +1,16 @@
 #include <gtest/gtest.h>
 
 #include "olap/rowset/rowset_factory.h"
+#include "olap/rowset/unique_rowset_id_generator.h"
 #include "olap/tablet.h"
 
 namespace doris {
 
+static UniqueRowsetIdGenerator id_generator({0, 1});
+
 static RowsetMetaSharedPtr create_rowset_meta(Version version) {
     auto rs_meta = std::make_shared<RowsetMeta>();
+    rs_meta->set_rowset_id(id_generator.next_id());
     rs_meta->set_rowset_type(BETA_ROWSET);
     rs_meta->set_start_version(version.first);
     rs_meta->set_end_version(version.second);
@@ -71,23 +75,41 @@ TEST(CloudTabletTest, add_rowsets) {
         rowsets.push_back(create_rowset({2, 2}));
         rowsets.push_back(create_rowset({3, 3}));
         rowsets.push_back(create_rowset({4, 4}));
-        tablet.cloud_add_rowsets(std::move(rowsets), false);
+        tablet.cloud_add_rowsets(rowsets, false);
         ASSERT_EQ(tablet._rs_version_map.size(), 4);
+        ASSERT_EQ(tablet.tablet_meta()->all_rs_metas().size(), 4);
         Versions versions;
+        tablet.capture_consistent_versions({0, 4}, &versions);
+        ASSERT_EQ(versions, (Versions {{0, 1}, {2, 2}, {3, 3}, {4, 4}}));
+
+        versions.clear();
+        // add rowsets with same version and same rowset_id
+        tablet.cloud_add_rowsets(rowsets, true);
+        ASSERT_EQ(tablet._rs_version_map.size(), 4);
+        ASSERT_EQ(tablet.tablet_meta()->all_rs_metas().size(), 4);
         tablet.capture_consistent_versions({0, 4}, &versions);
         ASSERT_EQ(versions, (Versions {{0, 1}, {2, 2}, {3, 3}, {4, 4}}));
     }
     {
         std::vector<RowsetSharedPtr> rowsets;
+        // add rowsets with same version but different rowset_id
         rowsets.push_back(create_rowset({2, 2}));
         rowsets.push_back(create_rowset({3, 3}));
         rowsets.push_back(create_rowset({4, 4}));
-        tablet.cloud_add_rowsets(std::move(rowsets), true);
+        tablet.cloud_add_rowsets(rowsets, true);
         ASSERT_EQ(tablet._rs_version_map.size(), 4);
+        ASSERT_EQ(tablet.tablet_meta()->all_rs_metas().size(), 4);
         ASSERT_EQ(tablet._stale_rs_version_map.size(), 0);
+        ASSERT_EQ(tablet.tablet_meta()->all_stale_rs_metas().size(), 0);
         Versions versions;
-        tablet.capture_consistent_versions({0, 4}, &versions);
-        ASSERT_EQ(versions, (Versions {{0, 1}, {2, 2}, {3, 3}, {4, 4}}));
+        tablet.capture_consistent_versions({2, 4}, &versions);
+        ASSERT_EQ(versions, (Versions {{2, 2}, {3, 3}, {4, 4}}));
+
+        std::vector<RowsetReaderSharedPtr> rs_readers;
+        ASSERT_EQ(tablet.capture_rs_readers(versions, &rs_readers), Status::OK());
+        for (size_t i = 0; i < versions.size(); ++i) {
+            ASSERT_EQ(rs_readers[i]->rowset()->rowset_id(), rowsets[i]->rowset_id());
+        }
     }
     {
         std::vector<RowsetSharedPtr> rowsets;
@@ -95,8 +117,10 @@ TEST(CloudTabletTest, add_rowsets) {
         tablet.cloud_add_rowsets(std::move(rowsets), true);
         // [0-1][2-2][3-4]
         ASSERT_EQ(tablet._rs_version_map.size(), 3);
+        ASSERT_EQ(tablet.tablet_meta()->all_rs_metas().size(), 3);
         // [3-3][4-4]
         ASSERT_EQ(tablet._stale_rs_version_map.size(), 2);
+        ASSERT_EQ(tablet.tablet_meta()->all_stale_rs_metas().size(), 2);
         Versions versions;
         tablet.capture_consistent_versions({0, 4}, &versions);
         ASSERT_EQ(versions, (Versions {{0, 1}, {2, 2}, {3, 4}}));
@@ -106,7 +130,6 @@ TEST(CloudTabletTest, add_rowsets) {
     }
     {
         std::vector<RowsetSharedPtr> rowsets;
-        rowsets.push_back(create_rowset({0, 1}));
         rowsets.push_back(create_rowset({2, 5}));
         rowsets.push_back(create_rowset({6, 6}));
         rowsets.push_back(create_rowset({7, 7}));
@@ -114,8 +137,10 @@ TEST(CloudTabletTest, add_rowsets) {
         tablet.cloud_add_rowsets(std::move(rowsets), true);
         // [0-1][2-5][6-6][7-7][8-8]
         ASSERT_EQ(tablet._rs_version_map.size(), 5);
+        ASSERT_EQ(tablet.tablet_meta()->all_rs_metas().size(), 5);
         // [3-3][4-4][2-2][3-4]
         ASSERT_EQ(tablet._stale_rs_version_map.size(), 4);
+        ASSERT_EQ(tablet.tablet_meta()->all_stale_rs_metas().size(), 4);
         Versions versions;
         tablet.capture_consistent_versions({0, 8}, &versions);
         ASSERT_EQ(versions, (Versions {{0, 1}, {2, 5}, {6, 6}, {7, 7}, {8, 8}}));

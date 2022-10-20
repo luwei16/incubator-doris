@@ -19,6 +19,9 @@ CloudBaseCompaction::CloudBaseCompaction(TabletSharedPtr tablet)
 CloudBaseCompaction::~CloudBaseCompaction() = default;
 
 Status CloudBaseCompaction::prepare_compact() {
+    if (_tablet->tablet_state() != TABLET_RUNNING) {
+        return Status::InternalError("invalid tablet state. tablet_id={}", _tablet->tablet_id());
+    }
     std::unique_lock lock(_tablet->get_base_compaction_lock(), std::try_to_lock);
     if (!lock.owns_lock()) {
         return Status::OLAPInternalError(OLAP_ERR_BE_TRY_BE_LOCK_ERROR);
@@ -40,18 +43,22 @@ Status CloudBaseCompaction::prepare_compact() {
 
     // prepare compaction job
     selectdb::TabletJobInfoPB job;
-    job.set_id(_uuid);
     auto idx = job.mutable_idx();
     idx->set_tablet_id(_tablet->tablet_id());
     idx->set_table_id(_tablet->table_id());
     idx->set_index_id(_tablet->index_id());
     idx->set_partition_id(_tablet->partition_id());
     auto compaction_job = job.mutable_compaction();
+    compaction_job->set_id(_uuid);
     compaction_job->set_initiator(BackendOptions::get_localhost() + ':' +
                                   std::to_string(config::heartbeat_service_port));
     compaction_job->set_type(selectdb::TabletCompactionJobPB::BASE);
     compaction_job->set_base_compaction_cnt(base_compaction_cnt);
     compaction_job->set_cumulative_compaction_cnt(cumulative_compaction_cnt);
+    using namespace std::chrono;
+    int64_t expiration =
+            duration_cast<seconds>(system_clock::now().time_since_epoch()).count() + 43200; // 12h
+    compaction_job->set_expiration(expiration); // FIXME(cyx): estimate according to data size
     return cloud::meta_mgr()->prepare_tablet_job(job);
 }
 
@@ -91,13 +98,13 @@ Status CloudBaseCompaction::update_tablet_meta() {
         input_data_size += rs->data_disk_size();
     }
     selectdb::TabletJobInfoPB job;
-    job.set_id(_uuid);
     auto idx = job.mutable_idx();
     idx->set_tablet_id(_tablet->tablet_id());
     idx->set_table_id(_tablet->table_id());
     idx->set_index_id(_tablet->index_id());
     idx->set_partition_id(_tablet->partition_id());
     auto compaction_job = job.mutable_compaction();
+    compaction_job->set_id(_uuid);
     compaction_job->set_initiator(BackendOptions::get_localhost() + ':' +
                                   std::to_string(config::heartbeat_service_port));
     compaction_job->set_type(selectdb::TabletCompactionJobPB::BASE);
@@ -140,13 +147,13 @@ Status CloudBaseCompaction::update_tablet_meta() {
 
 void CloudBaseCompaction::garbage_collection() {
     selectdb::TabletJobInfoPB job;
-    job.set_id(_uuid);
     auto idx = job.mutable_idx();
     idx->set_tablet_id(_tablet->tablet_id());
     idx->set_table_id(_tablet->table_id());
     idx->set_index_id(_tablet->index_id());
     idx->set_partition_id(_tablet->partition_id());
     auto compaction_job = job.mutable_compaction();
+    compaction_job->set_id(_uuid);
     compaction_job->set_initiator(BackendOptions::get_localhost() + ':' +
                                   std::to_string(config::heartbeat_service_port));
     compaction_job->set_type(selectdb::TabletCompactionJobPB::BASE);

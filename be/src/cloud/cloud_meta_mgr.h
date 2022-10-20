@@ -22,9 +22,11 @@ public:
 
     Status write_tablet_meta(const TabletMetaSharedPtr& tablet_meta) override;
 
-    Status prepare_rowset(const RowsetMetaSharedPtr& rs_meta, bool is_tmp) override;
+    Status prepare_rowset(const RowsetMetaSharedPtr& rs_meta, bool is_tmp,
+                          RowsetMetaSharedPtr* existed_rs_meta = nullptr) override;
 
-    Status commit_rowset(const RowsetMetaSharedPtr& rs_meta, bool is_tmp) override;
+    Status commit_rowset(const RowsetMetaSharedPtr& rs_meta, bool is_tmp,
+                         RowsetMetaSharedPtr* existed_rs_meta = nullptr) override;
 
     Status commit_txn(StreamLoadContext* ctx, bool is_2pc) override;
 

@@ -157,7 +157,8 @@ Status Compaction::do_compaction_impl(int64_t permits) {
 
     // construct output rowset writer
     RowsetWriterContext context;
-    context.txn_id = _input_rowsets.back()->txn_id();
+    context.txn_id = boost::uuids::hash_value(UUIDGenerator::instance()->next_uuid()) &
+                     std::numeric_limits<int64_t>::max(); // MUST be positive
     context.version = _output_version;
     context.rowset_state = VISIBLE;
     context.segments_overlap = NONOVERLAPPING;

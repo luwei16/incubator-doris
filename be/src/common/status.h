@@ -5,6 +5,7 @@
 #pragma once
 
 #include <fmt/format.h>
+#include <gen_cpp/selectdb_cloud.pb.h>
 #include <glog/logging.h>
 
 #include <iostream>
@@ -231,7 +232,8 @@ class PStatus;
     M(OLAP_ERR_ROWSET_INVALID_STATE_TRANSITION, -3112, "", true)         \
     M(OLAP_ERR_STRING_OVERFLOW_IN_VEC_ENGINE, -3113, "", true)           \
     M(OLAP_ERR_ROWSET_ADD_MIGRATION_V2, -3114, "", true)                 \
-    M(OLAP_ERR_PUBLISH_VERSION_NOT_CONTINUOUS, -3115, "", false)
+    M(OLAP_ERR_PUBLISH_VERSION_NOT_CONTINUOUS, -3115, "", false)         \
+    M(JOB_ALREADY_SUCCESS, -4000, "", false)
 
 enum ErrorCode {
 #define M(NAME, ERRORCODE, DESC, STACKTRACEENABLED) NAME = ERRORCODE,

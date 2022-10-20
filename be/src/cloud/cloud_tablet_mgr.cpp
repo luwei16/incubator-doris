@@ -9,6 +9,7 @@
 #include "cloud/utils.h"
 #include "common/config.h"
 #include "common/sync_point.h"
+#include "olap/tablet_meta.h"
 
 namespace doris::cloud {
 
@@ -76,7 +77,7 @@ static SingleFlight<int64_t, std::variant<Status, TabletSharedPtr>> s_singleflig
 // TODO(cyx): multi shard to increase concurrency
 static std::mutex s_tablet_map_mtx;
 // tablet_id -> cached tablet
-// This map owns all cached tablets. The lifetime of tablet can be longer than the LRU handle which holds its ref.
+// This map owns all cached tablets. The lifetime of tablet can be longer than the LRU handle.
 // It's also used for scenarios where users want to access the tablet by `tablet_id` without changing the LRU order.
 static std::unordered_map<int64_t, TabletSharedPtr> s_tablet_map;
 
@@ -87,10 +88,9 @@ CloudTabletMgr::CloudTabletMgr()
 CloudTabletMgr::~CloudTabletMgr() = default;
 
 Status CloudTabletMgr::get_tablet(int64_t tablet_id, TabletSharedPtr* tablet) {
-    // LRU value type, holds the ref of cached tablet
+    // LRU value type
     struct Value {
-        Tablet* tablet;
-        int64_t tablet_id;
+        TabletSharedPtr tablet;
     };
 
     auto tablet_id_str = std::to_string(tablet_id);
@@ -111,8 +111,7 @@ Status CloudTabletMgr::get_tablet(int64_t tablet_id, TabletSharedPtr* tablet) {
             }
             auto tablet = std::make_shared<Tablet>(std::move(tablet_meta), cloud::cloud_data_dir());
             auto value = new Value();
-            value->tablet = tablet.get();
-            value->tablet_id = tablet->tablet_id();
+            value->tablet = tablet;
             st = meta_mgr()->sync_tablet_rowsets(tablet.get());
             // ignore failure here because we will sync this tablet before query
             if (!st.ok()) {
@@ -123,9 +122,8 @@ Status CloudTabletMgr::get_tablet(int64_t tablet_id, TabletSharedPtr* tablet) {
                 {
                     // tablet has been evicted, release it from `s_tablet_map`
                     std::lock_guard lock(s_tablet_map_mtx);
-                    // ref tablet may be released by another tablet with same `tablet_id` here, MUST NOT access memory in ref tablet
-                    auto it = s_tablet_map.find(value1->tablet_id);
-                    if (it != s_tablet_map.end() && it->second.get() == value1->tablet) {
+                    auto it = s_tablet_map.find(value1->tablet->tablet_id());
+                    if (it != s_tablet_map.end() && it->second == value1->tablet) {
                         s_tablet_map.erase(it);
                     }
                 }
@@ -137,7 +135,7 @@ Status CloudTabletMgr::get_tablet(int64_t tablet_id, TabletSharedPtr* tablet) {
                 std::lock_guard lock(s_tablet_map_mtx);
                 s_tablet_map[tablet_id] = std::move(tablet);
             }
-            *res = std::shared_ptr<Tablet>(value->tablet,
+            *res = std::shared_ptr<Tablet>(value->tablet.get(),
                                            [this, handle](...) { _cache->release(handle); });
             return res;
         };
@@ -150,7 +148,7 @@ Status CloudTabletMgr::get_tablet(int64_t tablet_id, TabletSharedPtr* tablet) {
         return Status::OK();
     }
 
-    Tablet* tablet1 = reinterpret_cast<Value*>(_cache->value(handle))->tablet;
+    Tablet* tablet1 = reinterpret_cast<Value*>(_cache->value(handle))->tablet.get();
     *tablet = std::shared_ptr<Tablet>(tablet1, [this, handle](...) { _cache->release(handle); });
     return Status::OK();
 }
@@ -162,6 +160,7 @@ void CloudTabletMgr::erase_tablet(int64_t tablet_id) {
 }
 
 void CloudTabletMgr::vacuum_stale_rowsets() {
+    LOG_INFO("begin to vacuum stale rowsets");
     std::vector<int64_t> tablets_to_vacuum;
     {
         std::lock_guard lock(_vacuum_set_mtx);
@@ -206,6 +205,7 @@ std::vector<std::weak_ptr<Tablet>> CloudTabletMgr::get_weak_tablets() {
 }
 
 void CloudTabletMgr::sync_tablets() {
+    LOG_INFO("begin to sync tablets");
     using namespace std::chrono;
     int64_t last_sync_time_bound =
             duration_cast<seconds>(system_clock::now().time_since_epoch()).count() -
@@ -220,6 +220,9 @@ void CloudTabletMgr::sync_tablets() {
 
     for (auto& weak_tablet : weak_tablets) {
         if (auto tablet = weak_tablet.lock()) {
+            if (tablet->tablet_state() != TABLET_RUNNING) {
+                continue;
+            }
             int64_t last_sync_time = tablet->last_sync_time();
             if (last_sync_time <= last_sync_time_bound) {
                 sync_time_tablet_set.emplace(last_sync_time, weak_tablet);
@@ -227,6 +230,7 @@ void CloudTabletMgr::sync_tablets() {
         }
     }
 
+    int num_sync = 0;
     for (auto& [_, weak_tablet] : sync_time_tablet_set) {
         if (auto tablet = weak_tablet.lock()) {
             if (tablet->last_sync_time() > last_sync_time_bound) {
@@ -236,8 +240,10 @@ void CloudTabletMgr::sync_tablets() {
             if (!st.ok()) {
                 LOG_WARNING("failed to sync tablet {}", tablet->tablet_id()).error(st);
             }
+            ++num_sync;
         }
     }
+    LOG_INFO("finish sync tablets").tag("num_sync", num_sync);
 }
 
 Status CloudTabletMgr::get_topn_tablets_to_compact(int n, CompactionType compaction_type,

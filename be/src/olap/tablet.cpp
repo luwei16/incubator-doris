@@ -59,6 +59,7 @@
 #include "olap/tablet_meta.h"
 #include "olap/tablet_meta_manager.h"
 #include "olap/tablet_schema.h"
+#include "olap/version_graph.h"
 #include "segment_loader.h"
 #include "util/path_util.h"
 #include "util/pretty_printer.h"
@@ -545,6 +546,38 @@ Status Tablet::cloud_capture_rs_readers(const Version& version_range,
 }
 
 Status Tablet::cloud_sync_rowsets(int64_t query_version) {
+    do {
+        // Sync tablet if not running.
+        // This could happen when BE didn't finish schema change job and another BE committed this schema change job.
+        // It should be a quite rare situation.
+        {
+            std::shared_lock rlock(_meta_lock);
+            if (tablet_state() == TABLET_RUNNING) break;
+        }
+        // serially execute sync to reduce unnecessary network overhead
+        std::lock_guard lock(_sync_rowsets_lock);
+        {
+            std::shared_lock rlock(_meta_lock);
+            if (tablet_state() == TABLET_RUNNING) break;
+        }
+        TabletMetaSharedPtr tablet_meta;
+        RETURN_IF_ERROR(cloud::meta_mgr()->get_tablet_meta(tablet_id(), &tablet_meta));
+        if (tablet_meta->tablet_state() != TABLET_RUNNING) { // impossible
+            return Status::InternalError("invalid tablet state. tablet_id={}", tablet_id());
+        }
+        {
+            std::lock_guard wlock(_meta_lock);
+            set_tablet_state(TABLET_RUNNING);
+            _rs_version_map.clear();
+            _stale_rs_version_map.clear();
+            _timestamped_version_tracker = TimestampedVersionTracker();
+            _tablet_meta->clear_rs_metas();
+            _tablet_meta->clear_stale_rowset();
+            _max_version = -1;
+        }
+        return cloud::meta_mgr()->sync_tablet_rowsets(this);
+    } while (false);
+    
     if (query_version > 0) {
         std::shared_lock rlock(_meta_lock);
         if (_max_version >= query_version) {
@@ -571,8 +604,15 @@ void Tablet::cloud_add_rowsets(std::vector<RowsetSharedPtr> to_add, bool version
         auto it = to_add.begin();
         size_t num_filtered = 0;
         while (it != to_add.end() - num_filtered) {
-            if (version_exists((*it)->version())) {
-                // TODO(cyx): should check rowset_id?
+            auto find_it = _rs_version_map.find((*it)->version());
+            if (find_it != _rs_version_map.end()) {
+                if (find_it->second->rowset_id() != (*it)->rowset_id()) {
+                    // If version of rowset in `to_add` is equal to rowset in tablet but rowset_id is not equal,
+                    // replace existed rowset with `to_add` rowset. This may occur during schema change.
+                    _tablet_meta->delete_rs_meta_by_version((*it)->version(), nullptr);
+                    _rs_version_map[(*it)->version()] = *it;
+                    _tablet_meta->cloud_add_rs_metas({*it});
+                }
                 std::swap(*it, *(to_add.end() - num_filtered - 1));
                 ++num_filtered;
             } else {
@@ -2412,7 +2452,7 @@ void Tablet::reset_approximate_stats(int64_t num_rowsets, int64_t num_segments, 
     int64_t cumu_num_rowsets = 0;
     auto cp = _cumulative_point.load(std::memory_order_relaxed);
     for (auto& [v, r] : _rs_version_map) {
-        if (v.second <= cp) continue;
+        if (v.second < cp) continue;
         cumu_data_size += r->data_disk_size();
         ++cumu_num_rowsets;
     }
@@ -2428,7 +2468,7 @@ int64_t Tablet::get_cloud_base_compaction_score() {
     [[maybe_unused]] int64_t delete_score = 0;
     std::shared_lock meta_rlock(_meta_lock); // This lock may be bottle neck
     for (auto& [v, r] : _rs_version_map) {
-        if (v.second > cp) continue; // Only caculate rowsets <= cumu_point
+        if (v.second >= cp) continue; // Only caculate rowsets < cumu_point
         if (v.first == v.second && r->rowset_meta()->has_delete_predicate()) ++delete_score;
         ++num_rowsets_score;
         num_segments_score += r->num_segments();

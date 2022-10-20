@@ -195,6 +195,8 @@ public:
 
     // used for after tablet cloned to clear stale rowset
     void clear_stale_rowset() { _stale_rs_metas.clear(); }
+    // CLOUD_MODE
+    void clear_rs_metas() { _rs_metas.clear(); }
 
     bool all_beta() const;
 

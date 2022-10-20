@@ -1,16 +1,25 @@
 #pragma once
 
+#include "olap/rowset/rowset.h"
 #include "olap/schema_change.h"
 
 namespace doris::cloud {
 
-class CloudSchemaChangeHandler {
+class CloudSchemaChange {
 public:
+    CloudSchemaChange(std::string job_id);
+    ~CloudSchemaChange(); 
+
     // This method is idempotent for a same request.
-    static Status process_alter_tablet(const TAlterTabletReqV2& request);
+    Status process_alter_tablet(const TAlterTabletReqV2& request);
 
 private:
-    static Status _convert_historical_rowsets(const SchemaChangeParams& sc_params);
+    Status _convert_historical_rowsets(const SchemaChangeParams& sc_params);
+
+private:
+    std::string _job_id;
+    std::vector<RowsetSharedPtr> _output_rowsets;
+    int64_t _output_cumulative_point;
 };
 
 } // namespace doris::cloud
