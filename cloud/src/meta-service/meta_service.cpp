@@ -1,6 +1,7 @@
 
 // clang-format off
 #include "meta_service.h"
+#include <gen_cpp/selectdb_cloud.pb.h>
 #include "meta-service/doris_txn.h"
 #include "meta-service/keys.h"
 #include "common/config.h"
@@ -875,6 +876,13 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
             CHECK_EQ(stat.mutable_idx()->index_id(), index_id);
             CHECK_EQ(stat.mutable_idx()->partition_id(), partition_id);
             CHECK_EQ(stat.mutable_idx()->tablet_id(), tablet_id);
+            if (stat.num_rowsets() > config::max_tablet_version_num) {
+                code = MetaServiceCode::UNDEFINED_ERR;
+                ss << "tablet exceeds max version num limit, txn_id=" << txn_id
+                   << " tablet_id=" << tablet_id << " limit=" << config::max_tablet_version_num;
+                msg = ss.str();
+                return;
+            }
             break;
         }
         auto& stat = tablet_stats[stat_key];

@@ -65,4 +65,9 @@ CONF_Int32(stream_load_default_precommit_timeout_second, "3600");
 CONF_Int32(label_keep_max_second, "259200"); //3 * 24 * 3600 seconds
 CONF_Int32(expired_txn_scan_key_nums, "1000");
 
+// Maximum number of version of a tablet. If the version num of a tablet exceed limit,
+// the load process will reject new incoming load job of this tablet.
+// This is to avoid too many version num.
+CONF_Int64(max_tablet_version_num, "2000");
+
 } // namespace selectdb::config

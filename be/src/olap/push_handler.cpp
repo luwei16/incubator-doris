@@ -43,6 +43,13 @@ Status PushHandler::cloud_process_streaming_ingestion(const TabletSharedPtr& tab
     if (push_type != PUSH_FOR_DELETE) {
         LOG(FATAL) << "Not support for push_type " << push_type;
     }
+    // check if version number exceed limit
+    if (tablet->fetch_add_approximate_num_rowsets(0) > config::max_tablet_version_num) {
+        LOG_WARNING("tablet exceeds max version num limit")
+                .tag("limit", config::max_tablet_version_num)
+                .tag("tablet_id", tablet->tablet_id());
+        return Status::OLAPInternalError(OLAP_ERR_TOO_MANY_VERSION);
+    }
     // check delete condition if push for delete
     DeletePredicatePB del_pred;
     auto tablet_schema = std::make_shared<TabletSchema>();

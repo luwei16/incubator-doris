@@ -18,6 +18,8 @@
 #include "olap/delta_writer.h"
 
 #include "cloud/utils.h"
+#include "common/config.h"
+#include "common/logging.h"
 #include "olap/base_compaction.h"
 #include "olap/cumulative_compaction.h"
 #include "olap/data_dir.h"
@@ -120,7 +122,14 @@ Status DeltaWriter::init() {
     _mem_tracker = std::make_shared<MemTrackerLimiter>(
             -1, fmt::format("DeltaWriter:tabletId={}", _tablet->tablet_id()), _parent_tracker);
 
-#ifndef CLOUD_MODE
+#ifdef CLOUD_MODE
+    if (_tablet->fetch_add_approximate_num_rowsets(0) > config::max_tablet_version_num) {
+        LOG_WARNING("tablet exceeds max version num limit")
+                .tag("limit", config::max_tablet_version_num)
+                .tag("tablet_id", _tablet->tablet_id());
+        return Status::OLAPInternalError(OLAP_ERR_TOO_MANY_VERSION);
+    }
+#else
     // check tablet version number
     if (_tablet->version_count() > config::max_tablet_version_num) {
         //trigger quick compaction

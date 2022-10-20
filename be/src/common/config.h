@@ -631,7 +631,7 @@ CONF_Int32(query_cache_max_partition_count, "1024");
 // Maximum number of version of a tablet. If the version num of a tablet exceed limit,
 // the load process will reject new incoming load job of this tablet.
 // This is to avoid too many version num.
-CONF_mInt32(max_tablet_version_num, "500");
+CONF_mInt32(max_tablet_version_num, "2000");
 
 // Frontend mainly use two thrift sever type: THREAD_POOL, THREADED_SELECTOR. if fe use THREADED_SELECTOR model for thrift server,
 // the thrift_server_type_of_fe should be set THREADED_SELECTOR to make be thrift client to fe constructed with TFramedTransport
