@@ -27,6 +27,7 @@ import org.apache.logging.log4j.Logger;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.net.StandardSocketOptions;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
 import java.util.concurrent.Future;
@@ -109,6 +110,7 @@ public class MysqlServer {
                     if (clientChannel == null) {
                         continue;
                     }
+                    clientChannel.setOption(StandardSocketOptions.SO_KEEPALIVE, true);
                     // submit this context to scheduler
                     ConnectContext context = new ConnectContext(clientChannel);
                     // Set catalog here.
