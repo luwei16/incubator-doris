@@ -169,15 +169,6 @@ Status BetaRowsetReader::init(RowsetReaderContext* read_context) {
     read_options.use_topn_opt = read_context->use_topn_opt;
     read_options.read_orderby_key_reverse = read_context->read_orderby_key_reverse;
     read_options.read_orderby_key_columns = read_context->read_orderby_key_columns;
-    if (read_context->read_orderby_key_limit > 0) {
-        size_t limit = read_context->read_orderby_key_limit;
-        if (read_context->predicates != nullptr) {
-            limit = limit * 2;
-        }
-        if (read_options.block_row_max > limit) {
-            read_options.block_row_max = limit;
-        }
-    }
     read_options.kept_in_memory = read_context->kept_in_memory;
     read_options.is_persistent = read_context->is_persistent;
     read_options.runtime_state = read_context->runtime_state;
