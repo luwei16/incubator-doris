@@ -84,8 +84,6 @@ private:
     // make sure this handle is initialized and valid before
     // reading data.
     SegmentCacheHandle _segment_cache_handle;
-
-    bool _empty = false;
 };
 
 } // namespace doris

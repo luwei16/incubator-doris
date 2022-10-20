@@ -194,11 +194,6 @@ Status BetaRowsetReader::init(RowsetReaderContext* read_context) {
         seg_iterators.push_back(std::move(iter));
     }
 
-    if (seg_iterators.empty() && read_context->is_vec) {
-        _empty = true;
-        return Status::OK();
-    }
-
     std::vector<RowwiseIterator*> iterators;
     for (auto& owned_it : seg_iterators) {
         // transfer ownership of segment iterator to `_iterator`
@@ -303,9 +298,6 @@ Status BetaRowsetReader::next_block(RowBlock** block) {
 
 Status BetaRowsetReader::next_block(vectorized::Block* block) {
     SCOPED_RAW_TIMER(&_stats->block_fetch_ns);
-
-    if (_empty) return Status::OLAPInternalError(OLAP_ERR_DATA_EOF);
-
     if (config::enable_storage_vectorization && _context->is_vec) {
         do {
             auto s = _iterator->next_batch(block);
