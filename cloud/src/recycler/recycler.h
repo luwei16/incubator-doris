@@ -90,6 +90,9 @@ public:
     //scan and recycle expire txn label
     void recycle_expired_txn_label();
 
+    // scan and recycle finished or timeout copy jobs
+    void recycle_copy_jobs();
+
 private:
     /**
      * Scan key-value pairs between [`begin`, `end`), and perform `recycle_func` on each key-value pair.
@@ -110,6 +113,7 @@ private:
 private:
     std::shared_ptr<TxnKv> txn_kv_;
     std::string instance_id_;
+    InstanceInfoPB instance_info_;
     std::unordered_map<std::string, std::shared_ptr<ObjStoreAccessor>> accessor_map_;
 };
 

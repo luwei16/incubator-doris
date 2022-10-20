@@ -35,6 +35,12 @@ public:
 
     // returns 0 for success otherwise error
     virtual int list(const std::string& relative_path, std::vector<std::string>* keys) = 0;
+
+    // returns 0 for success otherwise error
+    virtual int exists(const std::string& relative_path, const std::string& etag, bool* exist) = 0;
+
+    // returns 0 for success otherwise error
+    virtual int get_etag(const std::string& relative_path, std::string* etag) = 0;
 };
 
 struct S3Conf {
@@ -71,6 +77,13 @@ public:
 
     // returns 0 for success otherwise error
     int list(const std::string& relative_path, std::vector<std::string>* keys) override;
+
+    // returns 0 for success otherwise error
+    int exists(const std::string& relative_path, const std::string& etag,
+               bool* exist) override;
+
+    // returns 0 for success otherwise error
+    int get_etag(const std::string& relative_path, std::string* etag) override;
 
 private:
     std::string get_key(const std::string& relative_path) const;

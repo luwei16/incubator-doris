@@ -73,6 +73,19 @@ public:
         return 0;
     }
 
+    // returns 0 for success otherwise error
+    int exists(const std::string& relative_path, const std::string& etag, bool* exist) override {
+        std::lock_guard lock(mtx_);
+        *exist = objects_.find(relative_path) != objects_.end();
+        return 0;
+    }
+
+    // returns 0 for success otherwise error
+    int get_etag(const std::string& relative_path, std::string* etag) override {
+        *etag = relative_path;
+        return 0;
+    }
+
 private:
     std::string path_;
 
