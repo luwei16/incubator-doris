@@ -1026,3 +1026,93 @@ TEST(MetaServiceTest, RetrySchemaChangeJobTest) {
         EXPECT_EQ(it->size(), 3);
     }
 }
+
+TEST(MetaServiceTest, ConflictCompactionTest) {
+    auto meta_service = get_meta_service();
+    meta_service->resource_mgr_.reset(); // Do not use resource manager
+
+    std::string instance_id = "tablet_job_test_instance_id";
+
+    [[maybe_unused]] auto sp = SyncPoint::get_instance();
+    sp->set_call_back("get_instance_id::pred", [](void* p) { *((bool*)p) = true; });
+    sp->set_call_back("get_instance_id", [&](void* p) { *((std::string*)p) = instance_id; });
+    sp->enable_processing();
+
+    brpc::Controller cntl;
+
+    int64_t table_id = 1;
+    int64_t index_id = 2;
+    int64_t partition_id = 3;
+    int64_t tablet_id = 4;
+
+    // create tablet
+    {
+        CreateTabletRequest req;
+        MetaServiceGenericResponse res;
+        auto tablet_meta_pb = req.mutable_tablet_meta();
+        tablet_meta_pb->set_table_id(table_id);
+        tablet_meta_pb->set_index_id(index_id);
+        tablet_meta_pb->set_partition_id(partition_id);
+        tablet_meta_pb->set_tablet_id(tablet_id);
+        tablet_meta_pb->set_tablet_state(doris::TabletStatePB::PB_RUNNING);
+        auto rs_meta_pb = tablet_meta_pb->add_rs_metas();
+        rs_meta_pb->set_tablet_id(tablet_id);
+        rs_meta_pb->set_rowset_id(0);
+        // rs_meta_pb->set_rowset_id_v2("xxx");
+        rs_meta_pb->set_start_version(0);
+        rs_meta_pb->set_end_version(1);
+        meta_service->create_tablet(&cntl, &req, &res, nullptr);
+        ASSERT_EQ(res.status().code(), MetaServiceCode::OK);
+    };
+
+    {
+        StartTabletJobRequest req;
+        StartTabletJobResponse res;
+        req.mutable_job()->mutable_compaction()->set_id("job1");
+        req.mutable_job()->mutable_compaction()->set_initiator("BE1");
+        req.mutable_job()->mutable_idx()->set_tablet_id(tablet_id);
+        req.mutable_job()->mutable_compaction()->set_base_compaction_cnt(0);
+        req.mutable_job()->mutable_compaction()->set_cumulative_compaction_cnt(0);
+        meta_service->start_tablet_job(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
+                                       &req, &res, nullptr);
+        ASSERT_EQ(res.status().code(), MetaServiceCode::OK);
+    }
+
+    {
+        StartTabletJobRequest req;
+        StartTabletJobResponse res;
+        req.mutable_job()->mutable_compaction()->set_id("job2");
+        req.mutable_job()->mutable_compaction()->set_initiator("BE1");
+        req.mutable_job()->mutable_idx()->set_tablet_id(tablet_id);
+        req.mutable_job()->mutable_compaction()->set_base_compaction_cnt(0);
+        req.mutable_job()->mutable_compaction()->set_cumulative_compaction_cnt(0);
+        meta_service->start_tablet_job(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
+                                       &req, &res, nullptr);
+        ASSERT_EQ(res.status().code(), MetaServiceCode::OK); // preempt
+    }
+
+    {
+        StartTabletJobRequest req;
+        StartTabletJobResponse res;
+        req.mutable_job()->mutable_compaction()->set_id("job3");
+        req.mutable_job()->mutable_compaction()->set_initiator("BE2");
+        req.mutable_job()->mutable_idx()->set_tablet_id(tablet_id);
+        req.mutable_job()->mutable_compaction()->set_base_compaction_cnt(0);
+        req.mutable_job()->mutable_compaction()->set_cumulative_compaction_cnt(0);
+        meta_service->start_tablet_job(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
+                                       &req, &res, nullptr);
+        ASSERT_EQ(res.status().code(), MetaServiceCode::JOB_TABLET_BUSY);
+    }
+
+    // check job kv
+    std::unique_ptr<Transaction> txn;
+    ASSERT_EQ(meta_service->txn_kv_->create_txn(&txn), 0);
+    std::string job_key =
+            job_tablet_key({instance_id, table_id, index_id, partition_id, tablet_id});
+    std::string job_val;
+    TabletJobInfoPB job_pb;
+    ASSERT_EQ(txn->get(job_key, &job_val), 0);
+    ASSERT_TRUE(job_pb.ParseFromString(job_val));
+    ASSERT_EQ(job_pb.compaction().id(), "job2");
+    ASSERT_EQ(job_pb.compaction().initiator(), "BE1");
+}

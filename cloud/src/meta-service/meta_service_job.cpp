@@ -158,8 +158,15 @@ void start_compaction_job(MetaServiceCode& code, std::string& msg, std::stringst
            << " tablet_id=" << tablet_id << " job=" << proto_to_json(job_pb);
         msg = ss.str();
         // TODO(gavin): more condition to check
-        code = compaction.id() == recorded_compaction.id() ? MetaServiceCode::OK // Idempotency
-                                                           : MetaServiceCode::JOB_TABLET_BUSY;
+        if (compaction.id() == recorded_compaction.id()) {
+            code = MetaServiceCode::OK; // Idempotency
+        } else if (compaction.initiator() == recorded_compaction.initiator()) {
+            LOG(WARNING) << "preempt compaction job of same initiator. instance_id=" << instance_id
+                         << " job=" << proto_to_json(recorded_compaction);
+            break;
+        } else {
+            code = MetaServiceCode::JOB_TABLET_BUSY;
+        }
         return;
     }
     job_pb.mutable_idx()->CopyFrom(request->job().idx());
