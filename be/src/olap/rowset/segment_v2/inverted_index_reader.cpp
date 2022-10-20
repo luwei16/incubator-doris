@@ -535,17 +535,18 @@ lucene::util::bkd::relation InvertedIndexVisitor::compare(std::vector<uint8_t>& 
 Status InvertedIndexIterator::read_from_inverted_index(const std::string& column_name,
                                                        const void* query_value,
                                                        InvertedIndexQueryType query_type,
+                                                       uint32_t segment_num_rows,
                                                        roaring::Roaring* bit_map) {
     if (_reader->type() == InvertedIndexReaderType::BKD) {
         auto query_bkd_limit_percent = config::query_bkd_inverted_index_limit_percent;
         uint32_t hit_count = 0;
         RETURN_IF_ERROR(try_read_from_inverted_index(column_name, query_value, query_type, &hit_count));
-        if (hit_count > _segment_num_rows * query_bkd_limit_percent / 100) {
+        if (hit_count > segment_num_rows * query_bkd_limit_percent / 100) {
             LOG(INFO) << "hit count: " << hit_count 
-                    << ", reached limit " << query_bkd_limit_percent << "%, segment num rows: " << _segment_num_rows;
+                    << ", reached limit " << query_bkd_limit_percent << "%, segment num rows: " << segment_num_rows;
             return Status::OLAPInternalError(OLAP_ERR_INVERTED_INDEX_HIT_LIMIT,
                     fmt::format("hit count '{}' for bkd inverted reached limit '{}%', segment num rows: {}",
-                                hit_count, query_bkd_limit_percent, _segment_num_rows));
+                                hit_count, query_bkd_limit_percent, segment_num_rows));
         }
     }
    
@@ -575,10 +576,6 @@ InvertedIndexParserType InvertedIndexIterator::get_inverted_index_analyser_type(
 
 InvertedIndexReaderType InvertedIndexIterator::get_inverted_index_reader_type() const {
     return _reader->type();
-}
-
-void InvertedIndexIterator::set_segment_num_rows(uint32_t num) {
-    _segment_num_rows = num;
 }
 
 } // namespace segment_v2

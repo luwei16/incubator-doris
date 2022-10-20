@@ -184,7 +184,7 @@ public:
     }
 
     Status evaluate(const Schema& schema, InvertedIndexIterator* iterator,
-                    roaring::Roaring* result) const override {
+                    uint32_t num_rows, roaring::Roaring* result) const override {
         if (iterator == nullptr) {
             return Status::OK();
         }
@@ -195,7 +195,7 @@ public:
             InvertedIndexQueryType query_type = InvertedIndexQueryType::EQUAL_QUERY;
             roaring::Roaring index;
             RETURN_IF_ERROR(
-                    iterator->read_from_inverted_index(column_name, &value, query_type, &index));
+                    iterator->read_from_inverted_index(column_name, &value, query_type, num_rows, &index));
             indices |= index;
         }
         if constexpr (PT == PredicateType::IN_LIST) {

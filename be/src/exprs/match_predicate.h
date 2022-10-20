@@ -72,7 +72,7 @@ public:
 
     //evaluate predicate on inverted
     Status evaluate(const Schema& schema, InvertedIndexIterator* iterator,
-                    roaring::Roaring* bitmap) const override;
+                    uint32_t num_rows, roaring::Roaring* bitmap) const override;
 
 private:
     InvertedIndexQueryType _to_inverted_index_query_type(MatchType match_type) const;

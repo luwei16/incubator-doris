@@ -182,7 +182,7 @@ public:
     }
 
     Status evaluate(const Schema& schema, InvertedIndexIterator* iterator,
-                              roaring::Roaring* bitmap) const override {
+                            uint32_t num_rows, roaring::Roaring* bitmap) const override {
         if (iterator == nullptr) {
             return Status::OK();
         }
@@ -216,7 +216,7 @@ public:
 
         roaring::Roaring roaring;
         RETURN_IF_ERROR(
-            iterator->read_from_inverted_index(column_name, &_value, query_type, &roaring));
+            iterator->read_from_inverted_index(column_name, &_value, query_type, num_rows, &roaring));
         
         if constexpr(PT == PredicateType::NE) {
             *bitmap -= roaring;

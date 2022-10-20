@@ -206,7 +206,8 @@ public:
             : _reader(reader), _analyser_type(analyser_type) {}
 
     Status read_from_inverted_index(const std::string& column_name, const void* query_value,
-                                    InvertedIndexQueryType query_type, roaring::Roaring* bit_map);
+                                    InvertedIndexQueryType query_type, uint32_t segment_num_rows, 
+                                    roaring::Roaring* bit_map);
     Status try_read_from_inverted_index(const std::string& column_name, const void* query_value,
                                     InvertedIndexQueryType query_type, uint32_t* count);
 
@@ -214,13 +215,10 @@ public:
 
     InvertedIndexReaderType get_inverted_index_reader_type() const;
 
-    void set_segment_num_rows(uint32_t num);
-
 private:
     InvertedIndexReader* _reader;
     std::string _column_name;
     InvertedIndexParserType _analyser_type;
-    uint32_t _segment_num_rows = 0;
 };
 
 } // namespace segment_v2

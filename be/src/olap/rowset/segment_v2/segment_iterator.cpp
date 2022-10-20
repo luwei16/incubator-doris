@@ -592,8 +592,7 @@ Status SegmentIterator::_apply_inverted_index() {
             remaining_predicates.push_back(pred);
         } else {
             roaring::Roaring bitmap = _row_bitmap;
-            _inverted_index_iterators[unique_id]->set_segment_num_rows(num_rows());
-            Status res = pred->evaluate(_schema, _inverted_index_iterators[unique_id], &bitmap);
+            Status res = pred->evaluate(_schema, _inverted_index_iterators[unique_id], num_rows(), &bitmap);
             if (!res.ok()) {
                 if ((res.precise_code() == OLAP_ERR_INVERTED_INDEX_FILE_NOT_FOUND && pred->type() != PredicateType::MATCH)
                         || res.precise_code() == OLAP_ERR_INVERTED_INDEX_HIT_LIMIT) {
@@ -771,8 +770,7 @@ Status SegmentIterator::_apply_bitmap_index_in_compound(ColumnPredicate* pred, r
 
 Status SegmentIterator::_apply_inverted_index_in_compound(ColumnPredicate* pred, roaring::Roaring* output_result) {
     int32_t unique_id = _schema.unique_id(pred->column_id());
-    _inverted_index_iterators[unique_id]->set_segment_num_rows(num_rows());
-    RETURN_IF_ERROR(pred->evaluate(_schema, _inverted_index_iterators[unique_id], output_result));
+    RETURN_IF_ERROR(pred->evaluate(_schema, _inverted_index_iterators[unique_id], num_rows(), output_result));
     return Status::OK();
 }
 

@@ -97,7 +97,7 @@ public:
 
     //evaluate predicate on inverted
     virtual Status evaluate(const Schema& schema, InvertedIndexIterator* iterators,
-                            roaring::Roaring* bitmap) const {
+                            uint32_t num_rows, roaring::Roaring* bitmap) const {
         return Status::NotSupported(
                 "Not Implemented evaluate with inverted index, please check the predicate");
     }
