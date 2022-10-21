@@ -688,6 +688,7 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
         code = MetaServiceCode::TXN_ALREADY_VISIBLE;
         ss << "transaction is already visible: db_id=" << db_id << " txn_id=" << txn_id;
         msg = ss.str();
+        response->mutable_txn_info()->CopyFrom(txn_info);
         return;
     }
 
