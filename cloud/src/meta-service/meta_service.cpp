@@ -172,7 +172,6 @@ void MetaServiceImpl::begin_txn(::google::protobuf::RpcController* controller,
     //ret > 0, means label not exist previously.
     txn->atomic_set_ver_value(txn_label_key_, txn_label_val);
     LOG(INFO) << "txn->atomic_set_ver_value txn_label_key=" << hex(txn_label_key_);
-
     ret = txn->commit();
     if (ret != 0) {
         code = ret == -1 ? MetaServiceCode::KV_TXN_CONFLICT : MetaServiceCode::KV_TXN_COMMIT_ERR;
@@ -182,8 +181,11 @@ void MetaServiceImpl::begin_txn(::google::protobuf::RpcController* controller,
         return;
     }
 
+    TEST_SYNC_POINT_CALLBACK("begin_txn:after:commit_txn:1", &label);
+
     //2. Get txn id from version stamp
     txn.reset();
+
     txn_kv_->create_txn(&txn);
     if (ret != 0) {
         code = MetaServiceCode::KV_TXN_CREATE_ERR;
@@ -386,6 +388,7 @@ void MetaServiceImpl::begin_txn(::google::protobuf::RpcController* controller,
         msg = ss.str();
         return;
     }
+    TEST_SYNC_POINT_CALLBACK("begin_txn:after:commit_txn:2", &txn_id);
     response->set_txn_id(txn_id);
     return;
 }
