@@ -24,6 +24,7 @@
 #include "vec/exec/scan/new_olap_scanner.h"
 #include "vec/functions/in.h"
 #include "vec/exprs/vslot_ref.h"
+#include "cloud/utils.h"
 
 namespace doris::vectorized {
 
@@ -178,6 +179,20 @@ Status NewOlapScanNode::_init_profile() {
 
     _filtered_segment_counter = ADD_COUNTER(_segment_profile, "NumSegmentFiltered", TUnit::UNIT);
     _total_segment_counter = ADD_COUNTER(_segment_profile, "NumSegmentTotal", TUnit::UNIT);
+
+    _num_io_total = ADD_COUNTER(_scanner_profile, "NumIOTotal", TUnit::UNIT);
+    _num_io_hit_cache = ADD_COUNTER(_scanner_profile, "NumIOHitCache", TUnit::UNIT);
+    _num_io_bytes_read_total = ADD_COUNTER(_scanner_profile, "NumIOBytesReadTotal", TUnit::UNIT);
+    _num_io_bytes_read_from_file_cache =
+            ADD_COUNTER(_scanner_profile, "NumIOBytesReadFromFileCache", TUnit::UNIT);
+    _num_io_bytes_read_from_write_cache =
+            ADD_COUNTER(_scanner_profile, "NumIOBytesReadFromWriteCache", TUnit::UNIT);
+    _num_io_written_in_file_cache =
+            ADD_COUNTER(_scanner_profile, "NumIOWrittenInFileCache", TUnit::UNIT);
+    _num_io_bytes_written_in_file_cache =
+            ADD_COUNTER(_scanner_profile, "NumIOBytesWrittenInFileCache", TUnit::UNIT);
+    _num_io_bytes_skip_cache = ADD_COUNTER(_scanner_profile, "NumIOBytesSkipCache", TUnit::UNIT);
+    _cloud_get_rowset_version_timer = ADD_TIMER(_scanner_profile, "CloudGetVersionTime");
 
     // for the purpose of debugging or profiling
     for (int i = 0; i < GENERAL_DEBUG_COUNT; ++i) {
@@ -414,6 +429,10 @@ Status NewOlapScanNode::_init_scanners(std::list<VScanner*>* scanners) {
     std::unordered_set<std::string> disk_set;
     for (auto& scan_range : _scan_ranges) {
         auto tablet_id = scan_range->tablet_id;
+#ifdef CLOUD_MODE
+        TabletSharedPtr tablet;
+        RETURN_IF_ERROR(cloud::tablet_mgr()->get_tablet(tablet_id, &tablet));
+#else
         std::string err;
         TabletSharedPtr tablet =
                 StorageEngine::instance()->tablet_manager()->get_tablet(tablet_id, true, &err);
@@ -423,6 +442,7 @@ Status NewOlapScanNode::_init_scanners(std::list<VScanner*>* scanners) {
             LOG(WARNING) << ss.str();
             return Status::InternalError(ss.str());
         }
+#endif
 
         std::vector<std::unique_ptr<doris::OlapScanRange>>* ranges = &cond_ranges;
         int size_based_scanners_per_tablet = 1;

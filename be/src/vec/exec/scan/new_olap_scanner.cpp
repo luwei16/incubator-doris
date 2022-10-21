@@ -20,6 +20,7 @@
 #include "olap/storage_engine.h"
 #include "vec/exec/scan/new_olap_scan_node.h"
 #include "vec/olap/block_reader.h"
+#include "cloud/utils.h"
 
 namespace doris::vectorized {
 
@@ -56,6 +57,16 @@ Status NewOlapScanner::prepare(
     TTabletId tablet_id = scan_range.tablet_id;
     _version = strtoul(scan_range.version.c_str(), nullptr, 10);
     {
+#ifdef CLOUD_MODE
+        {
+            NewOlapScanNode* olap_parent = (NewOlapScanNode*)_parent;
+            SCOPED_TIMER(olap_parent->_cloud_get_rowset_version_timer);
+            RETURN_IF_ERROR(cloud::tablet_mgr()->get_tablet(tablet_id, &_tablet));
+            RETURN_IF_ERROR(_tablet->cloud_sync_rowsets(_version));
+        }
+        RETURN_IF_ERROR(_tablet->cloud_capture_rs_readers({0, _version},
+                                                          &_tablet_reader_params.rs_readers));
+#else
         std::string err;
         _tablet = StorageEngine::instance()->tablet_manager()->get_tablet(tablet_id, true, &err);
         if (_tablet.get() == nullptr) {
@@ -64,8 +75,34 @@ Status NewOlapScanner::prepare(
             LOG(WARNING) << ss.str();
             return Status::InternalError(ss.str());
         }
-        _tablet_schema->copy_from(*_tablet->tablet_schema());
 
+        {
+            std::shared_lock rdlock(_tablet->get_header_lock());
+            const RowsetSharedPtr rowset = _tablet->rowset_with_max_version();
+            if (rowset == nullptr) {
+                std::stringstream ss;
+                ss << "fail to get latest version of tablet: " << tablet_id;
+                LOG(WARNING) << ss.str();
+                return Status::InternalError(ss.str());
+            }
+
+            // acquire tablet rowset readers at the beginning of the scan node
+            // to prevent this case: when there are lots of olap scanners to run for example 10000
+            // the rowsets maybe compacted when the last olap scanner starts
+            Version rd_version(0, _version);
+            Status acquire_reader_st =
+                    _tablet->capture_rs_readers(rd_version, &_tablet_reader_params.rs_readers);
+            if (!acquire_reader_st.ok()) {
+                LOG(WARNING) << "fail to init reader.res=" << acquire_reader_st;
+                std::stringstream ss;
+                ss << "failed to initialize storage reader. tablet=" << _tablet->full_name()
+                   << ", res=" << acquire_reader_st
+                   << ", backend=" << BackendOptions::get_localhost();
+                return Status::InternalError(ss.str());
+            }
+        }
+#endif
+        _tablet_schema->copy_from(*_tablet->tablet_schema());
         TOlapScanNode& olap_scan_node = ((NewOlapScanNode*)_parent)->_olap_scan_node;
         if (olap_scan_node.__isset.columns_desc && !olap_scan_node.columns_desc.empty() &&
             olap_scan_node.columns_desc[0].col_unique_id >= 0) {
@@ -93,40 +130,10 @@ Status NewOlapScanner::prepare(
                 rowid_column.set_type(FieldType::OLAP_FIELD_TYPE_STRING);
                 _tablet_schema->append_column(rowid_column);
             }
-        } 
-        
-        {
-            std::shared_lock rdlock(_tablet->get_header_lock());
-            const RowsetSharedPtr rowset = _tablet->rowset_with_max_version();
-            if (rowset == nullptr) {
-                std::stringstream ss;
-                ss << "fail to get latest version of tablet: " << tablet_id;
-                LOG(WARNING) << ss.str();
-                return Status::InternalError(ss.str());
-            }
-
-            // acquire tablet rowset readers at the beginning of the scan node
-            // to prevent this case: when there are lots of olap scanners to run for example 10000
-            // the rowsets maybe compacted when the last olap scanner starts
-            Version rd_version(0, _version);
-            Status acquire_reader_st =
-                    _tablet->capture_rs_readers(rd_version, &_tablet_reader_params.rs_readers);
-            if (!acquire_reader_st.ok()) {
-                LOG(WARNING) << "fail to init reader.res=" << acquire_reader_st;
-                std::stringstream ss;
-                ss << "failed to initialize storage reader. tablet=" << _tablet->full_name()
-                   << ", res=" << acquire_reader_st
-                   << ", backend=" << BackendOptions::get_localhost();
-                return Status::InternalError(ss.str());
-            }
-
-            // Initialize tablet_reader_params
-            RETURN_IF_ERROR(_init_tablet_reader_params(key_ranges, filters, bloom_filters,
-                                                       function_filters));
         }
     }
-
-    return Status::OK();
+    // Initialize tablet_reader_params
+    return _init_tablet_reader_params(key_ranges, filters, bloom_filters, function_filters);
 }
 
 Status NewOlapScanner::open(RuntimeState* state) {
@@ -460,6 +467,21 @@ void NewOlapScanner::_update_counters_before_close() {
 
     COUNTER_UPDATE(olap_parent->_filtered_segment_counter, stats.filtered_segment_number);
     COUNTER_UPDATE(olap_parent->_total_segment_counter, stats.total_segment_number);
+
+    COUNTER_UPDATE(olap_parent->_num_io_total, stats.file_cache_stats.num_io_total);
+    COUNTER_UPDATE(olap_parent->_num_io_hit_cache, stats.file_cache_stats.num_io_hit_cache);
+    COUNTER_UPDATE(olap_parent->_num_io_bytes_read_total,
+                   stats.file_cache_stats.num_io_bytes_read_total);
+    COUNTER_UPDATE(olap_parent->_num_io_bytes_read_from_file_cache,
+                   stats.file_cache_stats.num_io_bytes_read_from_file_cache);
+    COUNTER_UPDATE(olap_parent->_num_io_bytes_read_from_write_cache,
+                   stats.file_cache_stats.num_io_bytes_read_from_write_cache);
+    COUNTER_UPDATE(olap_parent->_num_io_written_in_file_cache,
+                   stats.file_cache_stats.num_io_written_in_file_cache);
+    COUNTER_UPDATE(olap_parent->_num_io_bytes_written_in_file_cache,
+                   stats.file_cache_stats.num_io_bytes_written_in_file_cache);
+    COUNTER_UPDATE(olap_parent->_num_io_bytes_skip_cache,
+                   stats.file_cache_stats.num_io_bytes_skip_cache);
 
     // Update metrics
     DorisMetrics::instance()->query_scan_bytes->increment(_compressed_bytes_read);
