@@ -17,6 +17,7 @@
 
 package org.apache.doris.metric;
 
+import org.apache.doris.catalog.Env;
 import org.apache.doris.common.Config;
 import org.apache.doris.metric.Metric.MetricUnit;
 
@@ -45,55 +46,61 @@ public class MetricCalculator extends TimerTask {
     }
 
     private void updateClusterMetrics(long interval) {
-        MetricRepo.CLOUD_CLUSTER_COUNTER_QUERY_ALL.forEach((clusterId, metric) -> {
-            long clusterLastQueryCounter = cloudClusterLastQueryCounter.computeIfAbsent(clusterId, key -> {
+        MetricRepo.CLOUD_CLUSTER_COUNTER_QUERY_ALL.forEach((clusterName, metric) -> {
+            long clusterLastQueryCounter = cloudClusterLastQueryCounter.computeIfAbsent(clusterName, key -> {
                 return metric.getValue();
             });
             long clusterCurrentQueryCounter = metric.getValue();
             double clusterQps = (double) (clusterCurrentQueryCounter - clusterLastQueryCounter) / interval;
-            MetricRepo.CLOUD_CLUSTER_GAUGE_QUERY_PER_SECOND.computeIfAbsent(clusterId, key -> {
+            MetricRepo.CLOUD_CLUSTER_GAUGE_QUERY_PER_SECOND.computeIfAbsent(clusterName, key -> {
+                String clusterId = Env.getCurrentSystemInfo().getCloudClusterNameToId().get(clusterName);
                 GaugeMetricImpl<Double> gaugeQueryPerSecond = new GaugeMetricImpl<>("qps", MetricUnit.NOUNIT,
                         "query per second");
-                gaugeQueryPerSecond.addLabel(new MetricLabel("cluster", clusterId));
+                gaugeQueryPerSecond.addLabel(new MetricLabel("cluster_id", clusterId));
+                gaugeQueryPerSecond.addLabel(new MetricLabel("cluster_name", clusterName));
                 gaugeQueryPerSecond.setValue(0.0);
                 MetricRepo.DORIS_METRIC_REGISTER.addMetrics(gaugeQueryPerSecond);
                 return gaugeQueryPerSecond;
             }).setValue(clusterQps < 0 ? 0.0 : clusterQps);
-            cloudClusterLastQueryCounter.replace(clusterId, clusterCurrentQueryCounter);
+            cloudClusterLastQueryCounter.replace(clusterName, clusterCurrentQueryCounter);
         });
 
-        MetricRepo.CLOUD_CLUSTER_COUNTER_REQUEST_ALL.forEach((clusterId, metric) -> {
-            long clusterLastRequestCounter = cloudClusterLastRequestCounter.computeIfAbsent(clusterId, key -> {
+        MetricRepo.CLOUD_CLUSTER_COUNTER_REQUEST_ALL.forEach((clusterName, metric) -> {
+            long clusterLastRequestCounter = cloudClusterLastRequestCounter.computeIfAbsent(clusterName, key -> {
                 return metric.getValue();
             });
             long clusterCurrentRequestCounter = metric.getValue();
             double clusterRps = (double) (clusterCurrentRequestCounter - clusterLastRequestCounter) / interval;
-            MetricRepo.CLOUD_CLUSTER_GAUGE_REQUEST_PER_SECOND.computeIfAbsent(clusterId, key -> {
+            MetricRepo.CLOUD_CLUSTER_GAUGE_REQUEST_PER_SECOND.computeIfAbsent(clusterName, key -> {
+                String clusterId = Env.getCurrentSystemInfo().getCloudClusterNameToId().get(clusterName);
                 GaugeMetricImpl<Double> gaugeRequestPerSecond = new GaugeMetricImpl<>("rps", MetricUnit.NOUNIT,
                         "request per second");
-                gaugeRequestPerSecond.addLabel(new MetricLabel("cluster", clusterId));
+                gaugeRequestPerSecond.addLabel(new MetricLabel("cluster_id", clusterId));
+                gaugeRequestPerSecond.addLabel(new MetricLabel("cluster_name", clusterName));
                 gaugeRequestPerSecond.setValue(0.0);
                 MetricRepo.DORIS_METRIC_REGISTER.addMetrics(gaugeRequestPerSecond);
                 return gaugeRequestPerSecond;
             }).setValue(clusterRps < 0 ? 0.0 : clusterRps);
-            cloudClusterLastRequestCounter.replace(clusterId, clusterCurrentRequestCounter);
+            cloudClusterLastRequestCounter.replace(clusterName, clusterCurrentRequestCounter);
         });
 
-        MetricRepo.CLOUD_CLUSTER_COUNTER_QUERY_ERR.forEach((clusterId, metric) -> {
-            long clusterLastQueryErrCounter = cloudClusterLastQueryErrCounter.computeIfAbsent(clusterId, key -> {
+        MetricRepo.CLOUD_CLUSTER_COUNTER_QUERY_ERR.forEach((clusterName, metric) -> {
+            long clusterLastQueryErrCounter = cloudClusterLastQueryErrCounter.computeIfAbsent(clusterName, key -> {
                 return metric.getValue();
             });
             long clusterCurrentQueryErrCounter = metric.getValue();
             double clusterErrRate = (double) (clusterCurrentQueryErrCounter - clusterLastQueryErrCounter) / interval;
-            MetricRepo.CLOUD_CLUSTER_GAUGE_QUERY_ERR_RATE.computeIfAbsent(clusterId, key -> {
+            MetricRepo.CLOUD_CLUSTER_GAUGE_QUERY_ERR_RATE.computeIfAbsent(clusterName, key -> {
+                String clusterId = Env.getCurrentSystemInfo().getCloudClusterNameToId().get(clusterName);
                 GaugeMetricImpl<Double> gaugeQueryErrRate = new GaugeMetricImpl<>("query_err_rate",
                         MetricUnit.NOUNIT, "query error rate");
-                gaugeQueryErrRate.addLabel(new MetricLabel("cluster", clusterId));
+                gaugeQueryErrRate.addLabel(new MetricLabel("cluster_id", clusterId));
+                gaugeQueryErrRate.addLabel(new MetricLabel("cluster_name", clusterName));
                 gaugeQueryErrRate.setValue(0.0);
                 MetricRepo.DORIS_METRIC_REGISTER.addMetrics(gaugeQueryErrRate);
                 return gaugeQueryErrRate;
             }).setValue(clusterErrRate < 0 ? 0.0 : clusterErrRate);
-            cloudClusterLastQueryErrCounter.replace(clusterId, clusterCurrentQueryErrCounter);
+            cloudClusterLastQueryErrCounter.replace(clusterName, clusterCurrentQueryErrCounter);
         });
     }
 
@@ -105,14 +112,14 @@ public class MetricCalculator extends TimerTask {
             lastRequestCounter = MetricRepo.COUNTER_REQUEST_ALL.getValue();
             lastQueryErrCounter = MetricRepo.COUNTER_QUERY_ERR.getValue();
             if (!Config.cloud_unique_id.isEmpty()) {
-                MetricRepo.CLOUD_CLUSTER_COUNTER_QUERY_ALL.forEach((clusterId, metric) -> {
-                    cloudClusterLastQueryCounter.put(clusterId, metric.getValue());
+                MetricRepo.CLOUD_CLUSTER_COUNTER_QUERY_ALL.forEach((clusterName, metric) -> {
+                    cloudClusterLastQueryCounter.put(clusterName, metric.getValue());
                 });
-                MetricRepo.CLOUD_CLUSTER_COUNTER_REQUEST_ALL.forEach((clusterId, metric) -> {
-                    cloudClusterLastRequestCounter.put(clusterId, metric.getValue());
+                MetricRepo.CLOUD_CLUSTER_COUNTER_REQUEST_ALL.forEach((clusterName, metric) -> {
+                    cloudClusterLastRequestCounter.put(clusterName, metric.getValue());
                 });
-                MetricRepo.CLOUD_CLUSTER_COUNTER_QUERY_ERR.forEach((clusterId, metric) -> {
-                    cloudClusterLastQueryErrCounter.put(clusterId, metric.getValue());
+                MetricRepo.CLOUD_CLUSTER_COUNTER_QUERY_ERR.forEach((clusterName, metric) -> {
+                    cloudClusterLastQueryErrCounter.put(clusterName, metric.getValue());
                 });
             }
             return;

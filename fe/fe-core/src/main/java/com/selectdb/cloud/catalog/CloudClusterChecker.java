@@ -228,13 +228,15 @@ public class CloudClusterChecker extends MasterDaemon {
 
         // Metric
         clusterIdToBackend = Env.getCurrentSystemInfo().getCloudClusterIdToBackend();
-        for (Map.Entry<String, List<Backend>> entry : clusterIdToBackend.entrySet()) {
+        Map<String, String> clusterNameToId = Env.getCurrentSystemInfo().getCloudClusterNameToId();
+        for (Map.Entry<String, String> entry : clusterNameToId.entrySet()) {
             long aliveNum = 0L;
-            for (Backend backend : entry.getValue()) {
+            for (Backend backend : clusterIdToBackend.get(entry.getValue())) {
                 MetricRepo.CLOUD_CLUSTER_BACKEND_ALIVE.computeIfAbsent(backend.getAddress(), key -> {
                     GaugeMetricImpl<Integer> backendAlive = new GaugeMetricImpl<>("backend_alive", MetricUnit.NOUNIT,
-                                "backend alive or not");
-                    backendAlive.addLabel(new MetricLabel("cluster", entry.getKey()));
+                            "backend alive or not");
+                    backendAlive.addLabel(new MetricLabel("cluster_id", entry.getValue()));
+                    backendAlive.addLabel(new MetricLabel("cluster_name", entry.getKey()));
                     backendAlive.addLabel(new MetricLabel("address", key));
                     MetricRepo.DORIS_METRIC_REGISTER.addMetrics(backendAlive);
                     return backendAlive;
@@ -243,10 +245,11 @@ public class CloudClusterChecker extends MasterDaemon {
             }
 
             MetricRepo.CLOUD_CLUSTER_BACKEND_ALIVE_TOTAL.computeIfAbsent(entry.getKey(), key -> {
-                GaugeMetricImpl<Long> backendAliveTotal =
-                                        new GaugeMetricImpl<>("backend_alive_total", MetricUnit.NOUNIT,
-                            "backend alive num in cluster");
-                backendAliveTotal.addLabel(new MetricLabel("cluster", key));
+                GaugeMetricImpl<Long> backendAliveTotal = new GaugeMetricImpl<>("backend_alive_total",
+                        MetricUnit.NOUNIT,
+                        "backend alive num in cluster");
+                backendAliveTotal.addLabel(new MetricLabel("cluster_id", entry.getValue()));
+                backendAliveTotal.addLabel(new MetricLabel("cluster_name", key));
                 MetricRepo.DORIS_METRIC_REGISTER.addMetrics(backendAliveTotal);
                 return backendAliveTotal;
             }).setValue(aliveNum);

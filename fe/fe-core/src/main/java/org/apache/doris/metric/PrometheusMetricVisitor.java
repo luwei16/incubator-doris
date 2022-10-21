@@ -18,6 +18,7 @@
 package org.apache.doris.metric;
 
 import org.apache.doris.catalog.Env;
+import org.apache.doris.common.Config;
 import org.apache.doris.monitor.jvm.JvmStats;
 import org.apache.doris.monitor.jvm.JvmStats.GarbageCollector;
 import org.apache.doris.monitor.jvm.JvmStats.MemoryPool;
@@ -177,18 +178,40 @@ public class PrometheusMetricVisitor extends MetricVisitor {
 
     @Override
     public void visitHistogram(StringBuilder sb, String prefix, String name, Histogram histogram) {
-        final String fullName = prefix + name.replaceAll("\\.", "_");
+        String fullName = prefix + name.replaceAll("\\.", "_");
+        String clusterName = "UNKNOWN";
+        String clusterId = "UNKNOWN";
+        int idx = fullName.indexOf(MetricRepo.SELECTDB_TAG);
+        if (!Config.cloud_unique_id.isEmpty() && idx != -1) {
+            clusterName = fullName.substring(idx + MetricRepo.SELECTDB_TAG.length() + 1);
+            fullName = fullName.substring(0, idx - 1);
+            clusterId = Env.getCurrentSystemInfo().getCloudClusterNameToId().get(clusterName);
+        }
         sb.append(HELP).append(fullName).append(" ").append("\n");
         sb.append(TYPE).append(fullName).append(" ").append("summary\n");
 
         Snapshot snapshot = histogram.getSnapshot();
-        sb.append(fullName).append("{quantile=\"0.75\"} ").append(snapshot.get75thPercentile()).append("\n");
-        sb.append(fullName).append("{quantile=\"0.95\"} ").append(snapshot.get95thPercentile()).append("\n");
-        sb.append(fullName).append("{quantile=\"0.98\"} ").append(snapshot.get98thPercentile()).append("\n");
-        sb.append(fullName).append("{quantile=\"0.99\"} ").append(snapshot.get99thPercentile()).append("\n");
-        sb.append(fullName).append("{quantile=\"0.999\"} ").append(snapshot.get999thPercentile()).append("\n");
-        sb.append(fullName).append("_sum ").append(histogram.getCount() * snapshot.getMean()).append("\n");
-        sb.append(fullName).append("_count ").append(histogram.getCount()).append("\n");
+        sb.append(fullName).append("{cluster_id=\"").append(clusterId).append("\", ")
+                        .append("cluster_name=\"").append(clusterName).append("\", ")
+                        .append("quantile=\"0.75\"} ").append(snapshot.get75thPercentile()).append("\n");
+        sb.append(fullName).append("{cluster_id=\"").append(clusterId).append("\", ")
+                        .append("cluster_name=\"").append(clusterName).append("\", ")
+                        .append("quantile=\"0.95\"} ").append(snapshot.get95thPercentile()).append("\n");
+        sb.append(fullName).append("{cluster_id=\"").append(clusterId).append("\", ")
+                        .append("cluster_name=\"").append(clusterName).append("\", ")
+                        .append("quantile=\"0.98\"} ").append(snapshot.get98thPercentile()).append("\n");
+        sb.append(fullName).append("{cluster_id=\"").append(clusterId).append("\", ")
+                        .append("cluster_name=\"").append(clusterName).append("\", ")
+                        .append("quantile=\"0.99\"} ").append(snapshot.get99thPercentile()).append("\n");
+        sb.append(fullName).append("{cluster_id=\"").append(clusterId).append("\", ")
+                        .append("cluster_name=\"").append(clusterName).append("\", ")
+                        .append("quantile=\"0.999\"} ").append(snapshot.get999thPercentile()).append("\n");
+        sb.append(fullName).append("_sum").append("{cluster_id=\"").append(clusterId).append("\", ")
+                        .append("cluster_name=\"").append(clusterName).append("\"} ")
+                        .append(histogram.getCount() * snapshot.getMean()).append("\n");
+        sb.append(fullName).append("_count").append("{cluster_id=\"").append(clusterId).append("\", ")
+                        .append("cluster_name=\"").append(clusterName).append("\"} ")
+                        .append(histogram.getCount()).append("\n");
         return;
     }
 
