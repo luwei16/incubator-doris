@@ -60,12 +60,12 @@ public class GrantStmt extends DdlStmt {
     }
 
     public GrantStmt(UserIdentity userIdent, String role,
-            ResourcePattern resourcePattern, List<AccessPrivilege> privileges, boolean isCloudCluster) {
+            ResourcePattern resourcePattern, List<AccessPrivilege> privileges, ResourceTypeEnum type) {
         this.userIdent = userIdent;
         this.role = role;
         this.tblPattern = null;
         this.resourcePattern = resourcePattern;
-        this.resourcePattern.setIsCloudCluster(isCloudCluster);
+        this.resourcePattern.setResourceType(type);
         PrivBitSet privs = PrivBitSet.of();
         for (AccessPrivilege accessPrivilege : privileges) {
             privs.or(accessPrivilege.toPaloPrivilege());
@@ -111,7 +111,7 @@ public class GrantStmt extends DdlStmt {
             tblPattern.analyze(analyzer);
         } else {
             // TODO(wyb): spark-load
-            if (!resourcePattern.getIsCloudCluster() && !Config.enable_spark_load) {
+            if (resourcePattern.isGeneralResource() && !Config.enable_spark_load) {
                 throw new AnalysisException("GRANT ON RESOURCE is coming soon");
             }
             resourcePattern.analyze();
@@ -218,16 +218,24 @@ public class GrantStmt extends DdlStmt {
                 if (!Env.getCurrentEnv().getAuth().checkGlobalPriv(ConnectContext.get(), PrivPredicate.GRANT)) {
                     ErrorReport.reportAnalysisException(ErrorCode.ERR_SPECIFIC_ACCESS_DENIED_ERROR, "GRANT/ROVOKE");
                 }
-            } else if (!resourcePattern.getIsCloudCluster()) {
+            } else if (resourcePattern.isGeneralResource()) {
                 if (!Env.getCurrentEnv().getAuth().checkResourcePriv(ConnectContext.get(),
                         resourcePattern.getResourceName(), PrivPredicate.GRANT)) {
                     ErrorReport.reportAnalysisException(ErrorCode.ERR_SPECIFIC_ACCESS_DENIED_ERROR, "GRANT/ROVOKE");
                 }
             } else {
-                if (!Env.getCurrentEnv().getAuth().checkCloudClusterPriv(ConnectContext.get().getCurrentUserIdentity(),
-                        resourcePattern.getResourceName(), PrivPredicate.GRANT)) {
-                    ErrorReport.reportAnalysisException(ErrorCode.ERR_SPECIFIC_ACCESS_DENIED_ERROR, "GRANT/ROVOKE");
+                if (resourcePattern.isClusterResource()) {
+                    if (!Env.getCurrentEnv().getAuth().checkCloudPriv(ConnectContext.get().getCurrentUserIdentity(),
+                            resourcePattern.getResourceName(), PrivPredicate.GRANT, ResourceTypeEnum.CLUSTER)) {
+                        ErrorReport.reportAnalysisException(ErrorCode.ERR_SPECIFIC_ACCESS_DENIED_ERROR, "GRANT/ROVOKE");
+                    }
+                } else if (resourcePattern.isStageResource()) {
+                    if (!Env.getCurrentEnv().getAuth().checkCloudPriv(ConnectContext.get().getCurrentUserIdentity(),
+                            resourcePattern.getResourceName(), PrivPredicate.GRANT, ResourceTypeEnum.STAGE)) {
+                        ErrorReport.reportAnalysisException(ErrorCode.ERR_SPECIFIC_ACCESS_DENIED_ERROR, "GRANT/ROVOKE");
+                    }
                 }
+
             }
         }
     }

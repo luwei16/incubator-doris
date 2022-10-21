@@ -4290,13 +4290,6 @@ void MetaServiceImpl::get_stage(google::protobuf::RpcController* controller,
         return;
     }
 
-    auto mysql_user_name = request->has_mysql_user_name() ? request->mysql_user_name() : "";
-    if (mysql_user_name.empty()) {
-        code = MetaServiceCode::INVALID_ARGUMENT;
-        msg = "mysql user name not set";
-        return;
-    }
-
     if (!request->has_type()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
         msg = "stage type not set";
@@ -4336,6 +4329,13 @@ void MetaServiceImpl::get_stage(google::protobuf::RpcController* controller,
     }
 
     if (type == StagePB::INTERNAL) {
+        auto mysql_user_name = request->has_mysql_user_name() ? request->mysql_user_name() : "";
+        if (mysql_user_name.empty()) {
+            code = MetaServiceCode::INVALID_ARGUMENT;
+            msg = "mysql user name not set";
+            return;
+        }
+
         // check mysql user_name has been created internal stage
         auto& stage = instance.stages();
         bool found = false;
@@ -4364,18 +4364,18 @@ void MetaServiceImpl::get_stage(google::protobuf::RpcController* controller,
                 }
                 auto& old_obj = instance.obj_info()[idx - 1];
 
-                response->mutable_stage()->mutable_obj_info()->set_ak(old_obj.ak());
-                response->mutable_stage()->mutable_obj_info()->set_sk(old_obj.sk());
-                response->mutable_stage()->mutable_obj_info()->set_bucket(old_obj.bucket());
-                response->mutable_stage()->mutable_obj_info()->set_endpoint(old_obj.endpoint());
-                response->mutable_stage()->mutable_obj_info()->set_external_endpoint(
-                        old_obj.external_endpoint());
-                response->mutable_stage()->mutable_obj_info()->set_region(old_obj.region());
-                response->mutable_stage()->mutable_obj_info()->set_provider(old_obj.provider());
-                response->mutable_stage()->mutable_obj_info()->set_prefix(s.obj_info().prefix());
-                response->mutable_stage()->set_stage_id(s.stage_id());
-                response->mutable_stage()->set_type(s.type());
-                msg = proto_to_json(response->stage());
+                StagePB stage_pb;
+                stage_pb.mutable_obj_info()->set_ak(old_obj.ak());
+                stage_pb.mutable_obj_info()->set_sk(old_obj.sk());
+                stage_pb.mutable_obj_info()->set_bucket(old_obj.bucket());
+                stage_pb.mutable_obj_info()->set_endpoint(old_obj.endpoint());
+                stage_pb.mutable_obj_info()->set_region(old_obj.region());
+                stage_pb.mutable_obj_info()->set_provider(old_obj.provider());
+                stage_pb.mutable_obj_info()->set_prefix(s.obj_info().prefix());
+                stage_pb.set_stage_id(s.stage_id());
+                stage_pb.set_type(s.type());
+                msg = proto_to_json(stage_pb);
+                response->add_stage()->CopyFrom(stage_pb);
                 return;
             }
         }
@@ -4411,53 +4411,46 @@ void MetaServiceImpl::get_stage(google::protobuf::RpcController* controller,
                 LOG(WARNING) << msg << " ret=" << ret;
                 return;
             }
-            response->mutable_stage()->mutable_obj_info()->set_prefix(prefix);
-            response->mutable_stage()->mutable_obj_info()->set_ak(lastest_obj.ak());
-            response->mutable_stage()->mutable_obj_info()->set_sk(lastest_obj.sk());
-            response->mutable_stage()->mutable_obj_info()->set_bucket(lastest_obj.bucket());
-            response->mutable_stage()->mutable_obj_info()->set_endpoint(lastest_obj.endpoint());
-            response->mutable_stage()->mutable_obj_info()->set_external_endpoint(
-                    lastest_obj.external_endpoint());
-            response->mutable_stage()->mutable_obj_info()->set_region(lastest_obj.region());
-            response->mutable_stage()->mutable_obj_info()->set_provider(lastest_obj.provider());
-            response->mutable_stage()->set_stage_id(stage_id);
-            response->mutable_stage()->set_type(StagePB::INTERNAL);
-            msg = proto_to_json(response->stage());
+            StagePB stage_pb;
+            stage_pb.mutable_obj_info()->set_prefix(prefix);
+            stage_pb.mutable_obj_info()->set_ak(lastest_obj.ak());
+            stage_pb.mutable_obj_info()->set_sk(lastest_obj.sk());
+            stage_pb.mutable_obj_info()->set_bucket(lastest_obj.bucket());
+            stage_pb.mutable_obj_info()->set_endpoint(lastest_obj.endpoint());
+            stage_pb.mutable_obj_info()->set_region(lastest_obj.region());
+            stage_pb.mutable_obj_info()->set_provider(lastest_obj.provider());
+            stage_pb.set_stage_id(stage_id);
+            stage_pb.set_type(StagePB::INTERNAL);
+            msg = proto_to_json(stage_pb);
+            response->add_stage()->CopyFrom(stage_pb);
             return;
         }
     }
 
-    // external
+    // get all external stages
     if (type == StagePB::EXTERNAL && !request->has_stage_name()) {
-        code = MetaServiceCode::INVALID_ARGUMENT;
-        msg = "stage name not set";
-        return;
-    }
-
-    auto found = false;
-    for (int i = 0; i < instance.stages_size() && !found; ++i) {
-        auto& s = instance.stages(i);
-        if (s.type() != type) {
-            continue;
-        }
-        if (type == StagePB::EXTERNAL && s.name() != request->stage_name()) {
-            continue;
-        }
-        for (int j = 0; j < s.mysql_user_name_size(); ++j) {
-            if (s.mysql_user_name(j) == mysql_user_name) {
-                response->mutable_stage()->CopyFrom(s);
-                found = true;
-                break;
+        for (int i = 0; i < instance.stages_size(); ++i) {
+            auto& s = instance.stages(i);
+            if (s.type() != StagePB::EXTERNAL) {
+                continue;
             }
+            response->add_stage()->CopyFrom(s);
+        }
+        return;
+    }
+
+    // get external stage with the specified stage name
+    for (int i = 0; i < instance.stages_size(); ++i) {
+        auto& s = instance.stages(i);
+        if (s.type() == type && s.name() == request->stage_name()) {
+            response->add_stage()->CopyFrom(s);
+            return;
         }
     }
 
-    if (!response->has_stage()) {
-        ss << "fail to get stage with " << proto_to_json(*request);
-        msg = ss.str();
-        code = MetaServiceCode::STAGE_NOT_FOUND;
-        return;
-    }
+    ss << "stage not found with " << proto_to_json(*request);
+    msg = ss.str();
+    code = MetaServiceCode::STAGE_NOT_FOUND;
 }
 
 void MetaServiceImpl::begin_copy(google::protobuf::RpcController* controller,

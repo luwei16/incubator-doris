@@ -26,6 +26,7 @@ import org.apache.doris.analysis.DropUserStmt;
 import org.apache.doris.analysis.GrantStmt;
 import org.apache.doris.analysis.PasswordOptions;
 import org.apache.doris.analysis.ResourcePattern;
+import org.apache.doris.analysis.ResourceTypeEnum;
 import org.apache.doris.analysis.RevokeStmt;
 import org.apache.doris.analysis.SetLdapPassVar;
 import org.apache.doris.analysis.SetPassVar;
@@ -76,6 +77,7 @@ import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -103,6 +105,9 @@ public class PaloAuth implements Writable {
 
     // reuse ResourcePrivTable and ResourcePrivEntry for grant/revoke cloudClusterName
     private ResourcePrivTable cloudClusterPrivTable = new ResourcePrivTable();
+
+    // reuse ResourcePrivTable and ResourcePrivEntry for grant/revoke cloudStageName
+    private ResourcePrivTable cloudStagePrivTable = new ResourcePrivTable();
 
     private RoleManager roleManager = new RoleManager();
     private UserPropertyMgr propertyMgr = new UserPropertyMgr();
@@ -165,6 +170,17 @@ public class PaloAuth implements Writable {
 
     public PasswordPolicyManager getPasswdPolicyManager() {
         return passwdPolicyManager;
+    }
+
+    private ResourcePrivTable getCloudPrivTable(ResourceTypeEnum type) {
+        if (type == ResourceTypeEnum.CLUSTER) {
+            return cloudClusterPrivTable;
+        } else if (type == ResourceTypeEnum.STAGE) {
+            return cloudStagePrivTable;
+        } else {
+            // cloud resource not GENERAL type
+            return null;
+        }
     }
 
     private GlobalPrivEntry grantGlobalPrivs(UserIdentity userIdentity, boolean errOnExist, boolean errOnNonExist,
@@ -280,6 +296,20 @@ public class PaloAuth implements Writable {
         tablePrivTable.revoke(entry, errOnNonExist, true /* delete entry when empty */);
     }
 
+    private void grantCloudStagePrivs(UserIdentity userIdentity, String cloudStageName, boolean errOnExist,
+                                        boolean errOnNonExist, PrivBitSet privs) throws DdlException {
+        ResourcePrivEntry entry;
+        try {
+            entry = ResourcePrivEntry.create(userIdentity.getHost(), cloudStageName, userIdentity.getQualifiedUser(),
+                userIdentity.isDomain(), privs);
+            entry.setSetByDomainResolver(false);
+        } catch (AnalysisException e) {
+            throw new DdlException(e.getMessage());
+        }
+        cloudStagePrivTable.addEntry(entry, errOnExist, errOnNonExist);
+        LOG.info("cloud stage add list {}", cloudStagePrivTable);
+    }
+
     private void grantCloudClusterPrivs(UserIdentity userIdentity, String cloudClusterName, boolean errOnExist,
                                     boolean errOnNonExist, PrivBitSet privs) throws DdlException {
         ResourcePrivEntry entry;
@@ -343,6 +373,21 @@ public class PaloAuth implements Writable {
             throw new DdlException(e.getMessage());
         }
         resourcePrivTable.addEntry(entry, errOnExist, errOnNonExist);
+    }
+
+    private void revokeCloudStagePrivs(UserIdentity userIdentity, String cloudStageName, PrivBitSet privs,
+                                         boolean errOnNonExist) throws DdlException {
+        ResourcePrivEntry entry;
+        try {
+            entry = ResourcePrivEntry.create(userIdentity.getHost(), cloudStageName, userIdentity.getQualifiedUser(),
+                userIdentity.isDomain(), privs);
+            entry.setSetByDomainResolver(false);
+        } catch (AnalysisException e) {
+            throw new DdlException(e.getMessage());
+        }
+
+        cloudStagePrivTable.revoke(entry, errOnNonExist, true /* delete entry when empty */);
+        LOG.info("cloud stage revoke list {}", cloudStagePrivTable);
     }
 
     private void revokeCloudClusterPrivs(UserIdentity userIdentity, String cloudClusterName, PrivBitSet privs,
@@ -628,14 +673,21 @@ public class PaloAuth implements Writable {
         return checkTblPriv(currentUser, DEFAULT_CATALOG, db, tbl, wanted);
     }
 
-    public boolean checkCloudClusterPriv(UserIdentity currentUser, String clusterName, PrivPredicate wanted) {
+    public boolean checkCloudPriv(UserIdentity currentUser, String name,
+                                  PrivPredicate wanted, ResourceTypeEnum type) {
         if (!Config.cloud_enable_auth_check) {
             return true;
         }
 
+        ResourcePrivTable cloudPrivTable = getCloudPrivTable(type);
+        if (cloudPrivTable == null) {
+            LOG.warn("cloud resource type err: {}", type);
+            return false;
+        }
+
         PrivBitSet savedPrivs = PrivBitSet.of();
         if (checkGlobalInternal(currentUser, wanted, savedPrivs)
-                || checkCloudClusterInternal(currentUser, clusterName, wanted, savedPrivs)) {
+                || checkCloudInternal(currentUser, name, wanted, savedPrivs, cloudPrivTable)) {
             return true;
         }
 
@@ -783,11 +835,11 @@ public class PaloAuth implements Writable {
         }
     }
 
-    private boolean checkCloudClusterInternal(UserIdentity currentUser, String clusterName,
-                                          PrivPredicate wanted, PrivBitSet savedPrivs) {
+    private boolean checkCloudInternal(UserIdentity currentUser, String stageName,
+                                              PrivPredicate wanted, PrivBitSet savedPrivs, ResourcePrivTable table) {
         readLock();
         try {
-            cloudClusterPrivTable.getPrivs(currentUser, clusterName, savedPrivs);
+            table.getPrivs(currentUser, stageName, savedPrivs);
             if (PaloPrivilege.satisfy(savedPrivs, wanted)) {
                 return true;
             }
@@ -827,6 +879,7 @@ public class PaloAuth implements Writable {
         tablePrivTable.clear();
         resourcePrivTable.clear();
         cloudClusterPrivTable.clear();
+        cloudStagePrivTable.clear();
     }
 
     // create user
@@ -1002,6 +1055,7 @@ public class PaloAuth implements Writable {
             tablePrivTable.dropUser(userIdent);
             resourcePrivTable.dropUser(userIdent);
             cloudClusterPrivTable.dropUser(userIdent);
+            cloudStagePrivTable.dropUser(userIdent);
             // drop user in roles if exist
             roleManager.dropUser(userIdent);
 
@@ -1092,7 +1146,7 @@ public class PaloAuth implements Writable {
         try {
             if (role != null) {
                 // grant privs to role, role must exist
-                PaloRole newRole = new PaloRole(role, resourcePattern, privs);
+                PaloRole newRole = new PaloRole(role, Arrays.asList(resourcePattern), privs);
                 PaloRole existingRole = roleManager.addRole(newRole, false /* err on exist */);
 
                 // update users' privs of this role
@@ -1183,8 +1237,10 @@ public class PaloAuth implements Writable {
                     grantGlobalPrivs(userIdent, false, errOnNonExist, privs);
                     break;
                 case RESOURCE:
-                    if (resourcePattern.getIsCloudCluster()) {
+                    if (resourcePattern.isClusterResource()) {
                         grantCloudClusterPrivs(userIdent, resourcePattern.getResourceName(), false, false, privs);
+                    } else if (resourcePattern.isStageResource()) {
+                        grantCloudStagePrivs(userIdent, resourcePattern.getResourceName(), false, false, privs);
                     } else {
                         grantResourcePrivs(userIdent, resourcePattern.getResourceName(), false, false, privs);
                     }
@@ -1332,8 +1388,10 @@ public class PaloAuth implements Writable {
                     revokeGlobalPrivs(userIdent, privs, errOnNonExist);
                     break;
                 case RESOURCE:
-                    if (resourcePattern.getIsCloudCluster()) {
+                    if (resourcePattern.isClusterResource()) {
                         revokeCloudClusterPrivs(userIdent, resourcePattern.getResourceName(), privs, errOnNonExist);
+                    } else if (resourcePattern.isStageResource()) {
+                        revokeCloudStagePrivs(userIdent, resourcePattern.getResourceName(), privs, errOnNonExist);
                     } else {
                         revokeResourcePrivs(userIdent, resourcePattern.getResourceName(), privs, errOnNonExist);
                     }
@@ -1615,6 +1673,24 @@ public class PaloAuth implements Writable {
         } finally {
             readUnlock();
         }
+        if (!Config.cloud_unique_id.isEmpty()) {
+            List<List<String>> userAuthInfosTmp = Lists.newArrayList();
+            for (List<String> userAuthInfo : userAuthInfos) {
+                if (userAuthInfo == null) {
+                    continue;
+                }
+                List<String> userAuthInfoTmp = Lists.newArrayList();
+                for (String s : userAuthInfo) {
+                    if (s == null) {
+                        userAuthInfoTmp.add(s);
+                        continue;
+                    }
+                    userAuthInfoTmp.add(s.replaceAll("default_cluster:", ""));
+                }
+                userAuthInfosTmp.add(userAuthInfoTmp);
+            }
+            userAuthInfos = userAuthInfosTmp;
+        }
         return userAuthInfos;
     }
 
@@ -1779,7 +1855,7 @@ public class PaloAuth implements Writable {
 
         // cloudCluster
         List<String> cloudClusterPrivs = Lists.newArrayList();
-        Set<String> addedcloudClusters = Sets.newHashSet();
+        Set<String> addedCloudClusters = Sets.newHashSet();
         for (PrivEntry entry : cloudClusterPrivTable.entries) {
             if (!entry.match(userIdent, true /* exact match */)) {
                 continue;
@@ -1791,7 +1867,7 @@ public class PaloAuth implements Writable {
              */
             PrivBitSet savedPrivs = rEntry.getPrivSet().copy();
             savedPrivs.or(LdapPrivsChecker.getResourcePrivFromLdap(userIdent, rEntry.getOrigResource()));
-            addedcloudClusters.add(rEntry.getOrigResource());
+            addedCloudClusters.add(rEntry.getOrigResource());
             cloudClusterPrivs.add(rEntry.getOrigResource() + ": " + savedPrivs.toString()
                     + " (" + entry.isSetByDomainResolver() + ")");
         }
@@ -1799,7 +1875,7 @@ public class PaloAuth implements Writable {
         if (LdapPrivsChecker.hasLdapPrivs(userIdent)) {
             Map<ResourcePattern, PrivBitSet> ldapResourcePrivs = LdapPrivsChecker.getLdapAllResourcePrivs(userIdent);
             for (Map.Entry<ResourcePattern, PrivBitSet> entry : ldapResourcePrivs.entrySet()) {
-                if (!addedcloudClusters.contains(entry.getKey().getResourceName())) {
+                if (!addedCloudClusters.contains(entry.getKey().getResourceName())) {
                     tblPrivs.add(entry.getKey().getResourceName().concat(": ").concat(entry.getValue().toString())
                             .concat(" (false)"));
                 }
@@ -1810,6 +1886,41 @@ public class PaloAuth implements Writable {
             userAuthInfo.add(FeConstants.null_string);
         } else {
             userAuthInfo.add(Joiner.on("; ").join(cloudClusterPrivs));
+        }
+
+        // cloudStage
+        List<String> cloudStagePrivs = Lists.newArrayList();
+        Set<String> addedCloudStages = Sets.newHashSet();
+        for (PrivEntry entry : cloudStagePrivTable.entries) {
+            if (!entry.match(userIdent, true /* exact match */)) {
+                continue;
+            }
+            ResourcePrivEntry rEntry = (ResourcePrivEntry) entry;
+            /**
+             * Doris and Ldap may have different privs on one resource.
+             * Merge these privs and add.
+             */
+            PrivBitSet savedPrivs = rEntry.getPrivSet().copy();
+            savedPrivs.or(LdapPrivsChecker.getResourcePrivFromLdap(userIdent, rEntry.getOrigResource()));
+            addedCloudStages.add(rEntry.getOrigResource());
+            cloudStagePrivs.add(rEntry.getOrigResource() + ": " + savedPrivs.toString()
+                    + " (" + entry.isSetByDomainResolver() + ")");
+        }
+        // Add privs from ldap groups that have not been added in Doris.
+        if (LdapPrivsChecker.hasLdapPrivs(userIdent)) {
+            Map<ResourcePattern, PrivBitSet> ldapResourcePrivs = LdapPrivsChecker.getLdapAllResourcePrivs(userIdent);
+            for (Map.Entry<ResourcePattern, PrivBitSet> entry : ldapResourcePrivs.entrySet()) {
+                if (!addedCloudStages.contains(entry.getKey().getResourceName())) {
+                    tblPrivs.add(entry.getKey().getResourceName().concat(": ").concat(entry.getValue().toString())
+                            .concat(" (false)"));
+                }
+            }
+        }
+
+        if (cloudStagePrivs.isEmpty()) {
+            userAuthInfo.add(FeConstants.null_string);
+        } else {
+            userAuthInfo.add(Joiner.on("; ").join(cloudStagePrivs));
         }
 
         userAuthInfos.add(userAuthInfo);
@@ -1842,6 +1953,12 @@ public class PaloAuth implements Writable {
             userIdents.add(entry.getUserIdent());
         }
         for (PrivEntry entry : cloudClusterPrivTable.entries) {
+            if (!includeEntrySetByResolver && entry.isSetByDomainResolver()) {
+                continue;
+            }
+            userIdents.add(entry.getUserIdent());
+        }
+        for (PrivEntry entry : cloudStagePrivTable.entries) {
             if (!includeEntrySetByResolver && entry.isSetByDomainResolver()) {
                 continue;
             }
@@ -2140,6 +2257,7 @@ public class PaloAuth implements Writable {
         tablePrivTable.write(out);
         resourcePrivTable.write(out);
         cloudClusterPrivTable.write(out);
+        cloudStagePrivTable.write(out);
         propertyMgr.write(out);
         ldapInfo.write(out);
         passwdPolicyManager.write(out);
@@ -2159,6 +2277,7 @@ public class PaloAuth implements Writable {
         tablePrivTable = (TablePrivTable) PrivTable.read(in);
         resourcePrivTable = (ResourcePrivTable) PrivTable.read(in);
         cloudClusterPrivTable = (ResourcePrivTable) PrivTable.read(in);
+        cloudStagePrivTable = (ResourcePrivTable) PrivTable.read(in);
         propertyMgr = UserPropertyMgr.read(in);
         if (Env.getCurrentEnvJournalVersion() >= FeMetaVersion.VERSION_106) {
             ldapInfo = LdapInfo.read(in);
@@ -2183,6 +2302,7 @@ public class PaloAuth implements Writable {
         sb.append(tablePrivTable).append("\n");
         sb.append(resourcePrivTable).append("\n");
         sb.append(cloudClusterPrivTable).append("\n");
+        sb.append(cloudStagePrivTable).append("\n");
         sb.append(roleManager).append("\n");
         sb.append(propertyMgr).append("\n");
         sb.append(ldapInfo).append("\n");

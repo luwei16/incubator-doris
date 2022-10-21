@@ -675,7 +675,7 @@ message GetStageRequest {
 
 message GetStageResponse {
     optional MetaServiceResponseStatus status = 1;
-    optional StagePB stage = 2;
+    repeated StagePB stage = 2;
 }
 
 message StartTabletJobRequest {

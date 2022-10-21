@@ -30,6 +30,7 @@ import java.util.Locale;
 import java.util.Map;
 
 import org.apache.doris.analysis.AlterDatabaseQuotaStmt.QuotaType;
+import org.apache.doris.analysis.ResourceTypeEnum;
 import org.apache.doris.analysis.SetOperationStmt.Qualifier;
 import org.apache.doris.analysis.SetOperationStmt.Operation;
 import org.apache.doris.analysis.SetOperationStmt.SetOperand;
@@ -543,6 +544,7 @@ terminal String
     KW_SPLIT,
     KW_SQL_BLOCK_RULE,
     KW_STAGE,
+    KW_STAGES,
     KW_START,
     KW_STATS,
     KW_STATUS,
@@ -2717,15 +2719,19 @@ grant_stmt ::=
     :}
     | KW_GRANT privilege_list:privs KW_ON KW_RESOURCE resource_pattern:resourcePattern KW_TO user_identity:userId
     {:
-        RESULT = new GrantStmt(userId, null, resourcePattern, privs, false);
+        RESULT = new GrantStmt(userId, null, resourcePattern, privs, ResourceTypeEnum.GENERAL);
     :}
     | KW_GRANT privilege_list:privs KW_ON KW_RESOURCE resource_pattern:resourcePattern KW_TO KW_ROLE STRING_LITERAL:role
     {:
-        RESULT = new GrantStmt(null, role, resourcePattern, privs, false);
+        RESULT = new GrantStmt(null, role, resourcePattern, privs, ResourceTypeEnum.GENERAL);
     :}
     | KW_GRANT privilege_list:privs KW_ON KW_CLUSTER resource_pattern:resourcePattern KW_TO user_identity:userId
     {:
-        RESULT = new GrantStmt(userId, null, resourcePattern, privs, true);
+        RESULT = new GrantStmt(userId, null, resourcePattern, privs, ResourceTypeEnum.CLUSTER);
+    :}
+    | KW_GRANT privilege_list:privs KW_ON KW_STAGE resource_pattern:resourcePattern KW_TO user_identity:userId
+    {:
+        RESULT = new GrantStmt(userId, null, resourcePattern, privs, ResourceTypeEnum.STAGE);
     :}
     ;
 
@@ -2747,11 +2753,11 @@ tbl_pattern ::=
 resource_pattern ::=
     ident_or_star:resourceName
     {:
-        RESULT = new ResourcePattern(resourceName);
+        RESULT = new ResourcePattern(resourceName, ResourceTypeEnum.GENERAL);
     :}
     | STRING_LITERAL:resourceName
     {:
-        RESULT = new ResourcePattern(resourceName);
+        RESULT = new ResourcePattern(resourceName, ResourceTypeEnum.GENERAL);
     :}
     ;
 
@@ -2778,15 +2784,19 @@ revoke_stmt ::=
     :}
     | KW_REVOKE privilege_list:privs KW_ON KW_RESOURCE resource_pattern:resourcePattern KW_FROM user_identity:userId
     {:
-        RESULT = new RevokeStmt(userId, null, resourcePattern, privs, false);
+        RESULT = new RevokeStmt(userId, null, resourcePattern, privs, ResourceTypeEnum.GENERAL);
     :}
     | KW_REVOKE privilege_list:privs KW_ON KW_RESOURCE resource_pattern:resourcePattern KW_FROM KW_ROLE STRING_LITERAL:role
     {:
-        RESULT = new RevokeStmt(null, role, resourcePattern, privs, false);
+        RESULT = new RevokeStmt(null, role, resourcePattern, privs, ResourceTypeEnum.GENERAL);
     :}
     | KW_REVOKE privilege_list:privs KW_ON KW_CLUSTER resource_pattern:resourcePattern KW_FROM user_identity:userId
     {:
-        RESULT = new RevokeStmt(userId, null, resourcePattern, privs, true);
+        RESULT = new RevokeStmt(userId, null, resourcePattern, privs, ResourceTypeEnum.CLUSTER);
+    :}
+    | KW_REVOKE privilege_list:privs KW_ON KW_STAGE resource_pattern:resourcePattern KW_FROM user_identity:userId
+    {:
+        RESULT = new RevokeStmt(userId, null, resourcePattern, privs, ResourceTypeEnum.STAGE);
     :}
     ;
 
@@ -3382,6 +3392,11 @@ show_stmt ::=
     | KW_SHOW KW_STORAGE KW_POLICY
     {:
         RESULT = new ShowPolicyStmt(PolicyTypeEnum.STORAGE, null);
+    :}
+    /* show stage */
+    | KW_SHOW KW_STAGES
+    {:
+        RESULT = new ShowStageStmt();
     :}
     ;
 

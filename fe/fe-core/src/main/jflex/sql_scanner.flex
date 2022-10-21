@@ -464,6 +464,7 @@ import org.apache.doris.qe.SqlModeHelper;
         keywordMap.put("file_format", new Integer(SqlParserSymbols.KW_FILE_FORMAT));
         keywordMap.put("copy_option", new Integer(SqlParserSymbols.KW_COPY_OPTION));
         keywordMap.put("async", new Integer(SqlParserSymbols.KW_ASYNC));
+        keywordMap.put("stages", new Integer(SqlParserSymbols.KW_STAGES));
    }
 
   // map from token id to token description

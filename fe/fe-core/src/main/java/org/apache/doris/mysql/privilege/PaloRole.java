@@ -30,7 +30,9 @@ import com.google.common.collect.Sets;
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -42,15 +44,18 @@ public class PaloRole implements Writable {
 
     public static PaloRole OPERATOR = new PaloRole(OPERATOR_ROLE,
             TablePattern.ALL, PrivBitSet.of(PaloPrivilege.NODE_PRIV, PaloPrivilege.ADMIN_PRIV),
-            ResourcePattern.ALL, PrivBitSet.of(PaloPrivilege.NODE_PRIV, PaloPrivilege.ADMIN_PRIV));
+            Arrays.asList(ResourcePattern.ALL_GENERAL, ResourcePattern.ALL_CLUSTER, ResourcePattern.ALL_STAGE),
+            PrivBitSet.of(PaloPrivilege.NODE_PRIV, PaloPrivilege.ADMIN_PRIV));
     public static PaloRole ADMIN = new PaloRole(ADMIN_ROLE,
             TablePattern.ALL, PrivBitSet.of(PaloPrivilege.ADMIN_PRIV),
-            ResourcePattern.ALL, PrivBitSet.of(PaloPrivilege.ADMIN_PRIV));
+            Arrays.asList(ResourcePattern.ALL_GENERAL, ResourcePattern.ALL_CLUSTER, ResourcePattern.ALL_STAGE),
+            PrivBitSet.of(PaloPrivilege.ADMIN_PRIV));
 
     private String roleName;
     private Map<TablePattern, PrivBitSet> tblPatternToPrivs = Maps.newConcurrentMap();
     private Map<ResourcePattern, PrivBitSet> resourcePatternToPrivs = Maps.newConcurrentMap();
     private Map<ResourcePattern, PrivBitSet> clusterPatternToPrivs = Maps.newConcurrentMap();
+    private Map<ResourcePattern, PrivBitSet> stagePatternToPrivs = Maps.newConcurrentMap();
     // users which this role
     private Set<UserIdentity> users = Sets.newConcurrentHashSet();
 
@@ -67,16 +72,33 @@ public class PaloRole implements Writable {
         this.tblPatternToPrivs.put(tablePattern, privs);
     }
 
-    public PaloRole(String roleName, ResourcePattern resourcePattern, PrivBitSet privs) {
+    public PaloRole(String roleName, List<ResourcePattern> resourcePatterns, PrivBitSet privs) {
         this.roleName = roleName;
-        this.resourcePatternToPrivs.put(resourcePattern, privs);
+        resourcePatterns.forEach(r -> {
+            if (r.isGeneralResource()) {
+                this.resourcePatternToPrivs.put(r, privs);
+            } else if (r.isClusterResource()) {
+                this.clusterPatternToPrivs.put(r, privs);
+            } else if (r.isStageResource()) {
+                this.stagePatternToPrivs.put(r, privs);
+            }
+        });
+
     }
 
     public PaloRole(String roleName, TablePattern tablePattern, PrivBitSet tablePrivs,
-            ResourcePattern resourcePattern, PrivBitSet resourcePrivs) {
+                    List<ResourcePattern> resourcePatterns, PrivBitSet resourcePrivs) {
         this.roleName = roleName;
         this.tblPatternToPrivs.put(tablePattern, tablePrivs);
-        this.resourcePatternToPrivs.put(resourcePattern, resourcePrivs);
+        resourcePatterns.forEach(r -> {
+            if (r.isGeneralResource()) {
+                this.resourcePatternToPrivs.put(r, resourcePrivs);
+            } else if (r.isClusterResource()) {
+                this.clusterPatternToPrivs.put(r, resourcePrivs);
+            } else if (r.isStageResource()) {
+                this.stagePatternToPrivs.put(r, resourcePrivs);
+            }
+        });
     }
 
     public String getRoleName() {
@@ -93,6 +115,10 @@ public class PaloRole implements Writable {
 
     public Map<ResourcePattern, PrivBitSet> getClusterPatternToPrivs() {
         return clusterPatternToPrivs;
+    }
+
+    public Map<ResourcePattern, PrivBitSet> getStagePatternToPrivs() {
+        return stagePatternToPrivs;
     }
 
     public Set<UserIdentity> getUsers() {
@@ -115,6 +141,24 @@ public class PaloRole implements Writable {
                 existPrivs.or(entry.getValue());
             } else {
                 resourcePatternToPrivs.put(entry.getKey(), entry.getValue());
+            }
+        }
+
+        for (Map.Entry<ResourcePattern, PrivBitSet> entry : other.clusterPatternToPrivs.entrySet()) {
+            if (clusterPatternToPrivs.containsKey(entry.getKey())) {
+                PrivBitSet existPrivs = clusterPatternToPrivs.get(entry.getKey());
+                existPrivs.or(entry.getValue());
+            } else {
+                clusterPatternToPrivs.put(entry.getKey(), entry.getValue());
+            }
+        }
+
+        for (Map.Entry<ResourcePattern, PrivBitSet> entry : other.stagePatternToPrivs.entrySet()) {
+            if (stagePatternToPrivs.containsKey(entry.getKey())) {
+                PrivBitSet existPrivs = stagePatternToPrivs.get(entry.getKey());
+                existPrivs.or(entry.getValue());
+            } else {
+                stagePatternToPrivs.put(entry.getKey(), entry.getValue());
             }
         }
     }
@@ -161,6 +205,16 @@ public class PaloRole implements Writable {
             entry.getKey().write(out);
             entry.getValue().write(out);
         }
+        out.writeInt(clusterPatternToPrivs.size());
+        for (Map.Entry<ResourcePattern, PrivBitSet> entry : clusterPatternToPrivs.entrySet()) {
+            entry.getKey().write(out);
+            entry.getValue().write(out);
+        }
+        out.writeInt(stagePatternToPrivs.size());
+        for (Map.Entry<ResourcePattern, PrivBitSet> entry : stagePatternToPrivs.entrySet()) {
+            entry.getKey().write(out);
+            entry.getValue().write(out);
+        }
         out.writeInt(users.size());
         for (UserIdentity userIdentity : users) {
             userIdentity.write(out);
@@ -183,6 +237,18 @@ public class PaloRole implements Writable {
         }
         size = in.readInt();
         for (int i = 0; i < size; i++) {
+            ResourcePattern resourcePattern = ResourcePattern.read(in);
+            PrivBitSet privs = PrivBitSet.read(in);
+            clusterPatternToPrivs.put(resourcePattern, privs);
+        }
+        size = in.readInt();
+        for (int i = 0; i < size; i++) {
+            ResourcePattern resourcePattern = ResourcePattern.read(in);
+            PrivBitSet privs = PrivBitSet.read(in);
+            stagePatternToPrivs.put(resourcePattern, privs);
+        }
+        size = in.readInt();
+        for (int i = 0; i < size; i++) {
             UserIdentity userIdentity = UserIdentity.read(in);
             users.add(userIdentity);
         }
@@ -193,6 +259,8 @@ public class PaloRole implements Writable {
         StringBuilder sb = new StringBuilder();
         sb.append("role: ").append(roleName).append(", db table privs: ").append(tblPatternToPrivs);
         sb.append(", resource privs: ").append(resourcePatternToPrivs);
+        sb.append(", cluster privs: ").append(clusterPatternToPrivs);
+        sb.append(", stage privs: ").append(stagePatternToPrivs);
         sb.append(", users: ").append(users);
         return sb.toString();
     }

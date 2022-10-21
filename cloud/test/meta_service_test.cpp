@@ -1286,20 +1286,21 @@ TEST(MetaServiceTest, StageTest) {
     sp->set_call_back("get_instance_id", [&](void* p) { *((std::string*)p) = instance_id; });
     sp->enable_processing();
 
+    ObjectStoreInfoPB obj;
+    obj.set_ak("123");
+    obj.set_sk("321");
+    obj.set_bucket("456");
+    obj.set_prefix("654");
+    obj.set_endpoint("789");
+    obj.set_region("987");
+    obj.set_provider(ObjectStoreInfoPB::BOS);
+
     // create instance
     {
         CreateInstanceRequest req;
         req.set_instance_id(instance_id);
         req.set_user_id("test_user");
         req.set_name("test_name");
-        ObjectStoreInfoPB obj;
-        obj.set_ak("123");
-        obj.set_sk("321");
-        obj.set_bucket("456");
-        obj.set_prefix("654");
-        obj.set_endpoint("789");
-        obj.set_region("987");
-        obj.set_provider(ObjectStoreInfoPB::BOS);
         req.mutable_obj_info()->CopyFrom(obj);
 
         MetaServiceGenericResponse res;
@@ -1320,15 +1321,76 @@ TEST(MetaServiceTest, StageTest) {
         meta_service->get_stage(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
                                 &get_stage_req, &res, nullptr);
         ASSERT_EQ(res.status().code(), MetaServiceCode::OK);
-        ASSERT_FALSE(res.stage().stage_id().empty());
-        auto stage_id = res.stage().stage_id();
+        ASSERT_EQ(1, res.stage().size());
+        ASSERT_FALSE(res.stage().at(0).stage_id().empty());
+        auto stage_id = res.stage().at(0).stage_id();
 
         // get existent internal stage
         GetStageResponse res2;
         meta_service->get_stage(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
                                 &get_stage_req, &res2, nullptr);
         ASSERT_EQ(res2.status().code(), MetaServiceCode::OK);
-        ASSERT_EQ(stage_id, res2.stage().stage_id());
+        ASSERT_EQ(1, res.stage().size());
+        ASSERT_EQ(stage_id, res2.stage().at(0).stage_id());
+    }
+
+    // test create and get external stage
+    {
+        // get an external stage with name
+        GetStageRequest get_stage_req;
+        get_stage_req.set_cloud_unique_id(cloud_unique_id);
+        get_stage_req.set_type(StagePB::EXTERNAL);
+        get_stage_req.set_stage_name("ex_name_1");
+
+        {
+            GetStageResponse res;
+            meta_service->get_stage(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
+                                    &get_stage_req, &res, nullptr);
+            ASSERT_EQ(res.status().code(), MetaServiceCode::STAGE_NOT_FOUND);
+        }
+
+        // create 2 stages
+        for (auto i = 0; i < 2; ++i) {
+            StagePB stage;
+            stage.set_type(StagePB::EXTERNAL);
+            stage.set_stage_id("ex_id_" + std::to_string(i));
+            stage.set_name("ex_name_" + std::to_string(i));
+            stage.mutable_obj_info()->CopyFrom(obj);
+
+            CreateStageRequest create_stage_req;
+            create_stage_req.set_cloud_unique_id(cloud_unique_id);
+            create_stage_req.mutable_stage()->CopyFrom(stage);
+
+            CreateStageResponse create_stage_res;
+            meta_service->create_stage(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
+                                       &create_stage_req, &create_stage_res, nullptr);
+            ASSERT_EQ(create_stage_res.status().code(), MetaServiceCode::OK);
+        }
+
+        // get an external stage with name
+        {
+            GetStageResponse res;
+            meta_service->get_stage(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
+                                    &get_stage_req, &res, nullptr);
+            ASSERT_EQ(res.status().code(), MetaServiceCode::OK);
+            ASSERT_EQ(1, res.stage().size());
+            ASSERT_EQ("ex_id_1", res.stage().at(0).stage_id());
+        }
+
+        // get all stages
+        {
+            GetStageRequest req;
+            req.set_cloud_unique_id(cloud_unique_id);
+            req.set_type(StagePB::EXTERNAL);
+
+            GetStageResponse res;
+            meta_service->get_stage(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
+                                    &req, &res, nullptr);
+            ASSERT_EQ(res.status().code(), MetaServiceCode::OK);
+            ASSERT_EQ(2, res.stage().size());
+            ASSERT_EQ("ex_id_0", res.stage().at(0).stage_id());
+            ASSERT_EQ("ex_id_1", res.stage().at(1).stage_id());
+        }
     }
 }
 

@@ -21,6 +21,7 @@ import org.apache.doris.analysis.InsertStmt;
 import org.apache.doris.analysis.KillStmt;
 import org.apache.doris.analysis.Queriable;
 import org.apache.doris.analysis.QueryStmt;
+import org.apache.doris.analysis.ResourceTypeEnum;
 import org.apache.doris.analysis.SelectStmt;
 import org.apache.doris.analysis.SqlParser;
 import org.apache.doris.analysis.SqlScanner;
@@ -129,8 +130,8 @@ public class ConnectProcessor {
         String clusterName = res[1];
 
         // check resource usage privilege
-        if (!Env.getCurrentEnv().getAuth().checkCloudClusterPriv(ConnectContext.get().getCurrentUserIdentity(),
-                clusterName, PrivPredicate.USAGE)) {
+        if (!Env.getCurrentEnv().getAuth().checkCloudPriv(ConnectContext.get().getCurrentUserIdentity(),
+                clusterName, PrivPredicate.USAGE, ResourceTypeEnum.CLUSTER)) {
             ctx.getState().setError(ErrorCode.ERR_CLUSTER_NO_PERMISSIONS, "USAGE denied to user"
                     + ConnectContext.get().getQualifiedUser() + "'@'" + ConnectContext.get().getRemoteIP()
                     + "' for cloud cluster '" + clusterName + "'");

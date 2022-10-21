@@ -46,7 +46,7 @@ public class DropResourceStmt extends DdlStmt {
             ErrorReport.reportAnalysisException(ErrorCode.ERR_SPECIFIC_ACCESS_DENIED_ERROR, "ADMIN");
         }
 
-        FeNameFormat.checkResourceName(resourceName, false);
+        FeNameFormat.checkResourceName(resourceName, ResourceTypeEnum.GENERAL);
     }
 
     @Override

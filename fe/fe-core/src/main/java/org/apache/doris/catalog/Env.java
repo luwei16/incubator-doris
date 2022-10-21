@@ -72,6 +72,7 @@ import org.apache.doris.analysis.RecoverPartitionStmt;
 import org.apache.doris.analysis.RecoverTableStmt;
 import org.apache.doris.analysis.RefreshMaterializedViewStmt;
 import org.apache.doris.analysis.ReplacePartitionClause;
+import org.apache.doris.analysis.ResourceTypeEnum;
 import org.apache.doris.analysis.RestoreStmt;
 import org.apache.doris.analysis.RollupRenameClause;
 import org.apache.doris.analysis.ShowAlterStmt.AlterType;
@@ -4463,8 +4464,8 @@ public class Env {
         String clusterName = res[1];
 
         // check resource usage privilege
-        if (!Env.getCurrentEnv().getAuth().checkCloudClusterPriv(ConnectContext.get().getCurrentUserIdentity(),
-                clusterName, PrivPredicate.USAGE)) {
+        if (!Env.getCurrentEnv().getAuth().checkCloudPriv(ConnectContext.get().getCurrentUserIdentity(),
+                clusterName, PrivPredicate.USAGE, ResourceTypeEnum.CLUSTER)) {
             throw new DdlException("USAGE denied to user"
                     + ConnectContext.get().getQualifiedUser() + "'@'" + ConnectContext.get().getRemoteIP()
                     + "' for cloud cluster '" + clusterName + "'", ErrorCode.ERR_CLUSTER_NO_PERMISSIONS);

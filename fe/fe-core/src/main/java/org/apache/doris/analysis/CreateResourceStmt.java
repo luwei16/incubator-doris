@@ -69,7 +69,7 @@ public class CreateResourceStmt extends DdlStmt {
         }
 
         // check name
-        FeNameFormat.checkResourceName(resourceName, false);
+        FeNameFormat.checkResourceName(resourceName, ResourceTypeEnum.GENERAL);
 
         // check type in properties
         if (properties == null || properties.isEmpty()) {

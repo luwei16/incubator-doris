@@ -3863,9 +3863,12 @@ public class InternalCatalog implements CatalogIf<Database> {
         }
     }
 
-    public StagePB getStage(StagePB.StageType stageType, String userName, String stageName) throws DdlException {
+    public List<StagePB> getStage(StagePB.StageType stageType, String userName, String stageName) throws DdlException {
         SelectdbCloud.GetStageRequest.Builder builder = SelectdbCloud.GetStageRequest.newBuilder()
-                .setCloudUniqueId(Config.cloud_unique_id).setType(stageType).setMysqlUserName(userName);
+                .setCloudUniqueId(Config.cloud_unique_id).setType(stageType);
+        if (userName != null) {
+            builder.setMysqlUserName(userName);
+        }
         if (stageName != null) {
             builder.setStageName(stageName);
         }
@@ -3876,9 +3879,9 @@ public class InternalCatalog implements CatalogIf<Database> {
                 LOG.warn("getStage response: {} ", response);
                 throw new DdlException(response.getStatus().getMsg());
             }
-            return response.getStage();
+            return response.getStageList();
         } catch (RpcException e) {
-            LOG.warn("createStage response: {} ", response);
+            LOG.warn("getStage response: {} ", response);
             throw new DdlException(e.getMessage());
         }
     }

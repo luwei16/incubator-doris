@@ -27,6 +27,7 @@ import org.apache.doris.common.DdlException;
 import org.apache.doris.common.UserException;
 import org.apache.doris.common.util.DebugUtil;
 import org.apache.doris.load.loadv2.LoadTask.MergeType;
+import org.apache.doris.mysql.privilege.PrivPredicate;
 import org.apache.doris.qe.ConnectContext;
 import org.apache.doris.qe.ShowResultSetMetaData;
 
@@ -112,14 +113,21 @@ public class CopyStmt extends DdlStmt {
         label.analyze(analyzer);
         // analyze stage
         analyzeStageName();
-        // get stage from meta service. And permission is checked in meta service
+        // get stage from meta service
         StagePB stagePB;
         String user = ClusterNamespace.getNameFromFullName(
                 ConnectContext.get().getCurrentUserIdentity().getQualifiedUser());
         if (stage.equals("~")) {
-            stagePB = Env.getCurrentInternalCatalog().getStage(StageType.INTERNAL, user, null);
+            stagePB = Env.getCurrentInternalCatalog().getStage(StageType.INTERNAL, user, null).get(0);
         } else {
-            stagePB = Env.getCurrentInternalCatalog().getStage(StageType.EXTERNAL, user, stage);
+            // check stage permission
+            if (!Env.getCurrentEnv().getAuth()
+                    .checkCloudPriv(ConnectContext.get().getCurrentUserIdentity(), stage, PrivPredicate.USAGE,
+                            ResourceTypeEnum.STAGE)) {
+                throw new AnalysisException("USAGE denied to user '" + ConnectContext.get().getQualifiedUser() + "'@'"
+                        + ConnectContext.get().getRemoteIP() + "' for cloud stage '" + stage + "'");
+            }
+            stagePB = Env.getCurrentInternalCatalog().getStage(StageType.EXTERNAL, null, stage).get(0);
         }
         analyzeStagePB(stagePB);
 

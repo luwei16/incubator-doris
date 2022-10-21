@@ -82,8 +82,8 @@ public class UseCloudClusterStmt extends StatementBase {
         if (Strings.isNullOrEmpty(cluster)) {
             ErrorReport.reportAnalysisException(ErrorCode.ERR_NO_CLUSTER_ERROR);
         }
-        if (!Env.getCurrentEnv().getAuth().checkCloudClusterPriv(ConnectContext.get().getCurrentUserIdentity(),
-                cluster, PrivPredicate.USAGE)) {
+        if (!Env.getCurrentEnv().getAuth().checkCloudPriv(ConnectContext.get().getCurrentUserIdentity(),
+                cluster, PrivPredicate.USAGE, ResourceTypeEnum.CLUSTER)) {
             throw new AnalysisException("USAGE denied to user '" + ConnectContext.get().getQualifiedUser()
                 + "'@'" + ConnectContext.get().getRemoteIP()
                 + "' for cloud cluster '" + cluster + "'");

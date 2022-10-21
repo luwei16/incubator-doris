@@ -24,6 +24,7 @@ import org.apache.doris.analysis.DropRoleStmt;
 import org.apache.doris.analysis.DropUserStmt;
 import org.apache.doris.analysis.GrantStmt;
 import org.apache.doris.analysis.ResourcePattern;
+import org.apache.doris.analysis.ResourceTypeEnum;
 import org.apache.doris.analysis.RevokeStmt;
 import org.apache.doris.analysis.TablePattern;
 import org.apache.doris.analysis.UserDesc;
@@ -1395,9 +1396,9 @@ public class AuthTest {
         UserIdentity userIdentity = new UserIdentity("testUser", "%");
         String role = "role0";
         String resourceName = "spark0";
-        ResourcePattern resourcePattern = new ResourcePattern(resourceName);
+        ResourcePattern resourcePattern = new ResourcePattern(resourceName, ResourceTypeEnum.GENERAL);
         String anyResource = "*";
-        ResourcePattern anyResourcePattern = new ResourcePattern(anyResource);
+        ResourcePattern anyResourcePattern = new ResourcePattern(anyResource, ResourceTypeEnum.GENERAL);
         List<AccessPrivilege> usagePrivileges = Lists.newArrayList(AccessPrivilege.USAGE_PRIV);
         UserDesc userDesc = new UserDesc(userIdentity, "12345", true);
         // TODO(wyb): spark-load
@@ -1415,7 +1416,7 @@ public class AuthTest {
         }
 
         // 2. grant usage_priv on resource 'spark0' to 'testUser'@'%'
-        GrantStmt grantStmt = new GrantStmt(userIdentity, null, resourcePattern, usagePrivileges, false);
+        GrantStmt grantStmt = new GrantStmt(userIdentity, null, resourcePattern, usagePrivileges, ResourceTypeEnum.GENERAL);
         try {
             grantStmt.analyze(analyzer);
             auth.grant(grantStmt);
@@ -1427,7 +1428,7 @@ public class AuthTest {
         Assert.assertFalse(auth.checkGlobalPriv(userIdentity, PrivPredicate.USAGE));
 
         // 3. revoke usage_priv on resource 'spark0' from 'testUser'@'%'
-        RevokeStmt revokeStmt = new RevokeStmt(userIdentity, null, resourcePattern, usagePrivileges, false);
+        RevokeStmt revokeStmt = new RevokeStmt(userIdentity, null, resourcePattern, usagePrivileges, ResourceTypeEnum.GENERAL);
         try {
             revokeStmt.analyze(analyzer);
             auth.revoke(revokeStmt);
@@ -1459,7 +1460,7 @@ public class AuthTest {
             Assert.fail();
         }
         // grant usage_priv on resource 'spark0' to role 'role0'
-        grantStmt = new GrantStmt(null, role, resourcePattern, usagePrivileges, false);
+        grantStmt = new GrantStmt(null, role, resourcePattern, usagePrivileges, ResourceTypeEnum.GENERAL);
         try {
             grantStmt.analyze(analyzer);
             auth.grant(grantStmt);
@@ -1481,7 +1482,7 @@ public class AuthTest {
         Assert.assertFalse(auth.checkGlobalPriv(userIdentity, PrivPredicate.USAGE));
 
         // 3. revoke usage_priv on resource 'spark0' from role 'role0'
-        revokeStmt = new RevokeStmt(null, role, resourcePattern, usagePrivileges, false);
+        revokeStmt = new RevokeStmt(null, role, resourcePattern, usagePrivileges, ResourceTypeEnum.GENERAL);
         try {
             revokeStmt.analyze(analyzer);
             auth.revoke(revokeStmt);
@@ -1523,7 +1524,7 @@ public class AuthTest {
         }
 
         // 2. grant usage_priv on resource '*' to 'testUser'@'%'
-        grantStmt = new GrantStmt(userIdentity, null, anyResourcePattern, usagePrivileges, false);
+        grantStmt = new GrantStmt(userIdentity, null, anyResourcePattern, usagePrivileges, ResourceTypeEnum.GENERAL);
         try {
             grantStmt.analyze(analyzer);
             auth.grant(grantStmt);
@@ -1535,7 +1536,7 @@ public class AuthTest {
         Assert.assertTrue(auth.checkGlobalPriv(userIdentity, PrivPredicate.USAGE));
 
         // 3. revoke usage_priv on resource '*' from 'testUser'@'%'
-        revokeStmt = new RevokeStmt(userIdentity, null, anyResourcePattern, usagePrivileges, false);
+        revokeStmt = new RevokeStmt(userIdentity, null, anyResourcePattern, usagePrivileges, ResourceTypeEnum.GENERAL);
         try {
             revokeStmt.analyze(analyzer);
             auth.revoke(revokeStmt);
@@ -1567,7 +1568,7 @@ public class AuthTest {
             Assert.fail();
         }
         // grant usage_priv on resource '*' to role 'role0'
-        grantStmt = new GrantStmt(null, role, anyResourcePattern, usagePrivileges, false);
+        grantStmt = new GrantStmt(null, role, anyResourcePattern, usagePrivileges, ResourceTypeEnum.GENERAL);
         try {
             grantStmt.analyze(analyzer);
             auth.grant(grantStmt);
@@ -1589,7 +1590,7 @@ public class AuthTest {
         Assert.assertTrue(auth.checkGlobalPriv(userIdentity, PrivPredicate.USAGE));
 
         // 3. revoke usage_priv on resource '*' from role 'role0'
-        revokeStmt = new RevokeStmt(null, role, anyResourcePattern, usagePrivileges, false);
+        revokeStmt = new RevokeStmt(null, role, anyResourcePattern, usagePrivileges, ResourceTypeEnum.GENERAL);
         try {
             revokeStmt.analyze(analyzer);
             auth.revoke(revokeStmt);
@@ -1632,7 +1633,7 @@ public class AuthTest {
 
         // 1. grant db table priv to resource
         List<AccessPrivilege> privileges = Lists.newArrayList(AccessPrivilege.SELECT_PRIV);
-        grantStmt = new GrantStmt(userIdentity, null, resourcePattern, privileges, false);
+        grantStmt = new GrantStmt(userIdentity, null, resourcePattern, privileges, ResourceTypeEnum.GENERAL);
         hasException = false;
         try {
             grantStmt.analyze(analyzer);

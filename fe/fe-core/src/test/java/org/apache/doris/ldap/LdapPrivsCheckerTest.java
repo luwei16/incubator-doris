@@ -18,6 +18,7 @@
 package org.apache.doris.ldap;
 
 import org.apache.doris.analysis.ResourcePattern;
+import org.apache.doris.analysis.ResourceTypeEnum;
 import org.apache.doris.analysis.TablePattern;
 import org.apache.doris.analysis.UserIdentity;
 import org.apache.doris.catalog.Env;
@@ -98,11 +99,11 @@ public class LdapPrivsCheckerTest {
                 tblPatternToPrivs.put(tbl2, PrivBitSet.of(PaloPrivilege.SELECT_PRIV, PaloPrivilege.DROP_PRIV));
 
                 Map<ResourcePattern, PrivBitSet> resourcePatternToPrivs = role.getResourcePatternToPrivs();
-                ResourcePattern globalResource = new ResourcePattern("*");
+                ResourcePattern globalResource = new ResourcePattern("*",  ResourceTypeEnum.GENERAL);
                 resourcePatternToPrivs.put(globalResource, PrivBitSet.of(PaloPrivilege.USAGE_PRIV));
-                ResourcePattern resource1 = new ResourcePattern(RESOURCE1);
+                ResourcePattern resource1 = new ResourcePattern(RESOURCE1,  ResourceTypeEnum.GENERAL);
                 resourcePatternToPrivs.put(resource1, PrivBitSet.of(PaloPrivilege.USAGE_PRIV));
-                ResourcePattern resource2 = new ResourcePattern(RESOURCE1);
+                ResourcePattern resource2 = new ResourcePattern(RESOURCE1,  ResourceTypeEnum.GENERAL);
                 resourcePatternToPrivs.put(resource2, PrivBitSet.of(PaloPrivilege.USAGE_PRIV));
                 try {
                     global.analyze(CLUSTER);
@@ -224,8 +225,8 @@ public class LdapPrivsCheckerTest {
     @Test
     public void testGetLdapAllResourcePrivs() {
         Map<ResourcePattern, PrivBitSet> allResource = LdapPrivsChecker.getLdapAllResourcePrivs(userIdent);
-        ResourcePattern resource1 = new ResourcePattern(RESOURCE1);
-        ResourcePattern resource2 = new ResourcePattern(RESOURCE1);
+        ResourcePattern resource1 = new ResourcePattern(RESOURCE1,  ResourceTypeEnum.GENERAL);
+        ResourcePattern resource2 = new ResourcePattern(RESOURCE1,  ResourceTypeEnum.GENERAL);
         Assert.assertEquals(PrivBitSet.of(PaloPrivilege.USAGE_PRIV).toString(), allResource.get(resource1).toString());
         Assert.assertEquals(PrivBitSet.of(PaloPrivilege.USAGE_PRIV).toString(), allResource.get(resource2).toString());
     }

@@ -26,6 +26,7 @@ import org.apache.doris.analysis.AdminShowTabletStorageFormatStmt;
 import org.apache.doris.analysis.DescribeStmt;
 import org.apache.doris.analysis.HelpStmt;
 import org.apache.doris.analysis.PartitionNames;
+import org.apache.doris.analysis.ResourceTypeEnum;
 import org.apache.doris.analysis.ShowAlterStmt;
 import org.apache.doris.analysis.ShowAnalyzeStmt;
 import org.apache.doris.analysis.ShowAuthorStmt;
@@ -78,6 +79,7 @@ import org.apache.doris.analysis.ShowRoutineLoadTaskStmt;
 import org.apache.doris.analysis.ShowSmallFilesStmt;
 import org.apache.doris.analysis.ShowSnapshotStmt;
 import org.apache.doris.analysis.ShowSqlBlockRuleStmt;
+import org.apache.doris.analysis.ShowStageStmt;
 import org.apache.doris.analysis.ShowStmt;
 import org.apache.doris.analysis.ShowStreamLoadStmt;
 import org.apache.doris.analysis.ShowSyncJobStmt;
@@ -191,6 +193,9 @@ import com.google.common.base.Preconditions;
 import com.google.common.base.Strings;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
+import com.google.gson.GsonBuilder;
+import com.selectdb.cloud.proto.SelectdbCloud.StagePB;
+import com.selectdb.cloud.proto.SelectdbCloud.StagePB.StageType;
 import org.apache.commons.lang3.tuple.Triple;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -206,8 +211,10 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -376,6 +383,8 @@ public class ShowExecutor {
             handleShowAnalyze();
         } else if (stmt instanceof AdminCopyTabletStmt) {
             handleCopyTablet();
+        } else if (stmt instanceof ShowStageStmt) {
+            handleShowStage();
         } else {
             handleEmtpy();
         }
@@ -2395,6 +2404,39 @@ public class ShowExecutor {
             resultSet = new ShowResultSet(showMetaData, resultRowSet);
         } finally {
             AgentTaskQueue.removeBatchTask(batchTask, TTaskType.MAKE_SNAPSHOT);
+        }
+    }
+
+    private void handleShowStage() throws AnalysisException {
+        ShowStageStmt showStmt = (ShowStageStmt) stmt;
+        try {
+            List<StagePB> stages = Env.getCurrentInternalCatalog().getStage(StageType.EXTERNAL, null, null);
+            List<List<String>> results = new ArrayList<>();
+            for (StagePB stage : stages) {
+                if (!Env.getCurrentEnv().getAuth()
+                        .checkCloudPriv(ConnectContext.get().getCurrentUserIdentity(), stage.getName(),
+                                PrivPredicate.USAGE, ResourceTypeEnum.STAGE)) {
+                    continue;
+                }
+                List<String> result = new ArrayList<>();
+                result.add(stage.getName());
+                result.add(stage.getStageId());
+                result.add(stage.getObjInfo().getEndpoint());
+                result.add(stage.getObjInfo().getRegion());
+                result.add(stage.getObjInfo().getBucket());
+                result.add(stage.getObjInfo().getPrefix());
+                result.add(stage.getObjInfo().getAk());
+                result.add(stage.getObjInfo().getSk());
+                result.add(stage.getObjInfo().getProvider().name());
+                Map<String, String> propertiesMap = new HashMap<>();
+                propertiesMap.putAll(stage.getFileFormatPropertiesMap());
+                propertiesMap.putAll(stage.getCopyOptionPropertiesMap());
+                result.add(new GsonBuilder().disableHtmlEscaping().create().toJson(propertiesMap));
+                results.add(result);
+            }
+            resultSet = new ShowResultSet(showStmt.getMetaData(), results);
+        } catch (DdlException e) {
+            throw new AnalysisException(e.getMessage());
         }
     }
 }

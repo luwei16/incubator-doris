@@ -111,7 +111,7 @@ public class CloudLoadAction extends RestBaseController {
             // use userName, fileName to get presigned url from ms EXTERNAL
             // 1. rpc to ms, by unique_id、username
             StagePB internalStage = Env.getCurrentInternalCatalog().getStage(StageType.INTERNAL,
-                    mysqlUserName, fileName);
+                    mysqlUserName, null).get(0);
             ObjectStoreInfoPB objPb = internalStage.getObjInfo();
             if (!isInternal) {
                 // external, use external endpoint to set endpoint
@@ -122,7 +122,8 @@ public class CloudLoadAction extends RestBaseController {
                 obj.setEndpoint(endpoint);
                 objPb = obj.build();
             }
-            LOG.debug("obj info : {}", objPb.toString());
+            LOG.debug("obj info : {}, isInternal {}", objPb.toString(), isInternal);
+
             // 2. call RemoteBase to get pre-signedUrl
             RemoteBase rb = RemoteBase.newInstance(new ObjectInfo(objPb));
             String signedUrl = rb.getPresignedUrl(fileName);

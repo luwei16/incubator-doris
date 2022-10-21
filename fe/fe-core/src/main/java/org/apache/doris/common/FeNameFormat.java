@@ -18,6 +18,7 @@
 package org.apache.doris.common;
 
 import org.apache.doris.alter.SchemaChangeHandler;
+import org.apache.doris.analysis.ResourceTypeEnum;
 import org.apache.doris.datasource.InternalCatalog;
 import org.apache.doris.mysql.privilege.PaloRole;
 import org.apache.doris.system.SystemInfoService;
@@ -116,11 +117,13 @@ public class FeNameFormat {
         }
     }
 
-    public static void checkResourceName(String resourceName, boolean isCloudCluster) throws AnalysisException {
-        if (!isCloudCluster) {
+    public static void checkResourceName(String resourceName, ResourceTypeEnum type) throws AnalysisException {
+        if (type == ResourceTypeEnum.GENERAL) {
             checkCommonName("resource", resourceName);
-        } else {
+        } else if (type == ResourceTypeEnum.CLUSTER) {
             checkCommonName("clusterName", resourceName);
+        } else {
+            checkCommonName("stageName", resourceName);
         }
     }
 

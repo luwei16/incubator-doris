@@ -41,15 +41,22 @@ public class ResourcePattern implements Writable {
 
     // just for cloud
     // GRANT USAGE_PRIV ON CLUSTER '${clusterName}' TO '${userName}';
-    @SerializedName(value = "isCloudCluster")
-    private boolean isCloudCluster;
+    @SerializedName(value = "resourceType")
+    private ResourceTypeEnum resourceType;
 
-    public static ResourcePattern ALL;
+    public static ResourcePattern ALL_GENERAL;
+    public static ResourcePattern ALL_CLUSTER;
+    public static ResourcePattern ALL_STAGE;
 
     static {
-        ALL = new ResourcePattern("*");
+        ALL_GENERAL = new ResourcePattern("*", ResourceTypeEnum.GENERAL);
+        ALL_CLUSTER = new ResourcePattern("*", ResourceTypeEnum.CLUSTER);
+        ALL_STAGE = new ResourcePattern("*", ResourceTypeEnum.STAGE);
+
         try {
-            ALL.analyze();
+            ALL_GENERAL.analyze();
+            ALL_CLUSTER.analyze();
+            ALL_STAGE.analyze();
         } catch (AnalysisException e) {
             // will not happen
         }
@@ -58,16 +65,29 @@ public class ResourcePattern implements Writable {
     private ResourcePattern() {
     }
 
-    public ResourcePattern(String resourceName) {
+    public ResourcePattern(String resourceName, ResourceTypeEnum type) {
         this.resourceName = Strings.isNullOrEmpty(resourceName) ? "*" : resourceName;
+        resourceType = type;
     }
 
-    public void setIsCloudCluster(boolean cloudCluster) {
-        isCloudCluster = cloudCluster;
+    public void setResourceType(ResourceTypeEnum type) {
+        resourceType = type;
     }
 
-    public boolean getIsCloudCluster() {
-        return isCloudCluster;
+    public ResourceTypeEnum getResourceTypeEnum() {
+        return resourceType;
+    }
+
+    public boolean isGeneralResource() {
+        return resourceType == ResourceTypeEnum.GENERAL;
+    }
+
+    public boolean isClusterResource() {
+        return resourceType == ResourceTypeEnum.CLUSTER;
+    }
+
+    public boolean isStageResource() {
+        return resourceType == ResourceTypeEnum.STAGE;
     }
 
     public String getResourceName() {
@@ -84,7 +104,7 @@ public class ResourcePattern implements Writable {
 
     public void analyze() throws AnalysisException {
         if (!resourceName.equals("*")) {
-            FeNameFormat.checkResourceName(resourceName, isCloudCluster);
+            FeNameFormat.checkResourceName(resourceName, resourceType);
         }
     }
 
