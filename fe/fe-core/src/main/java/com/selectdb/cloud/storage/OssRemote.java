@@ -78,6 +78,10 @@ public class OssRemote extends DefaultRemote {
 
     private void initClient() {
         if (ossClient == null) {
+            /*
+             * There are several timeout configuration, see {@link com.aliyun.oss.ClientConfiguration},
+             * please config if needed.
+             */
             ossClient = new OSSClientBuilder().build(obj.getEndpoint(), obj.getAk(), obj.getSk());
         }
     }

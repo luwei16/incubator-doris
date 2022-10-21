@@ -21,6 +21,7 @@ import org.apache.doris.analysis.BrokerDesc;
 import org.apache.doris.analysis.StorageBackend;
 import org.apache.doris.catalog.Env;
 import org.apache.doris.common.Config;
+import org.apache.doris.common.DdlException;
 import org.apache.doris.common.Pair;
 import org.apache.doris.common.UserException;
 import org.apache.doris.common.util.BrokerUtil;
@@ -131,8 +132,9 @@ public class CopyLoadPendingTask extends BrokerLoadPendingTask {
                         + reachLimitStr, matchedFileNum, loadedFileNum));
             }
             fileStatusMap.put(aggKey, fileStatusList);
-            LOG.info("get {} files to be loaded. total size: {}. cost: {} ms, job: {}", tableTotalFileNum,
-                    tableTotalFileSize, (System.currentTimeMillis() - start), callback.getCallbackId());
+            LOG.info("get {} files to be loaded. total size: {}. cost: {} ms, job: {}, copyId: {}", tableTotalFileNum,
+                    tableTotalFileSize, (System.currentTimeMillis() - start), callback.getCallbackId(),
+                    copyJob.getCopyId());
         }
     }
 
@@ -217,6 +219,8 @@ public class CopyLoadPendingTask extends BrokerLoadPendingTask {
 
     private void listAndFilterFiles(ObjectInfo objectInfo, String pattern, long sizeLimit, int fileNum, int metaSize,
             List<ObjectFilePB> copiedFiles, List<Pair<TBrokerFileStatus, ObjectFilePB>> fileStatus) throws Exception {
+        long startTimestamp = System.currentTimeMillis();
+        long listFileNum = 0;
         matchedFileNum = 0;
         loadedFileNum = 0;
         reachLimitStr = "";
@@ -230,6 +234,13 @@ public class CopyLoadPendingTask extends BrokerLoadPendingTask {
             boolean finish = false;
             while (!finish) {
                 ListObjectsResult listObjectsResult = remote.listObjects(continuationToken);
+                listFileNum += listObjectsResult.getObjectInfoList().size();
+                long costSeconds = (System.currentTimeMillis() - startTimestamp) / 1000;
+                if (costSeconds >= 3600 || listFileNum >= 1000000) {
+                    throw new DdlException("Abort list object for copyId=" + ((CopyJob) callback).getCopyId()
+                            + ". We don't collect enough files to load, after listing " + listFileNum + " objects for "
+                            + costSeconds + " seconds, please check if your pattern " + pattern + " is correct.");
+                }
                 for (ObjectFile objectFile : listObjectsResult.getObjectInfoList()) {
                     // check:
                     // 1. match pattern if it's set

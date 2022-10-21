@@ -32,6 +32,11 @@ public class DefaultRemote extends RemoteBase {
     @Override
     public ListObjectsResult listObjects(String continuationToken) throws DdlException {
         if (s3Client == null) {
+            /*
+             * https://github.com/aws/aws-sdk-java-v2/blob/master/docs/LaunchChangelog.md#131-client-http-configuration
+             * https://github.com/aws/aws-sdk-java-v2/blob/master/docs/LaunchChangelog.md#133-client-override-configuration
+             * There are several timeout configuration, please config if needed.
+             */
             AwsBasicCredentials credentials = AwsBasicCredentials.create(obj.getAk(), obj.getSk());
             StaticCredentialsProvider scp = StaticCredentialsProvider.create(credentials);
             URI endpointUri = URI.create("http://" + obj.getEndpoint());
