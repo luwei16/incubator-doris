@@ -1854,4 +1854,7 @@ public class Config extends ConfigBase {
 
     @ConfField(mutable = false)
     public static int statement_submitter_threads_num = 64;
+
+    @ConfField(mutable = false)
+    public static int cloud_copy_txn_conflict_error_retry_num = 5;
 }

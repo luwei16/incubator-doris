@@ -3886,45 +3886,68 @@ public class InternalCatalog implements CatalogIf<Database> {
     public List<ObjectFilePB> beginCopy(String stageId, SelectdbCloud.StagePB.StageType stageType, long tableId,
             String copyJobId, int groupId, long startTime, long timeoutTime, List<ObjectFilePB> objectFiles)
             throws DdlException {
-        SelectdbCloud.BeginCopyRequest.Builder builder = SelectdbCloud.BeginCopyRequest.newBuilder()
+        SelectdbCloud.BeginCopyRequest request = SelectdbCloud.BeginCopyRequest.newBuilder()
                 .setCloudUniqueId(Config.cloud_unique_id).setStageId(stageId).setStageType(stageType)
                 .setTableId(tableId).setCopyId(copyJobId).setGroupId(groupId).setStartTime(startTime)
-                .setTimeoutTime(timeoutTime).addAllObjectFiles(objectFiles);
-        SelectdbCloud.BeginCopyResponse response;
+                .setTimeoutTime(timeoutTime).addAllObjectFiles(objectFiles).build();
+        SelectdbCloud.BeginCopyResponse response = null;
         try {
-            response = MetaServiceProxy.getInstance().beginCopy(builder.build());
-            if (response.getStatus().getCode() != SelectdbCloud.MetaServiceCode.OK) {
+            int retry = 0;
+            while (true) {
+                response = MetaServiceProxy.getInstance().beginCopy(request);
+                if (response.getStatus().getCode() == SelectdbCloud.MetaServiceCode.OK) {
+                    return response.getFilteredObjectFilesList();
+                }
+                if (retry < Config.cloud_copy_txn_conflict_error_retry_num
+                        && response.getStatus().getCode() == SelectdbCloud.MetaServiceCode.KV_TXN_CONFLICT) {
+                    LOG.warn("begin copy error with kv txn conflict, tableId={}, stageId={}, copyId={}, retry={}",
+                            tableId, stageId, copyJobId, retry);
+                    retry++;
+                    continue;
+                }
                 LOG.warn("beginCopy response: {} ", response);
                 throw new DdlException(response.getStatus().getMsg());
             }
-            return response.getFilteredObjectFilesList();
         } catch (RpcException e) {
-            throw new RuntimeException(e);
+            LOG.warn("beginCopy response: {} ", response);
+            throw new DdlException(e.getMessage());
         }
     }
 
     public void finishCopy(String stageId, SelectdbCloud.StagePB.StageType stageType, long tableId, String copyJobId,
             int groupId, boolean success) throws DdlException {
-        SelectdbCloud.FinishCopyRequest.Builder builder = SelectdbCloud.FinishCopyRequest.newBuilder()
+        SelectdbCloud.FinishCopyRequest request = SelectdbCloud.FinishCopyRequest.newBuilder()
                 .setCloudUniqueId(Config.cloud_unique_id).setStageId(stageId).setStageType(stageType)
                 .setTableId(tableId).setCopyId(copyJobId).setGroupId(groupId)
-                .setAction(success ? Action.COMMIT : Action.ABORT);
-        SelectdbCloud.FinishCopyResponse response;
+                .setAction(success ? Action.COMMIT : Action.ABORT).build();
+        SelectdbCloud.FinishCopyResponse response = null;
         try {
-            response = MetaServiceProxy.getInstance().finishCopy(builder.build());
-            if (response.getStatus().getCode() != SelectdbCloud.MetaServiceCode.OK) {
+            int retry = 0;
+            while (true) {
+                response = MetaServiceProxy.getInstance().finishCopy(request);
+                if (response.getStatus().getCode() == SelectdbCloud.MetaServiceCode.OK) {
+                    return;
+                }
+                if (retry < Config.cloud_copy_txn_conflict_error_retry_num
+                        && response.getStatus().getCode() == SelectdbCloud.MetaServiceCode.KV_TXN_CONFLICT) {
+                    LOG.warn("finish copy error with kv txn conflict, tableId={}, stageId={}, copyId={}, retry={}",
+                            tableId, stageId, copyJobId, retry);
+                    retry++;
+                    continue;
+                }
                 LOG.warn("finishCopy response: {} ", response);
                 throw new DdlException(response.getStatus().getMsg());
             }
         } catch (RpcException e) {
-            throw new RuntimeException(e);
+            LOG.warn("finishCopy response: {} ", response);
+            throw new DdlException(e.getMessage());
         }
     }
 
     public List<ObjectFilePB> getCopyFiles(String stageId, long tableId) throws DdlException {
         SelectdbCloud.GetCopyFilesRequest.Builder builder = SelectdbCloud.GetCopyFilesRequest.newBuilder()
                 .setCloudUniqueId(Config.cloud_unique_id).setStageId(stageId).setTableId(tableId);
-        SelectdbCloud.GetCopyFilesResponse response;
+        SelectdbCloud.GetCopyFilesResponse response = null;
         try {
             response = MetaServiceProxy.getInstance().getCopyFiles(builder.build());
             if (response.getStatus().getCode() != SelectdbCloud.MetaServiceCode.OK) {
@@ -3933,7 +3956,8 @@ public class InternalCatalog implements CatalogIf<Database> {
             }
             return response.getObjectFilesList();
         } catch (RpcException e) {
-            throw new RuntimeException(e);
+            LOG.warn("getCopyFiles response: {} ", response);
+            throw new DdlException(e.getMessage());
         }
     }
 
