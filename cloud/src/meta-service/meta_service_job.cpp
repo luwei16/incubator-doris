@@ -556,6 +556,7 @@ void process_compaction_job(MetaServiceCode& code, std::string& msg, std::string
             auto& recycle_key = *obj_pool.add(new std::string(
                     recycle_rowset_key({instance_id, tablet_id, rs.rowset_id_v2()})));
             RecycleRowsetPB recycle_rowset;
+            recycle_rowset.set_tablet_id(tablet_id);
             recycle_rowset.set_resource_id(rs.resource_id());
             recycle_rowset.set_creation_time(now);
             auto& recycle_val = *obj_pool.add(new std::string(recycle_rowset.SerializeAsString()));
@@ -822,6 +823,7 @@ void process_schema_change_job(MetaServiceCode& code, std::string& msg, std::str
             auto& recycle_key = *obj_pool.add(new std::string(
                     recycle_rowset_key({instance_id, new_tablet_id, rs.rowset_id_v2()})));
             RecycleRowsetPB recycle_rowset;
+            recycle_rowset.set_tablet_id(new_tablet_id);
             recycle_rowset.set_resource_id(rs.resource_id());
             recycle_rowset.set_creation_time(now);
             auto& recycle_val = *obj_pool.add(new std::string(recycle_rowset.SerializeAsString()));
