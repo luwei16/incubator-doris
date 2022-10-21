@@ -41,10 +41,12 @@ public class AlterSystemStmt extends DdlStmt {
 
     @Override
     public void analyze(Analyzer analyzer) throws UserException {
+        if (!Config.cloud_unique_id.isEmpty()) {
+            ErrorReport.reportAnalysisException(ErrorCode.ERR_UNSUPPORTED_OPERATION_ERROR);
+        }
 
         if (!Env.getCurrentEnv().getAuth().checkGlobalPriv(ConnectContext.get(), PrivPredicate.OPERATOR)) {
-            ErrorReport.reportAnalysisException(ErrorCode.ERR_SPECIFIC_ACCESS_DENIED_ERROR,
-                                                "NODE");
+            ErrorReport.reportAnalysisException(ErrorCode.ERR_SPECIFIC_ACCESS_DENIED_ERROR, "NODE");
         }
 
         Preconditions.checkState((alterClause instanceof AddBackendClause)
@@ -57,10 +59,6 @@ public class AlterSystemStmt extends DdlStmt {
                 || (alterClause instanceof ModifyBrokerClause)
                 || (alterClause instanceof AlterLoadErrorUrlClause)
                 || (alterClause instanceof ModifyBackendClause));
-
-        if (!Config.cloud_unique_id.isEmpty()) {
-            throw new UserException("Unsupported operation.");
-        }
 
         alterClause.analyze(analyzer);
     }

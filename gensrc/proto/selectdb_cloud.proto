@@ -104,6 +104,7 @@ message ObjectStoreInfoPB {
     optional string endpoint = 8;
     optional string region = 9;
     optional Provider provider = 10;
+    optional string external_endpoint = 11;
 }
 
 //==============================================================================

@@ -1,5 +1,7 @@
 package com.selectdb.cloud.http;
 
+import com.selectdb.cloud.proto.SelectdbCloud;
+import com.selectdb.cloud.proto.SelectdbCloud.ObjectStoreInfoPB;
 import com.selectdb.cloud.proto.SelectdbCloud.StagePB;
 import com.selectdb.cloud.proto.SelectdbCloud.StagePB.StageType;
 import com.selectdb.cloud.storage.RemoteBase;
@@ -13,6 +15,7 @@ import org.apache.doris.cluster.ClusterNamespace;
 import org.apache.doris.common.DorisHttpException;
 import org.apache.doris.datasource.InternalCatalog;
 import org.apache.doris.httpv2.entity.ResponseEntityBuilder;
+import org.apache.doris.httpv2.exception.UnauthorizedException;
 import org.apache.doris.httpv2.rest.RestBaseController;
 import org.apache.doris.httpv2.util.ExecutionResultSet;
 import org.apache.doris.httpv2.util.HttpUtil;
@@ -31,25 +34,74 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
 @RestController
 @RequestMapping(path = "/copy")
 public class CloudLoadAction extends RestBaseController {
-    private static final Logger LOG = LogManager.getLogger(CloudLoadAction.class);
+    static final String pattern =
+            "^((2(5[0-5]|[0-4]\\d))|[0-1]?\\d{1,2})(\\.((2(5[0-5]|[0-4]\\d))|[0-1]?\\d{1,2})){3}$";
+    static Pattern pat = Pattern.compile(pattern);
 
+    private static final Logger LOG = LogManager.getLogger(CloudLoadAction.class);
     private static StatementSubmitter stmtSubmitter = new StatementSubmitter();
+
+    private final String endpointHeader = "__USE_ENDPOINT__";
+
+    private final String internal = "internal";
+
+    private final String external = "external";
+
+    private boolean isIP(String addr) {
+        if (Strings.isNullOrEmpty(addr)) {
+            return false;
+        }
+        String addrTrim = addr.trim();
+        String[] ep = addrTrim.split(":");
+        String ip = ep.length == 2 ? ep[0] : addr;
+        int port = 0;
+        try {
+            port = Integer.parseInt(ep.length == 2 ? ep[1] : "0");
+
+        } catch (NumberFormatException e) {
+            return false;
+        }
+        if (port < 0 || port > 65536) {
+            return false;
+        }
+
+        if (ip.length() < 7 || ip.length() > 15) {
+            return false;
+        }
+        Matcher mat = pat.matcher(ip);
+        return mat.find();
+    }
 
     // curl  -u user:password -H "fileName: file" -T file -L http://127.0.0.1:12104/copy/upload
     @RequestMapping(path = "/upload", method = RequestMethod.PUT)
     public Object copy(HttpServletRequest request, HttpServletResponse response) {
-        executeCheckPassword(request, response);
         Map<String, Object> resultMap = new HashMap<>(3);
         try {
+            executeCheckPassword(request, response);
             String fileName = request.getHeader("fileName");
             if (Strings.isNullOrEmpty(fileName)) {
                 return ResponseEntityBuilder.badRequest("http header must have fileName entry");
+            }
+            String eh = request.getHeader(endpointHeader);
+            // default use endpoint
+            boolean isInternal = true;
+            if (Strings.isNullOrEmpty(eh)) {
+                // check Header's Host
+                String host = request.getHeader("Host");
+                if (!Strings.isNullOrEmpty(host) && !isIP(host)) {
+                    // check host is ip, if true internal, else external
+                    isInternal = false;
+                }
+            } else {
+                isInternal = eh.equals(internal) || (!eh.equals(external));
             }
             String mysqlUserName = ClusterNamespace
                     .getNameFromFullName(ConnectContext.get().getCurrentUserIdentity().getQualifiedUser());
@@ -60,8 +112,19 @@ public class CloudLoadAction extends RestBaseController {
             // 1. rpc to ms, by unique_id、username
             StagePB internalStage = Env.getCurrentInternalCatalog().getStage(StageType.INTERNAL,
                     mysqlUserName, fileName);
+            ObjectStoreInfoPB objPb = internalStage.getObjInfo();
+            if (!isInternal) {
+                // external, use external endpoint to set endpoint
+                SelectdbCloud.ObjectStoreInfoPB.Builder obj =
+                        SelectdbCloud.ObjectStoreInfoPB.newBuilder(internalStage.getObjInfo());
+                String endpoint = internalStage.getObjInfo().hasExternalEndpoint()
+                        ? internalStage.getObjInfo().getExternalEndpoint() : internalStage.getObjInfo().getEndpoint();
+                obj.setEndpoint(endpoint);
+                objPb = obj.build();
+            }
+            LOG.debug("obj info : {}", objPb.toString());
             // 2. call RemoteBase to get pre-signedUrl
-            RemoteBase rb = RemoteBase.newInstance(new ObjectInfo(internalStage.getObjInfo()));
+            RemoteBase rb = RemoteBase.newInstance(new ObjectInfo(objPb));
             String signedUrl = rb.getPresignedUrl(fileName);
             LOG.info("get internal stage remote info: {}, and signedUrl: {}", rb.toString(), signedUrl);
             return redirectToObj(signedUrl);
@@ -69,6 +132,8 @@ public class CloudLoadAction extends RestBaseController {
             // status code  should conforms to HTTP semantic
             resultMap.put("code", e.getCode().code());
             resultMap.put("msg", e.getMessage());
+        } catch (UnauthorizedException e) {
+            return ResponseEntityBuilder.unauthorized(e.getMessage());
         } catch (Exception e) {
             resultMap.put("code", "1");
             resultMap.put("exception", e.getMessage());
@@ -78,10 +143,10 @@ public class CloudLoadAction extends RestBaseController {
 
     @RequestMapping(path = "/query", method = RequestMethod.POST)
     public Object loadQuery(HttpServletRequest request, HttpServletResponse response) throws InterruptedException {
-        ActionAuthorizationInfo authInfo = executeCheckPassword(request, response);
         String postContent = HttpUtil.getBody(request);
         Map<String, Object> resultMap = new HashMap<>(3);
         try {
+            ActionAuthorizationInfo authInfo = executeCheckPassword(request, response);
             if (Strings.isNullOrEmpty(postContent)) {
                 return ResponseEntityBuilder.badRequest("POST body must contain json object");
             }
@@ -110,6 +175,8 @@ public class CloudLoadAction extends RestBaseController {
             // status code  should conforms to HTTP semantic
             resultMap.put("code", e.getCode().code());
             resultMap.put("msg", e.getMessage());
+        } catch (UnauthorizedException e) {
+            return ResponseEntityBuilder.unauthorized(e.getMessage());
         } catch (Exception e) {
             resultMap.put("code", "1");
             resultMap.put("exception", e.getMessage());

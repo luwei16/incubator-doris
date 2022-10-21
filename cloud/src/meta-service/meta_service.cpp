@@ -3417,6 +3417,7 @@ void MetaServiceImpl::alter_obj_store_info(google::protobuf::RpcController* cont
     std::string bucket = obj.has_bucket() ? obj.bucket() : "";
     std::string prefix = obj.has_prefix() ? obj.prefix() : "";
     std::string endpoint = obj.has_endpoint() ? obj.endpoint() : "";
+    std::string external_endpoint = obj.has_external_endpoint() ? obj.external_endpoint() : "";
     std::string region = obj.has_region() ? obj.region() : "";
 
     //  obj size > 1k, refuse
@@ -3533,7 +3534,7 @@ void MetaServiceImpl::alter_obj_store_info(google::protobuf::RpcController* cont
         for (auto& it : objs) {
             if (bucket == it.bucket() && prefix == it.prefix() && endpoint == it.endpoint() &&
                 region == it.region() && ak == it.ak() && sk == it.sk() &&
-                obj.provider() == it.provider()) {
+                obj.provider() == it.provider() && external_endpoint == it.external_endpoint()) {
                 // err, anything not changed
                 code = MetaServiceCode::INVALID_ARGUMENT;
                 msg = "original obj infos has a same conf, please check it";
@@ -3552,6 +3553,7 @@ void MetaServiceImpl::alter_obj_store_info(google::protobuf::RpcController* cont
         prefix = trim(prefix);
         last_item.set_prefix(prefix);
         last_item.set_endpoint(endpoint);
+        last_item.set_external_endpoint(external_endpoint);
         last_item.set_region(region);
         last_item.set_provider(obj.provider());
         instance.add_obj_info()->CopyFrom(last_item);
@@ -3612,6 +3614,7 @@ void MetaServiceImpl::create_instance(google::protobuf::RpcController* controlle
     // format prefix, such as `/aa/bb/`, `aa/bb//`, `//aa/bb`, `  /aa/bb` -> `aa/bb`
     prefix = trim(prefix);
     std::string endpoint = obj.has_endpoint() ? obj.endpoint() : "";
+    std::string external_endpoint = obj.has_external_endpoint() ? obj.external_endpoint() : "";
     std::string region = obj.has_region() ? obj.region() : "";
 
     // ATTN: prefix may be empty
@@ -3632,6 +3635,7 @@ void MetaServiceImpl::create_instance(google::protobuf::RpcController* controlle
     obj_info->set_bucket(bucket);
     obj_info->set_prefix(prefix);
     obj_info->set_endpoint(endpoint);
+    obj_info->set_external_endpoint(external_endpoint);
     obj_info->set_region(region);
     obj_info->set_provider(obj.provider());
     std::ostringstream oss;
@@ -4364,6 +4368,8 @@ void MetaServiceImpl::get_stage(google::protobuf::RpcController* controller,
                 response->mutable_stage()->mutable_obj_info()->set_sk(old_obj.sk());
                 response->mutable_stage()->mutable_obj_info()->set_bucket(old_obj.bucket());
                 response->mutable_stage()->mutable_obj_info()->set_endpoint(old_obj.endpoint());
+                response->mutable_stage()->mutable_obj_info()->set_external_endpoint(
+                        old_obj.external_endpoint());
                 response->mutable_stage()->mutable_obj_info()->set_region(old_obj.region());
                 response->mutable_stage()->mutable_obj_info()->set_provider(old_obj.provider());
                 response->mutable_stage()->mutable_obj_info()->set_prefix(s.obj_info().prefix());
@@ -4410,6 +4416,8 @@ void MetaServiceImpl::get_stage(google::protobuf::RpcController* controller,
             response->mutable_stage()->mutable_obj_info()->set_sk(lastest_obj.sk());
             response->mutable_stage()->mutable_obj_info()->set_bucket(lastest_obj.bucket());
             response->mutable_stage()->mutable_obj_info()->set_endpoint(lastest_obj.endpoint());
+            response->mutable_stage()->mutable_obj_info()->set_external_endpoint(
+                    lastest_obj.external_endpoint());
             response->mutable_stage()->mutable_obj_info()->set_region(lastest_obj.region());
             response->mutable_stage()->mutable_obj_info()->set_provider(lastest_obj.provider());
             response->mutable_stage()->set_stage_id(stage_id);
