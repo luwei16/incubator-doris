@@ -2103,7 +2103,7 @@ void MetaServiceImpl::commit_rowset(::google::protobuf::RpcController* controlle
             code = MetaServiceCode::PROTOBUF_PARSE_ERR;
             msg = fmt::format("malformed rowset meta value. key={}", hex(commit_key));
             return;
-        }        
+        }
         code = MetaServiceCode::ALREADY_EXISTED;
         msg = "rowset already exists";
         return;
@@ -2349,8 +2349,9 @@ void MetaServiceImpl::get_rowset(::google::protobuf::RpcController* controller,
     ret = txn->get(tablet_stat_key, &tablet_stat_val);
     LOG(INFO) << "get tablet stats, tablet_id=" << tablet_id << " key=" << hex(tablet_stat_key);
     if (ret != 0) {
-        code = MetaServiceCode::KV_TXN_GET_ERR;
+        code = ret == 1 ? MetaServiceCode::TABLET_NOT_FOUND : MetaServiceCode::KV_TXN_GET_ERR;
         ss << (ret == 1 ? " not_found" : " failed") << "_tablet_id=" << tablet_id;
+        msg = ss.str();
         LOG(WARNING) << "failed to get tablet stats, tablet_id=" << tablet_id << " ret=" << ret
                      << " key=" << hex(tablet_stat_key);
         return;
@@ -4398,7 +4399,8 @@ void MetaServiceImpl::get_stage(google::protobuf::RpcController* controller,
                       << " json=" << proto_to_json(instance);
             ret = txn->commit();
             if (ret != 0) {
-                code = ret == -1 ? MetaServiceCode::KV_TXN_CONFLICT : MetaServiceCode::KV_TXN_COMMIT_ERR;
+                code = ret == -1 ? MetaServiceCode::KV_TXN_CONFLICT
+                                 : MetaServiceCode::KV_TXN_COMMIT_ERR;
                 msg = "failed to commit kv txn";
                 LOG(WARNING) << msg << " ret=" << ret;
                 return;

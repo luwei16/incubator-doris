@@ -101,6 +101,9 @@ Status CloudMetaMgr::sync_tablet_rowsets(Tablet* tablet) {
     if (cntl.Failed()) {
         return Status::RpcError("failed to get rowset meta: {}", cntl.ErrorText());
     }
+    if (resp.status().code() == selectdb::MetaServiceCode::TABLET_NOT_FOUND) {
+        return Status::NotFound("failed to get rowset meta: {}", resp.status().msg());
+    }
     if (resp.status().code() != selectdb::MetaServiceCode::OK) {
         return Status::InternalError("failed to get rowset meta: {}", resp.status().msg());
     }

@@ -575,9 +575,13 @@ Status Tablet::cloud_sync_rowsets(int64_t query_version) {
             _tablet_meta->clear_stale_rowset();
             _max_version = -1;
         }
-        return cloud::meta_mgr()->sync_tablet_rowsets(this);
+        auto st = cloud::meta_mgr()->sync_tablet_rowsets(this);
+        if (st.is_not_found()) {
+            cloud::tablet_mgr()->erase_tablet(tablet_id());
+        }
+        return st;
     } while (false);
-    
+
     if (query_version > 0) {
         std::shared_lock rlock(_meta_lock);
         if (_max_version >= query_version) {
@@ -592,7 +596,11 @@ Status Tablet::cloud_sync_rowsets(int64_t query_version) {
             return Status::OK();
         }
     }
-    return cloud::meta_mgr()->sync_tablet_rowsets(this);
+    auto st = cloud::meta_mgr()->sync_tablet_rowsets(this);
+    if (st.is_not_found()) {
+        cloud::tablet_mgr()->erase_tablet(tablet_id());
+    }
+    return st;
 }
 
 void Tablet::cloud_add_rowsets(std::vector<RowsetSharedPtr> to_add, bool version_overlap) {

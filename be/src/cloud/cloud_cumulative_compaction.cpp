@@ -49,8 +49,10 @@ Status CloudCumulativeCompaction::prepare_compact() {
     }
     TRACE("rowsets picked");
     TRACE_COUNTER_INCREMENT("input_rowsets_count", _input_rowsets.size());
-    VLOG_CRITICAL << "compaction range=[" << _input_rowsets.front()->start_version() << '-'
-                  << _input_rowsets.back()->end_version() << ']';
+    LOG_INFO("start cumulative compaction, range=[{}-{}]", _input_rowsets.front()->start_version(),
+             _input_rowsets.back()->end_version())
+            .tag("job_id", _uuid)
+            .tag("tablet_id", _tablet->tablet_id());
 
     // prepare compaction job
     selectdb::TabletJobInfoPB job;
@@ -168,7 +170,10 @@ void CloudCumulativeCompaction::garbage_collection() {
     compaction_job->set_type(selectdb::TabletCompactionJobPB::CUMULATIVE);
     auto st = cloud::meta_mgr()->abort_tablet_job(job);
     if (!st.ok()) {
-        LOG_WARNING("failed to gc compaction job").tag("tablet_id", _tablet->tablet_id()).error(st);
+        LOG_WARNING("failed to gc compaction job")
+                .tag("job_id", _uuid)
+                .tag("tablet_id", _tablet->tablet_id())
+                .error(st);
     }
 }
 
@@ -228,6 +233,7 @@ void CloudCumulativeCompaction::update_cumulative_point(int64_t base_compaction_
     auto st = cloud::meta_mgr()->prepare_tablet_job(job);
     if (!st.ok()) {
         LOG_WARNING("failed to update cumulative point to meta srv")
+                .tag("job_id", _uuid)
                 .tag("tablet_id", _tablet->tablet_id())
                 .error(st);
     }
@@ -239,11 +245,13 @@ void CloudCumulativeCompaction::update_cumulative_point(int64_t base_compaction_
     st = cloud::meta_mgr()->commit_tablet_job(job, &stats);
     if (!st.ok()) {
         LOG_WARNING("failed to update cumulative point to meta srv")
+                .tag("job_id", _uuid)
                 .tag("tablet_id", _tablet->tablet_id())
                 .error(st);
         return;
     }
     LOG_INFO("do empty cumulative compaction to update cumulative point")
+            .tag("job_id", _uuid)
             .tag("tablet_id", _tablet->tablet_id())
             .tag("input_cumulative_point", input_cumulative_point)
             .tag("output_cumulative_point", output_cumulative_point);

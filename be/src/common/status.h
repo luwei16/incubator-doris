@@ -82,7 +82,7 @@ class PStatus;
     M(OLAP_ERR_DISK_REACH_CAPACITY_LIMIT, -232, "", true)                \
     M(OLAP_ERR_TOO_MANY_TRANSACTIONS, -233, "", true)                    \
     M(OLAP_ERR_INVALID_SNAPSHOT_VERSION, -234, "", true)                 \
-    M(OLAP_ERR_TOO_MANY_VERSION, -235, "", true)                         \
+    M(OLAP_ERR_TOO_MANY_VERSION, -235, "", false)                        \
     M(OLAP_ERR_NOT_INITIALIZED, -236, "", true)                          \
     M(OLAP_ERR_ALREADY_CANCELLED, -237, "", true)                        \
     M(OLAP_ERR_TOO_MANY_SEGMENTS, -238, "", true)                        \

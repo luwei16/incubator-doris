@@ -549,11 +549,13 @@ void TaskWorkerPool::_alter_tablet(const TAgentTaskRequest& agent_task_req, int6
         LOG_WARNING("failed to {}", process_name)
                 .tag("signature", agent_task_req.signature)
                 .tag("base_tablet_id", agent_task_req.alter_tablet_req_v2.base_tablet_id)
+                .tag("job_id", agent_task_req.alter_tablet_req_v2.job_id)
                 .error(status);
     } else {
         LOG_INFO("successfully {}", process_name)
                 .tag("signature", agent_task_req.signature)
                 .tag("base_tablet_id", agent_task_req.alter_tablet_req_v2.base_tablet_id)
+                .tag("job_id", agent_task_req.alter_tablet_req_v2.job_id)
                 .tag("status", status.get_error_msg());
     }
     finish_task_request->__set_task_status(status.to_thrift());

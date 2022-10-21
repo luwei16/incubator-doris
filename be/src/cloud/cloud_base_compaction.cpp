@@ -38,8 +38,10 @@ Status CloudBaseCompaction::prepare_compact() {
     RETURN_IF_ERROR(pick_rowsets_to_compact());
     TRACE("rowsets picked");
     TRACE_COUNTER_INCREMENT("input_rowsets_count", _input_rowsets.size());
-    VLOG_CRITICAL << "compaction range=[" << _input_rowsets.front()->start_version() << '-'
-                  << _input_rowsets.back()->end_version() << ']';
+    LOG_INFO("start base compaction, range=[{}-{}]", _input_rowsets.front()->start_version(),
+             _input_rowsets.back()->end_version())
+            .tag("job_id", _uuid)
+            .tag("tablet_id", _tablet->tablet_id());
 
     // prepare compaction job
     selectdb::TabletJobInfoPB job;
@@ -159,7 +161,10 @@ void CloudBaseCompaction::garbage_collection() {
     compaction_job->set_type(selectdb::TabletCompactionJobPB::BASE);
     auto st = cloud::meta_mgr()->abort_tablet_job(job);
     if (!st.ok()) {
-        LOG_WARNING("failed to gc compaction job").tag("tablet_id", _tablet->tablet_id()).error(st);
+        LOG_WARNING("failed to gc compaction job")
+                .tag("job_id", _uuid)
+                .tag("tablet_id", _tablet->tablet_id())
+                .error(st);
     }
 }
 

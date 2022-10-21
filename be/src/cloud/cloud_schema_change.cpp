@@ -25,7 +25,7 @@ CloudSchemaChange::~CloudSchemaChange() = default;
 Status CloudSchemaChange::process_alter_tablet(const TAlterTabletReqV2& request) {
     LOG(INFO) << "Begin to alter tablet. base_tablet_id=" << request.base_tablet_id
               << ", new_tablet_id=" << request.new_tablet_id
-              << ", alter_version=" << request.alter_version;
+              << ", alter_version=" << request.alter_version << ", job_id=" << _job_id;
 
     // new tablet has to exist
     TabletSharedPtr new_tablet;
@@ -33,7 +33,7 @@ Status CloudSchemaChange::process_alter_tablet(const TAlterTabletReqV2& request)
     if (new_tablet->tablet_state() == TABLET_RUNNING) {
         LOG(INFO) << "schema change job has already finished. base_tablet_id="
                   << request.base_tablet_id << ", new_tablet_id=" << request.new_tablet_id
-                  << ", alter_version=" << request.alter_version;
+                  << ", alter_version=" << request.alter_version << ", job_id=" << _job_id;
         return Status::OK();
     }
 
@@ -140,7 +140,7 @@ Status CloudSchemaChange::process_alter_tablet(const TAlterTabletReqV2& request)
 Status CloudSchemaChange::_convert_historical_rowsets(const SchemaChangeParams& sc_params) {
     LOG(INFO) << "Begin to convert historical rowsets for new_tablet from base_tablet. base_tablet="
               << sc_params.base_tablet->tablet_id()
-              << ", new_tablet=" << sc_params.new_tablet->tablet_id();
+              << ", new_tablet=" << sc_params.new_tablet->tablet_id() << ", job_id=" << _job_id;
 
     auto& new_tablet = sc_params.new_tablet;
 
