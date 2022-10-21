@@ -70,10 +70,10 @@ Status S3FileWriter::close() {
         return Status::OK();
     }
     VLOG_DEBUG << "S3FileWriter::close, path: " << _path.native();
-    _closed = true;
     if (!_handle) {
         RETURN_IF_ERROR(finalize());
     }
+    _closed = true;
 
     {
         SCOPED_ATTACH_TASK(ExecEnv::GetInstance()->orphan_mem_tracker());

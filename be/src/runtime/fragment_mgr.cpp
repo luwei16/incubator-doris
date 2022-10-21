@@ -63,17 +63,6 @@ DEFINE_GAUGE_METRIC_PROTOTYPE_2ARG(plan_fragment_count, MetricUnit::NOUNIT);
 DEFINE_GAUGE_METRIC_PROTOTYPE_2ARG(timeout_canceled_fragment_count, MetricUnit::NOUNIT);
 DEFINE_GAUGE_METRIC_PROTOTYPE_2ARG(fragment_thread_pool_queue_size, MetricUnit::NOUNIT);
 
-std::string to_load_error_http_path(const std::string& file_name) {
-    if (file_name.empty()) {
-        return "";
-    }
-    std::stringstream url;
-    url << "http://" << BackendOptions::get_localhost() << ":" << config::webserver_port
-        << "/api/_load_error_log?"
-        << "file=" << file_name;
-    return url.str();
-}
-
 using apache::thrift::TException;
 using apache::thrift::TProcessor;
 using apache::thrift::transport::TTransportException;
@@ -353,8 +342,7 @@ void FragmentExecState::coordinator_callback(const Status& status, RuntimeProfil
                                          std::to_string(runtime_state->num_rows_load_unselected()));
         }
         if (!runtime_state->get_error_log_file_path().empty()) {
-            params.__set_tracking_url(
-                    to_load_error_http_path(runtime_state->get_error_log_file_path()));
+            params.__set_tracking_url(runtime_state->get_load_error_http_path());
         }
         if (!runtime_state->export_output_files().empty()) {
             params.__isset.export_files = true;

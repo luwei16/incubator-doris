@@ -40,6 +40,7 @@
 #include "io/fs/s3_file_writer.h"
 #include "olap/olap_common.h"
 #include "util/async_io.h"
+#include "util/string_util.h"
 
 namespace doris {
 namespace io {
@@ -50,6 +51,8 @@ namespace io {
         return Status::InternalError("init s3 client error"); \
     }
 #endif
+
+const std::string OSS_PRIVATE_ENDPOINT_SUFFIX = "-internal.aliyuncs.com";
 
 S3FileSystem::S3FileSystem(S3Conf s3_conf, ResourceId resource_id)
         : RemoteFileSystem(
@@ -387,6 +390,25 @@ FileReaderSPtr S3FileSystem::lookup_tmp_file(const Path& path) {
         return nullptr;
     }
     return file_reader;
+}
+
+// oss has public endpoint and private endpoint, is_public_endpoint determines
+// whether to return a public endpoint.
+std::string S3FileSystem::generate_presigned_url(const Path& path, int64_t expiration_secs,
+                                                 bool is_public_endpoint) const {
+    auto key = get_key(path);
+    std::shared_ptr<Aws::S3::S3Client> client;
+    if (is_public_endpoint && ends_with(_s3_conf.endpoint, OSS_PRIVATE_ENDPOINT_SUFFIX)) {
+        S3Conf new_s3_conf = _s3_conf;
+        new_s3_conf.endpoint.erase(new_s3_conf.endpoint.size() - OSS_PRIVATE_ENDPOINT_SUFFIX.size(),
+                                   9);
+        client = ClientFactory::instance().create(new_s3_conf);
+    } else {
+        client = get_client();
+    }
+    DCHECK(client != nullptr);
+    return client->GeneratePresignedUrl(_s3_conf.bucket, key, Aws::Http::HttpMethod::HTTP_GET,
+                                        expiration_secs);
 }
 
 } // namespace io

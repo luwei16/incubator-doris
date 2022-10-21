@@ -34,6 +34,7 @@
 #include "gen_cpp/PaloInternalService_types.h" // for TQueryOptions
 #include "gen_cpp/Types_types.h"               // for TUniqueId
 #include "io/cloud/cloud_file_cache.h"
+#include "io/fs/file_system.h"
 #include "runtime/mem_pool.h"
 #include "runtime/query_fragments_ctx.h"
 #include "runtime/thread_resource_mgr.h"
@@ -95,8 +96,6 @@ public:
 
     // Gets/Creates the query wide block mgr.
     Status create_block_mgr();
-
-    Status create_load_dir();
 
     const TQueryOptions& query_options() const { return _query_options; }
     ObjectPool* obj_pool() const { return _obj_pool.get(); }
@@ -388,6 +387,8 @@ public:
 
     bool enable_profile() const { return _query_options.is_report_success; }
 
+    std::string get_load_error_http_path() const;
+
 private:
     // Use a custom block manager for the query for testing purposes.
     void set_block_mgr2(const std::shared_ptr<BufferedBlockMgr2>& block_mgr) {
@@ -508,6 +509,12 @@ private:
     int64_t _error_row_number;
     std::string _error_log_file_path;
     std::ofstream* _error_log_file = nullptr; // error file path, absolute path
+#ifdef CLOUD_MODE
+    // cloud mode will save error log to s3
+    io::FileSystemPtr _error_fs;
+    // error file path on s3, ${bucket}/${prefix}/error_log/${label}_${fragment_instance_id}
+    std::string _s3_error_log_file_path;
+#endif
     std::unique_ptr<LoadErrorHub> _error_hub;
     std::mutex _create_error_hub_lock;
     std::vector<TTabletCommitInfo> _tablet_commit_infos;

@@ -26,11 +26,13 @@
 #include <sstream>
 #include <string>
 
+#include "cloud/utils.h"
 #include "common/logging.h"
 #include "common/object_pool.h"
 #include "common/status.h"
 #include "exec/exec_node.h"
 #include "io/cloud/cloud_file_cache_factory.h"
+#include "io/fs/s3_file_system.h"
 #include "runtime/buffered_block_mgr2.h"
 #include "runtime/exec_env.h"
 #include "runtime/load_path_mgr.h"
@@ -156,6 +158,22 @@ RuntimeState::~RuntimeState() {
         _error_log_file->close();
         delete _error_log_file;
         _error_log_file = nullptr;
+
+#ifdef CLOUD_MODE
+        std::string error_log_absolute_path =
+                _exec_env->load_path_mgr()->get_load_error_absolute_path(_error_log_file_path);
+        // upload error log file to s3
+        Status st = std::dynamic_pointer_cast<io::S3FileSystem>(_error_fs)->upload(
+                error_log_absolute_path, _s3_error_log_file_path);
+        if (st.ok()) {
+            // remove local error log file
+            std::filesystem::remove(error_log_absolute_path);
+        } else {
+            // remove local error log file later by clean_expired_temp_path thread
+            LOG(WARNING) << "Fail to upload error file to s3, error_log_file_path="
+                         << _error_log_file_path << ", error=" << st;
+        }
+#endif
     }
 
     if (_error_hub != nullptr) {
@@ -333,26 +351,18 @@ Status RuntimeState::check_query_state(const std::string& msg) {
 const std::string ERROR_FILE_NAME = "error_log";
 const int64_t MAX_ERROR_NUM = 50;
 
-Status RuntimeState::create_load_dir() {
-    if (!_load_dir.empty()) {
-        return Status::OK();
-    }
-    RETURN_IF_ERROR(_exec_env->load_path_mgr()->allocate_dir(_db_name, _import_label, &_load_dir));
-    _load_dir += "/output";
-    return FileUtils::create_dir(_load_dir);
-}
-
 Status RuntimeState::create_error_log_file() {
-    // Make sure that load dir exists.
-    // create_load_dir();
+#ifdef CLOUD_MODE
+    _error_fs = cloud::latest_fs();
+    std::stringstream ss;
+    ss << ERROR_FILE_NAME << "/" << _import_label << "_" << std::hex << _fragment_instance_id.hi
+       << "_" << _fragment_instance_id.lo;
+    _s3_error_log_file_path = ss.str();
+#endif
 
+    // Make sure that load dir exists.
     _exec_env->load_path_mgr()->get_load_error_file_name(
-            _db_name, _import_label, _fragment_instance_id, &_error_log_file_path);
-    // std::stringstream ss;
-    // ss << load_dir() << "/" << ERROR_FILE_NAME
-    //     << "_" << std::hex << fragment_instance_id().hi
-    //     << "_" << fragment_instance_id().lo;
-    // _error_log_file_path = ss.str();
+            "insert_stmt", _import_label, _fragment_instance_id, &_error_log_file_path);
     std::string error_log_absolute_path =
             _exec_env->load_path_mgr()->get_load_error_absolute_path(_error_log_file_path);
     _error_log_file = new std::ofstream(error_log_absolute_path, std::ifstream::out);
@@ -416,6 +426,25 @@ Status RuntimeState::append_error_msg_to_file(std::function<std::string()> line,
         export_load_error(fmt::to_string(out));
     }
     return Status::OK();
+}
+
+std::string RuntimeState::get_load_error_http_path() const {
+    if (_error_log_file_path.empty()) {
+        return "";
+    }
+#ifdef CLOUD_MODE
+    // expiration must be less than a week (in seconds) for presigned url
+    static const unsigned EXPIRATION_SECONDS = 7 * 24 * 60 * 60 - 1;
+    // We should return a public endpoint to user.
+    return std::dynamic_pointer_cast<io::S3FileSystem>(_error_fs)->generate_presigned_url(
+            _s3_error_log_file_path, EXPIRATION_SECONDS, true);
+#else
+    std::stringstream url;
+    url << "http://" << BackendOptions::get_localhost() << ":" << config::webserver_port
+        << "/api/_load_error_log?"
+        << "file=" << _error_log_file_path;
+    return url.str();
+#endif
 }
 
 const int64_t HUB_MAX_ERROR_NUM = 10;

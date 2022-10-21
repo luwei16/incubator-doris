@@ -83,6 +83,9 @@ public:
 
     const S3Conf& s3_conf() { return _s3_conf; }
 
+    std::string generate_presigned_url(const Path& path, int64_t expiration_secs,
+                                       bool is_public_endpoint) const;
+
     // insert tmp file to mgr
     static void insert_tmp_file(const Path& path, size_t file_size);
 
