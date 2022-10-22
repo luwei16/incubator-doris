@@ -33,15 +33,18 @@ import java.util.List;
 
 public class CopyIntoTest extends TestWithFeService {
 
-    private static final String OBJ_INFO =  "(\"bucket\" = \"tmp_bucket\", "
+    private static final String OBJ_INFO = "properties (\"bucket\" = \"tmp_bucket\", "
             + "\"endpoint\" = \"cos.ap-beijing.myqcloud.com\", "
             + "\"prefix\" = \"tmp_prefix\", "
             + "\"sk\" = \"tmp_sk\", "
             + "\"ak\" = \"tmp_ak\", "
             + "\"provider\" = \"s3\", "
-            + "\"region\" = \"ap-beijing\") ";
+            + "\"region\" = \"ap-beijing\" ";
     private List<String> tableColumnNames = Lists.newArrayList("id", "name", "score");
+
+    private static final String INTERNAL_STAGE_ID = "test_in_stage_id";
     private StagePB externalStagePB;
+    private StagePB internalStagePB;
 
     @Override
     protected void runBeforeAll() throws Exception {
@@ -53,68 +56,92 @@ public class CopyIntoTest extends TestWithFeService {
         createTable(varcharTable);
 
         String query = "create stage if not exists ex_stage_1 " + OBJ_INFO
-                + "with file_format = ('type' = 'csv', 'column_separator'=\",\") "
-                + "copy_option = ('on_error' = 'max_filter_ratio_0.4', 'size_limit' = '100')";
+                + ", 'default.file.type' = 'csv', 'default.file.column_separator'=\",\" "
+                + ", 'default.copy.on_error' = 'max_filter_ratio_0.4', 'default.copy.size_limit' = '100')";
         externalStagePB = ((CreateStageStmt) UtFrameUtils.parseAndAnalyzeStmt(query, connectContext)).toStageProto();
+        internalStagePB = StagePB.newBuilder().setType(StageType.INTERNAL).addMysqlUserName("test")
+                .setStageId(INTERNAL_STAGE_ID).setObjInfo(externalStagePB.getObjInfo()).build();
     }
 
     @Test
     public void testCopyInto() throws Exception {
-        String query = "create stage if not exists ex_stage_2 " + OBJ_INFO;
-        StagePB stagePB = ((CreateStageStmt) UtFrameUtils.parseAndAnalyzeStmt(query, connectContext)).toStageProto();
+        String query1 = "create stage if not exists ex_stage_2 " + OBJ_INFO + ")";
+        StagePB stagePB1 = ((CreateStageStmt) UtFrameUtils.parseAndAnalyzeStmt(query1, connectContext)).toStageProto();
+        String query2 = "create stage if not exists ex_stage_3 " + OBJ_INFO
+                + ", 'default.file.type' = 'csv', 'default.file.column_separator' = ',' "
+                + ", 'default.copy.on_error' = 'continue', 'default.copy.size_limit' = '100')";
+        StagePB stagePB2 = ((CreateStageStmt) UtFrameUtils.parseAndAnalyzeStmt(query2, connectContext)).toStageProto();
 
         new Expectations(connectContext.getEnv(), connectContext.getEnv().getInternalCatalog()) {
             {
                 Env.getCurrentInternalCatalog().getStage(StageType.EXTERNAL, anyString, "ex_stage_2");
                 minTimes = 0;
-                result = stagePB;
+                result = stagePB1;
+
+                Env.getCurrentInternalCatalog().getStage(StageType.EXTERNAL, anyString, "ex_stage_3");
+                minTimes = 0;
+                result = stagePB2;
             }
         };
 
         String copySqlPrefix = "copy into t2 from @ex_stage_2 ";
-        checkCopyInto(copySqlPrefix, null, 0, 0, true);
+        checkCopyInto(copySqlPrefix, null, 0, true, 0);
+        String copySqlPrefix2 = "copy into t2 from @ex_stage_3 ";
+        checkCopyInto(copySqlPrefix2, "csv", 100, true, 4);
 
-        String copySql = copySqlPrefix
-                + "with file_format = ('type' = 'json', 'fuzzy_parse'='true', 'json_root'=\"{\") "
-                + "copy_option= ('on_error' = 'continue', 'size_limit' = '200')"
-                + "async = false";
-        checkCopyInto(copySql, "json", 3, 200, false);
+        String copyProperties = "properties ('file.type' = 'json', 'file.fuzzy_parse'='true', 'file.json_root'=\"{\", "
+                + "'copy.on_error' = 'continue', 'copy.size_limit' = '200', " + "'copy.async' = 'false')";
+        String copySql = copySqlPrefix + copyProperties;
+        checkCopyInto(copySql, "json",  200, false, 6);
+        copySql = copySqlPrefix2 + copyProperties;
+        checkCopyInto(copySql, "json",  200, false, 7);
 
-        copySql = copySqlPrefix + "with file_format = ('type' = 'csv', 'fuzzy_parse'='true', 'json_root'=\"{\") "
-                + "copy_option= ('on_error' = 'continue', 'size_limit' = '300')";
-        checkCopyInto(copySql, "csv", 3, 300, true);
+        copyProperties = "properties ('file.type' = 'csv', 'file.fuzzy_parse'='true', 'file.json_root'=\"{\", "
+                + "'copy.on_error' = 'continue', 'copy.size_limit' = '300')";
+        copySql = copySqlPrefix + copyProperties;
+        checkCopyInto(copySql, "csv",  300, true, 5);
+        copySql = copySqlPrefix2 + copyProperties;
+        checkCopyInto(copySql, "csv",  300, true, 6);
 
-        copySql = copySqlPrefix + "with file_format = ('type' = 'csv', 'fuzzy_parse'='true', 'json_root'=\"{\") ";
-        checkCopyInto(copySql, "csv", 3, 0, true);
+        copyProperties = "properties ('file.type' = 'csv', 'file.fuzzy_parse'='true', 'file.json_root'=\"{\") ";
+        copySql = copySqlPrefix + copyProperties;
+        checkCopyInto(copySql, "csv",  0, true, 3);
+        copySql = copySqlPrefix2 + copyProperties;
+        checkCopyInto(copySql, "csv",  100, true, 6);
 
-        copySql = copySqlPrefix + "with copy_option= ('on_error' = 'continue', 'size_limit' = '400')";
-        checkCopyInto(copySql, null, 0, 400, true);
+        copyProperties = "properties ('copy.on_error' = 'continue', 'copy.size_limit' = '400')";
+        copySql = copySqlPrefix + copyProperties;
+        checkCopyInto(copySql, null,  400, true, 2);
+        copySql = copySqlPrefix2 + copyProperties;
+        checkCopyInto(copySql, "csv",  400, true, 4);
 
-        copySql = copySqlPrefix + "with async = false";
-        checkCopyInto(copySql, null, 0, 0, false);
+        copyProperties = "properties('copy.async' = 'false')";
+        copySql = copySqlPrefix + copyProperties;
+        checkCopyInto(copySql, null,  0, false, 1);
+        copySql = copySqlPrefix2 + copyProperties;
+        checkCopyInto(copySql, "csv",  100, false, 5);
 
-        copySql = copySqlPrefix + "with file_format = ('compression' = 'gz') ";
-        checkCopyInto(copySql, null, 1, 0, true);
+        copyProperties = "properties ('file.compression' = 'gz') ";
+        copySql = copySqlPrefix + copyProperties;
+        checkCopyInto(copySql, null,  0, true, 1);
+        copySql = copySqlPrefix2 + copyProperties;
+        checkCopyInto(copySql, null,  100, true, 5);
 
-        copySql = copySqlPrefix + "with file_format = ('type' = 'csv', 'compression' = 'gz') ";
-        checkCopyInto(copySql, null, 2, 0, true);
+        copyProperties = "properties ('file.type' = 'csv', 'file.compression' = 'gz') ";
+        copySql = copySqlPrefix + copyProperties;
+        checkCopyInto(copySql, null,  0, true, 2);
+        copySql = copySqlPrefix2 + copyProperties;
+        checkCopyInto(copySql, null,  100, true, 5);
     }
 
-    private void checkCopyInto(String sql, String format, int fileFormatPropertySize, long sizeLimit, boolean async) {
+    private void checkCopyInto(String sql, String fileType, long sizeLimit, boolean async, int propertiesNum) {
         try {
             CopyStmt copyStmt = (CopyStmt) UtFrameUtils.parseAndAnalyzeStmt(sql, connectContext);
             System.out.println("original sql: " + sql);
             System.out.println("parsed sql: " + copyStmt.toSql());
-            Assert.assertTrue(fileFormatPropertySize == 0 ? (copyStmt.getFileFormat() == null
-                    || copyStmt.getFileFormat().getProperties().size() == 0)
-                    : (copyStmt.getFileFormat().getProperties().size() == fileFormatPropertySize));
-            Assert.assertEquals(fileFormatPropertySize, copyStmt.getFileFormat().getProperties().size());
-            Assert.assertEquals(format, copyStmt.getFileFormat().getFormat());
-            if (sizeLimit == 0) {
-                Assert.assertEquals(0, copyStmt.getCopyOption().getProperties().size());
-            } else {
-                Assert.assertEquals(sizeLimit, copyStmt.getCopyOption().getSizeLimit());
-            }
+            Assert.assertEquals(propertiesNum, copyStmt.getCopyIntoProperties().getProperties().size());
+            Assert.assertEquals(fileType, copyStmt.getCopyIntoProperties().getFileType());
+            Assert.assertEquals(sizeLimit, copyStmt.getCopyIntoProperties().getSizeLimit());
             Assert.assertEquals(async, copyStmt.isAsync());
         } catch (Exception e) {
             e.printStackTrace();
@@ -124,10 +151,6 @@ public class CopyIntoTest extends TestWithFeService {
 
     @Test
     public void testCopyFromInternalStage() throws Exception {
-        String stageId = "test_in_stage_id";
-        StagePB internalStagePB = StagePB.newBuilder().setType(StageType.INTERNAL).addMysqlUserName("test")
-                .setStageId(stageId).setObjInfo(externalStagePB.getObjInfo()).build();
-
         new Expectations(connectContext.getEnv().getInternalCatalog()) {
             {
                 Env.getCurrentInternalCatalog().getStage(StageType.INTERNAL, anyString, null);
@@ -137,16 +160,28 @@ public class CopyIntoTest extends TestWithFeService {
         };
 
         String sql = "copy into t2 from @~";
-        try {
-            CopyStmt copyStmt = (CopyStmt) UtFrameUtils.parseAndAnalyzeStmt(sql, connectContext);
-            System.out.println("original sql: " + sql);
-            System.out.println("parsed sql: " + copyStmt.toSql());
-            Assert.assertEquals(StageType.INTERNAL, copyStmt.getStageType());
-            Assert.assertEquals("~", copyStmt.getStage());
-            Assert.assertEquals(stageId, copyStmt.getStageId());
-        } catch (Exception e) {
-            e.printStackTrace();
-            Assert.fail("must be success.");
+        CopyStmt copyStmt = parseAndAnalyze(sql);
+        Assert.assertEquals("~", copyStmt.getStage());
+        Assert.assertEquals(INTERNAL_STAGE_ID, copyStmt.getStageId());
+        Assert.assertEquals(StageType.INTERNAL, copyStmt.getStageType());
+        Assert.assertEquals("tmp_ak", copyStmt.getObjectInfo().getAk());
+    }
+
+    @Test
+    public void testCopyWithPattern() throws Exception {
+        new Expectations(connectContext.getEnv().getInternalCatalog()) {
+            {
+                Env.getCurrentInternalCatalog().getStage(StageType.INTERNAL, anyString, null);
+                minTimes = 0;
+                result = internalStagePB;
+            }
+        };
+
+        String sql1 = "copy into t2 from @~('/*.csv')";
+        String sql2 = "copy into t2 from (select $3, $1, $2 from @~('/*.csv'))";
+        for (String sql : Lists.newArrayList(sql1, sql2)) {
+            CopyStmt copyStmt = parseAndAnalyze(sql);
+            Assert.assertEquals("/*.csv", copyStmt.getPattern());
         }
     }
 
@@ -210,7 +245,6 @@ public class CopyIntoTest extends TestWithFeService {
             Assert.assertEquals(3, columnMappingList.size());
             for (int i = 0; i < columnMappingList.size(); i++) {
                 Expr expr = columnMappingList.get(i);
-                System.out.println("expr = " + expr.debugString());
                 List<SlotRef> slotRefs = Lists.newArrayList();
                 Expr.collectList(Lists.newArrayList(expr), SlotRef.class, slotRefs);
                 Assert.assertEquals(2, slotRefs.size());
@@ -291,28 +325,14 @@ public class CopyIntoTest extends TestWithFeService {
         } while (false);
     }
 
-    @Test
-    public void testCopyWithPattern() throws Exception {
-        new Expectations(connectContext.getEnv(), connectContext.getEnv().getInternalCatalog()) {
-            {
-                Env.getCurrentInternalCatalog().getStage(StageType.EXTERNAL, anyString, "ex_stage_1");
-                minTimes = 0;
-                result = externalStagePB;
-            }
-        };
-
-        String sql1 = "copy into t2 from @ex_stage_1('/*.csv')";
-        String sql2 = "copy into t2 from (select $3, $1, $2 from @ex_stage_1('/*.csv'))";
-        for (String sql : Lists.newArrayList(sql1, sql2)) {
-            try {
-                CopyStmt copyStmt = (CopyStmt) UtFrameUtils.parseAndAnalyzeStmt(sql, connectContext);
-                System.out.println("original sql: " + sql);
-                System.out.println("parsed sql: " + copyStmt.toSql());
-                Assert.assertEquals("/*.csv", copyStmt.getPattern());
-            } catch (Exception e) {
-                e.printStackTrace();
-                Assert.fail("must be success.");
-            }
+    private CopyStmt parseAndAnalyze(String sql) throws Exception {
+        try {
+            CopyStmt stmt = (CopyStmt) UtFrameUtils.parseAndAnalyzeStmt(sql, connectContext);
+            return stmt;
+        } catch (Exception e) {
+            e.printStackTrace();
+            Assert.fail("must be success.");
+            throw e;
         }
     }
 }

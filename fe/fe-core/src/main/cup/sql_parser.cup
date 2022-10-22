@@ -259,7 +259,6 @@ terminal String
     KW_ARRAY,
     KW_AS,
     KW_ASC,
-    KW_ASYNC,
     KW_AUTHORS,
     KW_BACKEND,
     KW_BACKENDS,
@@ -304,7 +303,6 @@ terminal String
     KW_CONSISTENT,
     KW_CONVERT,
     KW_COPY,
-    KW_COPY_OPTION,
     KW_COUNT,
     KW_CREATE,
     KW_CREATION,
@@ -366,7 +364,6 @@ terminal String
     KW_FEATURE,
     KW_FIELDS,
     KW_FILE,
-    KW_FILE_FORMAT,
     KW_FILTER,
     KW_FIRST,
     KW_FLOAT,
@@ -877,22 +874,11 @@ nonterminal MVRefreshInfo.RefreshMethod opt_refresh_method;
 nonterminal MVRefreshTriggerInfo opt_refresh_trigger;
 nonterminal MVRefreshInfo opt_mv_refersh_info;
 
-// stage
-nonterminal StageParam external_stage_param;
-// copy into params: 1. file_format; 2. copy_option;
-nonterminal Pair<FileFormat, CopyOption> create_stage_params;
-// copy into params: 1. file_format; 2. copy_option; 3. async
-nonterminal Pair<Pair<FileFormat, CopyOption>, Boolean> copy_into_params;
-// file_format
-nonterminal FileFormat file_format;
-// copy option
-nonterminal CopyOption copy_option;
 // copy into
 nonterminal CopyFromParam copy_from_param;
 nonterminal String stage_name;
 nonterminal StageAndPattern stage_and_pattern;
 nonterminal List<Expr> copy_select_expr_list;
-nonterminal Boolean async_option;
 
 precedence nonassoc COMMA;
 precedence nonassoc STRING_LITERAL;
@@ -1884,10 +1870,9 @@ create_stmt ::=
         RESULT = new CreatePolicyStmt(PolicyTypeEnum.STORAGE, ifNotExists, policyName, properties);
     :}
     /* stage */
-    | KW_CREATE KW_STAGE opt_if_not_exists:ifNotExists ident:stageName
-    external_stage_param:stageParam create_stage_params:createStageParams
+    | KW_CREATE KW_STAGE opt_if_not_exists:ifNotExists ident:stageName KW_PROPERTIES opt_key_value_map:properties
     {:
-        RESULT = new CreateStageStmt(ifNotExists, stageName, stageParam, createStageParams.key(), createStageParams.value());
+        RESULT = new CreateStageStmt(ifNotExists, stageName, properties);
     :}
     ;
 
@@ -1909,61 +1894,6 @@ channel_desc ::=
         RESULT = new ChannelDescription(srcDatabase, srcTableName, desTableName, partitionNames, colList);
     :}
     ;
-
-external_stage_param ::=
-  LPAREN key_value_map:properties RPAREN
-  {:
-        RESULT = new StageParam(StagePB.StageType.EXTERNAL, properties);
-  :};
-
-create_stage_params ::=
-    {:
-        RESULT = Pair.of(null, null);
-    :}
-    | KW_WITH file_format:fileFormat copy_option:copyOption
-    {:
-        RESULT = Pair.of(fileFormat, copyOption);
-    :};
-
-copy_into_params ::=
-    {:
-        RESULT = Pair.of(Pair.of(null, null), true);
-    :}
-    | KW_WITH file_format:fileFormat copy_option:copyOption async_option:asyncOption
-    {:
-        RESULT = Pair.of(Pair.of(fileFormat, copyOption), asyncOption);
-    :};
-
-file_format ::=
-   {:
-        RESULT = null;
-   :}
-   | KW_FILE_FORMAT EQUAL LPAREN key_value_map:properties RPAREN
-   {:
-        RESULT = new FileFormat(properties);
-   :};
-
-copy_option ::=
-   {:
-       RESULT = null;
-   :}
-   | KW_COPY_OPTION EQUAL LPAREN key_value_map:properties RPAREN
-   {:
-       RESULT = new CopyOption(properties);
-   :};
-
-async_option ::=
-    {:
-        RESULT = true;
-    :}
-    | KW_ASYNC EQUAL KW_TRUE
-    {:
-        RESULT = true;
-    :}
-    | KW_ASYNC EQUAL KW_FALSE
-    {:
-        RESULT = false;
-    :};
 
 binlog_desc ::=
     KW_FROM KW_BINLOG LPAREN key_value_map:properties RPAREN
@@ -2078,10 +2008,13 @@ opt_user_role ::=
 
 // Copy Statement
 copy_stmt ::=
-    KW_COPY KW_INTO table_name:name KW_FROM copy_from_param:copyFromParam
-    copy_into_params:copyIntoParams
+    KW_COPY KW_INTO table_name:name KW_FROM copy_from_param:copyFromParam KW_PROPERTIES opt_key_value_map:properties
     {:
-        RESULT = new CopyStmt(name, copyFromParam, copyIntoParams.key().key(), copyIntoParams.key().value(), copyIntoParams.value());
+        RESULT = new CopyStmt(name, copyFromParam, properties);
+    :}
+    | KW_COPY KW_INTO table_name:name KW_FROM copy_from_param:copyFromParam
+    {:
+        RESULT = new CopyStmt(name, copyFromParam, new HashMap());
     :};
 
 copy_from_param ::=

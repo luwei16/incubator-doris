@@ -17,36 +17,36 @@
 
 package org.apache.doris.analysis;
 
-import org.apache.doris.catalog.Database;
-import org.apache.doris.catalog.Env;
-import org.apache.doris.catalog.OlapTable;
 import org.apache.doris.common.AnalysisException;
 import org.apache.doris.common.FeConstants;
 import org.apache.doris.qe.ConnectContext;
 import org.apache.doris.utframe.TestWithFeService;
 import org.apache.doris.utframe.UtFrameUtils;
 
+import com.selectdb.cloud.proto.SelectdbCloud.ObjectStoreInfoPB;
+import com.selectdb.cloud.proto.SelectdbCloud.ObjectStoreInfoPB.Provider;
 import com.selectdb.cloud.proto.SelectdbCloud.StagePB;
 import com.selectdb.cloud.proto.SelectdbCloud.StagePB.StageType;
-import mockit.Expectations;
-import mockit.Mocked;
 import org.junit.Assert;
 import org.junit.jupiter.api.Test;
+import org.junit.platform.commons.util.StringUtils;
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Map.Entry;
 
 public class StageTest extends TestWithFeService {
 
-    @Mocked
-    private Database db;
-    @Mocked
-    private OlapTable table;
     private ConnectContext ctx;
-    private static final String OBJ_INFO =  "(\"bucket\" = \"tmp_bucket\", "
+    private static final String OBJ_INFO =  "PROPERTIES (\"bucket\" = \"tmp_bucket\", "
             + "\"endpoint\" = \"cos.ap-beijing.myqcloud.com\", "
             + "\"provider\" = \"cos\", "
             + "\"prefix\" = \"tmp_prefix\", "
             + "\"sk\" = \"tmp_sk\", "
             + "\"ak\" = \"tmp_ak\", "
-            + "\"region\" = \"ap-beijing\") ";
+            + "\"region\" = \"ap-beijing\"";
+
+    private static final String CREATE_STAGE_SQL = "create stage if not exists ex_stage_1 " + OBJ_INFO;
 
     @Override
     protected void runBeforeAll() throws Exception {
@@ -55,82 +55,41 @@ public class StageTest extends TestWithFeService {
     }
 
     @Test
-    public void testCreateStageStmt() throws Exception {
-        // create an internal stage
-        String sql = "create stage in_stage_1";
-        parseAndAnalyzeWithException(sql, "Syntax error");
-
-        // create an external stage with no bucket
-        sql = "create stage ex_stage_1 "
-                + "('endpoint' = 'cos.ap-beijing.myqcloud.com', "
+    public void testAnalyzeStorageProperties() throws Exception {
+        // test bucket not set
+        String sql = "create stage ex_stage_1 "
+                + "PROPERTIES ('endpoint' = 'cos.ap-beijing.myqcloud.com', "
                 + "'region' = 'ap-beijing', "
                 + "'prefix' = 'tmp_prefix', "
                 + "'ak'='tmp_ak', 'sk'='tmp_sk');";
         parseAndAnalyzeWithException(sql, "bucket is required for ExternalStage");
 
-        // create stage with file format
-        try {
-            sql = "create stage if not exists ex_stage_1 " + OBJ_INFO
-                    + "with file_format = ('type' = 'csv', 'column_separator'=\",\", 'line_delimiter'=\"\t\")";
-            UtFrameUtils.parseAndAnalyzeStmt(sql, ctx);
-        } catch (Exception e) {
-            Assert.fail("must be success.");
+        // test prefix
+        Map<String, String> prefixMap = new HashMap<>();
+        prefixMap.put("", "");
+        prefixMap.put("/", "");
+        prefixMap.put("//", "");
+        prefixMap.put(null, "");
+        prefixMap.put("/abc/def/", "abc/def");
+        prefixMap.put("/abc/def", "abc/def");
+        prefixMap.put("abc/def/", "abc/def");
+        prefixMap.put("abc/def", "abc/def");
+        for (Entry<String, String> entry : prefixMap.entrySet()) {
+            sql = "create stage ex_stage_1 PROPERTIES "
+                    + "('endpoint' = 'cos.ap-beijing.myqcloud.com', "
+                    + "'bucket' = 'test_bucket', "
+                    + "'region' = 'ap-beijing', " + "'ak'='tmp_ak', 'sk'='tmp_sk', "
+                    + (entry.getKey() == null ? "" : ("'prefix'='" + entry.getKey()) + "', ")
+                    + "'provider'='oss');";
+            CreateStageStmt stmt = parseAndAnalyze(sql);
+            StageProperties stageProperties = stmt.getStageProperties();
+            Assert.assertEquals(entry.getValue(), stageProperties.getProperties().get(StageProperties.PREFIX));
+            Assert.assertEquals(entry.getValue(), stageProperties.getObjectStoreInfoPB().getPrefix());
         }
 
-        // create stage with unknown file format property
-        sql = "create stage if not exists ex_stage_1 " + OBJ_INFO
-                + "with file_format = ('type' = 'csv', 'test_key'='test_value')";
-        parseAndAnalyzeWithException(sql, "'test_key' is invalid in FileFormat");
-
-        // create stage with copy option: on_error
-        try {
-            sql = "create stage if not exists ex_stage_1 " + OBJ_INFO
-                    + "with copy_option= ('on_error' = 'continue')";
-            UtFrameUtils.parseAndAnalyzeStmt(sql, ctx);
-        } catch (Exception e) {
-            Assert.fail("must be success.");
-        }
-
-        // create stage with copy option: on_error and size_limit
-        try {
-            sql = "create stage if not exists ex_stage_1 " + OBJ_INFO
-                    + "with copy_option= ('on_error' = 'max_filter_ratio_0.4', 'size_limit' = '100')";
-            StatementBase statementBase = UtFrameUtils.parseAndAnalyzeStmt(sql, ctx);
-            Assert.assertTrue(statementBase instanceof CreateStageStmt);
-            Assert.assertEquals(0.4, ((CreateStageStmt) statementBase).getCopyOption().getMaxFilterRatio(), 0.02);
-        } catch (Exception e) {
-            Assert.fail("must be success.");
-        }
-
-        // create stage with copy option: invalid max_filter_ratio
-        sql = "create stage if not exists ex_stage_1 " + OBJ_INFO
-                + "with copy_option= ('on_error' = 'max_filter_ratio_a') ";
-        parseAndAnalyzeWithException(sql, "Property on_error with invalid value max_filter_ratio_a");
-
-        // create an external stage with file format and copy option
-        try {
-            sql = "create stage ex_stage_1 " + OBJ_INFO
-                    + "with file_format = (\"type\" = \"csv\", \"column_separator\" = \",\") "
-                    + "copy_option = (\"on_error\" = \"max_filter_ratio_0.4\", \"size_limit\" = \"100\")";
-            StatementBase statementBase = UtFrameUtils.parseAndAnalyzeStmt(sql, ctx);
-            Assert.assertEquals(sql, statementBase.toSql().toLowerCase().trim());
-        } catch (Exception e) {
-            Assert.fail("must be success.");
-        }
-
-        // create stage with invalid prefix
+        // test invalid provider
         sql = "create stage ex_stage_1 "
-                + "('endpoint' = 'cos.ap-beijing.myqcloud.com', "
-                + "'region' = 'ap-beijing', "
-                + "'bucket' = 'tmp_bucket', "
-                + "'prefix' = '/tmp_prefix', "
-                + "'provider' = 'OSS', "
-                + "'ak'='tmp_ak', 'sk'='tmp_sk');";
-        parseAndAnalyzeWithException(sql, "can not start or end with '/'");
-
-        // create stage with invalid provider
-        sql = "create stage ex_stage_1 "
-                + "('endpoint' = 'cos.ap-beijing.myqcloud.com', "
+                + "properties ('endpoint' = 'cos.ap-beijing.myqcloud.com', "
                 + "'region' = 'ap-beijing', "
                 + "'bucket' = 'tmp_bucket', "
                 + "'prefix' = 'tmp_prefix', "
@@ -138,99 +97,189 @@ public class StageTest extends TestWithFeService {
                 + "'ak'='tmp_ak', 'sk'='tmp_sk');";
         parseAndAnalyzeWithException(sql, "Property provider with invalid value abc");
 
-        // create stage with async
-        sql = "create stage ex_stage_1 " + OBJ_INFO + "with async = false;";
-        parseAndAnalyzeWithException(sql, "");
+        // test getObjectInfoPB
+        sql = "create stage if not exists ex_stage_1 " + OBJ_INFO + ")";
+        CreateStageStmt stmt = parseAndAnalyze(sql);
+        ObjectStoreInfoPB objectStoreInfoPB = stmt.getStageProperties().getObjectStoreInfoPB();
+        Assert.assertEquals("cos.ap-beijing.myqcloud.com", objectStoreInfoPB.getEndpoint());
+        Assert.assertEquals("ap-beijing", objectStoreInfoPB.getRegion());
+        Assert.assertEquals("tmp_bucket", objectStoreInfoPB.getBucket());
+        Assert.assertEquals("tmp_prefix", objectStoreInfoPB.getPrefix());
+        Assert.assertEquals("tmp_ak", objectStoreInfoPB.getAk());
+        Assert.assertEquals("tmp_sk", objectStoreInfoPB.getSk());
+        Assert.assertEquals(Provider.COS, objectStoreInfoPB.getProvider());
+    }
+
+    @Test
+    public void testAnalyzeTypeAndCompression() throws Exception {
+        // create stage with type
+        String sql = CREATE_STAGE_SQL + ", 'default.file.type' = 'json')";
+        Assert.assertEquals("json", parseAndAnalyze(sql).getStageProperties().getFileType());
+
+        // TODO create stage with type with invalid type
+        sql = CREATE_STAGE_SQL + ", 'default.file.type' = 'js')";
+        Assert.assertEquals("js", parseAndAnalyze(sql).getStageProperties().getFileType());
+
+        // create stage with compression
+        sql = CREATE_STAGE_SQL + ", 'default.file.compression' = 'gz')";
+        Assert.assertEquals(null, parseAndAnalyze(sql).getStageProperties().getFileType());
+
+        // TODO create stage with invalid compression
+        sql = CREATE_STAGE_SQL + ", 'default.file.compression' = 'gza')";
+        Assert.assertEquals(null, parseAndAnalyze(sql).getStageProperties().getFileType());
+
+        // create stage with type and compression
+        sql = CREATE_STAGE_SQL + ", 'default.file.type' = 'csv', 'default.file.compression'='gz')";
+        Assert.assertEquals(null, parseAndAnalyze(sql).getStageProperties().getFileType());
 
         // create stage with invalid type and compression
-        sql = "create stage if not exists ex_stage_1 " + OBJ_INFO
-                + "with file_format = ('type' = 'json', 'compression'='gz')";
+        sql = CREATE_STAGE_SQL + ", 'default.file.type' = 'json', 'default.file.compression'='gz')";
         parseAndAnalyzeWithException(sql, "Compression only support CSV file type, but input type is json");
     }
 
     @Test
-    public void testStagePB() throws Exception {
-        String query = "create stage if not exists ex_stage_1 " + OBJ_INFO
-                + "with file_format = ('type' = 'csv', 'column_separator'=\",\") "
-                + "copy_option = ('on_error' = 'max_filter_ratio_0.4', 'size_limit' = '100')";
-        StagePB stagePB = ((CreateStageStmt) UtFrameUtils.parseAndAnalyzeStmt(query, ctx)).toStageProto();
-        String query2 = "create stage if not exists ex_stage_2 " + OBJ_INFO;
-        StagePB stagePB2 = ((CreateStageStmt) UtFrameUtils.parseAndAnalyzeStmt(query2, ctx)).toStageProto();
+    public void testAnalyzeSizeLimit() throws Exception {
+        // create stage without size limit
+        String sql = CREATE_STAGE_SQL + ")";
+        Assert.assertEquals(0, parseAndAnalyze(sql).getStageProperties().getSizeLimit());
 
-        new Expectations(ctx.getEnv(), ctx.getEnv().getInternalCatalog(), db) {
-            {
-                Env.getCurrentInternalCatalog().getStage((StageType) any, anyString, "ex_stage_1");
-                minTimes = 0;
-                result = stagePB;
+        // create stage with size limit
+        sql = CREATE_STAGE_SQL + ", 'default.copy.size_limit' = '100')";
+        Assert.assertEquals(100, parseAndAnalyze(sql).getStageProperties().getSizeLimit());
 
-                Env.getCurrentInternalCatalog().getStage((StageType) any, anyString, "ex_stage_2");
-                minTimes = 0;
-                result = stagePB2;
+        // create stage with invalid size limit
+        sql = CREATE_STAGE_SQL + ", 'default.copy.size_limit' = '100a')";
+        parseAndAnalyzeWithException(sql, "Property default.copy.size_limit with invalid value 100a");
+    }
 
-                Env.getCurrentInternalCatalog().getDbOrAnalysisException("default_cluster:db");
-                minTimes = 0;
-                result = db;
+    @Test
+    public void testAnalyzeOnError() throws Exception {
+        // create stage without on_error
+        String sql = CREATE_STAGE_SQL + ")";
+        Assert.assertEquals(0, parseAndAnalyze(sql).getStageProperties().getMaxFilterRatio(), 0.02);
 
-                db.getOlapTableOrAnalysisException("test_table");
-                minTimes = 0;
-                result = table;
+        // create stage with on_error value is continue
+        sql = CREATE_STAGE_SQL + ", 'default.copy.on_error' = 'continue')";
+        Assert.assertEquals(1, parseAndAnalyze(sql).getStageProperties().getMaxFilterRatio(), 0.02);
+
+        // create stage with on_error value is abort_statement
+        sql = CREATE_STAGE_SQL + ", 'default.copy.on_error' = 'abort_statement')";
+        Assert.assertEquals(0, parseAndAnalyze(sql).getStageProperties().getMaxFilterRatio(), 0.02);
+
+        // create stage with on_error value is max filter ratio
+        sql = CREATE_STAGE_SQL + ", 'default.copy.on_error' = 'max_filter_ratio_0.4')";
+        Assert.assertEquals(0.4, parseAndAnalyze(sql).getStageProperties().getMaxFilterRatio(), 0.02);
+
+        // create stage with on_error value is invalid max filter ratio
+        sql = CREATE_STAGE_SQL + ", 'default.copy.on_error' = 'max_filter_ratio_0.a')";
+        parseAndAnalyzeWithException(sql, "Property default.copy.on_error with invalid value max_filter_ratio_0.a");
+    }
+
+    @Test
+    public void testAnalyzeAsync() throws Exception {
+        // create stage without async
+        String sql = CREATE_STAGE_SQL + ")";
+        Assert.assertEquals(true, parseAndAnalyze(sql).getStageProperties().isAsync());
+
+        // create stage with async
+        sql = CREATE_STAGE_SQL + ", 'default.copy.async'='false')";
+        Assert.assertEquals(false, parseAndAnalyze(sql).getStageProperties().isAsync());
+
+        // create stage with invalid async
+        sql = CREATE_STAGE_SQL + ", 'default.copy.async'='abc')";
+        parseAndAnalyzeWithException(sql, "Property default.copy.async with invalid value abc");
+    }
+
+    @Test
+    public void testOtherProperties() throws Exception {
+        String sql = CREATE_STAGE_SQL + ", 'default.file.column_separator'=\",\", "
+                + "'default.file.line_delimiter'=\"\n\")";
+        CreateStageStmt stmt = parseAndAnalyze(sql);
+        Assert.assertEquals(",", stmt.getStageProperties().getColumnSeparator());
+        Assert.assertEquals("\n", stmt.getStageProperties().getProperties().get("default.file.line_delimiter"));
+        Assert.assertEquals("\n", stmt.getStageProperties().getDefaultProperties().get("default.file.line_delimiter"));
+        Assert.assertEquals("\n",
+                stmt.getStageProperties().getDefaultPropertiesWithoutPrefix().get("file.line_delimiter"));
+
+        // without property
+        sql = "create stage in_stage_1";
+        parseAndAnalyzeWithException(sql, "Syntax error");
+
+        // with an unknown property
+        sql = CREATE_STAGE_SQL + ", 'default.file.type' = 'csv', 'test_key'='test_value')";
+        parseAndAnalyzeWithException(sql, "'test_key' is invalid");
+    }
+
+    @Test
+    public void testToSql() throws Exception {
+        String sql = "create stage ex_stage_1 properties (\"bucket\" = \"tmp_bucket\", "
+                + "\"default.copy.size_limit\" = \"100\", "
+                + "\"endpoint\" = \"cos.ap-beijing.myqcloud.com\", "
+                + "\"default.file.type\" = \"csv\", "
+                + "\"provider\" = \"cos\", "
+                + "\"prefix\" = \"tmp_prefix\", "
+                + "\"default.file.column_separator\" = \",\", "
+                + "\"sk\" = \"tmp_sk\", \"ak\" = \"tmp_ak\", \"region\" = \"ap-beijing\")";
+        StatementBase statementBase = parseAndAnalyze(sql);
+        System.out.println("expectedSql: " + sql.toLowerCase());
+        System.out.println("realSql    : " + statementBase.toSql().toLowerCase().trim());
+        Assert.assertEquals(sql.toLowerCase(), statementBase.toSql().toLowerCase().trim());
+    }
+
+    @Test
+    public void testGetProperties() throws Exception {
+        String sql = CREATE_STAGE_SQL
+                + ", 'default.file.type' = 'csv', 'default.file.column_separator'=\",\" "
+                + ", 'default.copy.on_error' = 'abort_statement', 'default.copy.size_limit' = '100')";
+        CreateStageStmt createStageStmt = parseAndAnalyze(sql);
+        Assert.assertEquals(11, createStageStmt.getStageProperties().getProperties().size());
+        // check default properties
+        do {
+            Map<String, String> properties = createStageStmt.getStageProperties().getDefaultProperties();
+            Assert.assertEquals(4, properties.size());
+            Map<String, String> expectedProperties = new HashMap<>();
+            expectedProperties.put("default.file.type", "csv");
+            expectedProperties.put("default.file.column_separator", ",");
+            expectedProperties.put("default.copy.on_error", "abort_statement");
+            expectedProperties.put("default.copy.size_limit", "100");
+            for (Entry<String, String> entry : expectedProperties.entrySet()) {
+                Assert.assertTrue(properties.containsKey(entry.getKey()));
+                Assert.assertEquals(entry.getValue(), properties.get(entry.getKey()));
             }
-        };
-        try {
-            String copyQuery = "copy into db.test_table from @ex_stage_1";
-            CopyStmt copyStmt = (CopyStmt) UtFrameUtils.parseAndAnalyzeStmt(copyQuery, ctx);
-            System.out.println("parsed sql: " + copyStmt.toSql());
-            // check file format
-            FileFormat fileFormat = copyStmt.getFileFormat();
-            Assert.assertNotNull(fileFormat);
-            Assert.assertEquals("csv", fileFormat.getFormat());
-            Assert.assertEquals(",", fileFormat.getColumnSeparator());
-            // check copy option
-            CopyOption copyOption = copyStmt.getCopyOption();
-            Assert.assertNotNull(copyOption);
-            Assert.assertEquals(100, copyOption.getSizeLimit());
-            Assert.assertEquals(0.4, copyOption.getMaxFilterRatio(), 0.02);
-        } catch (Exception e) {
-            e.printStackTrace();
-            Assert.fail("must be success.");
-        }
-        try {
-            String copyQuery = "copy into db.test_table from @ ex_stage_1 "
-                    + "with file_format = ('type' = 'json', 'fuzzy_parse'='true', 'json_root'=\"{\") "
-                    + "copy_option= ('on_error' = 'continue', 'size_limit' = '200')";
-            CopyStmt copyStmt = (CopyStmt) UtFrameUtils.parseAndAnalyzeStmt(copyQuery, ctx);
-            // check file format
-            FileFormat fileFormat = copyStmt.getFileFormat();
-            Assert.assertNotNull(fileFormat);
-            Assert.assertEquals("json", fileFormat.getFormat());
-            // TODO should we merge file_format_option?
-            Assert.assertEquals(",", fileFormat.getColumnSeparator());
-            // check copy option
-            CopyOption copyOption = copyStmt.getCopyOption();
-            Assert.assertNotNull(copyOption);
-            Assert.assertEquals(200, copyOption.getSizeLimit());
-            Assert.assertEquals(1.0, copyOption.getMaxFilterRatio(), 0.02);
-            Assert.assertTrue(copyStmt.getDataDescriptions().size() == 1);
-            Assert.assertEquals("{", copyStmt.getDataDescriptions().get(0).getJsonRoot());
-        } catch (Exception e) {
-            e.printStackTrace();
-            Assert.fail("must be success.");
-        }
-        try {
-            String copyQuery = "copy into db.test_table from @ex_stage_2";
-            CopyStmt copyStmt = (CopyStmt) UtFrameUtils.parseAndAnalyzeStmt(copyQuery, ctx);
-            // check file format
-            FileFormat fileFormat = copyStmt.getFileFormat();
-            Assert.assertNotNull(fileFormat);
-            Assert.assertEquals("", fileFormat.toSql());
-            // check copy option
-            CopyOption copyOption = copyStmt.getCopyOption();
-            Assert.assertNotNull(copyOption);
-            Assert.assertEquals("", copyOption.toSql());
-        } catch (Exception e) {
-            e.printStackTrace();
-            Assert.fail("must be success.");
-        }
+        } while (false);
+        // check default properties without prefix
+        do {
+            Map<String, String> properties = createStageStmt.getStageProperties().getDefaultPropertiesWithoutPrefix();
+            Assert.assertEquals(4, properties.size());
+            Map<String, String> expectedProperties = new HashMap<>();
+            expectedProperties.put("file.type", "csv");
+            expectedProperties.put("file.column_separator", ",");
+            expectedProperties.put("copy.on_error", "abort_statement");
+            expectedProperties.put("copy.size_limit", "100");
+            Assert.assertEquals(4, properties.size());
+            for (Entry<String, String> entry : expectedProperties.entrySet()) {
+                Assert.assertTrue(properties.containsKey(entry.getKey()));
+                Assert.assertEquals(entry.getValue(), properties.get(entry.getKey()));
+            }
+        } while (false);
+    }
+
+    @Test
+    public void testStagePB() throws Exception {
+        String sql = CREATE_STAGE_SQL
+                + ", 'default.file.type' = 'csv', 'default.file.column_separator'=\",\" "
+                + ", 'default.copy.on_error' = 'abort_statement', 'default.copy.size_limit' = '100')";
+        CreateStageStmt createStageStmt = parseAndAnalyze(sql);
+        StagePB stagePB = createStageStmt.toStageProto();
+        Assert.assertEquals(StageType.EXTERNAL, stagePB.getType());
+        Assert.assertEquals("ex_stage_1", stagePB.getName());
+        Assert.assertEquals(1, stagePB.getMysqlUserNameList().size());
+        Assert.assertTrue(StringUtils.isNotBlank(stagePB.getStageId()));
+        ObjectStoreInfoPB objInfo = stagePB.getObjInfo();
+        Assert.assertEquals("cos.ap-beijing.myqcloud.com", objInfo.getEndpoint());
+        Map<String, String> propertiesMap = stagePB.getPropertiesMap();
+        Assert.assertEquals(4, propertiesMap.size());
+        Assert.assertEquals("csv", propertiesMap.get("default.file.type"));
     }
 
     private void parseAndAnalyzeWithException(String sql, String errorMsg) {
@@ -245,5 +294,16 @@ public class StageTest extends TestWithFeService {
             }
             Assert.fail("must be AnalysisException.");
         } while (false);
+    }
+
+    private CreateStageStmt parseAndAnalyze(String sql) throws Exception {
+        try {
+            CreateStageStmt stmt = (CreateStageStmt) UtFrameUtils.parseAndAnalyzeStmt(sql, ctx);
+            return stmt;
+        } catch (Exception e) {
+            e.printStackTrace();
+            Assert.fail("must be success.");
+            throw e;
+        }
     }
 }

@@ -32,6 +32,7 @@ import lombok.Getter;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -45,22 +46,18 @@ public class CreateStageStmt extends DdlStmt {
     @Getter
     private final String stageName;
     @Getter
-    private StageParam stageParam;
-    @Getter
-    private FileFormat fileFormat;
-    @Getter
-    private CopyOption copyOption;
+    private StageProperties stageProperties;
+
+    protected StagePB.StageType type;
 
     /**
      * Use for cup.
      */
-    public CreateStageStmt(boolean ifNotExists, String stageName, StageParam stageParam,
-            FileFormat fileFormat, CopyOption copyOption) {
+    public CreateStageStmt(boolean ifNotExists, String stageName, Map<String, String> properties) {
         this.ifNotExists = ifNotExists;
         this.stageName = stageName;
-        this.stageParam = stageParam;
-        this.fileFormat = fileFormat;
-        this.copyOption = copyOption;
+        this.stageProperties = new StageProperties(properties);
+        this.type = StagePB.StageType.EXTERNAL;
     }
 
     @Override
@@ -74,16 +71,7 @@ public class CreateStageStmt extends DdlStmt {
         if (stageName.contains("@") || stageName.contains("~") || stageName.contains("%")) {
             throw new AnalysisException("Stage name='" + stageName + "', can not include '@', '~' or '%'");
         }
-        if (stageParam != null) {
-            stageParam.analyze();
-        }
-        if (fileFormat != null) {
-            fileFormat.analyze();
-        }
-        // check copy_option: max_file_ratio and size_limit
-        if (this.copyOption != null) {
-            this.copyOption.analyze();
-        }
+        stageProperties.analyze();
     }
 
     public StagePB toStageProto() throws DdlException {
@@ -91,21 +79,16 @@ public class CreateStageStmt extends DdlStmt {
         stageBuilder.addMysqlUserName(ClusterNamespace
                         .getNameFromFullName(ConnectContext.get().getCurrentUserIdentity().getQualifiedUser()))
                 .setStageId(UUID.randomUUID().toString());
-        switch (getStageParam().getType()) {
+        switch (type) {
             case EXTERNAL:
                 stageBuilder.setName(getStageName()).setType(StagePB.StageType.EXTERNAL)
-                        .setObjInfo(getStageParam().toProto());
+                        .setObjInfo(stageProperties.getObjectStoreInfoPB());
                 break;
             case INTERNAL:
             default:
-                throw new DdlException("Cant not create stage with type=" + getStageParam().getType());
+                throw new DdlException("Cant not create stage with type=" + type);
         }
-        if (getFileFormat() != null) {
-            stageBuilder.putAllFileFormatProperties(getFileFormat().getProperties());
-        }
-        if (getCopyOption() != null) {
-            stageBuilder.putAllCopyOptionProperties(getCopyOption().getProperties());
-        }
+        stageBuilder.putAllProperties(stageProperties.getDefaultProperties());
         return stageBuilder.build();
     }
 
@@ -116,18 +99,7 @@ public class CreateStageStmt extends DdlStmt {
         if (ifNotExists) {
             sb.append("IF NOT EXISTS ");
         }
-        sb.append(stageName).append(" ");
-        sb.append(stageParam.toSql());
-        if ((fileFormat != null && fileFormat.getProperties().size() > 0) || (copyOption != null
-                && copyOption.getProperties().size() > 0)) {
-            sb.append("WITH ");
-        }
-        if (fileFormat != null) {
-            sb.append(fileFormat.toSql());
-        }
-        if (copyOption != null) {
-            sb.append(copyOption.toSql());
-        }
+        sb.append(stageName).append(" PROPERTIES ").append(stageProperties.toSql());
         return sb.toString();
     }
 }

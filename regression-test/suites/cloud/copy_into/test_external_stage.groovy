@@ -35,25 +35,24 @@ suite("test_external_stage") {
 
         sql """
             create stage if not exists ${externalStageName} 
-            ('endpoint' = '${getS3Endpoint()}' ,
+            properties ('endpoint' = '${getS3Endpoint()}' ,
             'region' = '${getS3Region()}' ,
             'bucket' = '${getS3BucketName()}' ,
             'prefix' = '${prefix}' ,
             'ak' = '${getS3AK()}' ,
             'sk' = '${getS3SK()}' ,
-            'provider' = '${getProvider(getS3Endpoint())}')
-            with file_format = ('column_separator' = "|" )
-            copy_option = ('on_error'='max_filter_ratio_0.4');
+            'provider' = '${getProvider(getS3Endpoint())}', 
+            'default.file.column_separator' = "|");
         """
 
-        def result = sql " copy into ${tableName} from @${externalStageName}('customer.csv.gz') with file_format = ('type' = 'csv', 'compression' = 'gz') async = false; "
+        def result = sql " copy into ${tableName} from @${externalStageName}('customer.csv.gz') properties ('file.type' = 'csv', 'file.compression' = 'gz', 'copy.async' = 'false'); "
         logger.info("copy result: " + result)
         assertTrue(result.size() == 1)
         assertTrue(result[0].size() == 8)
         assertTrue(result[0][1].equals("FINISHED"), "Finish copy into, state=" + result[0][1] + ", expected state=FINISHED")
         qt_sql " SELECT COUNT(*) FROM ${tableName}; "
 
-        result = sql " copy into ${tableName} from @${externalStageName}('customer.csv.gz') with async = false; "
+        result = sql " copy into ${tableName} from @${externalStageName}('customer.csv.gz') properties ('copy.async' = 'false'); "
         logger.info("copy result: " + result)
         assertTrue(result.size() == 1)
         assertTrue(result[0].size() == 8)

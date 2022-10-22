@@ -69,39 +69,36 @@ public class CopyStmt extends DdlStmt {
     @Getter
     private CopyFromParam copyFromParam;
     @Getter
-    private String stage;
-    @Getter
-    private FileFormat fileFormat;
-    @Getter
-    private CopyOption copyOption;
-    @Getter
-    private boolean async;
+    private CopyIntoProperties copyIntoProperties;
 
     private LabelName label = null;
     private BrokerDesc brokerDesc = null;
     private DataDescription dataDescription = null;
     private final Map<String, String> brokerProperties = new HashMap<>();
     private final Map<String, String> properties = new HashMap<>();
+
+    @Getter
+    private String stage;
     @Getter
     private String stageId;
     @Getter
     private StageType stageType;
     @Getter
     private ObjectInfo objectInfo;
+
     @Getter
     private long sizeLimit;
+    @Getter
+    private boolean async;
 
     /**
      * Use for cup.
      */
-    public CopyStmt(TableName tableName, CopyFromParam copyFromParam, FileFormat fileFormat, CopyOption copyOption,
-            boolean async) {
+    public CopyStmt(TableName tableName, CopyFromParam copyFromParam, Map<String, String> properties) {
         this.tableName = tableName;
         this.copyFromParam = copyFromParam;
         this.stage = copyFromParam.getStageAndPattern().getStageName();
-        this.fileFormat = fileFormat;
-        this.copyOption = copyOption;
-        this.async = async;
+        this.copyIntoProperties = new CopyIntoProperties(properties);
     }
 
     @Override
@@ -132,15 +129,14 @@ public class CopyStmt extends DdlStmt {
         analyzeStagePB(stagePB);
 
         // generate broker desc
-        sizeLimit = copyOption.getSizeLimit();
+        sizeLimit = copyIntoProperties.getSizeLimit();
         brokerDesc = new BrokerDesc("S3", StorageBackend.StorageType.S3, brokerProperties);
         // generate data description
         String filePath = "s3://" + brokerProperties.get(S3_BUCKET) + "/" + brokerProperties.get(S3_PREFIX);
-        Separator separator = fileFormat.getColumnSeparator() != null ? new Separator(fileFormat.getColumnSeparator())
-                : null;
-        String fileFormatStr = fileFormat.getFormat();
-        Map<String, String> dataDescProperties = new HashMap<>();
-        fileFormat.toDataDescriptionProperties(dataDescProperties);
+        Separator separator = copyIntoProperties.getColumnSeparator() != null ? new Separator(
+                copyIntoProperties.getColumnSeparator()) : null;
+        String fileFormatStr = copyIntoProperties.getFileType();
+        Map<String, String> dataDescProperties = copyIntoProperties.getDataDescriptionProperties();
         copyFromParam.analyze(label.getDbName(), tableName);
         if (copyFromParam.isSelect()) {
             dataDescription = new DataDescription(tableName.getTbl(), null, Lists.newArrayList(filePath),
@@ -176,36 +172,21 @@ public class CopyStmt extends DdlStmt {
 
     // after analyzeStagePB, fileFormat and copyOption is not null
     private void analyzeStagePB(StagePB stagePB) throws AnalysisException {
+        stageType = stagePB.getType();
+        stageId = stagePB.getStageId();
         ObjectStoreInfoPB objInfo = stagePB.getObjInfo();
+        objectInfo = new ObjectInfo(objInfo);
         brokerProperties.put(S3Storage.S3_ENDPOINT, objInfo.getEndpoint());
         brokerProperties.put(S3Storage.S3_REGION, objInfo.getRegion());
         brokerProperties.put(S3Storage.S3_AK, objInfo.getAk());
         brokerProperties.put(S3Storage.S3_SK, objInfo.getSk());
         brokerProperties.put(S3_BUCKET, objInfo.getBucket());
         brokerProperties.put(S3_PREFIX, objInfo.getPrefix());
-        objectInfo = new ObjectInfo(objInfo);
 
-        stageType = stagePB.getType();
-        stageId = stagePB.getStageId();
-        Map<String, String> fileFormatProperties = stagePB.getFileFormatPropertiesMap();
-        if (this.fileFormat == null) {
-            this.fileFormat = new FileFormat(fileFormatProperties);
-        } else {
-            this.fileFormat.mergeProperties(fileFormatProperties);
-        }
-        if (this.fileFormat.getProperties().size() > 0) {
-            this.fileFormat.analyze();
-        }
-        Map<String, String> copyOptionProperties = stagePB.getCopyOptionPropertiesMap();
-        if (this.copyOption == null) {
-            this.copyOption = new CopyOption(copyOptionProperties);
-        } else {
-            this.copyOption.mergeProperties(copyOptionProperties);
-        }
-        if (this.copyOption.getProperties().size() > 0) {
-            this.copyOption.analyze();
-            this.copyOption.analyzeProperty(properties);
-        }
+        StageProperties stageProperties = new StageProperties(stagePB.getPropertiesMap());
+        this.copyIntoProperties.mergeProperties(stageProperties);
+        this.copyIntoProperties.analyze();
+        this.async = this.copyIntoProperties.isAsync();
     }
 
     public String getDbName() {
@@ -233,18 +214,8 @@ public class CopyStmt extends DdlStmt {
         StringBuilder sb = new StringBuilder();
         sb.append("COPY INTO ").append(tableName.toSql()).append(" \n");
         sb.append("from ").append(copyFromParam.toSql()).append("\n");
-        if ((fileFormat != null && fileFormat.getProperties().size() > 0) || (copyOption != null
-                && copyOption.getProperties().size() > 0) || async) {
-            sb.append("WITH ");
-        }
-        if (fileFormat != null) {
-            sb.append(fileFormat.toSql()).append(" \n");
-        }
-        if (copyOption != null) {
-            sb.append(copyOption.toSql()).append(" \n");
-        }
-        if (async) {
-            sb.append(" ASYNC = true");
+        if (copyIntoProperties != null && copyIntoProperties.getProperties().size() > 0) {
+            sb.append(" PROPERTIES ").append(copyIntoProperties.toSql());
         }
         return sb.toString();
     }

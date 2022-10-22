@@ -15,20 +15,19 @@ suite("test_copy_with_select") {
 
     sql """
         create stage if not exists ${externalStageName} 
-        ('endpoint' = '${getS3Endpoint()}' ,
+        properties ('endpoint' = '${getS3Endpoint()}' ,
         'region' = '${getS3Region()}' ,
         'bucket' = '${getS3BucketName()}' ,
         'prefix' = '${prefix}' ,
         'ak' = '${getS3AK()}' ,
         'sk' = '${getS3SK()}' ,
-        'provider' = '${getProvider(getS3Endpoint())}')
-        with file_format = ('column_separator' = "|" )
-        copy_option = ('on_error'='max_filter_ratio_0.4');
+        'provider' = '${getProvider(getS3Endpoint())}',
+        'default.file.column_separator' = "|");
     """
 
     def sql_prefix = """ copy into ${tableName} from ("""
     def sql_stage = """  from @${externalStageName}('customer.csv.gz')"""
-    def sql_postfix = """) with file_format = ('type' = 'null') async = false;"""
+    def sql_postfix = """) properties ('file.type' = 'null', 'copy.async' = 'false');"""
 
     def sqls = [
             'select $1, $2, $3, $4, $5, $6, $7, $8 ' + sql_stage,

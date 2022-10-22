@@ -32,17 +32,15 @@ message StagePB {
     enum StageType {
         INTERNAL = 0;
         EXTERNAL = 1;
-    }    
+    }
     optional StageType type = 1;
     repeated string mysql_user_name = 2;
     // external stage name
     optional string name = 3;
-    // file format
-    map<string, string> file_format_properties = 4;
-    // copy option
-    map<string, string> copy_option_properties = 5;
     optional ObjectStoreInfoPB obj_info = 6;
     optional string stage_id = 7;
+    // file and copy properties
+    map<string, string> properties = 8;
 }
 
 message ClusterPB {
