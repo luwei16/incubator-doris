@@ -87,7 +87,7 @@ void start_compaction_job(MetaServiceCode& code, std::string& msg, std::stringst
                           std::string& instance_id, int64_t& table_id, int64_t& index_id,
                           int64_t& partition_id, int64_t& tablet_id, bool& need_commit,
                           ObjectPool& obj_pool) {
-    auto& compaction = request->job().compaction();
+    auto& compaction = request->job().compaction(0);
     if (!compaction.has_id() || compaction.id().empty()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
         msg = "no job id specified";
@@ -141,10 +141,10 @@ void start_compaction_job(MetaServiceCode& code, std::string& msg, std::stringst
     }
     while (ret == 0) {
         job_pb.ParseFromString(job_val);
-        if (!job_pb.has_compaction()) {
+        if (job_pb.compaction().empty()) {
             break;
         }
-        auto& recorded_compaction = job_pb.compaction();
+        auto& recorded_compaction = job_pb.compaction(0);
 
         using namespace std::chrono;
         int64_t now = duration_cast<seconds>(system_clock::now().time_since_epoch()).count();
@@ -170,7 +170,8 @@ void start_compaction_job(MetaServiceCode& code, std::string& msg, std::stringst
         return;
     }
     job_pb.mutable_idx()->CopyFrom(request->job().idx());
-    job_pb.mutable_compaction()->CopyFrom(compaction);
+    job_pb.clear_compaction();
+    job_pb.add_compaction()->CopyFrom(compaction);
     job_pb.SerializeToString(&job_val);
     if (job_val.empty()) {
         code = MetaServiceCode::PROTOBUF_SERIALIZE_ERR;
@@ -292,7 +293,7 @@ void MetaServiceImpl::start_tablet_job(::google::protobuf::RpcController* contro
     }
 
     if (!request->has_job() ||
-        (!request->job().has_compaction() && !request->job().has_schema_change())) {
+        (request->job().compaction().empty() && !request->job().has_schema_change())) {
         code = MetaServiceCode::INVALID_ARGUMENT;
         msg = "no valid job specified";
         return;
@@ -332,7 +333,7 @@ void MetaServiceImpl::start_tablet_job(::google::protobuf::RpcController* contro
                 }
             });
 
-    if (request->job().has_compaction()) {
+    if (!request->job().compaction().empty()) {
         start_compaction_job(code, msg, ss, ret, txn, request, instance_id, table_id, index_id,
                              partition_id, tablet_id, need_commit, obj_pool);
         return;
@@ -356,14 +357,14 @@ void process_compaction_job(MetaServiceCode& code, std::string& msg, std::string
     //==========================================================================
     //                                check
     //==========================================================================
-    if (!recorded_job.has_compaction()) {
+    if (recorded_job.compaction().empty()) {
         SS << "there is no running compaction, tablet_id=" << tablet_id;
         msg = ss.str();
         code = MetaServiceCode::INVALID_ARGUMENT;
         return;
     }
 
-    auto& recorded_compaction = recorded_job.compaction();
+    auto& recorded_compaction = recorded_job.compaction(0);
     using namespace std::chrono;
     int64_t now = duration_cast<seconds>(system_clock::now().time_since_epoch()).count();
     if (recorded_compaction.expiration() > 0 && recorded_compaction.expiration() < now) {
@@ -377,7 +378,7 @@ void process_compaction_job(MetaServiceCode& code, std::string& msg, std::string
     }
 
     // TODO(gavin): more check
-    auto& compaction = request->job().compaction();
+    auto& compaction = request->job().compaction(0);
 
     if (compaction.id() != recorded_compaction.id()) {
         SS << "unmatched job id, recorded_id=" << recorded_compaction.id()
@@ -466,7 +467,7 @@ void process_compaction_job(MetaServiceCode& code, std::string& msg, std::string
     //==========================================================================
     TabletStatsPB stats;
     stats.ParseFromString(stats_val);
-    if (recorded_job.compaction().type() == TabletCompactionJobPB::EMPTY_CUMULATIVE) {
+    if (compaction.type() == TabletCompactionJobPB::EMPTY_CUMULATIVE) {
         stats.set_cumulative_compaction_cnt(stats.cumulative_compaction_cnt() + 1);
         stats.set_cumulative_point(compaction.output_cumulative_point());
     } else {
@@ -488,7 +489,7 @@ void process_compaction_job(MetaServiceCode& code, std::string& msg, std::string
     txn->put(stats_key, stats_val);
     VLOG_DEBUG << "update tablet stats tablet_id=" << tablet_id << " key=" << hex(stats_key)
                << " stats=" << proto_to_json(stats);
-    if (recorded_job.compaction().type() == TabletCompactionJobPB::EMPTY_CUMULATIVE) {
+    if (compaction.type() == TabletCompactionJobPB::EMPTY_CUMULATIVE) {
         recorded_job.clear_compaction();
         auto& job_val = *obj_pool.add(new std::string());
         recorded_job.SerializeToString(&job_val);
@@ -501,20 +502,19 @@ void process_compaction_job(MetaServiceCode& code, std::string& msg, std::string
     //==========================================================================
     //                    Move input rowsets to recycle
     //==========================================================================
-    if (request->job().compaction().input_versions_size() != 2 ||
-        request->job().compaction().output_versions_size() != 1 ||
-        request->job().compaction().output_rowset_ids_size() != 1) {
+    if (compaction.input_versions_size() != 2 || compaction.output_versions_size() != 1 ||
+        compaction.output_rowset_ids_size() != 1) {
         code = MetaServiceCode::INVALID_ARGUMENT;
-        SS << "invalid input or output versions, input_versions="
-           << request->job().compaction().input_versions_size()
-           << " output_versions=" << request->job().compaction().output_versions_size()
-           << " output_rowset_ids=" << request->job().compaction().output_rowset_ids_size();
+        SS << "invalid input or output versions, input_versions_size="
+           << compaction.input_versions_size()
+           << " output_versions_size=" << compaction.output_versions_size()
+           << " output_rowset_ids_size=" << compaction.output_rowset_ids_size();
         msg = ss.str();
         return;
     }
 
-    auto start = request->job().compaction().input_versions(0);
-    auto end = request->job().compaction().input_versions(1);
+    auto start = compaction.input_versions(0);
+    auto end = compaction.input_versions(1);
     auto& rs_start =
             *obj_pool.add(new std::string(meta_rowset_key({instance_id, tablet_id, start})));
     auto& rs_end =
@@ -591,8 +591,14 @@ void process_compaction_job(MetaServiceCode& code, std::string& msg, std::string
     //==========================================================================
     //                Change tmp rowset to formal rowset
     //==========================================================================
-    int64_t txn_id = request->job().compaction().txn_id();
-    auto& rowset_id = request->job().compaction().output_rowset_ids(0);
+    if (compaction.txn_id_size() != 1) {
+        SS << "invalid txn_id, txn_id_size=" << compaction.txn_id_size();
+        msg = ss.str();
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        return;
+    }
+    int64_t txn_id = compaction.txn_id(0);
+    auto& rowset_id = compaction.output_rowset_ids(0);
     if (txn_id <= 0 || rowset_id.empty()) {
         SS << "invalid txn_id or rowset_id, tablet_id=" << tablet_id << " txn_id=" << txn_id
            << " rowset_id=" << rowset_id;
@@ -627,7 +633,7 @@ void process_compaction_job(MetaServiceCode& code, std::string& msg, std::string
     LOG(INFO) << "remove tmp rowset meta, tablet_id=" << tablet_id
               << " tmp_rowset_key=" << hex(tmp_rowset_key);
 
-    int64_t version = request->job().compaction().output_versions(0);
+    int64_t version = compaction.output_versions(0);
     auto& rowset_key =
             *obj_pool.add(new std::string(meta_rowset_key({instance_id, tablet_id, version})));
     txn->put(rowset_key, tmp_rowset_val);
@@ -924,7 +930,7 @@ void MetaServiceImpl::finish_tablet_job(::google::protobuf::RpcController* contr
     }
 
     if (!request->has_job() ||
-        (!request->job().has_compaction() && !request->job().has_schema_change())) {
+        (request->job().compaction().empty() && !request->job().has_schema_change())) {
         code = MetaServiceCode::INVALID_ARGUMENT;
         msg = "no valid job specified";
         return;
@@ -985,7 +991,7 @@ void MetaServiceImpl::finish_tablet_job(::google::protobuf::RpcController* contr
             });
 
     // Process compaction commit
-    if (request->job().has_compaction()) {
+    if (!request->job().compaction().empty()) {
         process_compaction_job(code, msg, ss, ret, txn, request, response, recorded_job,
                                instance_id, table_id, index_id, partition_id, tablet_id, job_key,
                                need_commit, obj_pool);

@@ -50,7 +50,7 @@ Status CloudBaseCompaction::prepare_compact() {
     idx->set_table_id(_tablet->table_id());
     idx->set_index_id(_tablet->index_id());
     idx->set_partition_id(_tablet->partition_id());
-    auto compaction_job = job.mutable_compaction();
+    auto compaction_job = job.add_compaction();
     compaction_job->set_id(_uuid);
     compaction_job->set_initiator(BackendOptions::get_localhost() + ':' +
                                   std::to_string(config::heartbeat_service_port));
@@ -105,7 +105,7 @@ Status CloudBaseCompaction::update_tablet_meta() {
     idx->set_table_id(_tablet->table_id());
     idx->set_index_id(_tablet->index_id());
     idx->set_partition_id(_tablet->partition_id());
-    auto compaction_job = job.mutable_compaction();
+    auto compaction_job = job.add_compaction();
     compaction_job->set_id(_uuid);
     compaction_job->set_initiator(BackendOptions::get_localhost() + ':' +
                                   std::to_string(config::heartbeat_service_port));
@@ -123,7 +123,7 @@ Status CloudBaseCompaction::update_tablet_meta() {
     compaction_job->add_input_versions(_input_rowsets.front()->start_version());
     compaction_job->add_input_versions(_input_rowsets.back()->end_version());
     compaction_job->add_output_versions(_output_rowset->end_version());
-    compaction_job->set_txn_id(_output_rowset->txn_id());
+    compaction_job->add_txn_id(_output_rowset->txn_id());
     compaction_job->add_output_rowset_ids(_output_rowset->rowset_id().to_string());
 
     int64_t base_compaction_cnt = _tablet->base_compaction_cnt();
@@ -154,7 +154,7 @@ void CloudBaseCompaction::garbage_collection() {
     idx->set_table_id(_tablet->table_id());
     idx->set_index_id(_tablet->index_id());
     idx->set_partition_id(_tablet->partition_id());
-    auto compaction_job = job.mutable_compaction();
+    auto compaction_job = job.add_compaction();
     compaction_job->set_id(_uuid);
     compaction_job->set_initiator(BackendOptions::get_localhost() + ':' +
                                   std::to_string(config::heartbeat_service_port));
