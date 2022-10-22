@@ -460,6 +460,7 @@ import org.apache.doris.qe.SqlModeHelper;
         keywordMap.put("write", new Integer(SqlParserSymbols.KW_WRITE));
         keywordMap.put("year", new Integer(SqlParserSymbols.KW_YEAR));
         keywordMap.put("stage", new Integer(SqlParserSymbols.KW_STAGE));
+        keywordMap.put("stages", new Integer(SqlParserSymbols.KW_STAGES));
    }
 
   // map from token id to token description

@@ -115,7 +115,11 @@ public class CopyStmt extends DdlStmt {
         String user = ClusterNamespace.getNameFromFullName(
                 ConnectContext.get().getCurrentUserIdentity().getQualifiedUser());
         if (stage.equals("~")) {
-            stagePB = Env.getCurrentInternalCatalog().getStage(StageType.INTERNAL, user, null).get(0);
+            List<StagePB> stagePBs = Env.getCurrentInternalCatalog().getStage(StageType.INTERNAL, user, null);
+            if (stagePBs.isEmpty()) {
+                throw new AnalysisException("Failed to get internal stage for user: " + user);
+            }
+            stagePB = stagePBs.get(0);
         } else {
             // check stage permission
             if (!Env.getCurrentEnv().getAuth()
@@ -124,7 +128,11 @@ public class CopyStmt extends DdlStmt {
                 throw new AnalysisException("USAGE denied to user '" + ConnectContext.get().getQualifiedUser() + "'@'"
                         + ConnectContext.get().getRemoteIP() + "' for cloud stage '" + stage + "'");
             }
-            stagePB = Env.getCurrentInternalCatalog().getStage(StageType.EXTERNAL, null, stage).get(0);
+            List<StagePB> stagePBs = Env.getCurrentInternalCatalog().getStage(StageType.EXTERNAL, null, stage);
+            if (stagePBs.isEmpty()) {
+                throw new AnalysisException("Failed to get external stage with name: " + stage);
+            }
+            stagePB = stagePBs.get(0);
         }
         analyzeStagePB(stagePB);
 

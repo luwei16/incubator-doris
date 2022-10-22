@@ -2429,8 +2429,7 @@ public class ShowExecutor {
                 result.add(stage.getObjInfo().getSk());
                 result.add(stage.getObjInfo().getProvider().name());
                 Map<String, String> propertiesMap = new HashMap<>();
-                propertiesMap.putAll(stage.getFileFormatPropertiesMap());
-                propertiesMap.putAll(stage.getCopyOptionPropertiesMap());
+                propertiesMap.putAll(stage.getPropertiesMap());
                 result.add(new GsonBuilder().disableHtmlEscaping().create().toJson(propertiesMap));
                 results.add(result);
             }

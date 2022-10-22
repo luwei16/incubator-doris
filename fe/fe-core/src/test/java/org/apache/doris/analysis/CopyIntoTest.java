@@ -67,20 +67,22 @@ public class CopyIntoTest extends TestWithFeService {
     public void testCopyInto() throws Exception {
         String query1 = "create stage if not exists ex_stage_2 " + OBJ_INFO + ")";
         StagePB stagePB1 = ((CreateStageStmt) UtFrameUtils.parseAndAnalyzeStmt(query1, connectContext)).toStageProto();
+        List<StagePB> stages1 = Lists.newArrayList(stagePB1);
         String query2 = "create stage if not exists ex_stage_3 " + OBJ_INFO
                 + ", 'default.file.type' = 'csv', 'default.file.column_separator' = ',' "
                 + ", 'default.copy.on_error' = 'continue', 'default.copy.size_limit' = '100')";
         StagePB stagePB2 = ((CreateStageStmt) UtFrameUtils.parseAndAnalyzeStmt(query2, connectContext)).toStageProto();
+        List<StagePB> stages2 = Lists.newArrayList(stagePB2);
 
         new Expectations(connectContext.getEnv(), connectContext.getEnv().getInternalCatalog()) {
             {
                 Env.getCurrentInternalCatalog().getStage(StageType.EXTERNAL, anyString, "ex_stage_2");
                 minTimes = 0;
-                result = stagePB1;
+                result = stages1;
 
                 Env.getCurrentInternalCatalog().getStage(StageType.EXTERNAL, anyString, "ex_stage_3");
                 minTimes = 0;
-                result = stagePB2;
+                result = stages2;
             }
         };
 
@@ -151,11 +153,12 @@ public class CopyIntoTest extends TestWithFeService {
 
     @Test
     public void testCopyFromInternalStage() throws Exception {
+        List<StagePB> stages = Lists.newArrayList(internalStagePB);
         new Expectations(connectContext.getEnv().getInternalCatalog()) {
             {
                 Env.getCurrentInternalCatalog().getStage(StageType.INTERNAL, anyString, null);
                 minTimes = 0;
-                result = internalStagePB;
+                result = stages;
             }
         };
 
@@ -169,11 +172,12 @@ public class CopyIntoTest extends TestWithFeService {
 
     @Test
     public void testCopyWithPattern() throws Exception {
+        List<StagePB> stages = Lists.newArrayList(internalStagePB);
         new Expectations(connectContext.getEnv().getInternalCatalog()) {
             {
                 Env.getCurrentInternalCatalog().getStage(StageType.INTERNAL, anyString, null);
                 minTimes = 0;
-                result = internalStagePB;
+                result = stages;
             }
         };
 
@@ -187,11 +191,12 @@ public class CopyIntoTest extends TestWithFeService {
 
     @Test
     public void testCopyIntoWithSelect() throws Exception {
+        List<StagePB> stages = Lists.newArrayList(externalStagePB);
         new Expectations(connectContext.getEnv(), connectContext.getEnv().getInternalCatalog()) {
             {
                 Env.getCurrentInternalCatalog().getStage(StageType.EXTERNAL, anyString, "ex_stage_1");
                 minTimes = 0;
-                result = externalStagePB;
+                result = stages;
             }
         };
 

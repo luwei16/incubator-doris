@@ -12,6 +12,7 @@ import org.apache.doris.analysis.CopyStmt;
 import org.apache.doris.analysis.StatementBase;
 import org.apache.doris.catalog.Env;
 import org.apache.doris.cluster.ClusterNamespace;
+import org.apache.doris.common.DdlException;
 import org.apache.doris.common.DorisHttpException;
 import org.apache.doris.datasource.InternalCatalog;
 import org.apache.doris.httpv2.entity.ResponseEntityBuilder;
@@ -31,6 +32,7 @@ import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
@@ -110,8 +112,11 @@ public class CloudLoadAction extends RestBaseController {
 
             // use userName, fileName to get presigned url from ms EXTERNAL
             // 1. rpc to ms, by unique_id、username
-            StagePB internalStage = Env.getCurrentInternalCatalog().getStage(StageType.INTERNAL,
-                    mysqlUserName, null).get(0);
+            List<StagePB> stages = Env.getCurrentInternalCatalog().getStage(StageType.INTERNAL, mysqlUserName, null);
+            if (stages.isEmpty()) {
+                throw new DdlException("Failed to get internal stage for user: " + mysqlUserName);
+            }
+            StagePB internalStage = stages.get(0);
             ObjectStoreInfoPB objPb = internalStage.getObjInfo();
             if (!isInternal) {
                 // external, use external endpoint to set endpoint
