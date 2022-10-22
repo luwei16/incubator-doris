@@ -240,7 +240,8 @@ public class CloudGlobalTransactionMgr implements GlobalTransactionMgrInterface 
 
         LOG.info("try to commit transaction, transactionId: {}", transactionId);
         if (Config.disable_load_job) {
-            throw new TransactionCommitFailedException("disable_load_job is set to true, all load jobs are prevented");
+            throw new TransactionCommitFailedException(
+                    "disable_load_job is set to true, all load jobs are not allowed");
         }
 
         CommitTxnRequest.Builder builder = CommitTxnRequest.newBuilder();
@@ -264,36 +265,35 @@ public class CloudGlobalTransactionMgr implements GlobalTransactionMgrInterface 
         int retryTime = 0;
         while (retryTime++ < 3) {
             try {
-                LOG.info("transactionId={}, commitTxnRequest:{}", transactionId, commitTxnRequest);
+                LOG.info("commitTxn, transactionId={}, commitTxnRequest:{}", transactionId, commitTxnRequest);
                 commitTxnResponse = MetaServiceProxy.getInstance().commitTxn(commitTxnRequest);
-                LOG.info("transactionId={}, commitTxnResponse: {}", transactionId, commitTxnResponse);
+                LOG.info("commitTxn, transactionId={}, commitTxnResponse: {}", transactionId, commitTxnResponse);
+                if (commitTxnResponse.getStatus().getCode() == MetaServiceCode.OK
+                        || commitTxnResponse.getStatus().getCode() == MetaServiceCode.TXN_ALREADY_VISIBLE) {
+                    break;
+                }
             } catch (Exception e) {
-                LOG.warn("ignore commitTxn Exception, transactionId={}, retryTime={}", transactionId, retryTime, e);
+                LOG.warn("ignore commitTxn exception, transactionId={}, retryTime={}", transactionId, retryTime, e);
             }
         }
 
-        if (retryTime >= 3) {
-            LOG.warn("commitTxn failed, for {} times, commitTxnResponse:{}",
-                    retryTime, commitTxnResponse);
-            throw new UserException("commitTxn transactionId:" + transactionId
-                    + " failed, for " + retryTime + " times");
-        }
-
         if (commitTxnResponse.getStatus().getCode() != MetaServiceCode.OK
-                || commitTxnResponse.getStatus().getCode() != MetaServiceCode.TXN_ALREADY_VISIBLE) {
+                && commitTxnResponse.getStatus().getCode() != MetaServiceCode.TXN_ALREADY_VISIBLE) {
+            LOG.warn("commitTxn failed, transactionId={}, for {} times, commitTxnResponse:{}",
+                    transactionId, retryTime, commitTxnResponse);
             throw new UserException(commitTxnResponse.getStatus().getMsg());
         }
 
         TransactionState txnState = TxnUtil.transactionStateFromPb(commitTxnResponse.getTxnInfo());
         TxnStateChangeCallback cb = callbackFactory.getCallback(txnState.getCallbackId());
         if (cb == null) {
-            LOG.info("no callback to run for this txn, transactionId={} callbackId={}, txnState={}",
+            LOG.info("commitTxn, no callback to run for this txn, transactionId={} callbackId={}, txnState={}",
                     txnState.getTransactionId(), txnState.getCallbackId(), txnState);
             return;
         }
 
-        LOG.info("run txn callback, transactionId={} callbackId={}, txnState={}", txnState.getTransactionId(),
-                txnState.getCallbackId(), txnState);
+        LOG.info("commitTxn, run txn callback, transactionId={} callbackId={}, txnState={}",
+                txnState.getTransactionId(), txnState.getCallbackId(), txnState);
         cb.afterCommitted(txnState, true);
         cb.afterVisible(txnState, true);
     }
