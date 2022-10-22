@@ -4369,6 +4369,7 @@ void MetaServiceImpl::get_stage(google::protobuf::RpcController* controller,
                 stage_pb.mutable_obj_info()->set_sk(old_obj.sk());
                 stage_pb.mutable_obj_info()->set_bucket(old_obj.bucket());
                 stage_pb.mutable_obj_info()->set_endpoint(old_obj.endpoint());
+                stage_pb.mutable_obj_info()->set_external_endpoint(old_obj.external_endpoint());
                 stage_pb.mutable_obj_info()->set_region(old_obj.region());
                 stage_pb.mutable_obj_info()->set_provider(old_obj.provider());
                 stage_pb.mutable_obj_info()->set_prefix(s.obj_info().prefix());
@@ -4417,6 +4418,7 @@ void MetaServiceImpl::get_stage(google::protobuf::RpcController* controller,
             stage_pb.mutable_obj_info()->set_sk(lastest_obj.sk());
             stage_pb.mutable_obj_info()->set_bucket(lastest_obj.bucket());
             stage_pb.mutable_obj_info()->set_endpoint(lastest_obj.endpoint());
+            stage_pb.mutable_obj_info()->set_external_endpoint(lastest_obj.external_endpoint());
             stage_pb.mutable_obj_info()->set_region(lastest_obj.region());
             stage_pb.mutable_obj_info()->set_provider(lastest_obj.provider());
             stage_pb.set_stage_id(stage_id);

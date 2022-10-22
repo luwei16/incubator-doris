@@ -98,8 +98,8 @@ public class CloudLoadAction extends RestBaseController {
             if (Strings.isNullOrEmpty(eh)) {
                 // check Header's Host
                 String host = request.getHeader("Host");
-                if (!Strings.isNullOrEmpty(host) && !isIP(host)) {
-                    // check host is ip, if true internal, else external
+                if (!Strings.isNullOrEmpty(host) && isIP(host)) {
+                    // check host is ip, if true external, else internal
                     isInternal = false;
                 }
             } else {
@@ -107,8 +107,8 @@ public class CloudLoadAction extends RestBaseController {
             }
             String mysqlUserName = ClusterNamespace
                     .getNameFromFullName(ConnectContext.get().getCurrentUserIdentity().getQualifiedUser());
-            LOG.info("receive Presigned url request [ user [{}]] for filename [{}]",
-                    mysqlUserName, fileName);
+            LOG.info("receive Presigned url request [ user [{}]] for filename [{}], isInternal [{}]",
+                    mysqlUserName, fileName, isInternal);
 
             // use userName, fileName to get presigned url from ms EXTERNAL
             // 1. rpc to ms, by unique_id、username
@@ -122,7 +122,9 @@ public class CloudLoadAction extends RestBaseController {
                 // external, use external endpoint to set endpoint
                 SelectdbCloud.ObjectStoreInfoPB.Builder obj =
                         SelectdbCloud.ObjectStoreInfoPB.newBuilder(internalStage.getObjInfo());
-                String endpoint = internalStage.getObjInfo().hasExternalEndpoint()
+                boolean hasExternal = internalStage.getObjInfo().hasExternalEndpoint();
+                LOG.debug("meta service msHasExternal: {}", hasExternal);
+                String endpoint = hasExternal
                         ? internalStage.getObjInfo().getExternalEndpoint() : internalStage.getObjInfo().getEndpoint();
                 obj.setEndpoint(endpoint);
                 objPb = obj.build();
