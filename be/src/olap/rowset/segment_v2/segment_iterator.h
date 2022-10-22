@@ -135,7 +135,7 @@ private:
     void _output_non_pred_columns(vectorized::Block* block);
     Status _read_columns_by_rowids(std::vector<ColumnId>& read_column_ids,
                                    std::vector<rowid_t>& rowid_vector, uint16_t* sel_rowid_idx,
-                                   size_t select_size);
+                                   size_t select_size, vectorized::MutableColumns* mutable_columns);
 
     void _vec_init_prefetch_column_pages();
     void _init_prefetch_column_pages();
@@ -157,11 +157,6 @@ private:
                                     const roaring::Roaring& inverted_bitmap);
 
     bool _is_handle_predicate_by_fulltext(ColumnPredicate* predicate);
-
-    bool _need_read_data(ColumnId cid);
-
-    bool _prune_column(ColumnId cid, vectorized::MutableColumnPtr& column,
-                    bool fill_defaults, size_t num_of_defaults);
 
     bool _can_evaluated_by_vectorized(ColumnPredicate* predicate);
 
@@ -214,6 +209,10 @@ private:
 
     bool _check_apply_by_bitmap_index(ColumnPredicate* pred);
     bool _check_apply_by_inverted_index(ColumnPredicate* pred);
+
+    bool _need_read_data(ColumnId cid);
+    bool _prune_column(ColumnId cid, vectorized::MutableColumnPtr& column,
+                    bool fill_defaults, size_t num_of_defaults);
 
 private:
     class BitmapRangeIterator;
@@ -284,6 +283,7 @@ private:
     std::set<ColumnId> _not_apply_index_pred;
 
     std::shared_ptr<ColumnPredicate> _runtime_predicate {nullptr};
+    std::set<int32_t> _output_columns;
 
     // row schema of the key to seek
     // only used in `_get_row_ranges_by_keys`

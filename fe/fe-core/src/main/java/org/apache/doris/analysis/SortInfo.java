@@ -51,8 +51,8 @@ public class SortInfo {
     private static final float SORT_MATERIALIZATION_COST_THRESHOLD = Expr.FUNCTION_CALL_COST;
 
     private List<Expr> orderingExprs;
-    private final List<Boolean> isAscOrder;
     private List<Expr> origOrderingExprs;
+    private final List<Boolean> isAscOrder;
     // True if "NULLS FIRST", false if "NULLS LAST", null if not specified.
     private final List<Boolean> nullsFirstParams;
     // Subset of ordering exprs that are materialized. Populated in
@@ -118,12 +118,12 @@ public class SortInfo {
         }
     }
 
-    public List<Expr> getOrigOrderingExprs() {
-        return origOrderingExprs;
-    }
-
     public List<Expr> getOrderingExprs() {
         return orderingExprs;
+    }
+
+    public List<Expr> getOrigOrderingExprs() {
+        return origOrderingExprs;
     }
 
     public List<Boolean> getIsAscOrder() {
@@ -221,7 +221,6 @@ public class SortInfo {
         TupleDescriptor sortTupleDesc = analyzer.getDescTbl().createTupleDescriptor("sort");
         sortTupleDesc.setIsMaterialized(true);
         List<Expr> sortTupleExprs = Lists.newArrayList();
-
         // substOrderBy is a mapping from exprs evaluated on the sort input that get
         // materialized into the sort tuple to their corresponding SlotRefs in the sort tuple.
         // The following exprs are materialized:
@@ -256,6 +255,8 @@ public class SortInfo {
                 sortTupleExprs.add(origSlotRef);
             }
         }
+        // backup before substitute orderingExprs
+        origOrderingExprs = orderingExprs;
 
         // backup before substitute orderingExprs
         origOrderingExprs = orderingExprs;

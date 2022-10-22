@@ -1339,7 +1339,10 @@ Status SchemaChangeForInvertedIndex::process(
     OlapReaderStatistics stats;
     read_options.stats = &stats;
     read_options.tablet_schema = _tablet_schema;
-    std::unique_ptr<Schema> schema = std::make_unique<Schema>(_tablet_schema->columns(), return_columns);
+    std::set<int32_t> output_columns(return_columns.begin(), return_columns.end());
+    read_options.output_columns = &output_columns;
+    std::unique_ptr<Schema> schema =
+            std::make_unique<Schema>(_tablet_schema->columns(), return_columns);
     for (auto& seg_ptr : segment_cache_handle.get_segments()) {
         std::unique_ptr<RowwiseIterator> iter;
         res = seg_ptr->new_iterator(*schema, read_options, &iter);

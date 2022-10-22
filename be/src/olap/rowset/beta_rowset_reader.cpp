@@ -172,7 +172,7 @@ Status BetaRowsetReader::init(RowsetReaderContext* read_context) {
     read_options.kept_in_memory = read_context->kept_in_memory;
     read_options.is_persistent = read_context->is_persistent;
     read_options.runtime_state = read_context->runtime_state;
-    read_options.conjunct_ctxs_size = read_context->conjunct_ctxs_size;
+    read_options.output_columns = read_context->output_columns;
 
     // load segments
     RETURN_NOT_OK(SegmentLoader::instance()->load_segments(

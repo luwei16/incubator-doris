@@ -105,11 +105,10 @@ public:
     RuntimeState* runtime_state = nullptr;
 
     RowsetId rowset_id;
-    int32_t tablet_id = 0; 
-
-    int32_t conjunct_ctxs_size = 0;
+    int32_t tablet_id = 0;
     
     vectorized::VExpr* remaining_vconjunct_root = nullptr;
+    const std::set<int32_t>* output_columns = nullptr;
 };
 
 // Used to read data in RowBlockV2 one by one

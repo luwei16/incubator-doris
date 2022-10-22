@@ -73,6 +73,7 @@ private:
     std::unique_ptr<MemTracker> _scanner_mem_tracker;
 
     std::set<int32_t> _pruned_column_ids;
+    std::set<int32_t> _no_condition_column_ids;
 
 private:
     std::unique_ptr<RuntimeProfile> _segment_profile;

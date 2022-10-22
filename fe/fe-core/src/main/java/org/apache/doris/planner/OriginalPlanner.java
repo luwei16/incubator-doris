@@ -255,6 +255,10 @@ public class OriginalPlanner extends Planner {
 
         pushDownResultFileSink(analyzer);
 
+        if (VectorizedUtil.isVectorized()) {
+            pushOutExprsToOlapScan(rootFragment);
+        }
+
         if (queryStmt instanceof SelectStmt) {
             SelectStmt selectStmt = (SelectStmt) queryStmt;
             if (queryStmt.getSortInfo() != null || selectStmt.getAggInfo() != null) {
@@ -395,6 +399,29 @@ public class OriginalPlanner extends Planner {
             }
             scanNode.setSortInfo(sortNode.getSortInfo());
             scanNode.getSortInfo().setSortTupleSlotExprs(sortNode.resolvedTupleExprs);
+        }
+    }
+
+    /**
+     * push output exprs to olap scan.
+    */
+    private void pushOutExprsToOlapScan(PlanFragment rootFragment) {
+        ArrayList<Expr> outputExprs = rootFragment.getOutputExprs();
+
+        for (PlanFragment fragment : fragments) {
+            PlanNode node = fragment.getPlanRoot();
+
+            // OlapScanNode is the last node.
+            // So, just get the last node and check if it is OlapScan.
+            while (node.getChildren().size() != 0) {
+                node = node.getChildren().get(0);
+            }
+            if (!(node instanceof OlapScanNode)) {
+                continue;
+            }
+
+            OlapScanNode scanNode = (OlapScanNode) node;
+            scanNode.setOutputExprs(outputExprs);
         }
     }
 

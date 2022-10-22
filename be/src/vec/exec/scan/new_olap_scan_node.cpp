@@ -57,10 +57,6 @@ bool NewOlapScanNode::is_pruned_column(int32_t col_unique_id) {
 }
 
 bool NewOlapScanNode::_maybe_prune_columns() {
-    // If last column is rowid column, we should try our best to prune seeking columns
-    if (_output_tuple_desc->slots().back()->col_name() != BeConsts::ROWID_COL) {
-        return false;
-    }
     // an id collection of ordering column id, key column id, conjuncts column id
     std::set<int32_t> output_columns;
 
@@ -76,6 +72,29 @@ bool NewOlapScanNode::_maybe_prune_columns() {
                 output_columns.emplace(col_id);
             }
         }
+    }
+
+    if (!_olap_scan_node.output_exprs.empty()) {
+        for (auto i = 0; i < _olap_scan_node.output_exprs.size(); ++i) {
+            auto t_output_expr = _olap_scan_node.output_exprs[i];
+            for (TExprNode& t_outptu_expr_node : t_output_expr.nodes) {
+                auto col_id = t_outptu_expr_node.slot_ref.col_unique_id;
+                if (col_id < 0) {
+                    continue;
+                }
+                output_columns.emplace(col_id);
+            }
+        }
+    }
+
+    // get no condition column ids
+    std::copy(output_columns.cbegin(), output_columns.cend(),
+              std::inserter(_no_condition_column_ids,
+                            _no_condition_column_ids.begin()));
+
+    // If last column is rowid column, we should try our best to prune seeking columns
+    if (_output_tuple_desc->slots().back()->col_name() != BeConsts::ROWID_COL) {
+        return false;
     }
 
     std::set<int32_t> output_tuple_column_unique_ids;

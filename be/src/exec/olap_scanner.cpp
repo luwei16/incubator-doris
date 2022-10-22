@@ -89,6 +89,7 @@ Status OlapScanner::prepare(
                 _tablet_schema->append_column(TabletColumn(column_desc));
             }
         }
+        
         {
             std::shared_lock rdlock(_tablet->get_header_lock());
             const RowsetSharedPtr rowset = _tablet->rowset_with_max_version();
@@ -192,7 +193,6 @@ Status OlapScanner::_init_tablet_reader_params(
     _tablet_reader_params.reader_type = READER_QUERY;
     _tablet_reader_params.aggregation = _aggregation;
     _tablet_reader_params.version = Version(0, _version);
-    _tablet_reader_params.conjunct_ctxs_size = _conjunct_ctxs.size();
 
     // Condition
     for (auto& filter : filters) {

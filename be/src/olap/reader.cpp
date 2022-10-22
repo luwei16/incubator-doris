@@ -231,8 +231,8 @@ Status TabletReader::_capture_rs_readers(const ReaderParams& read_params,
     _reader_context.record_rowids = read_params.record_rowids;
     _reader_context.kept_in_memory = _tablet->is_in_memory();
     _reader_context.is_persistent = _tablet->is_persistent();
-    _reader_context.conjunct_ctxs_size = read_params.conjunct_ctxs_size;
     _reader_context.remaining_vconjunct_root = read_params.remaining_vconjunct_root;
+    _reader_context.output_columns = &read_params.output_columns;
 
     *valid_rs_readers = *rs_readers;
 

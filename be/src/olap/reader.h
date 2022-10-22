@@ -88,6 +88,7 @@ public:
 
         std::vector<RowsetReaderSharedPtr> rs_readers;
         std::vector<uint32_t> return_columns;
+        std::set<int32_t> output_columns;
         RuntimeProfile* profile = nullptr;
         RuntimeState* runtime_state = nullptr;
 
@@ -111,8 +112,6 @@ public:
         size_t read_orderby_key_limit = 0;
         // filter_block arguments
         vectorized::VExprContext** filter_block_vconjunct_ctx_ptr = nullptr;
-
-        int conjunct_ctxs_size = 0;
 
         void check_validation() const;
 

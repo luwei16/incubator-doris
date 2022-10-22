@@ -80,7 +80,7 @@ struct RowsetReaderContext {
     bool kept_in_memory = false;
     bool is_persistent = false;
 
-    int conjunct_ctxs_size = 0;
+    const std::set<int32_t>* output_columns = nullptr;
 };
 
 } // namespace doris

@@ -488,6 +488,7 @@ struct TOlapScanNode {
   12: optional TPushAggOp push_down_agg_type_opt
   13: optional bool use_topn_opt
   14: optional list<Exprs.TExpr> ordering_exprs
+  15: optional list<Exprs.TExpr> output_exprs
 }
 
 struct TEqJoinCondition {
