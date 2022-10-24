@@ -192,7 +192,7 @@ echo "start time: $(date)" >>"${LOG_DIR}/be.out"
 if [[ ! -f '/bin/limit3' ]]; then
     LIMIT=''
 else
-    LIMIT="/bin/limit3 -c 0 -n 65536"
+    LIMIT="/bin/limit3 -c 0 -n 1000000"
 fi
 
 ## If you are not running in aws cloud, disable this env since https://github.com/aws/aws-sdk-cpp/issues/1410.
