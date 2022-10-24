@@ -33,7 +33,8 @@ int MemTxnKv::update(const std::set<std::string>& read_set,
             auto log_item = iter->second;
             if (log_item.front().commit_version_ > read_version) {
                 LOG(WARNING) << "commit confict";
-                return -1;
+                //keep the same behaviour with fdb.
+                return 1002;
             }
         }
     }
@@ -278,8 +279,12 @@ void Transaction::remove(std::string_view begin, std::string_view end) {
 
 int Transaction::commit() {
     std::lock_guard<std::mutex> l(lock_);
-    if (aborted_ || kv_->update(read_set_, op_list_, read_version_, &committed_version_) != 0) {
+    if (aborted_) {
         return -2;
+    }
+    int ret = kv_->update(read_set_, op_list_, read_version_, &committed_version_);
+    if (ret != 0) {
+        return ret == 1002? -1 : -2;
     }
     commited_ = true;
     op_list_.clear();
