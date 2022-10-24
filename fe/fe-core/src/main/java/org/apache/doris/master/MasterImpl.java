@@ -36,6 +36,7 @@ import org.apache.doris.load.loadv2.SparkLoadJob;
 import org.apache.doris.system.Backend;
 import org.apache.doris.task.AgentTask;
 import org.apache.doris.task.AgentTaskQueue;
+import org.apache.doris.task.AlterInvertedIndexTask;
 import org.apache.doris.task.AlterReplicaTask;
 import org.apache.doris.task.CheckConsistencyTask;
 import org.apache.doris.task.ClearAlterTask;
@@ -136,7 +137,8 @@ public class MasterImpl {
                         && taskType != TTaskType.DOWNLOAD && taskType != TTaskType.MOVE
                         && taskType != TTaskType.CLONE && taskType != TTaskType.PUBLISH_VERSION
                         && taskType != TTaskType.CREATE && taskType != TTaskType.UPDATE_TABLET_META_INFO
-                        && taskType != TTaskType.STORAGE_MEDIUM_MIGRATE) {
+                        && taskType != TTaskType.STORAGE_MEDIUM_MIGRATE
+                        && taskType != TTaskType.ALTER_INVERTED_INDEX) {
                     return result;
                 }
             }
@@ -191,6 +193,9 @@ public class MasterImpl {
                     finishRecoverTablet(task);
                     break;
                 case ALTER:
+                    finishAlterTask(task);
+                    break;
+                case ALTER_INVERTED_INDEX:
                     finishAlterTask(task);
                     break;
                 case UPDATE_TABLET_META_INFO:
@@ -585,17 +590,24 @@ public class MasterImpl {
     }
 
     private void finishAlterTask(AgentTask task) {
-        AlterReplicaTask alterTask = (AlterReplicaTask) task;
-        try {
-            if (alterTask.getJobType() == JobType.ROLLUP) {
-                Env.getCurrentEnv().getMaterializedViewHandler().handleFinishAlterTask(alterTask);
-            } else if (alterTask.getJobType() == JobType.SCHEMA_CHANGE) {
-                Env.getCurrentEnv().getSchemaChangeHandler().handleFinishAlterTask(alterTask);
+        if (task instanceof AlterReplicaTask) {
+            AlterReplicaTask alterTask = (AlterReplicaTask) task;
+            try {
+                if (alterTask.getJobType() == JobType.ROLLUP) {
+                    Env.getCurrentEnv().getMaterializedViewHandler().handleFinishAlterTask(alterTask);
+                } else if (alterTask.getJobType() == JobType.SCHEMA_CHANGE) {
+                    Env.getCurrentEnv().getSchemaChangeHandler().handleFinishAlterTask(alterTask);
+                }
+                alterTask.setFinished(true);
+            } catch (MetaNotFoundException e) {
+                LOG.warn("failed to handle finish alter task: {}, {}", task.getSignature(), e.getMessage());
             }
-            alterTask.setFinished(true);
-        } catch (MetaNotFoundException e) {
-            LOG.warn("failed to handle finish alter task: {}, {}", task.getSignature(), e.getMessage());
+            AgentTaskQueue.removeTask(task.getBackendId(), TTaskType.ALTER, task.getSignature());
+        } else if (task instanceof AlterInvertedIndexTask) {
+            AlterInvertedIndexTask alterInvertedIndexTask = (AlterInvertedIndexTask) task;
+            LOG.info("beigin finish AlterInvertedIndexTask, Jobtype: {}", alterInvertedIndexTask.getJobType());
+            alterInvertedIndexTask.setFinished(true);
+            AgentTaskQueue.removeTask(task.getBackendId(), TTaskType.ALTER_INVERTED_INDEX, task.getSignature());
         }
-        AgentTaskQueue.removeTask(task.getBackendId(), TTaskType.ALTER, task.getSignature());
     }
 }

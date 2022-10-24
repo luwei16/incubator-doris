@@ -208,6 +208,7 @@ private:
 };
 
 using BlockRow = std::pair<vectorized::Block*, int32_t>;
+using VecBlock = vectorized::Block;
 
 struct VOlapTablePartition {
     int64_t id = 0;
@@ -364,6 +365,10 @@ public:
             return &it->second;
         }
         return nullptr;
+    }
+
+    const std::unordered_map<int64_t, NodeInfo>& nodes_info() {
+        return _nodes;
     }
 
 private:

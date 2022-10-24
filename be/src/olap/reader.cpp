@@ -20,6 +20,7 @@
 #include <parallel_hashmap/phmap.h>
 
 #include "common/status.h"
+#include "exprs/match_predicate.h"
 #include "olap/bloom_filter_predicate.h"
 #include "olap/collect_iterator.h"
 #include "olap/comparison_predicate.h"
@@ -88,6 +89,9 @@ TabletReader::~TabletReader() {
         delete pred;
     }
     for (auto pred : _value_col_predicates) {
+        delete pred;
+    }
+    for (auto pred : _all_compound_col_predicates) {
         delete pred;
     }
 }
@@ -200,11 +204,15 @@ Status TabletReader::_capture_rs_readers(const ReaderParams& read_params,
     _reader_context.version = read_params.version;
     _reader_context.tablet_schema = _tablet_schema;
     _reader_context.need_ordered_result = need_ordered_result;
+    _reader_context.use_topn_opt = read_params.use_topn_opt;
     _reader_context.read_orderby_key_reverse = read_params.read_orderby_key_reverse;
+    _reader_context.read_orderby_key_limit = read_params.read_orderby_key_limit;
+    _reader_context.filter_block_vconjunct_ctx_ptr = read_params.filter_block_vconjunct_ctx_ptr;
     _reader_context.return_columns = &_return_columns;
     _reader_context.read_orderby_key_columns =
             _orderby_key_columns.size() > 0 ? &_orderby_key_columns : nullptr;
     _reader_context.predicates = &_col_predicates;
+    _reader_context.all_compound_predicates = &_all_compound_col_predicates;
     _reader_context.value_predicates = &_value_col_predicates;
     _reader_context.lower_bound_keys = &_keys_param.start_keys;
     _reader_context.is_lower_keys_included = &_is_lower_keys_included;
@@ -223,6 +231,8 @@ Status TabletReader::_capture_rs_readers(const ReaderParams& read_params,
     _reader_context.record_rowids = read_params.record_rowids;
     _reader_context.kept_in_memory = _tablet->is_in_memory();
     _reader_context.is_persistent = _tablet->is_persistent();
+    _reader_context.remaining_vconjunct_root = read_params.remaining_vconjunct_root;
+    _reader_context.output_columns = &read_params.output_columns;
 
     *valid_rs_readers = *rs_readers;
 
@@ -240,6 +250,7 @@ Status TabletReader::_init_params(const ReaderParams& read_params) {
     _tablet_schema = read_params.tablet_schema;
 
     _init_conditions_param(read_params);
+    _init_compound_conditions_param(read_params);
 
     Status res = _init_delete_condition(read_params);
     if (!res.ok()) {
@@ -445,6 +456,8 @@ void TabletReader::_init_conditions_param(const ReaderParams& read_params) {
         ColumnPredicate* predicate =
                 parse_to_predicate(_tablet_schema, tmp_cond, _predicate_mem_pool.get());
         if (predicate != nullptr) {
+            auto predicate_params = predicate->predicate_params();
+            predicate_params->value = condition.condition_values[0];
             if (_tablet_schema->column_by_uid(condition_col_uid).aggregation() !=
                 FieldAggregationMethod::OLAP_FIELD_AGGREGATION_NONE) {
                 _value_col_predicates.push_back(predicate);
@@ -462,6 +475,28 @@ void TabletReader::_init_conditions_param(const ReaderParams& read_params) {
     // Function filter push down to storage engine
     for (const auto& filter : read_params.function_filters) {
         _col_predicates.emplace_back(_parse_to_predicate(filter));
+    }
+
+    if (read_params.use_topn_opt) {
+        auto & runtime_predicate =
+            read_params.runtime_state->get_query_fragments_ctx()->get_runtime_predicate();
+        runtime_predicate.set_tablet_schema(_tablet_schema);
+    }
+}
+
+void TabletReader::_init_compound_conditions_param(const ReaderParams& read_params) {
+    for (const auto& conditions_per_conjunct : read_params.compound_conditions) {
+        for (const auto& condition : conditions_per_conjunct) {
+            TCondition tmp_cond = condition;
+            auto condition_col_uid = _tablet_schema->column(tmp_cond.column_name).unique_id();
+            tmp_cond.__set_column_unique_id(condition_col_uid);
+            ColumnPredicate* predicate = parse_to_predicate(_tablet_schema, tmp_cond, _predicate_mem_pool.get());
+            if (predicate != nullptr) {
+                auto predicate_params = predicate->predicate_params();
+                predicate_params->value = condition.condition_values[0];
+                _all_compound_col_predicates.push_back(predicate);
+            }
+        }
     }
 }
 

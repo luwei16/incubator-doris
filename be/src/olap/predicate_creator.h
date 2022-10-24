@@ -19,6 +19,8 @@
 
 #include <charconv>
 
+#include "exec/olap_utils.h"
+#include "exprs/match_predicate.h"
 #include "olap/column_predicate.h"
 #include "olap/comparison_predicate.h"
 #include "olap/in_list_predicate.h"
@@ -259,6 +261,8 @@ inline ColumnPredicate* parse_to_predicate(TabletSchemaSPtr tablet_schema,
     if (to_lower(condition.condition_op) == "is") {
         return new NullPredicate(index, to_lower(condition.condition_values[0]) == "null",
                                  opposite);
+    } else if (is_match_condition(condition.condition_op)) {
+        return new MatchPredicate(index, condition.condition_values[0], to_match_type(condition.condition_op));
     }
 
     if ((condition.condition_op == "*=" || condition.condition_op == "!*=") &&

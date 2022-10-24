@@ -81,6 +81,9 @@ public:
 
     Status new_bitmap_index_iterator(const TabletColumn& tablet_column, BitmapIndexIterator** iter);
 
+    Status new_inverted_index_iterator(const TabletColumn& tablet_column,
+                                            InvertedIndexIterator** iter);
+
     const ShortKeyIndexDecoder* get_short_key_index() const {
         DCHECK(_load_index_once.has_called() && _load_index_once.stored_result().ok());
         return _sk_index_decoder.get();
@@ -108,6 +111,8 @@ public:
         DCHECK(_tablet_schema->keys_type() == UNIQUE_KEYS && _footer.has_primary_key_index_meta());
         return _footer.primary_key_index_meta().max_key();
     };
+
+    io::FileReaderSPtr file_reader() { return _file_reader; }
 
 private:
     DISALLOW_COPY_AND_ASSIGN(Segment);

@@ -21,6 +21,7 @@
 #include "gutil/int128.h"
 #include "io/fs/file_reader.h"
 #include "io/fs/file_writer.h"
+#include "io/fs/s3_file_system.h"
 
 #include <unordered_set>
 #include <list>
@@ -32,7 +33,6 @@ class TransferHandle;
 namespace doris {
 namespace io {
 
-class S3FileSystem;
 struct TmpFileMgr;
 class S3FileWriter final : public FileWriter {
 public:
@@ -54,6 +54,8 @@ public:
     Status finalize() override;
 
     size_t bytes_appended() const override { return _tmp_file_writer->bytes_appended(); }
+
+    FileSystem* fs() const override { return _fs; }
 
 private:
     S3FileSystem* _fs;

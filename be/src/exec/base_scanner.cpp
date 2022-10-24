@@ -19,6 +19,7 @@
 
 #include <fmt/format.h>
 
+#include "common/consts.h"
 #include "common/utils.h"
 #include "exec/exec_node.h"
 #include "exprs/expr_context.h"
@@ -27,8 +28,16 @@
 #include "runtime/runtime_state.h"
 #include "runtime/tuple.h"
 #include "vec/data_types/data_type_factory.hpp"
+#include "vec/common/object_util.h"
 
 namespace doris {
+
+BaseScanner::~BaseScanner() {
+    Expr::close(_dest_expr_ctx, _state);
+    if (_state->enable_vectorized_exec()) {
+        vectorized::VExpr::close(_dest_vexpr_ctx, _state);
+    }
+}
 
 BaseScanner::BaseScanner(RuntimeState* state, RuntimeProfile* profile,
                          const TBrokerScanRangeParams& params,
@@ -56,6 +65,7 @@ BaseScanner::BaseScanner(RuntimeState* state, RuntimeProfile* profile,
           _scanner_eof(false) {}
 
 Status BaseScanner::open() {
+    _full_base_schema_view.reset(new vectorized::object_util::FullBaseSchemaView);
     RETURN_IF_ERROR(init_expr_ctxes());
     if (_params.__isset.strict_mode) {
         _strict_mode = _params.strict_mode;
@@ -113,6 +123,11 @@ Status BaseScanner::init_expr_ctxes() {
             return Status::InternalError("Unknown source slot descriptor, slot_id={}", slot_id);
         }
         _src_slot_descs.emplace_back(it->second);
+
+        if (it->second->type().is_variant() &&
+            it->second->col_name() == BeConsts::DYNAMIC_COLUMN_NAME) {
+            _is_dynamic_schema = true;
+        }
     }
     // Construct source tuple and tuple row
     _src_tuple = (Tuple*)_mem_pool->allocate(src_tuple_desc->byte_size());
@@ -186,6 +201,11 @@ Status BaseScanner::init_expr_ctxes() {
                 _src_slot_descs_order_by_dest.emplace_back(_src_slot_it->second);
             }
         }
+    }
+    if (_dest_tuple_desc->table_desc()) {
+        _full_base_schema_view->db_name = _dest_tuple_desc->table_desc()->database();
+        _full_base_schema_view->table_name = _dest_tuple_desc->table_desc()->name();
+        _full_base_schema_view->table_id = _dest_tuple_desc->table_desc()->table_id();
     }
     return Status::OK();
 }
@@ -315,20 +335,35 @@ Status BaseScanner::_materialize_dest_block(vectorized::Block* dest_block) {
         if (!slot_desc->is_materialized()) {
             continue;
         }
+        if (slot_desc->type().is_variant()) {
+            continue;
+        }
         int dest_index = ctx_idx++;
 
-        auto* ctx = _dest_vexpr_ctx[dest_index];
-        int result_column_id = -1;
-        // PT1 => dest primitive type
-        RETURN_IF_ERROR(ctx->execute(&_src_block, &result_column_id));
-        bool is_origin_column = result_column_id < origin_column_num;
-        auto column_ptr =
-                is_origin_column && _src_block_mem_reuse
-                        ? _src_block.get_by_position(result_column_id).column->clone_resized(rows)
-                        : _src_block.get_by_position(result_column_id).column;
-
-        DCHECK(column_ptr != nullptr);
-
+        vectorized::ColumnPtr column_ptr;
+        if (_is_dynamic_schema) {
+             // cast column
+            auto column_type_name = _src_block.get_by_position(dest_index);
+            auto dest_type = vectorized::DataTypeFactory::instance().create_data_type(
+                    slot_desc->type(), slot_desc->is_nullable());
+            if (!column_type_name.type->equals(*dest_type)) {
+                RETURN_IF_ERROR(vectorized::object_util::cast_column(column_type_name, dest_type,
+                                                                     &column_ptr));
+            } else {
+                column_ptr = column_type_name.column;
+            }
+        } else {
+            auto* ctx = _dest_vexpr_ctx[dest_index];
+            int result_column_id = -1;
+            // PT1 => dest primitive type
+            RETURN_IF_ERROR(ctx->execute(&_src_block, &result_column_id));
+            bool is_origin_column = result_column_id < origin_column_num;
+            column_ptr =
+                    is_origin_column && _src_block_mem_reuse
+                            ? _src_block.get_by_position(result_column_id).column->clone_resized(rows)
+                            : _src_block.get_by_position(result_column_id).column;
+        }
+        
         // because of src_slot_desc is always be nullable, so the column_ptr after do dest_expr
         // is likely to be nullable
         if (LIKELY(column_ptr->is_nullable())) {
@@ -382,6 +417,28 @@ Status BaseScanner::_materialize_dest_block(vectorized::Block* dest_block) {
         }
         dest_block->insert(vectorized::ColumnWithTypeAndName(
                 std::move(column_ptr), slot_desc->get_data_type_ptr(), slot_desc->col_name()));
+    }
+
+    // handle dynamic generated columns
+    if (!_full_base_schema_view->empty()) {
+        assert(_is_dynamic_schema);
+        for (size_t x = dest_block->columns(); x < _src_block.columns(); ++x) {
+            auto& column_type_name = _src_block.get_by_position(x);
+            const TColumn& tcolumn =
+                    _full_base_schema_view->column_name_to_column[column_type_name.name];
+            auto original_type = vectorized::DataTypeFactory::instance().create_data_type(tcolumn);
+            // type conflict free path, always cast to original type
+            if (!column_type_name.type->equals(*original_type)) {
+                vectorized::ColumnPtr column_ptr;
+                RETURN_IF_ERROR(vectorized::object_util::cast_column(column_type_name,
+                                                                     original_type, &column_ptr));
+                column_type_name.column = column_ptr;
+                column_type_name.type = original_type;
+            }
+            dest_block->insert(vectorized::ColumnWithTypeAndName(std::move(column_type_name.column),
+                                                                 std::move(column_type_name.type),
+                                                                 column_type_name.name));
+        }
     }
 
     // after do the dest block insert operation, clear _src_block to remove the reference of origin column

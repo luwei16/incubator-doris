@@ -80,6 +80,7 @@ void register_function_geo(SimpleFunctionFactory& factory);
 void register_function_encryption(SimpleFunctionFactory& factory);
 void register_function_regexp_extract(SimpleFunctionFactory& factory);
 void register_function_hex_variadic(SimpleFunctionFactory& factory);
+void register_function_match(SimpleFunctionFactory& factory);
 
 class SimpleFunctionFactory {
     using Creator = std::function<FunctionBuilderPtr()>;
@@ -213,6 +214,7 @@ public:
             register_function_hex_variadic(instance);
             register_function_array(instance);
             register_function_geo(instance);
+            register_function_match(instance);
         });
         return instance;
     }

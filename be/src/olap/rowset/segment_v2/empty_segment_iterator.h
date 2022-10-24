@@ -33,6 +33,7 @@ public:
     const Schema& schema() const override { return _schema; }
     Status next_batch(RowBlockV2* row_block) override;
     Status next_batch(vectorized::Block* block) override;
+    bool empty() const override { return true; }
 
 private:
     const Schema& _schema;

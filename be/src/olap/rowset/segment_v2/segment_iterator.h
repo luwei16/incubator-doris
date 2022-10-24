@@ -26,10 +26,12 @@
 #include "io/fs/file_system.h"
 #include "olap/olap_common.h"
 #include "olap/rowset/segment_v2/common.h"
+#include "olap/rowset/segment_v2/inverted_index_reader.h"
 #include "olap/rowset/segment_v2/row_ranges.h"
 #include "olap/rowset/segment_v2/segment.h"
 #include "olap/schema.h"
 #include "util/file_cache.h"
+#include "vec/exprs/vexpr.h"
 
 namespace doris {
 
@@ -46,6 +48,13 @@ namespace segment_v2 {
 class BitmapIndexIterator;
 class BitmapIndexReader;
 class ColumnIterator;
+
+struct ColumnPredicateInfo {
+    ColumnPredicateInfo() {};
+    std::string column_name;
+    std::string query_value;
+    std::string query_op;
+};
 
 class SegmentIterator : public RowwiseIterator {
 public:
@@ -70,6 +79,7 @@ private:
 
     Status _init_return_column_iterators();
     Status _init_bitmap_index_iterators();
+    Status _init_inverted_index_iterators();
 
     // calculate row ranges that fall into requested key ranges using short key index
     Status _get_row_ranges_by_keys();
@@ -87,6 +97,16 @@ private:
     Status _get_row_ranges_by_column_conditions();
     Status _get_row_ranges_from_conditions(RowRanges* condition_row_ranges);
     Status _apply_bitmap_index();
+    Status _apply_inverted_index();
+
+    Status _apply_index_in_compound();
+    Status _apply_bitmap_index_in_compound(ColumnPredicate* pred, roaring::Roaring* output_result);
+    Status _apply_inverted_index_in_compound(ColumnPredicate* pred, roaring::Roaring* output_result);
+
+    bool _is_index_for_compound_predicate();
+    Status _execute_all_compound_predicates(vectorized::VExpr* expr);
+    Status _execute_compound_fn(const std::string& function_name);
+    bool _is_literal_node(const TExprNodeType::type& node_type);
 
     void _init_lazy_materialization();
     void _vec_init_lazy_materialization();
@@ -115,7 +135,7 @@ private:
     void _output_non_pred_columns(vectorized::Block* block);
     Status _read_columns_by_rowids(std::vector<ColumnId>& read_column_ids,
                                    std::vector<rowid_t>& rowid_vector, uint16_t* sel_rowid_idx,
-                                   size_t select_size);
+                                   size_t select_size, vectorized::MutableColumns* mutable_columns);
 
     void _vec_init_prefetch_column_pages();
     void _init_prefetch_column_pages();
@@ -132,6 +152,11 @@ private:
         }
         return Status::OK();
     }
+
+    void _build_match_return_column(vectorized::Block* block, const std::string& match_column_sign,
+                                    const roaring::Roaring& inverted_bitmap);
+
+    bool _is_handle_predicate_by_fulltext(ColumnPredicate* predicate);
 
     bool _can_evaluated_by_vectorized(ColumnPredicate* predicate);
 
@@ -174,6 +199,21 @@ private:
         }
     }
 
+    std::string _gen_predicate_sign(ColumnPredicate* predicate);
+    std::string _gen_predicate_sign(ColumnPredicateInfo* predicate_info);
+
+    void _build_index_return_column(vectorized::Block* block, const std::string& index_result_column_sign,
+                                    const roaring::Roaring& index_result);
+
+    void _output_index_return_column(vectorized::Block* block);
+
+    bool _check_apply_by_bitmap_index(ColumnPredicate* pred);
+    bool _check_apply_by_inverted_index(ColumnPredicate* pred);
+
+    bool _need_read_data(ColumnId cid);
+    bool _prune_column(ColumnId cid, vectorized::MutableColumnPtr& column,
+                    bool fill_defaults, size_t num_of_defaults);
+
 private:
     class BitmapRangeIterator;
     class BackwardBitmapRangeIterator;
@@ -185,8 +225,12 @@ private:
     // can use _schema get unique_id by cid
     std::map<int32_t, ColumnIterator*> _column_iterators;
     std::map<int32_t, BitmapIndexIterator*> _bitmap_index_iterators;
+    std::map<int32_t, InvertedIndexIterator*> _inverted_index_iterators;
     // after init(), `_row_bitmap` contains all rowid to scan
     roaring::Roaring _row_bitmap;
+    // "column_name+operator+value-> <in_compound_query, rowid_result>
+    std::unordered_map<std::string, std::pair<bool, roaring::Roaring> > _rowid_result_for_index;
+    std::vector<std::pair<uint32_t, uint32_t>> _split_row_ranges;
     std::vector<std::pair<uint32_t, uint32_t>> _ranges;
     size_t _range_idx = 0;
     size_t _range_rowid = 0;
@@ -212,6 +256,7 @@ private:
     std::vector<ColumnId>
             _short_cir_pred_column_ids; // keep columnId of columns for short circuit predicate evaluation
     std::vector<bool> _is_pred_column; // columns hold by segmentIter
+    std::vector<bool> _is_handle_by_index; // columns hold by indexIter
     vectorized::MutableColumns _current_return_columns;
     std::vector<ColumnPredicate*> _pre_eval_block_predicate;
     std::vector<ColumnPredicate*> _short_cir_eval_predicate;
@@ -231,6 +276,14 @@ private:
     StorageReadOptions _opts;
     // make a copy of `_opts.column_predicates` in order to make local changes
     std::vector<ColumnPredicate*> _col_predicates;
+    std::vector<ColumnPredicate*> _all_compound_col_predicates;
+    doris::vectorized::VExpr* _remaining_vconjunct_root;
+    std::vector<roaring::Roaring> _compound_predicate_execute_result;
+    std::unique_ptr<ColumnPredicateInfo> _column_predicate_info;
+    std::set<ColumnId> _not_apply_index_pred;
+
+    std::shared_ptr<ColumnPredicate> _runtime_predicate {nullptr};
+    std::set<int32_t> _output_columns;
 
     // row schema of the key to seek
     // only used in `_get_row_ranges_by_keys`

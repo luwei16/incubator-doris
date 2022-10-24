@@ -58,6 +58,9 @@ Status BetaRowsetReader::init(RowsetReaderContext* read_context) {
 
     read_options.stats = _stats;
     read_options.push_down_agg_type_opt = _context->push_down_agg_type_opt;
+    read_options.rowset_id = _rowset->rowset_id();
+    read_options.tablet_id = _rowset->rowset_meta()->tablet_id();
+    read_options.remaining_vconjunct_root = _context->remaining_vconjunct_root;
     if (read_context->lower_bound_keys != nullptr) {
         for (int i = 0; i < read_context->lower_bound_keys->size(); ++i) {
             read_options.key_ranges.emplace_back(&read_context->lower_bound_keys->at(i),
@@ -120,6 +123,14 @@ Status BetaRowsetReader::init(RowsetReaderContext* read_context) {
                     single_column_block_predicate);
         }
     }
+    
+    if (read_context->all_compound_predicates != nullptr) {
+        read_options.all_compound_column_predicates.insert(
+                read_options.all_compound_column_predicates.end(),
+                read_context->all_compound_predicates->begin(),
+                read_context->all_compound_predicates->end());
+    }
+
     // Take a delete-bitmap for each segment, the bitmap contains all deletes
     // until the max read version, which is read_context->version.second
     if (read_context->delete_bitmap != nullptr) {
@@ -155,10 +166,13 @@ Status BetaRowsetReader::init(RowsetReaderContext* read_context) {
     read_options.use_page_cache = read_context->use_page_cache;
     read_options.tablet_schema = read_context->tablet_schema;
     read_options.record_rowids = read_context->record_rowids;
+    read_options.use_topn_opt = read_context->use_topn_opt;
     read_options.read_orderby_key_reverse = read_context->read_orderby_key_reverse;
     read_options.read_orderby_key_columns = read_context->read_orderby_key_columns;
     read_options.kept_in_memory = read_context->kept_in_memory;
     read_options.is_persistent = read_context->is_persistent;
+    read_options.runtime_state = read_context->runtime_state;
+    read_options.output_columns = read_context->output_columns;
 
     // load segments
     RETURN_NOT_OK(SegmentLoader::instance()->load_segments(
@@ -173,6 +187,9 @@ Status BetaRowsetReader::init(RowsetReaderContext* read_context) {
         if (!s.ok()) {
             LOG(WARNING) << "failed to create iterator[" << seg_ptr->id() << "]: " << s.to_string();
             return Status::OLAPInternalError(OLAP_ERR_ROWSET_READER_INIT);
+        }
+        if (iter->empty()) {
+            continue;
         }
         seg_iterators.push_back(std::move(iter));
     }

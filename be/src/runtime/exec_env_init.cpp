@@ -62,6 +62,7 @@
 #include "util/priority_work_stealing_thread_pool.hpp"
 #include "vec/exec/scan/scanner_scheduler.h"
 #include "vec/runtime/vdata_stream_mgr.h"
+#include "olap/rowset/segment_v2/inverted_index_cache.h"
 
 #if !defined(__SANITIZE_ADDRESS__) && !defined(ADDRESS_SANITIZER) && !defined(LEAK_SANITIZER) && \
         !defined(THREAD_SANITIZER) && !defined(USE_JEMALLOC)
@@ -215,7 +216,8 @@ Status ExecEnv::_init_mem_tracker() {
             std::make_shared<MemTrackerLimiter>(global_memory_limit_bytes, "Process");
     _orphan_mem_tracker = std::make_shared<MemTrackerLimiter>(-1, "Orphan", _process_mem_tracker);
     _orphan_mem_tracker_raw = _orphan_mem_tracker.get();
-    thread_context()->_thread_mem_tracker_mgr->init_impl();
+    _bthread_mem_tracker = std::make_shared<MemTrackerLimiter>(-1, "Bthread", _orphan_mem_tracker);
+    thread_context()->_thread_mem_tracker_mgr->init();
     thread_context()->_thread_mem_tracker_mgr->set_check_attach(false);
 #if defined(USE_MEM_TRACKER) && !defined(__SANITIZE_ADDRESS__) && !defined(ADDRESS_SANITIZER) && \
         !defined(LEAK_SANITIZER) && !defined(THREAD_SANITIZER) && !defined(USE_JEMALLOC)
@@ -295,6 +297,19 @@ Status ExecEnv::_init_mem_tracker() {
               << ", origin config value: " << config::storage_page_cache_limit;
 
     SegmentLoader::create_global_instance(config::segment_cache_capacity);
+
+    // use memory limit
+    int64_t inverted_index_cache_limit =
+            ParseUtil::parse_mem_spec(config::inverted_index_searcher_cache_limit, global_memory_limit_bytes,
+                                      MemInfo::physical_mem(), &is_percent);
+    while (!is_percent && inverted_index_cache_limit > global_memory_limit_bytes / 2) {
+        // Reason same as buffer_pool_limit
+        inverted_index_cache_limit = inverted_index_cache_limit / 2;
+    }
+    InvertedIndexSearcherCache::create_global_instance(inverted_index_cache_limit);
+    LOG(INFO) << "Inverted index searcher cache memory limit: "
+              << PrettyPrinter::print(inverted_index_cache_limit, TUnit::BYTES)
+              << ", origin config value: " << config::inverted_index_searcher_cache_limit;
 
     // 4. init other managers
     RETURN_IF_ERROR(_disk_io_mgr->init(global_memory_limit_bytes));

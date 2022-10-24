@@ -434,6 +434,20 @@ public:
     void compare_internal(size_t rhs_row_id, const IColumn& rhs, int nan_direction_hint,
                           int direction, std::vector<uint8>& cmp_res,
                           uint8* __restrict filter) const override;
+
+    TypeIndex get_data_type() const override { return TypeIndex::String; }
+
+    void get_indices_of_non_default_rows(Offsets64& indices, size_t from,
+                                         size_t limit) const override {
+        return get_indices_of_non_default_rows_impl<ColumnString>(indices, from, limit);
+    }
+
+    ColumnPtr index(const IColumn& indexes, size_t limit) const override;
+
+    bool is_default_at(size_t n) const override {
+        assert(n < size());
+        return size_at(n) == 1;
+    }
 };
 
 } // namespace doris::vectorized

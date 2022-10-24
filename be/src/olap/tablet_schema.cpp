@@ -21,6 +21,7 @@
 
 #include "gen_cpp/descriptors.pb.h"
 #include "olap/utils.h"
+#include "olap/inverted_index_parser.h"
 #include "tablet_meta.h"
 #include "vec/aggregate_functions/aggregate_function_reader.h"
 #include "vec/aggregate_functions/aggregate_function_simple_factory.h"
@@ -397,6 +398,15 @@ void TabletColumn::init_from_pb(const ColumnPB& column) {
     } else {
         _has_bitmap_index = false;
     }
+    if (column.has_has_inverted_index()) {
+        _has_inverted_index = column.has_inverted_index();
+    } else {
+        _has_inverted_index = false;
+    }
+    if (column.has_inverted_index_parser()) {
+        _inverted_index_parser_type = get_inverted_index_parser_type_from_string(
+                column.inverted_index_parser());
+    }
     if (column.has_aggregation()) {
         _aggregation = get_aggregation_type_by_string(column.aggregation());
     }
@@ -433,6 +443,11 @@ void TabletColumn::to_schema_pb(ColumnPB* column) const {
     if (_has_bitmap_index) {
         column->set_has_bitmap_index(_has_bitmap_index);
     }
+    if (_has_inverted_index) {
+        column->set_has_inverted_index(_has_inverted_index);
+    }
+    column->set_inverted_index_parser(
+            inverted_index_parser_type_to_string(_inverted_index_parser_type));
     column->set_visible(_visible);
 
     if (_type == OLAP_FIELD_TYPE_ARRAY) {
@@ -477,6 +492,9 @@ void TabletSchema::append_column(TabletColumn column, bool is_dropped_column) {
     if (column.is_nullable()) {
         _num_null_columns++;
     }
+    if (column.has_inverted_index()) {
+        _inverted_index_column.insert(column.unique_id());
+    }
     if (UNLIKELY(column.name() == DELETE_SIGN)) {
         _delete_sign_idx = _num_columns;
     } else if (UNLIKELY(column.name() == SEQUENCE_COL)) {
@@ -495,6 +513,7 @@ void TabletSchema::append_column(TabletColumn column, bool is_dropped_column) {
 void TabletSchema::clear_columns() {
     _field_name_to_index.clear();
     _field_id_to_index.clear();
+    _inverted_index_column.clear();
     _num_columns = 0;
     _num_null_columns = 0;
     _num_key_columns = 0;
@@ -509,6 +528,7 @@ void TabletSchema::init_from_pb(const TabletSchemaPB& schema) {
     _cols.clear();
     _field_name_to_index.clear();
     _field_id_to_index.clear();
+    _inverted_index_column.clear();
     for (auto& column_pb : schema.column()) {
         TabletColumn column;
         column.init_from_pb(column_pb);
@@ -517,6 +537,9 @@ void TabletSchema::init_from_pb(const TabletSchemaPB& schema) {
         }
         if (column.is_nullable()) {
             _num_null_columns++;
+        }
+        if (column.has_inverted_index()) {
+            _inverted_index_column.insert(column.unique_id());
         }
         _field_name_to_index[column.name()] = _num_columns;
         _field_id_to_index[column.unique_id()] = _num_columns;
@@ -535,6 +558,7 @@ void TabletSchema::init_from_pb(const TabletSchemaPB& schema) {
         _bf_fpp = BLOOM_FILTER_DEFAULT_FPP;
     }
     _disable_auto_compaction = schema.disable_auto_compaction();
+    _is_dynamic_schema = schema.is_dynamic_schema();
     _delete_sign_idx = schema.delete_sign_idx();
     _sequence_col_idx = schema.sequence_col_idx();
     _sort_type = schema.sort_type();
@@ -579,6 +603,7 @@ void TabletSchema::build_current_tablet_schema(int64_t index_id, int32_t version
     _cols.clear();
     _field_name_to_index.clear();
     _field_id_to_index.clear();
+    _inverted_index_column.clear();
 
     for (auto& pcolumn : index.columns_desc()) {
         TabletColumn column;
@@ -588,6 +613,9 @@ void TabletSchema::build_current_tablet_schema(int64_t index_id, int32_t version
         }
         if (column.is_nullable()) {
             _num_null_columns++;
+        }
+        if (column.has_inverted_index()) {
+            _inverted_index_column.insert(column.unique_id());
         }
         if (column.is_bf_column()) {
             has_bf_columns = true;
@@ -661,6 +689,7 @@ void TabletSchema::to_schema_pb(TabletSchemaPB* tablet_schema_pb) const {
     tablet_schema_pb->set_sort_col_num(_sort_col_num);
     tablet_schema_pb->set_schema_version(_schema_version);
     tablet_schema_pb->set_compression_type(_compression_type);
+    tablet_schema_pb->set_is_dynamic_schema(_is_dynamic_schema);
 }
 
 uint32_t TabletSchema::mem_size() const {
@@ -707,6 +736,21 @@ const TabletColumn& TabletSchema::column(size_t ordinal) const {
 
 const TabletColumn& TabletSchema::column_by_uid(int32_t col_unique_id) const {
     return _cols.at(_field_id_to_index.at(col_unique_id));
+}
+
+void TabletSchema::update_column_from(const TabletSchema& tablet_schema) {
+    TabletSchemaPB new_tablet_schema_pb;
+    tablet_schema.to_schema_pb(&new_tablet_schema_pb);
+    DCHECK(new_tablet_schema_pb.column().size() == _num_columns) 
+            << "new tablet_schema column size:" << new_tablet_schema_pb.column().size() 
+            << ", _num_columns:" << _num_columns;
+    
+    for (auto i = 0; i < new_tablet_schema_pb.column().size(); ++i) {
+        auto new_column_pb = new_tablet_schema_pb.column()[i];
+        TabletColumn new_column;
+        new_column.init_from_pb(new_column_pb);
+        _cols[i] = std::move(new_column);
+    }
 }
 
 const TabletColumn& TabletSchema::column(const std::string& field_name) const {

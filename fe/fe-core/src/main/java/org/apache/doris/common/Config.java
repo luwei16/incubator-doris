@@ -1857,4 +1857,7 @@ public class Config extends ConfigBase {
 
     @ConfField(mutable = false)
     public static int cloud_copy_txn_conflict_error_retry_num = 5;
+
+    @ConfField(mutable = false)
+    public static int topn_two_phase_limit_threshold = 4096;
 }

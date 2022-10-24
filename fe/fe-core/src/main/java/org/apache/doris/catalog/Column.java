@@ -59,6 +59,8 @@ public class Column implements Writable {
     private static final Logger LOG = LogManager.getLogger(Column.class);
     public static final String DELETE_SIGN = "__DORIS_DELETE_SIGN__";
     public static final String SEQUENCE_COL = "__DORIS_SEQUENCE_COL__";
+    public static final String DYNAMIC_COLUMN_NAME = "__DORIS_DYNAMIC_COL__";
+    public static final String ROWID_COL = "__DORIS_ROWID_COL__";
     private static final String COLUMN_ARRAY_CHILDREN = "item";
     public static final int COLUMN_UNIQUE_ID_INIT_VALUE = -1;
 
@@ -491,6 +493,10 @@ public class Column implements Writable {
                 if (index.getIndexType() == IndexDef.IndexType.BITMAP) {
                     builder.setHasBitmapIndex(true);
                     break;
+                } else if (index.getIndexType() == IndexDef.IndexType.INVERTED) {
+                    builder.setHasInvertedIndex(true);
+                    builder.setInvertedIndexParser(index.getInvertedIndexParser());
+                    break;
                 }
             }
         }
@@ -793,6 +799,12 @@ public class Column implements Writable {
                 List<String> columns = index.getColumns();
                 if (tColumn.getColumnName().equals(columns.get(0))) {
                     tColumn.setHasBitmapIndex(true);
+                }
+            } else if (index.getIndexType() == IndexDef.IndexType.INVERTED) {
+                List<String> columns = index.getColumns();
+                if (tColumn.getColumnName().equals(columns.get(0))) {
+                    tColumn.setHasInvertedIndex(true);
+                    tColumn.setInvertedIndexParser(index.getInvertedIndexParser());
                 }
             }
         }

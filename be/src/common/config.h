@@ -96,6 +96,8 @@ CONF_Int32(clear_transaction_task_worker_count, "1");
 CONF_Int32(delete_worker_count, "3");
 // the count of thread to alter table
 CONF_Int32(alter_tablet_worker_count, "3");
+// the count of thread to alter inverted index
+CONF_Int32(alter_inverted_index_worker_count, "3");
 // the count of thread to clone
 CONF_Int32(clone_worker_count, "3");
 // the count of thread to clone
@@ -873,7 +875,15 @@ CONF_mBool(enable_new_load_scan_node, "false");
 // Temp config. True to use new file scanner. Will remove after fully test.
 CONF_mBool(enable_new_file_scanner, "false");
 
-#if defined(BE_TEST)
+CONF_Int32(multi_get_per_batch, "10");
+// Hide webserver page for safety.
+// Hide the be config page for webserver.
+CONF_Bool(hide_webserver_config_page, "false");
+
+// Temp config. True to use optimization for bitmap_index apply compound predicate.  Will remove after fully test.
+CONF_Bool(enable_index_apply_compound_predicates, "true");
+
+#ifdef BE_TEST
 // test s3
 CONF_String(test_s3_resource, "resource");
 CONF_String(test_s3_ak, "ak");
@@ -913,6 +923,24 @@ CONF_mInt32(refresh_s3_info_interval_seconds, "60");
 CONF_mInt32(vacuum_stale_rowsets_interval_seconds, "1800");
 CONF_mInt32(tablet_sync_interval_seconds, "1800");
 CONF_mInt32(schedule_sync_tablets_interval_seconds, "600");
+
+// semi-structure configs
+CONF_Bool(enable_parse_multi_dimession_array, "true");
+
+// setRAMBufferSizeMB for lucene
+CONF_mDouble(inverted_index_ram_buffer_size, "512");
+// setMaxBufferedDocs for lucene
+CONF_mInt32(inverted_index_max_buffer_docs, "100000000");
+// setMergeFactor for lucene
+CONF_mInt32(inverted_index_merge_factor, "100000000");
+// inverted index searcher sweep time interval, default 30min
+CONF_mInt32(index_searcher_cache_stale_sweep_time_sec, "1800");
+// Cache for inverted index cache capacity
+CONF_Int32(inverted_index_searcher_cache_capacity, "1000000");
+// Cache for inverted index cache size
+CONF_String(inverted_index_searcher_cache_limit, "10%");
+// inverted index
+CONF_Int32(query_bkd_inverted_index_limit_percent, "10"); // 10%
 
 } // namespace config
 

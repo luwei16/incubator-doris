@@ -23,6 +23,7 @@
 #include "gen_cpp/segment_v2.pb.h"
 #include "olap/olap_define.h"
 #include "olap/types.h"
+#include "olap/inverted_index_parser.h"
 #include "vec/aggregate_functions/aggregate_function.h"
 #include "vec/data_types/data_type.h"
 
@@ -53,8 +54,13 @@ public:
     FieldType type() const { return _type; }
     bool is_key() const { return _is_key; }
     bool is_nullable() const { return _is_nullable; }
+    bool is_variant_type() const { return _type == OLAP_FIELD_TYPE_VARIANT; }
     bool is_bf_column() const { return _is_bf_column; }
     bool has_bitmap_index() const { return _has_bitmap_index; }
+    bool has_inverted_index() const { return _has_inverted_index; }
+    InvertedIndexParserType get_inverted_index_parser_type() const {
+        return _inverted_index_parser_type;
+    }
     bool is_length_variable_type() const {
         return _type == OLAP_FIELD_TYPE_CHAR || _type == OLAP_FIELD_TYPE_VARCHAR ||
                _type == OLAP_FIELD_TYPE_STRING || _type == OLAP_FIELD_TYPE_HLL ||
@@ -65,6 +71,11 @@ public:
     size_t length() const { return _length; }
     size_t index_length() const { return _index_length; }
     void set_index_length(size_t index_length) { _index_length = index_length; }
+    void set_type(FieldType type) { _type = type; }
+    void set_is_key(bool is_key) { _is_key = is_key; }
+    void set_is_nullable(bool is_nullable) { _is_nullable = is_nullable; }
+    void set_unique_id(int32_t unique_id) { _unique_id = unique_id; }
+    void set_has_default_value(bool has) { _has_default_value = has; }
     FieldAggregationMethod aggregation() const { return _aggregation; }
     vectorized::AggregateFunctionPtr get_aggregate_function(vectorized::DataTypes argument_types,
                                                             std::string suffix) const;
@@ -107,6 +118,9 @@ private:
     bool _is_bf_column = false;
 
     bool _has_bitmap_index = false;
+    bool _has_inverted_index = false;
+    InvertedIndexParserType _inverted_index_parser_type
+        {InvertedIndexParserType::PARSER_UNKNOWN};
     bool _visible = true;
 
     TabletColumn* _parent = nullptr;
@@ -134,6 +148,9 @@ public:
     int32_t field_index(const std::string& field_name) const;
     int32_t field_index(int32_t col_unique_id) const;
     const TabletColumn& column(size_t ordinal) const;
+    void update_column_from(const TabletSchema& tablet_schema);
+    // You must make sure all field name exists in _ext_field_name_to_index
+    // or _field_name_to_index
     const TabletColumn& column(const std::string& field_name) const;
     const TabletColumn& column_by_uid(int32_t col_unique_id) const;
     const std::vector<TabletColumn>& columns() const;
@@ -153,6 +170,8 @@ public:
         _disable_auto_compaction = disable_auto_compaction;
     }
     bool disable_auto_compaction() const { return _disable_auto_compaction; }
+    bool is_dynamic_schema() const { return _is_dynamic_schema; }
+    bool is_inverted_index(int32_t column_unique_id) const { return _inverted_index_column.count(column_unique_id); }
     int32_t delete_sign_idx() const { return _delete_sign_idx; }
     void set_delete_sign_idx(int32_t delete_sign_idx) { _delete_sign_idx = delete_sign_idx; }
     bool has_sequence_col() const { return _sequence_col_idx != -1; }
@@ -165,7 +184,10 @@ public:
             const std::vector<uint32_t>& return_columns,
             const std::unordered_set<uint32_t>* tablet_columns_need_convert_null = nullptr) const;
     vectorized::Block create_block(bool ignore_dropped_col = true) const;
+    void set_schema_version(int32_t version) { _schema_version = version; }
 
+    void set_table_id(int32_t table_id) { _table_id = table_id; }
+    int32_t table_id() const { return _table_id; }
     void build_current_tablet_schema(int64_t index_id, int32_t version,
                                      const POlapTableIndexSchema& index,
                                      const TabletSchema& out_tablet_schema);
@@ -207,10 +229,13 @@ private:
 
     bool _has_bf_fpp = false;
     double _bf_fpp = 0;
+    bool _is_dynamic_schema = false;
     int32_t _delete_sign_idx = -1;
     int32_t _sequence_col_idx = -1;
     int32_t _schema_version = -1;
+    int32_t _table_id = -1;
     bool _disable_auto_compaction = false;
+    std::set<int32_t> _inverted_index_column;
 };
 
 bool operator==(const TabletSchema& a, const TabletSchema& b);

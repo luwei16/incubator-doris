@@ -23,6 +23,7 @@
 #include "vec/columns/column_const.h"
 #include "vec/exec/scan/new_olap_scanner.h"
 #include "vec/functions/in.h"
+#include "vec/exprs/vslot_ref.h"
 #include "cloud/utils.h"
 
 namespace doris::vectorized {
@@ -34,6 +35,103 @@ NewOlapScanNode::NewOlapScanNode(ObjectPool* pool, const TPlanNode& tnode,
     if (_olap_scan_node.__isset.sort_info && _olap_scan_node.__isset.sort_limit) {
         _limit_per_scanner = _olap_scan_node.sort_limit;
     }
+}
+
+std::unique_ptr<vectorized::Block> NewOlapScanNode::_allocate_block(const TupleDescriptor* desc, size_t sz) {
+    vectorized::Block* block = new vectorized::Block;
+    for (auto slot : desc->slots()) {
+        // avoid allocate pruned columns
+        if (_pruned_column_ids.count(slot->col_unique_id())) {
+            continue;
+        }
+        auto column_ptr = slot->get_empty_mutable_column();
+        column_ptr->reserve(sz);
+        block->insert(ColumnWithTypeAndName(std::move(column_ptr), slot->get_data_type_ptr(),
+                                    slot->col_name()));
+    }
+    return std::unique_ptr<vectorized::Block>(block);
+}
+
+bool NewOlapScanNode::is_pruned_column(int32_t col_unique_id) {
+    return _pruned_column_ids.find(col_unique_id) != _pruned_column_ids.end();
+}
+
+bool NewOlapScanNode::_maybe_prune_columns() {
+    // an id collection of ordering column id, key column id, conjuncts column id
+    std::set<int32_t> output_columns;
+
+    // ordering column ids
+    if (!_olap_scan_node.ordering_exprs.empty()) {
+        for (auto i = 0; i < _olap_scan_node.ordering_exprs.size(); ++i) {
+            auto t_orderby_expr = _olap_scan_node.ordering_exprs[i];
+            for (TExprNode& t_orderby_expr_node : t_orderby_expr.nodes) {
+                auto col_id = t_orderby_expr_node.slot_ref.col_unique_id;
+                if (col_id < 0) {
+                    continue;
+                }
+                output_columns.emplace(col_id);
+            }
+        }
+    }
+
+    if (!_olap_scan_node.output_exprs.empty()) {
+        for (auto i = 0; i < _olap_scan_node.output_exprs.size(); ++i) {
+            auto t_output_expr = _olap_scan_node.output_exprs[i];
+            for (TExprNode& t_outptu_expr_node : t_output_expr.nodes) {
+                auto col_id = t_outptu_expr_node.slot_ref.col_unique_id;
+                if (col_id < 0) {
+                    continue;
+                }
+                output_columns.emplace(col_id);
+            }
+        }
+    }
+
+    // get no condition column ids
+    std::copy(output_columns.cbegin(), output_columns.cend(),
+              std::inserter(_no_condition_column_ids,
+                            _no_condition_column_ids.begin()));
+
+    // If last column is rowid column, we should try our best to prune seeking columns
+    if (_output_tuple_desc->slots().back()->col_name() != BeConsts::ROWID_COL) {
+        return false;
+    }
+
+    std::set<int32_t> output_tuple_column_unique_ids;
+    for (auto slot : _output_tuple_desc->slots()) {
+        if (slot->col_unique_id() < 0) {
+            continue;
+        }
+        if (slot->is_key()) {
+            // must include key columns
+            output_columns.emplace(slot->col_unique_id());
+        }
+        output_tuple_column_unique_ids.emplace(slot->col_unique_id());
+    }
+
+    for (int32_t cid : _conjuct_column_unique_ids) {
+        output_columns.emplace(cid); 
+    }
+
+    // get pruned column ids    
+    std::set_difference(output_tuple_column_unique_ids.begin(), output_tuple_column_unique_ids.end(),
+                    output_columns.begin(), output_columns.end(),
+                    std::inserter(_pruned_column_ids, _pruned_column_ids.end()));
+    if (!_pruned_column_ids.empty()) {
+        // Since some columns are pruned, the indexes of columns in the block
+        // maybe change. In order to find proper column id for VSlotRef,
+        // record the real column-id for the slot
+        size_t x = 0;
+        if (_vconjunct_ctx_ptr) {
+            for (auto slot : _output_tuple_desc->slots()) {
+                if (_pruned_column_ids.count(slot->col_unique_id())) {
+                    continue;
+                }
+                (*_vconjunct_ctx_ptr)->set_slot_id_mapping(slot->id(), x++);
+            }
+        }
+    }
+    return !_pruned_column_ids.empty();
 }
 
 Status NewOlapScanNode::prepare(RuntimeState* state) {
@@ -148,12 +246,45 @@ static std::string olap_filters_to_string(const std::vector<doris::TCondition>& 
     return filters_string;
 }
 
+// iterate through conjuncts tree
+void NewOlapScanNode::_iterate_conjuncts_tree(const VExpr* conjunct_expr_root,
+                        std::function<void(const VExpr*)> fn) {
+    if (!conjunct_expr_root) {
+        return;
+    }
+    fn(conjunct_expr_root);
+    for (const VExpr* child : conjunct_expr_root->children()) {
+        _iterate_conjuncts_tree(child, fn); 
+    }
+    return;
+}
+
+// get all slot ref column unique ids
+void NewOlapScanNode::_collect_conjuncts_slot_column_unique_ids(const VExpr* expr) {
+    if (!expr->is_slot_ref()) {
+        return;
+    }
+    auto slot_ref = reinterpret_cast<const VSlotRef*>(expr);
+    for (const auto* slot_desc : _output_tuple_desc->slots()) {
+        if (slot_desc->id() == slot_ref->slot_id() && slot_desc->col_unique_id() > 0) {
+            _conjuct_column_unique_ids.emplace(slot_desc->col_unique_id());
+        }
+    }
+    return;
+}
+
 Status NewOlapScanNode::_process_conjuncts() {
     RETURN_IF_ERROR(VScanNode::_process_conjuncts());
     if (_eos) {
         return Status::OK();
     }
     RETURN_IF_ERROR(_build_key_ranges_and_filters());
+    auto collect_fn = [this](const VExpr* expr) {
+        _collect_conjuncts_slot_column_unique_ids(expr);
+    };
+    if (_vconjunct_ctx_ptr && *_vconjunct_ctx_ptr) {
+        _iterate_conjuncts_tree((*_vconjunct_ctx_ptr)->root(), collect_fn);
+    }
     return Status::OK();
 }
 
@@ -193,6 +324,29 @@ Status NewOlapScanNode::_build_key_ranges_and_filters() {
 
         for (const auto& filter : filters) {
             _olap_filters.push_back(std::move(filter));
+        }
+    }
+
+    for (auto i = 0; i < _compound_value_ranges.size(); ++i) {
+        std::vector<TCondition> conditions;
+        for (auto& iter : _compound_value_ranges[i]) {
+            std::vector<TCondition> filters;
+            std::visit([&](auto&& range) { 
+                if (range.is_boundary_value_range()) {
+                    range.to_boundary_condition(filters); 
+                } else {
+                    range.to_olap_filter(filters);
+                }
+                
+            }, iter);
+
+            for (const auto& filter : filters) {
+                conditions.push_back(std::move(filter));
+            }
+        }
+
+        if (!conditions.empty()) {
+            _compound_filters.emplace_back(conditions);
         }
     }
 
@@ -278,6 +432,10 @@ Status NewOlapScanNode::_init_scanners(std::list<VScanner*>* scanners) {
     }
     auto span = opentelemetry::trace::Tracer::GetCurrentSpan();
 
+    // prune some columns, some of them will be fetched
+    // in exchanged node, may seem trick here?
+    _maybe_prune_columns();
+
     // ranges constructed from scan keys
     std::vector<std::unique_ptr<doris::OlapScanRange>> cond_ranges;
     RETURN_IF_ERROR(_scan_keys.get_key_range(&cond_ranges));
@@ -330,6 +488,8 @@ Status NewOlapScanNode::_init_scanners(std::list<VScanner*>* scanners) {
             NewOlapScanner* scanner = new NewOlapScanner(
                     _state, this, _limit_per_scanner, _olap_scan_node.is_preaggregation,
                     _need_agg_finalize, *scan_range, _scanner_mem_tracker.get());
+
+            scanner->set_compound_filters(_compound_filters);
             // add scanner to pool before doing prepare.
             // so that scanner can be automatically deconstructed if prepare failed.
             _scanner_pool.add(scanner);

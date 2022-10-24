@@ -81,6 +81,7 @@ import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
+import org.apache.commons.collections.CollectionUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -152,10 +153,14 @@ public class OlapScanNode extends ScanNode {
     private long totalBytes = 0;
 
     private SortInfo sortInfo = null;
+    private List<Expr> orderingExprs;
+    private ArrayList<Expr> outputExprs = Lists.newArrayList();
 
     // When scan match sort_info, we can push limit into OlapScanNode.
     // It's limit for scanner instead of scanNode so we add a new limit.
     private long sortLimit = -1;
+
+    private boolean useTopnOpt = false;
 
     private TPushAggOp pushDownAggNoGroupingOp = null;
 
@@ -232,6 +237,14 @@ public class OlapScanNode extends ScanNode {
 
     public void setSortLimit(long sortLimit) {
         this.sortLimit = sortLimit;
+    }
+
+    public boolean getUseTopnOpt() {
+        return useTopnOpt;
+    }
+
+    public void setUseTopnOpt(boolean useTopnOpt) {
+        this.useTopnOpt = useTopnOpt;
     }
 
     public Collection<Long> getSelectedPartitionIds() {
@@ -415,6 +428,16 @@ public class OlapScanNode extends ScanNode {
 
     public OlapTable getOlapTable() {
         return olapTable;
+    }
+
+    public boolean isDupKeysOrMergeOnWrite() {
+        if (olapTable.getKeysType() == KeysType.DUP_KEYS
+                || (olapTable.getKeysType() == KeysType.UNIQUE_KEYS
+                        && olapTable.getEnableUniqueKeyMergeOnWrite())) {
+            return true;
+        } else {
+            return false;
+        }
     }
 
     @Override
@@ -763,6 +786,14 @@ public class OlapScanNode extends ScanNode {
         LOG.debug("distribution prune cost: {} ms", (System.currentTimeMillis() - start));
     }
 
+    public void setOutputExprs(ArrayList<Expr> outputExprs) {
+        this.outputExprs = outputExprs;
+    }
+
+    public void setOrderingExprs(List<Expr> orderingExprs) {
+        this.orderingExprs = orderingExprs;
+    }
+
     private void computeTabletInfo() throws UserException {
         /**
          * The tablet info could be computed only once.
@@ -844,6 +875,17 @@ public class OlapScanNode extends ScanNode {
     @Override
     public String getNodeExplainString(String prefix, TExplainLevel detailLevel) {
         StringBuilder output = new StringBuilder();
+        if (CollectionUtils.isNotEmpty(outputExprs)) {
+            output.append(prefix).append("OUTPUT EXPRS:");
+            output.append(outputExprs.stream().map(Expr::toSql).collect(Collectors.joining(" | ")));
+        }
+        output.append("\n");
+
+        if (CollectionUtils.isNotEmpty(orderingExprs)) {
+            output.append(prefix).append("ORDER BY:");
+            output.append(orderingExprs.stream().map(Expr::toSql).collect(Collectors.joining(" | ")));
+        }
+        output.append("\n");
 
         String indexName = olapTable.getIndexNameById(selectedIndexId);
         output.append(prefix).append("TABLE: ").append(olapTable.getQualifiedName())
@@ -869,6 +911,9 @@ public class OlapScanNode extends ScanNode {
         }
         if (sortLimit != -1) {
             output.append(prefix).append("SORT LIMIT: ").append(sortLimit).append("\n");
+        }
+        if (useTopnOpt) {
+            output.append(prefix).append("TOPN OPT\n");
         }
         if (!conjuncts.isEmpty()) {
             output.append(prefix).append("PREDICATES: ").append(getExplainString(conjuncts)).append("\n");
@@ -938,12 +983,21 @@ public class OlapScanNode extends ScanNode {
         if (sortLimit != -1) {
             msg.olap_scan_node.setSortLimit(sortLimit);
         }
+        msg.olap_scan_node.setUseTopnOpt(useTopnOpt);
         msg.olap_scan_node.setKeyType(olapTable.getKeysType().toThrift());
         msg.olap_scan_node.setTableName(olapTable.getName());
         msg.olap_scan_node.setEnableUniqueKeyMergeOnWrite(olapTable.getEnableUniqueKeyMergeOnWrite());
 
         if (pushDownAggNoGroupingOp != null) {
             msg.olap_scan_node.setPushDownAggTypeOpt(pushDownAggNoGroupingOp);
+        }
+
+        if (outputExprs != null) {
+            msg.olap_scan_node.setOutputExprs(Expr.treesToThrift(outputExprs));
+        }
+
+        if (orderingExprs != null) {
+            msg.olap_scan_node.setOrderingExprs(Expr.treesToThrift(orderingExprs));
         }
     }
 

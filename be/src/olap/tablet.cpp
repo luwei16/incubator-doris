@@ -259,6 +259,20 @@ Status Tablet::revise_tablet_meta(const std::vector<RowsetMetaSharedPtr>& rowset
     return res;
 }
 
+RowsetSharedPtr Tablet::get_rowset(const RowsetId& rowset_id) {
+    for (auto& version_rowset : _rs_version_map) {
+        if (version_rowset.second->rowset_id() == rowset_id) {
+            return version_rowset.second;
+        }
+    }
+    for (auto& stale_version_rowset : _stale_rs_version_map) {
+        if (stale_version_rowset.second->rowset_id() == rowset_id) {
+            return stale_version_rowset.second;
+        }
+    }   
+    return nullptr;
+}
+
 Status Tablet::add_rowset(RowsetSharedPtr rowset) {
 #ifdef CLOUD_MODE
     LOG(FATAL) << "MUST NOT call add_rowset in CLOUD_MODE";

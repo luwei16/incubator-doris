@@ -37,6 +37,9 @@ namespace vectorized {
 class VExprContext;
 class IColumn;
 using MutableColumnPtr = IColumn::MutablePtr;
+namespace object_util {
+struct FullBaseSchemaView;
+}
 } // namespace vectorized
 
 // The counter will be passed to each scanner.
@@ -56,12 +59,7 @@ public:
                 const std::vector<TNetworkAddress>& broker_addresses,
                 const std::vector<TExpr>& pre_filter_texprs, ScannerCounter* counter);
 
-    virtual ~BaseScanner() {
-        Expr::close(_dest_expr_ctx, _state);
-        if (_state->enable_vectorized_exec()) {
-            vectorized::VExpr::close(_dest_vexpr_ctx, _state);
-        }
-    }
+    virtual ~BaseScanner();
 
     // Register conjuncts for push down
     virtual void reg_conjunct_ctxs(const TupleId& tupleId,
@@ -87,6 +85,8 @@ public:
                                          const std::vector<std::string>& columns_from_path);
 
     void free_expr_local_allocations();
+
+    bool is_dynamic_schema() const { return _is_dynamic_schema; }
 
 protected:
     Status _fill_dest_block(vectorized::Block* dest_block, bool* eof);
@@ -155,6 +155,10 @@ protected:
     // slot_ids for parquet predicate push down are in tuple desc
     TupleId _tupleId = -1;
     std::vector<ExprContext*> _conjunct_ctxs;
+
+    bool _is_dynamic_schema = false;
+    // for tracing dynamic schema
+    std::unique_ptr<vectorized::object_util::FullBaseSchemaView> _full_base_schema_view;
 
 private:
     Status _filter_src_block();

@@ -27,6 +27,8 @@
 #include <cstring>
 
 #include "util/simd/bits.h"
+#include "vec/columns/column_impl.h"
+#include "vec/columns/columns_common.h"
 #include "vec/common/arena.h"
 #include "vec/common/assert_cast.h"
 #include "vec/common/bit_cast.h"
@@ -521,6 +523,27 @@ void ColumnVector<T>::get_extremes(Field& min, Field& max) const {
 
     min = NearestFieldType<T>(cur_min);
     max = NearestFieldType<T>(cur_max);
+}
+
+template <typename T>
+ColumnPtr ColumnVector<T>::index(const IColumn& indexes, size_t limit) const {
+    return select_index_impl(*this, indexes, limit);
+}
+
+template <typename T>
+ColumnPtr ColumnVector<T>::create_with_offsets(const IColumn::Offsets64& offsets,
+                                               const Field& default_field, size_t total_rows,
+                                               size_t shift) const {
+    if (offsets.size() + shift != size())
+        LOG(FATAL) << fmt::format(
+                "Incompatible sizes of offsets ({}), shift ({}) and size of column {}",
+                offsets.size(), shift, size());
+    auto res = this->create();
+    auto& res_data = res->get_data();
+    T default_value = safe_get<T>(default_field);
+    res_data.resize_fill(total_rows, default_value);
+    for (size_t i = 0; i < offsets.size(); ++i) res_data[offsets[i]] = data[i + shift];
+    return res;
 }
 
 /// Explicit template instantiations - to avoid code bloat in headers.

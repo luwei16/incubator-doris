@@ -45,12 +45,18 @@ bool is_int_or_bool(PrimitiveType type);
 bool is_string_type(PrimitiveType type);
 bool has_variable_type(PrimitiveType type);
 
+// NOTICE:signed integers always return bigint
+// used for adapt data in varaint column's subcolumns
+PrimitiveType get_primitive_type(vectorized::TypeIndex v_type);
+
 // Returns the byte size of 'type'  Returns 0 for variable length types.
 int get_byte_size(PrimitiveType type);
 // Returns the byte size of type when in a tuple
 int get_slot_size(PrimitiveType type);
 
 bool is_type_compatible(PrimitiveType lhs, PrimitiveType rhs);
+
+PrimitiveType get_primitive_type(vectorized::TypeIndex v_type);
 
 TExprOpcode::type to_in_opcode(PrimitiveType t);
 PrimitiveType thrift_to_type(TPrimitiveType::type ttype);

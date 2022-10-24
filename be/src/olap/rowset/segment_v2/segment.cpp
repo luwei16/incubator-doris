@@ -78,6 +78,15 @@ Status Segment::_open() {
 
 Status Segment::new_iterator(const Schema& schema, const StorageReadOptions& read_options,
                              std::unique_ptr<RowwiseIterator>* iter) {
+    auto cond_in_compound_query = [&](int32_t column_id) -> auto {
+        for (auto pred : read_options.all_compound_column_predicates) {
+            if (pred->column_id() == column_id) {
+                return true;
+            }
+        }
+        return false;
+    };
+
     read_options.stats->total_segment_number++;
     // trying to prune the current segment by segment-level zone map
     for (auto& entry : read_options.col_id_to_predicates) {
@@ -87,15 +96,37 @@ Status Segment::new_iterator(const Schema& schema, const StorageReadOptions& rea
             continue;
         }
         int32_t uid = read_options.tablet_schema->column(column_id).unique_id();
-        if (_column_readers.count(uid) < 1 || !_column_readers.at(uid)->has_zone_map()) {
+        if (_column_readers.count(uid) < 1 || 
+                !_column_readers.at(uid)->has_zone_map() ||
+                cond_in_compound_query(column_id)) {
             continue;
         }
         if (read_options.col_id_to_predicates.count(column_id) > 0 &&
+            !read_options.tablet_schema->column(column_id).has_inverted_index() &&
             !_column_readers.at(uid)->match_condition(entry.second.get())) {
             // any condition not satisfied, return.
             iter->reset(new EmptySegmentIterator(schema));
             read_options.stats->filtered_segment_number++;
             return Status::OK();
+        }
+    }
+
+    if (read_options.use_topn_opt) {
+        auto query_ctx = read_options.runtime_state->get_query_fragments_ctx();
+        auto runtime_predicate = query_ctx->get_runtime_predicate().get_predictate();
+        if (runtime_predicate) {
+            int32_t uid = read_options.tablet_schema->column(
+                            runtime_predicate->column_id()).unique_id();
+            AndBlockColumnPredicate and_predicate;
+            auto single_predicate = new SingleColumnBlockPredicate(runtime_predicate.get());
+            and_predicate.add_column_predicate(single_predicate);
+            if (!read_options.tablet_schema->column(runtime_predicate->column_id()).has_inverted_index() &&
+                !_column_readers.at(uid)->match_condition(&and_predicate)) {
+                // any condition not satisfied, return.
+                iter->reset(new EmptySegmentIterator(schema));
+                read_options.stats->filtered_segment_number++;
+                return Status::OK();
+            }
         }
     }
 
@@ -264,6 +295,17 @@ Status Segment::new_bitmap_index_iterator(const TabletColumn& tablet_column,
     if (_column_readers.count(col_unique_id) > 0 &&
         _column_readers.at(col_unique_id)->has_bitmap_index()) {
         return _column_readers.at(col_unique_id)->new_bitmap_index_iterator(iter);
+    }
+    return Status::OK();
+}
+
+Status Segment::new_inverted_index_iterator(const TabletColumn& tablet_column,
+                                            InvertedIndexIterator** iter) {
+    auto col_unique_id = tablet_column.unique_id();
+    if (_column_readers.count(col_unique_id) > 0 &&
+        tablet_column.has_inverted_index()) {
+        return _column_readers.at(col_unique_id)->new_inverted_index_iterator(
+                        tablet_column.get_inverted_index_parser_type(), iter);
     }
     return Status::OK();
 }

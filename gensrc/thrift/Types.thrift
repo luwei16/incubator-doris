@@ -91,13 +91,15 @@ enum TPrimitiveType {
   DECIMAL64,
   DECIMAL128,
   JSONB,
+  VARIANT = 100,
 }
 
 enum TTypeNodeType {
     SCALAR,
     ARRAY,
     MAP,
-    STRUCT
+    STRUCT,
+    VARIANT = 100,
 }
 
 enum TStorageBackendType {
@@ -201,7 +203,8 @@ enum TTaskType {
     UNINSTALL_PLUGIN,
     COMPACTION,
     STORAGE_MEDIUM_MIGRATE_V2,
-    NOTIFY_UPDATE_STORAGE_POLICY
+    NOTIFY_UPDATE_STORAGE_POLICY,
+    ALTER_INVERTED_INDEX
 }
 
 enum TStmtType {

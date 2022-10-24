@@ -219,9 +219,9 @@ void Tuple::materialize_exprs(TupleRow* row, const TupleDescriptor& desc,
         PrimitiveType slot_type = slot_desc->type().type;
         PrimitiveType expr_type = materialize_expr_ctxs[mat_expr_index]->root()->type().type;
         if (slot_type == TYPE_CHAR || slot_type == TYPE_VARCHAR || slot_type == TYPE_HLL ||
-            slot_type == TYPE_STRING) {
+            slot_type == TYPE_STRING || slot_type == TYPE_VARIANT) {
             DCHECK(expr_type == TYPE_CHAR || expr_type == TYPE_VARCHAR || expr_type == TYPE_HLL ||
-                   expr_type == TYPE_STRING);
+                   expr_type == TYPE_STRING || expr_type == TYPE_VARIANT);
         } else if (slot_type == TYPE_DATE || slot_type == TYPE_DATETIME) {
             DCHECK(expr_type == TYPE_DATE || expr_type == TYPE_DATETIME);
         } else if (slot_type == TYPE_ARRAY) {
