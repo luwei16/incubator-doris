@@ -1400,9 +1400,9 @@ void SegmentIterator::_vec_init_char_column_id() {
 
 bool SegmentIterator::_prune_column(ColumnId cid, vectorized::MutableColumnPtr& column,
                  bool fill_defaults, size_t num_of_defaults) {
-    if (_schema.column(cid)->name() == BeConsts::ROWID_COL) {
-        return true;
-    }
+    // if (_schema.column(cid)->name() == BeConsts::ROWID_COL) {
+    //     return true;
+    // }
     if (_need_read_data(cid)) {
         return false;
     }
