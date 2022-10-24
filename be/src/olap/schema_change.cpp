@@ -1289,7 +1289,8 @@ Status SchemaChangeForInvertedIndex::_write_inverted_index(
 
 Status SchemaChangeForInvertedIndex::process(
             RowsetReaderSharedPtr rowset_reader, RowsetWriter* rowset_writer,
-            TabletSharedPtr base_tablet, TabletSchemaSPtr base_tablet_schema) {
+            TabletSharedPtr new_tablet, TabletSharedPtr base_tablet,
+            TabletSchemaSPtr base_tablet_schema) {
     Status res = Status::OK();
     if (rowset_reader->rowset()->empty() || rowset_reader->rowset()->num_rows() == 0) {
         return Status::OK();
@@ -2666,7 +2667,7 @@ Status SchemaChangeHandler::_rebuild_inverted_index(
         VLOG_TRACE << "begin to read a history rowset. version=" << rs_reader->version().first
                    << "-" << rs_reader->version().second;
 
-        if ((res = sc_procedure->process(rs_reader, nullptr, tablet, nullptr)) != Status::OK()) {
+        if ((res = sc_procedure->process(rs_reader, nullptr, nullptr, tablet, nullptr)) != Status::OK()) {
             LOG(WARNING) << "failed to process the version."
                          << " version=" << rs_reader->version().first << "-"
                          << rs_reader->version().second;

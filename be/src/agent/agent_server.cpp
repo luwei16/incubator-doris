@@ -70,6 +70,7 @@ AgentServer::AgentServer(ExecEnv* exec_env, const TMasterInfo& master_info)
 #ifdef CLOUD_MODE
     CREATE_AND_START_POOL(DELETE, _delete_workers);
     CREATE_AND_START_POOL(ALTER_TABLE, _alter_tablet_workers);
+    CREATE_AND_START_POOL(ALTER_INVERTED_INDEX, _alter_inverted_index_workers);
     CREATE_AND_START_POOL(SUBMIT_TABLE_COMPACTION, _submit_table_compaction_workers);
     CREATE_AND_START_THREAD(REPORT_TASK, _report_task_workers);
 #else

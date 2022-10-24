@@ -3506,7 +3506,8 @@ public class InternalCatalog implements CatalogIf<Database> {
                 TTabletType tabletType, int schemaHash, KeysType keysType, short shortKeyColumnCount,
                 Set<String> bfColumns, double bfFpp, List<Index> indexes, List<Column> schemaColumns,
                 DataSortInfo dataSortInfo, TCompressionType compressionType, String storagePolicy,
-                boolean isInMemory, boolean isPersistent, boolean isShadow, boolean isDynamicSchema) throws DdlException {
+                boolean isInMemory, boolean isPersistent, boolean isShadow,
+                boolean isDynamicSchema) throws DdlException {
         OlapFile.TabletMetaPB.Builder builder = OlapFile.TabletMetaPB.newBuilder();
         builder.setTableId(tableId);
         builder.setIndexId(indexId);

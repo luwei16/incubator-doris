@@ -180,7 +180,8 @@ public:
     virtual ~SchemaChangeForInvertedIndex();
 
     virtual Status process(RowsetReaderSharedPtr rowset_reader, RowsetWriter* rowset_writer,
-                           TabletSharedPtr base_tablet, TabletSchemaSPtr base_tablet_schema) override;
+                           TabletSharedPtr new_tablet, TabletSharedPtr base_tablet,
+                           TabletSchemaSPtr base_tablet_schema) override;
 
 private:
     DISALLOW_COPY_AND_ASSIGN(SchemaChangeForInvertedIndex);
