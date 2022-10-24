@@ -23,7 +23,6 @@
 #include "olap/rowset/rowset_meta.h"
 #include "olap/tablet.h"
 #include "olap/tablet_meta.h"
-#include "olap/utils.h"
 
 namespace doris {
 
@@ -82,9 +81,9 @@ public:
                                          Version& last_delete_version) = 0;
 
     // CLOUD_MODE
-    virtual int64_t new_cumulative_point(const std::vector<RowsetSharedPtr>& input_rowsets,
-                                         const RowsetSharedPtr& output_rowset,
-                                         Version& last_delete_version) = 0;
+    virtual int64_t new_cumulative_point(const RowsetSharedPtr& output_rowset,
+                                         Version& last_delete_version,
+                                         int64_t last_cumulative_point) = 0;
 
     /// Calculate tablet's cumulatiuve point before compaction. This calculation just executes once when the tablet compacts
     /// first time after BE initialization and then motion of cumulatiuve point depends on update_cumulative_point policy.
@@ -125,15 +124,14 @@ public:
     ~SizeBasedCumulativeCompactionPolicy() {}
 
     // CLOUD_MODE
-    int64_t new_cumulative_point(const std::vector<RowsetSharedPtr>& input_rowsets,
-                                 const RowsetSharedPtr& output_rowset,
-                                 Version& last_delete_version) override {
+    int64_t new_cumulative_point(const RowsetSharedPtr& output_rowset, Version& last_delete_version,
+                                 int64_t last_cumulative_point) override {
         // if rowsets have delete version, move to the last directly.
         // if rowsets have no delete version, check output_rowset total disk size satisfies promotion size.
         return (last_delete_version.first != -1 ||
                 output_rowset->data_disk_size() >= _tablet_size_based_promotion_size)
                        ? output_rowset->end_version() + 1
-                       : input_rowsets.front()->start_version();
+                       : last_cumulative_point;
     }
 
     /// SizeBased cumulative compaction policy implements calculate cumulative point function.

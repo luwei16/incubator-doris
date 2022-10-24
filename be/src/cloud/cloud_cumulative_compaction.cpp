@@ -97,8 +97,9 @@ Status CloudCumulativeCompaction::execute_compact_impl() {
 
 Status CloudCumulativeCompaction::update_tablet_meta() {
     // calculate new cumulative point
+    int64_t input_cumulative_point = _tablet->cumulative_layer_point();
     int64_t new_cumulative_point = _tablet->cumulative_compaction_policy()->new_cumulative_point(
-            _input_rowsets, _output_rowset, _last_delete_version);
+            _output_rowset, _last_delete_version, input_cumulative_point);
     // commit compaction job
     int64_t input_rows = 0;
     int64_t input_segments = 0;
@@ -119,7 +120,7 @@ Status CloudCumulativeCompaction::update_tablet_meta() {
     compaction_job->set_initiator(BackendOptions::get_localhost() + ':' +
                                   std::to_string(config::heartbeat_service_port));
     compaction_job->set_type(selectdb::TabletCompactionJobPB::CUMULATIVE);
-    compaction_job->set_input_cumulative_point(_tablet->cumulative_layer_point());
+    compaction_job->set_input_cumulative_point(input_cumulative_point);
     compaction_job->set_output_cumulative_point(new_cumulative_point);
     compaction_job->set_num_input_rows(input_rows);
     compaction_job->set_num_output_rows(_output_rowset->num_rows());
