@@ -19,6 +19,7 @@
 
 #include <string>
 
+#include "cloud/utils.h"
 #include "common/config.h"
 #include "common/consts.h"
 #include "gen_cpp/BackendService.h"
@@ -998,8 +999,13 @@ Status PInternalServiceImpl::_multi_get(const PMultiGetRequest *request, PMultiG
             MonotonicStopWatch watch;
             watch.start();
             auto row_id = request->rowids()[i];
-            TabletSharedPtr tablet = StorageEngine::instance()->tablet_manager()
-                                        ->get_tablet(row_id.tablet_id(), true /*include deleted*/);
+#ifdef CLOUD_MODE
+            TabletSharedPtr tablet;
+            Status status = cloud::tablet_mgr()->get_tablet(row_id.tablet_id(), &tablet);
+#else
+            TabletSharedPtr tablet =
+                    StorageEngine::instance()->tablet_manager()->get_tablet(row_id.tablet_id(), true /*include deleted*/);
+#endif
             RowsetId rowset_id;
             rowset_id.init(row_id.rowset_id());
             if (!tablet) {
