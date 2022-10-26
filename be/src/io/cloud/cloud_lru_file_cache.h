@@ -57,7 +57,7 @@ private:
         /// getorSet(), but cache users always hold it via FileSegmentsHolder.
         bool releasable() const { return file_segment.unique(); }
 
-        size_t size() const { return file_segment->_downloaded_size; }
+        size_t size() const { return file_segment->_segment_range.size(); }
 
         FileSegmentCell(FileSegmentSPtr file_segment_, LRUFileCache* cache,
                         std::lock_guard<std::mutex>& cache_lock);

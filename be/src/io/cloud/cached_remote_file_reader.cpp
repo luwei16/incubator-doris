@@ -178,7 +178,9 @@ Status CachedRemoteFileReader::read_at_impl(size_t offset, Slice result, size_t*
             }
             if (state != FileSegment::State::DOWNLOADING) {
                 return Status::IOError(
-                        "State is {}, the downloader encounters an error, please retry it", state);
+                        "File Cache State is {}, the cache downloader encounters an error, please "
+                        "retry it",
+                        state);
             }
         } while (++wait_time < MAX_WAIT_TIME);
         if (UNLIKELY(wait_time) == MAX_WAIT_TIME) {
