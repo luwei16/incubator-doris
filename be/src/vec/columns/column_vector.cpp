@@ -116,6 +116,7 @@ void ColumnVector<T>::update_hashes_with_value(uint64_t* __restrict hashes,
                                                const uint8_t* __restrict null_data) const {
     auto s = size();
     for (int i = 0; i < s; i++) {
+        if (null_data != nullptr && null_data[i] != 0) continue;
         hashes[i] = HashUtil::xxHash64WithSeed(reinterpret_cast<const char*>(&data[i]), sizeof(T),
                                                hashes[i]);
     }
