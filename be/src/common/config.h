@@ -942,6 +942,8 @@ CONF_String(inverted_index_searcher_cache_limit, "10%");
 // inverted index
 CONF_Int32(query_bkd_inverted_index_limit_percent, "10"); // 10%
 
+CONF_Bool(enable_index_compaction, "false");
+
 } // namespace config
 
 } // namespace doris

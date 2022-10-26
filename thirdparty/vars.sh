@@ -54,10 +54,10 @@ export TP_JAR_DIR="${TP_INSTALL_DIR}/lib/jar"
 # of all thirdparties
 #####################################################
 
-CLUCENE_VERSION=v0.3.0
-CLUCENE_NAME=clucene-0.3.0.zip
-CLUCENE_SOURCE=clucene-0.3.0
-CLUCENE_MD5SUM="362c02f1f891ddde62dcea57f7aa0eba"
+CLUCENE_VERSION=v0.3.1
+CLUCENE_NAME=clucene-0.3.1.zip
+CLUCENE_SOURCE=clucene-0.3.1
+CLUCENE_MD5SUM="532f28e5e2e73d4390b7f335d6ea50ea"
 # libevent
 LIBEVENT_DOWNLOAD="https://github.com/libevent/libevent/archive/release-2.1.12-stable.tar.gz"
 LIBEVENT_NAME=libevent-release-2.1.12-stable.tar.gz

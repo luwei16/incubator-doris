@@ -145,6 +145,7 @@ public:
     uint32_t mem_size() const;
 
     size_t row_size() const;
+    std::set<int32_t> get_inverted_index_column() const {return _inverted_index_column; }
     int32_t field_index(const std::string& field_name) const;
     int32_t field_index(int32_t col_unique_id) const;
     const TabletColumn& column(size_t ordinal) const;

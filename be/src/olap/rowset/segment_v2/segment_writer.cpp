@@ -108,7 +108,8 @@ Status SegmentWriter::init(uint32_t write_mbytes_per_sec __attribute__((unused))
         opts.need_zone_map = column.is_key() || _tablet_schema->keys_type() != KeysType::AGG_KEYS;
         opts.need_bloom_filter = column.is_bf_column();
         opts.need_bitmap_index = column.has_bitmap_index();
-        opts.need_inverted_index = column.has_inverted_index();
+        bool skip_inverted_index = _opts.rowset_ctx->skip_inverted_index.count(column_id) > 0;
+        opts.need_inverted_index = column.has_inverted_index() && !skip_inverted_index;
         opts.inverted_index_analyser_type = column.get_inverted_index_parser_type();
         if (column.type() == FieldType::OLAP_FIELD_TYPE_ARRAY) {
             opts.need_zone_map = false;

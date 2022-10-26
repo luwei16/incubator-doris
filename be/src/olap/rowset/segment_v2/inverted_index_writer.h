@@ -19,6 +19,7 @@
 
 #include "common/status.h"
 #include "olap/olap_common.h"
+#include "olap/inverted_index_parser.h"
 
 namespace doris {
 class CollectionValue;

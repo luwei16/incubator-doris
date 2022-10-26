@@ -111,6 +111,7 @@ add_library(Olap STATIC
     rowset/segment_v2/inverted_index_desc.cpp
     rowset/segment_v2/inverted_index_compound_directory.cpp
     rowset/segment_v2/inverted_index_compound_reader.cpp
+    rowset/segment_v2/inverted_index_compaction.cpp
     task/engine_batch_load_task.cpp
     task/engine_checksum_task.cpp
     task/engine_clone_task.cpp

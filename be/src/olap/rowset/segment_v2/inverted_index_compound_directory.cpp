@@ -146,10 +146,13 @@ void DorisCompoundFileWriter::writeCompoundFile() {
     int32_t file_count = sorted_files.size();
 
     // get index file name
-    io::Path path(((DorisCompoundDirectory*)directory)->getDirName());
-    auto idx_path = path.parent_path();
-    std::string idx_name = std::string(path.stem().c_str()) + COMPOUND_FILE_EXTENSION;
+    //io::Path path(((DorisCompoundDirectory*)directory)->getDirName());
+    //auto idx_path = path.parent_path();
+    //std::string idx_name = std::string(path.stem().c_str()) + COMPOUND_FILE_EXTENSION;
 
+    io::Path cfs_path(((DorisCompoundDirectory*)directory)->getCfsDirName());
+    auto idx_path = cfs_path.parent_path();
+    std::string idx_name = std::string(cfs_path.stem().c_str()) + COMPOUND_FILE_EXTENSION;
     // write file entries to ram directory to get header length
     lucene::store::RAMDirectory ram_dir;
     std::unique_ptr<lucene::store::IndexOutput> ram_output(ram_dir.createOutput(idx_name.c_str()));
@@ -178,8 +181,9 @@ void DorisCompoundFileWriter::writeCompoundFile() {
     // write real file
     // rowset data file home
     // lock problem?
-    DorisCompoundDirectory* out_dir = DorisCompoundDirectory::getDirectory(
-            ((DorisCompoundDirectory*)directory)->getFileSystem(), idx_path.c_str(), false);
+    auto compound_fs = ((DorisCompoundDirectory*)directory)->getCompoundFileSystem();
+    auto out_dir = DorisCompoundDirectory::getDirectory(compound_fs, idx_path.c_str(), false);
+
     std::unique_ptr<lucene::store::IndexOutput> output(out_dir->createOutput(idx_name.c_str()));
     output->writeVInt(file_count);
     // write file entries
@@ -612,9 +616,21 @@ DorisCompoundDirectory::DorisCompoundDirectory()
 }
 
 void DorisCompoundDirectory::init(io::FileSystem* _fs, const char* _path,
-                                  lucene::store::LockFactory* lockFactory) {
+                                  lucene::store::LockFactory* lockFactory,
+                                  io::FileSystem* cfs, const char* cfs_path) {
     fs = _fs;
     directory = _path;
+
+    if (cfs == nullptr) {
+        compound_fs = fs;
+    } else {
+        compound_fs = cfs;
+    }
+    if (cfs_path != nullptr) {
+        cfs_directory = cfs_path;
+    } else {
+        cfs_directory = _path;
+    }
     bool doClearLockID = false;
 
     if (lockFactory == NULL) {
@@ -725,6 +741,11 @@ const char* DorisCompoundDirectory::getDirName() const {
     return directory.c_str();
 }
 
+
+const char* DorisCompoundDirectory::getCfsDirName() const {
+    return cfs_directory.c_str();
+}
+
 DorisCompoundDirectory* DorisCompoundDirectory::getDirectory(
         io::FileSystem* fileSystem, const char* file, bool create,
         lucene::store::LockFactory* lockFactory) {
@@ -740,18 +761,26 @@ DorisCompoundDirectory* DorisCompoundDirectory::getDirectory(
 }
 
 DorisCompoundDirectory* DorisCompoundDirectory::getDirectory(io::FileSystem* fs, const char* file,
-                                                             bool useCompoundFileWriter) {
-    DorisCompoundDirectory* dir = getDirectory(fs, file, (lucene::store::LockFactory*)NULL);
+                                                             bool useCompoundFileWriter,
+                                                             io::FileSystem* cfs_fs, const char* cfs_file) {
+    DorisCompoundDirectory* dir = getDirectory(fs, file, (lucene::store::LockFactory*)nullptr, cfs_fs, cfs_file);
     dir->useCompoundFileWriter = useCompoundFileWriter;
     return dir;
 }
 
 //static
 DorisCompoundDirectory* DorisCompoundDirectory::getDirectory(
-        io::FileSystem* fs, const char* _file, lucene::store::LockFactory* lockFactory) {
-    DorisCompoundDirectory* dir = NULL;
+        io::FileSystem* fs, const char* _file, lucene::store::LockFactory* lockFactory,
+        io::FileSystem* cfs, const char* _cfs_file) {
+    const char* cfs_file = _cfs_file;
+    if (cfs_file == nullptr) {
+        cfs_file = _file;
+    }
+    DorisCompoundDirectory* dir = nullptr;
     {
-        if (!_file || !*_file) _CLTHROWA(CL_ERR_IO, "Invalid directory");
+        if (!_file || !*_file) {
+            _CLTHROWA(CL_ERR_IO, "Invalid directory");
+        }
 
         // char buf[CL_MAX_PATH];
         // char* file = _realpath(
@@ -786,11 +815,12 @@ DorisCompoundDirectory* DorisCompoundDirectory::getDirectory(
         }
 
         SCOPED_LOCK_MUTEX(DIRECTORIES_LOCK)
-        dir = DIRECTORIES.get(file);
+        // NOTE: we use cfs_file for cache key here, because *file* is temporary file path in cloud mode.
+        dir = DIRECTORIES.get(cfs_file);
         if (dir == NULL) {
             dir = _CLNEW DorisCompoundDirectory();
-            dir->init(fs, file, lockFactory);
-            DIRECTORIES.put(dir->directory.c_str(), dir);
+            dir->init(fs, file, lockFactory, cfs, cfs_file);
+            DIRECTORIES.put(dir->cfs_directory.c_str(), dir);
         } else {
             if (lockFactory != NULL && lockFactory != dir->getLockFactory()) {
                 _CLTHROWA(CL_ERR_IO,
@@ -877,7 +907,7 @@ void DorisCompoundDirectory::close() {
         CND_PRECONDITION(directory[0] != 0, "directory is not open");
 
         if (--refCount <= 0) { //refcount starts at 1
-            Directory* dir = DIRECTORIES.get(getDirName());
+            Directory* dir = DIRECTORIES.get(getCfsDirName());
             if (dir) {
                 if (useCompoundFileWriter) {
                     DorisCompoundFileWriter* cfsWriter = _CLNEW DorisCompoundFileWriter(dir);
@@ -888,7 +918,7 @@ void DorisCompoundDirectory::close() {
                     _CLDELETE(cfsWriter);
                 }
 
-                DIRECTORIES.remove(getDirName()); //this will be removed in ~DorisCompoundDirectory
+                DIRECTORIES.remove(getCfsDirName()); //this will be removed in ~DorisCompoundDirectory
                 _CLDECDELETE(dir);
                 //NOTE: Don't unlock the mutex, since it has been destroyed now...
                 return;

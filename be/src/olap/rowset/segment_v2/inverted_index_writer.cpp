@@ -1,11 +1,14 @@
-#include <memory>
+#include "olap/rowset/segment_v2/inverted_index_writer.h"
+
 #include <CLucene.h>
 #include <CLucene/util/bkd/bkd_writer.h>
 
+#include <memory>
+
+#include "io/fs/local_file_system.h"
 #include "olap/field.h"
 #include "olap/olap_common.h"
 #include "olap/rowset/segment_v2/common.h"
-#include "olap/rowset/segment_v2/inverted_index_writer.h"
 #include "olap/rowset/segment_v2/inverted_index_cache.h"
 #include "olap/rowset/segment_v2/inverted_index_compound_directory.h"
 #include "olap/rowset/segment_v2/inverted_index_desc.h"
@@ -98,7 +101,8 @@ public:
         int32_t max_doc = 0;
         int32_t total_point_count = std::numeric_limits<std::int32_t>::max();
         _bkd_writer = std::make_shared<lucene::util::bkd::bkd_writer>(
-                max_doc, DIMS, DIMS, value_length, MAX_LEAF_COUNT, MAXMBSortInHeap, total_point_count, true);
+                max_doc, DIMS, DIMS, value_length, MAX_LEAF_COUNT, MAXMBSortInHeap,
+                total_point_count, true);
         return Status::OK();
     }
 
@@ -122,8 +126,16 @@ public:
         _doc = _CLNEW lucene::document::Document();
         _default_analyzer = _CLNEW lucene::analysis::SimpleAnalyzer<char>();
         _standard_analyzer = _CLNEW lucene::analysis::standard::StandardAnalyzer();
+#ifdef CLOUD_MODE
+        _lfs = std::make_unique<doris::io::LocalFileSystem>(config::tmp_file_dir);
+        auto lfs_index_path = InvertedIndexDescriptor::get_temporary_index_path(
+                config::tmp_file_dir + "/" + _segment_file_name, _uuid);
+        lucene::store::Directory* dir = DorisCompoundDirectory::getDirectory(
+                _lfs.get(), lfs_index_path.c_str(), true, _fs, index_path.c_str());
+#else
         lucene::store::Directory* dir =
                 DorisCompoundDirectory::getDirectory(_fs, index_path.c_str(), true);
+#endif
 
         if (_parser_type == InvertedIndexParserType::PARSER_STANDARD) {
             _index_writer =
@@ -140,7 +152,8 @@ public:
         _index_writer->setUseCompoundFile(false);
         _doc->clear();
 
-        int field_config = lucene::document::Field::STORE_NO | lucene::document::Field::INDEX_NONORMS;
+        int field_config =
+                lucene::document::Field::STORE_NO | lucene::document::Field::INDEX_NONORMS;
         if (_parser_type == InvertedIndexParserType::PARSER_NONE) {
             field_config |= lucene::document::Field::INDEX_UNTOKENIZED;
         } else {
@@ -211,8 +224,9 @@ public:
                     ++v;
                     _rid++;
                     _index_writer->addDocument(_doc, _default_analyzer);
-                } else if (_parser_type == InvertedIndexParserType::PARSER_STANDARD){
-                    auto field_value = lucene::util::Misc::_charToWide(v->get_data(), v->get_size());
+                } else if (_parser_type == InvertedIndexParserType::PARSER_STANDARD) {
+                    auto field_value =
+                            lucene::util::Misc::_charToWide(v->get_data(), v->get_size());
                     // NOTE: avoid another data copy for string reader init in documentWriterThreadState
                     auto stringReader = _CLNEW lucene::util::StringReader(
                             field_value, wcslen(field_value), false);
@@ -222,9 +236,9 @@ public:
                     _index_writer->addDocument(_doc);
                     _CLDELETE_ARRAY(field_value)
                 } else {
-                    _char_string_reader->init(
-                            v->get_data(), v->get_size(), false);
-                    auto stream = _default_analyzer->reusableTokenStream(_field_name.c_str(), _char_string_reader);
+                    _char_string_reader->init(v->get_data(), v->get_size(), false);
+                    auto stream = _default_analyzer->reusableTokenStream(_field_name.c_str(),
+                                                                         _char_string_reader);
                     // NOTE: avoid another data copy for string reader init in documentWriterThreadState
                     /*auto stringReader = _CLNEW lucene::util::StringReader(
                             field_value, wcslen(field_value), false);*/
@@ -333,8 +347,18 @@ public:
                 // if null data is flush, _row_ids_seen_for_bkd is empty.
                 return Status::OK();
             }
+#ifdef CLOUD_MODE
+            if (_lfs == nullptr) {
+                _lfs = std::make_unique<doris::io::LocalFileSystem>(config::tmp_file_dir);
+            }
+            auto lfs_index_path = InvertedIndexDescriptor::get_temporary_index_path(
+                    config::tmp_file_dir + "/" + _segment_file_name, _uuid);
+            lucene::store::Directory* dir = DorisCompoundDirectory::getDirectory(
+                    _lfs.get(), lfs_index_path.c_str(), true, _fs, index_path.c_str());
+#else
             lucene::store::Directory* dir =
                     DorisCompoundDirectory::getDirectory(_fs, index_path.c_str(), true);
+#endif
             _bkd_writer->max_doc_ = _rid;
             _bkd_writer->docs_seen_ = _row_ids_seen_for_bkd;
             std::unique_ptr<lucene::store::IndexOutput> out(dir->createOutput(
@@ -369,6 +393,9 @@ private:
     std::string _directory;
     uint32_t _uuid;
     io::FileSystem* _fs;
+#ifdef CLOUD_MODE
+    std::unique_ptr<io::FileSystem> _lfs;
+#endif
     const KeyCoder* _value_key_coder;
     InvertedIndexParserType _parser_type;
     std::wstring _field_name;
@@ -378,8 +405,7 @@ Status InvertedIndexColumnWriter::create(const Field* field,
                                          std::unique_ptr<InvertedIndexColumnWriter>* res,
                                          uint32_t uuid, const std::string& segment_file_name,
                                          const std::string& dir,
-                                         InvertedIndexParserType parser_type,
-                                         io::FileSystem* fs) {
+                                         InvertedIndexParserType parser_type, io::FileSystem* fs) {
     //RETURN_IF_ERROR(InvertedIndexDescriptor::init_index_directory(path));
     auto typeinfo = field->type_info();
     FieldType type = typeinfo->type();
@@ -391,79 +417,79 @@ Status InvertedIndexColumnWriter::create(const Field* field,
     }
 
     switch (type) {
-    case OLAP_FIELD_TYPE_CHAR:{
+    case OLAP_FIELD_TYPE_CHAR: {
         *res = std::make_unique<InvertedIndexColumnWriterImpl<OLAP_FIELD_TYPE_CHAR>>(
                 field_name, uuid, segment_file_name, dir, fs, parser_type);
         (*res)->init();
         break;
     }
-    case OLAP_FIELD_TYPE_VARCHAR:{
+    case OLAP_FIELD_TYPE_VARCHAR: {
         *res = std::make_unique<InvertedIndexColumnWriterImpl<OLAP_FIELD_TYPE_VARCHAR>>(
                 field_name, uuid, segment_file_name, dir, fs, parser_type);
         (*res)->init();
         break;
     }
-    case OLAP_FIELD_TYPE_STRING:{
+    case OLAP_FIELD_TYPE_STRING: {
         *res = std::make_unique<InvertedIndexColumnWriterImpl<OLAP_FIELD_TYPE_STRING>>(
                 field_name, uuid, segment_file_name, dir, fs, parser_type);
         (*res)->init();
         break;
     }
-    case OLAP_FIELD_TYPE_DATETIME:{
+    case OLAP_FIELD_TYPE_DATETIME: {
         *res = std::make_unique<InvertedIndexColumnWriterImpl<OLAP_FIELD_TYPE_DATETIME>>(
                 field_name, uuid, segment_file_name, dir, fs, parser_type);
         (*res)->init();
         break;
     }
-    case OLAP_FIELD_TYPE_DATE:{
+    case OLAP_FIELD_TYPE_DATE: {
         *res = std::make_unique<InvertedIndexColumnWriterImpl<OLAP_FIELD_TYPE_DATE>>(
                 field_name, uuid, segment_file_name, dir, fs, parser_type);
         (*res)->init();
         break;
     }
-    case OLAP_FIELD_TYPE_TINYINT:{
+    case OLAP_FIELD_TYPE_TINYINT: {
         *res = std::make_unique<InvertedIndexColumnWriterImpl<OLAP_FIELD_TYPE_TINYINT>>(
                 field_name, uuid, segment_file_name, dir, fs, parser_type);
         (*res)->init();
         break;
     }
-    case OLAP_FIELD_TYPE_SMALLINT:{
+    case OLAP_FIELD_TYPE_SMALLINT: {
         *res = std::make_unique<InvertedIndexColumnWriterImpl<OLAP_FIELD_TYPE_SMALLINT>>(
                 field_name, uuid, segment_file_name, dir, fs, parser_type);
         (*res)->init();
         break;
     }
-    case OLAP_FIELD_TYPE_UNSIGNED_INT:{
+    case OLAP_FIELD_TYPE_UNSIGNED_INT: {
         *res = std::make_unique<InvertedIndexColumnWriterImpl<OLAP_FIELD_TYPE_UNSIGNED_INT>>(
                 field_name, uuid, segment_file_name, dir, fs, parser_type);
         (*res)->init();
         break;
     }
-    case OLAP_FIELD_TYPE_INT:{
+    case OLAP_FIELD_TYPE_INT: {
         *res = std::make_unique<InvertedIndexColumnWriterImpl<OLAP_FIELD_TYPE_INT>>(
                 field_name, uuid, segment_file_name, dir, fs, parser_type);
         (*res)->init();
         break;
     }
-    case OLAP_FIELD_TYPE_LARGEINT:{
+    case OLAP_FIELD_TYPE_LARGEINT: {
         *res = std::make_unique<InvertedIndexColumnWriterImpl<OLAP_FIELD_TYPE_LARGEINT>>(
                 field_name, uuid, segment_file_name, dir, fs, parser_type);
         (*res)->init();
         break;
     }
-    case OLAP_FIELD_TYPE_DECIMAL:{
+    case OLAP_FIELD_TYPE_DECIMAL: {
         *res = std::make_unique<InvertedIndexColumnWriterImpl<OLAP_FIELD_TYPE_DECIMAL>>(
                 field_name, uuid, segment_file_name, dir, fs, parser_type);
         (*res)->init();
         break;
     }
-    case OLAP_FIELD_TYPE_BOOL:{
+    case OLAP_FIELD_TYPE_BOOL: {
         *res = std::make_unique<InvertedIndexColumnWriterImpl<OLAP_FIELD_TYPE_BOOL>>(
                 field_name, uuid, segment_file_name, dir, fs, parser_type);
         (*res)->init();
         break;
     }
-    case OLAP_FIELD_TYPE_DOUBLE:{
+    case OLAP_FIELD_TYPE_DOUBLE: {
         *res = std::make_unique<InvertedIndexColumnWriterImpl<OLAP_FIELD_TYPE_DOUBLE>>(
                 field_name, uuid, segment_file_name, dir, fs, parser_type);
         (*res)->init();

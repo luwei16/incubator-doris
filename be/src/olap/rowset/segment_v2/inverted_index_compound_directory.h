@@ -64,12 +64,16 @@ private:
 protected:
     DorisCompoundDirectory();
     virtual void init(io::FileSystem* fs, const char* path,
-                      lucene::store::LockFactory* lockFactory = NULL);
+                      lucene::store::LockFactory* lockFactory = nullptr,
+                      io::FileSystem* compound_fs = nullptr,
+                      const char* cfs_path = nullptr);
     void priv_getFN(char* buffer, const char* name) const;
 
 private:
     io::FileSystem* fs;
+    io::FileSystem* compound_fs;
     std::string directory;
+    std::string cfs_directory;
     int refCount;
     void create();
 
@@ -87,6 +91,7 @@ protected:
 
 public:
     io::FileSystem* getFileSystem() { return fs; }
+    io::FileSystem* getCompoundFileSystem() { return compound_fs; }
     ///Destructor - only call this if you are sure the directory
     ///is not being used anymore. Otherwise use the ref-counting
     ///facilities of _CLDECDELETE
@@ -100,6 +105,7 @@ public:
 
     /// Returns the text name of the directory
     const char* getDirName() const; ///<returns reference
+    const char* getCfsDirName() const;
 
     /**
     * Deprecated, see getDirectory(file, lockFactory)
@@ -125,10 +131,14 @@ public:
     @return the DorisFSDirectory for the named file.
     */
     static DorisCompoundDirectory* getDirectory(io::FileSystem* fs, const char* file,
-                                                lucene::store::LockFactory* lockFactory = NULL);
+                                                lucene::store::LockFactory* lockFactory = nullptr,
+                                                io::FileSystem* cfs_fs = nullptr,
+                                                const char* cfs_file = nullptr);
 
     static DorisCompoundDirectory* getDirectory(io::FileSystem* fs, const char* file,
-                                                bool useCompoundFileWriter);
+                                                bool useCompoundFileWriter,
+                                                io::FileSystem* cfs_fs = nullptr,
+                                                const char* cfs_file = nullptr);
 
     /// Returns the time the named file was last modified.
     int64_t fileModified(const char* name) const override;
