@@ -49,7 +49,10 @@ class Config {
     public String feCloudHttpUser
     public String feCloudHttpPassword
 
+    public String instanceId
+    public String cloudUniqueId
     public String metaServiceHttpAddress
+    public String recycleServiceHttpAddress
 
     public String suitePath
     public String dataPath
@@ -83,6 +86,7 @@ class Config {
     public InetSocketAddress feHttpInetSocketAddress
     public InetSocketAddress feCloudHttpInetSocketAddress
     public InetSocketAddress metaServiceHttpInetSocketAddress
+    public InetSocketAddress recycleServiceHttpInetSocketAddress
     public Integer parallel
     public Integer suiteParallel
     public Integer actionParallel
@@ -93,10 +97,11 @@ class Config {
 
     Config(String defaultDb, String jdbcUrl, String jdbcUser, String jdbcPassword,
            String feHttpAddress, String feHttpUser, String feHttpPassword,
-           String feCloudHttpAddress, String feCloudHttpUser, String feCloudHttpPassword, String metaServiceHttpAddress,
-           String suitePath, String dataPath, String realDataPath, String sf1DataPath, String cacheDataPath,
-           String testGroups, String excludeGroups, String testSuites, String excludeSuites,
-           String testDirectories, String excludeDirectories, String pluginPath) {
+           String feCloudHttpAddress, String feCloudHttpUser, String feCloudHttpPassword, String instanceId,
+           String cloudUniqueId, String metaServiceHttpAddress, String recycleServiceHttpAddress, String suitePath,
+           String dataPath, String realDataPath, String sf1DataPath, String cacheDataPath, String testGroups,
+           String excludeGroups, String testSuites, String excludeSuites, String testDirectories, String excludeDirectories,
+           String pluginPath) {
         this.defaultDb = defaultDb
         this.jdbcUrl = jdbcUrl
         this.jdbcUser = jdbcUser
@@ -107,7 +112,10 @@ class Config {
         this.feCloudHttpAddress = feCloudHttpAddress
         this.feCloudHttpUser = feCloudHttpUser
         this.feCloudHttpPassword = feCloudHttpPassword
+        this.instanceId = instanceId;
+        this.cloudUniqueId = cloudUniqueId;
         this.metaServiceHttpAddress = metaServiceHttpAddress
+        this.recycleServiceHttpAddress = recycleServiceHttpAddress;
         this.suitePath = suitePath
         this.dataPath = dataPath
         this.realDataPath = realDataPath
@@ -199,6 +207,12 @@ class Config {
         }
         log.info("feCloudHttpAddress : $config.feCloudHttpAddress, socketAddr : $config.feCloudHttpInetSocketAddress")
 
+        config.instanceId = cmd.getOptionValue(instanceIdOpt, config.instanceId)
+        log.info("instanceId : ${config.instanceId}")
+
+        config.cloudUniqueId = cmd.getOptionValue(cloudUniqueIdOpt, config.cloudUniqueId)
+        log.info("cloudUniqueId : ${config.cloudUniqueId}")
+
         config.metaServiceHttpAddress = cmd.getOptionValue(metaServiceHttpAddressOpt, config.metaServiceHttpAddress)
         try {
             Inet4Address host = Inet4Address.getByName(config.metaServiceHttpAddress.split(":")[0]) as Inet4Address
@@ -208,6 +222,17 @@ class Config {
             throw new IllegalStateException("Can not parse meta service address: ${config.metaServiceHttpAddress}", t)
         }
         log.info("msAddr : $config.metaServiceHttpAddress, socketAddr : $config.metaServiceHttpInetSocketAddress")
+
+
+        config.recycleServiceHttpAddress = cmd.getOptionValue(recycleServiceHttpAddressOpt, config.recycleServiceHttpAddress)
+        try {
+            Inet4Address host = Inet4Address.getByName(config.recycleServiceHttpAddress.split(":")[0]) as Inet4Address
+            int port = Integer.valueOf(config.recycleServiceHttpAddress.split(":")[1])
+            config.recycleServiceHttpInetSocketAddress = new InetSocketAddress(host, port)
+        } catch (Throwable t) {
+            throw new IllegalStateException("Can not parse recycle service address: ${config.recycleServiceHttpAddress}", t)
+        }
+        log.info("recycleAddr : $config.recycleServiceHttpAddress, socketAddr : $config.recycleServiceHttpInetSocketAddress")
 
         config.defaultDb = cmd.getOptionValue(defaultDbOpt, config.defaultDb)
         config.jdbcUrl = cmd.getOptionValue(jdbcOpt, config.jdbcUrl)
@@ -254,7 +279,10 @@ class Config {
             configToString(obj.feCloudHttpAddress),
             configToString(obj.feCloudHttpUser),
             configToString(obj.feCloudHttpPassword),
+            configToString(obj.instanceId),
+            configToString(obj.cloudUniqueId),
             configToString(obj.metaServiceHttpAddress),
+            configToString(obj.recycleServiceHttpAddress),
             configToString(obj.suitePath),
             configToString(obj.dataPath),
             configToString(obj.realDataPath),
@@ -308,9 +336,24 @@ class Config {
             log.info("Set feHttpAddress to '${config.feHttpAddress}' because not specify.".toString())
         }
 
+        if (config.instanceId == null) {
+            config.instanceId = "instance_xxx"
+            log.info("Set instanceId to '${config.instanceId}' because not specify.".toString())
+        }
+
+        if (config.cloudUniqueId == null) {
+            config.cloudUniqueId = "cloud_unique_id_xxx"
+            log.info("Set cloudUniqueId to '${config.cloudUniqueId}' because not specify.".toString())
+        }
+
         if (config.metaServiceHttpAddress == null) {
             config.metaServiceHttpAddress = "127.0.0.1:5000"
             log.info("Set metaServiceHttpAddress to '${config.metaServiceHttpAddress}' because not specify.".toString())
+        }
+
+        if (config.recycleServiceHttpAddress == null) {
+            config.recycleServiceHttpAddress = "127.0.0.1:5001"
+            log.info("Set recycleServiceHttpAddress to '${config.recycleServiceHttpAddress}' because not specify.".toString())
         }
 
         if (config.feHttpUser == null) {

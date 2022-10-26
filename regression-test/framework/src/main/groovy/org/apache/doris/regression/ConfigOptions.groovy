@@ -38,7 +38,10 @@ class ConfigOptions {
     static Option feCloudHttpAddressOpt
     static Option feCloudHttpUserOpt
     static Option feCloudHttpPasswordOpt
+    static Option instanceIdOpt
+    static Option cloudUniqueIdOpt
     static Option metaServiceHttpAddressOpt
+    static Option recycleServiceHttpAddressOpt
     static Option pathOpt
     static Option dataOpt
     static Option realDataOpt
@@ -262,13 +265,37 @@ class ConfigOptions {
                 .longOpt("feCloudHttpPassword")
                 .desc("the password of fe cloud http server")
                 .build()
+        instanceIdOpt = Option.builder("ii")
+                .argName("instanceId")
+                .required(false)
+                .hasArg(true)
+                .type(String.class)
+                .longOpt("instanceId")
+                .desc("the instance id")
+                .build()
+        cloudUniqueIdOpt = Option.builder("cui")
+                .argName("cloudUniqueId")
+                .required(false)
+                .hasArg(true)
+                .type(String.class)
+                .longOpt("cloudUniqueId")
+                .desc("the cloudUniqueId")
+                .build()
         metaServiceHttpAddressOpt = Option.builder("hm")
-                .argName("address")
+                .argName("metaServiceHttpAddress")
                 .required(false)
                 .hasArg(true)
                 .type(String.class)
                 .longOpt("metaServiceHttpAddress")
                 .desc("the meta service http address, format is ip:port")
+                .build()
+        recycleServiceHttpAddressOpt = Option.builder("hr")
+                .argName("recycleServiceHttpAddress")
+                .required(false)
+                .hasArg(true)
+                .type(String.class)
+                .longOpt("recycleServiceHttpAddress")
+                .desc("the recycle service http address, format is ip:port")
                 .build()
         genOutOpt = Option.builder("genOut")
                 .required(false)
@@ -366,6 +393,7 @@ class ConfigOptions {
                 .addOption(feCloudHttpUserOpt)
                 .addOption(feCloudHttpPasswordOpt)
                 .addOption(metaServiceHttpAddressOpt)
+                .addOption(recycleServiceHttpAddressOpt)
                 .addOption(genOutOpt)
                 .addOption(confFileOpt)
                 .addOption(forceGenOutOpt)
