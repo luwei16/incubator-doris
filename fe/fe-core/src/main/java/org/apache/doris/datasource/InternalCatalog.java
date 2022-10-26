@@ -3903,7 +3903,7 @@ public class InternalCatalog implements CatalogIf<Database> {
                 }
                 if (retry < Config.cloud_copy_txn_conflict_error_retry_num
                         && response.getStatus().getCode() == SelectdbCloud.MetaServiceCode.KV_TXN_CONFLICT) {
-                    LOG.warn("begin copy error with kv txn conflict, tableId={}, stageId={}, copyId={}, retry={}",
+                    LOG.warn("begin copy error with kv txn conflict, tableId={}, stageId={}, queryId={}, retry={}",
                             tableId, stageId, copyJobId, retry);
                     retry++;
                     continue;
@@ -3933,7 +3933,7 @@ public class InternalCatalog implements CatalogIf<Database> {
                 }
                 if (retry < Config.cloud_copy_txn_conflict_error_retry_num
                         && response.getStatus().getCode() == SelectdbCloud.MetaServiceCode.KV_TXN_CONFLICT) {
-                    LOG.warn("finish copy error with kv txn conflict, tableId={}, stageId={}, copyId={}, retry={}",
+                    LOG.warn("finish copy error with kv txn conflict, tableId={}, stageId={}, queryId={}, retry={}",
                             tableId, stageId, copyJobId, retry);
                     retry++;
                     continue;

@@ -23,12 +23,14 @@ import org.apache.doris.catalog.Env;
 import org.apache.doris.common.DdlException;
 import org.apache.doris.common.MetaNotFoundException;
 import org.apache.doris.common.io.Text;
+import org.apache.doris.common.util.DebugUtil;
 import org.apache.doris.load.BrokerFileGroup;
 import org.apache.doris.load.BrokerFileGroupAggInfo.FileGroupAggKey;
 import org.apache.doris.load.EtlJobType;
 import org.apache.doris.load.FailMsg;
 import org.apache.doris.qe.OriginStatement;
 import org.apache.doris.thrift.TBrokerFileStatus;
+import org.apache.doris.thrift.TUniqueId;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -68,8 +70,8 @@ public class CopyJob extends BrokerLoadJob {
         super(EtlJobType.COPY);
     }
 
-    public CopyJob(long dbId, String label, BrokerDesc brokerDesc, OriginStatement originStmt, UserIdentity userInfo,
-            String stageId, StagePB.StageType stageType, long sizeLimit, String pattern,
+    public CopyJob(long dbId, String label, TUniqueId queryId, BrokerDesc brokerDesc, OriginStatement originStmt,
+            UserIdentity userInfo, String stageId, StagePB.StageType stageType, long sizeLimit, String pattern,
             ObjectInfo objectInfo) throws MetaNotFoundException {
         super(EtlJobType.COPY, dbId, label, brokerDesc, originStmt, userInfo);
         this.stageId = stageId;
@@ -77,8 +79,7 @@ public class CopyJob extends BrokerLoadJob {
         this.sizeLimit =  sizeLimit;
         this.pattern = pattern;
         this.objectInfo = objectInfo;
-        // FIXME(meiyi): specify copy id use: 1. label; 2. auto_increment job id from meta service...
-        this.copyId = label;
+        this.copyId = DebugUtil.printId(queryId);
     }
 
     @Override
@@ -92,7 +93,7 @@ public class CopyJob extends BrokerLoadJob {
         for (Entry<FileGroupAggKey, List<BrokerFileGroup>> entry : fileGroupAggInfo.getAggKeyToFileGroups()
                 .entrySet()) {
             long tableId = entry.getKey().getTableId();
-            LOG.debug("Start finish copy for stage={}, table={}", stageId, tableId);
+            LOG.debug("Start finish copy for stage={}, table={}, queryId={}", stageId, tableId, getCopyId());
             Env.getCurrentInternalCatalog().finishCopy(stageId, stageType, tableId, getCopyId(), 0, true);
         }
     }
@@ -103,7 +104,7 @@ public class CopyJob extends BrokerLoadJob {
         for (Entry<FileGroupAggKey, List<BrokerFileGroup>> entry : fileGroupAggInfo.getAggKeyToFileGroups()
                 .entrySet()) {
             long tableId = entry.getKey().getTableId();
-            LOG.debug("Start cancel copy for stage={}, table={}", stageId, tableId);
+            LOG.info("Start cancel copy for stage={}, table={}, queryId={}", stageId, tableId, getCopyId());
             Env.getCurrentInternalCatalog().finishCopy(stageId, stageType, tableId, getCopyId(), 0, false);
         }
     }
@@ -114,12 +115,12 @@ public class CopyJob extends BrokerLoadJob {
         for (Entry<FileGroupAggKey, List<BrokerFileGroup>> entry : fileGroupAggInfo.getAggKeyToFileGroups()
                 .entrySet()) {
             long tableId = entry.getKey().getTableId();
-            LOG.debug("Start cancel copy for stage={}, table={}", stageId, tableId);
             try {
+                LOG.info("Start cancel copy for stage={}, table={}, queryId={}", stageId, tableId, getCopyId());
                 Env.getCurrentInternalCatalog().finishCopy(stageId, stageType, tableId, getCopyId(), 0, false);
             } catch (DdlException e) {
                 // if cancel copy failed, kvs in fdb will be cleaned when expired
-                LOG.warn("Failed to cancel copy for stage={}, table={}", stageId, tableId, e);
+                LOG.warn("Failed to cancel copy for stage={}, table={}, queryId={}", stageId, tableId, getCopyId(), e);
             }
         }
     }

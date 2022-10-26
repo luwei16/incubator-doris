@@ -191,6 +191,18 @@ public class StageTest extends TestWithFeService {
     }
 
     @Test
+    public void testAnalyzeStrictMode() throws Exception {
+        // create stage with strict mode
+        String sql = CREATE_STAGE_SQL + ", 'default.copy.strict_mode'='true')";
+        Assert.assertEquals(true, Boolean.parseBoolean(
+                parseAndAnalyze(sql).getStageProperties().getDefaultPropertiesWithoutPrefix().get("copy.strict_mode")));
+
+        // create stage with invalid strict mode
+        sql = CREATE_STAGE_SQL + ", 'default.copy.strict_mode'='def')";
+        parseAndAnalyzeWithException(sql, "Property default.copy.strict_mode with invalid value def");
+    }
+
+    @Test
     public void testOtherProperties() throws Exception {
         String sql = CREATE_STAGE_SQL + ", 'default.file.column_separator'=\",\", "
                 + "'default.file.line_delimiter'=\"\n\")";

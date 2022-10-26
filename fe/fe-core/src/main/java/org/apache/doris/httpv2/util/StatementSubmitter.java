@@ -73,7 +73,7 @@ public class StatementSubmitter {
     private static final String JDBC_DRIVER = "org.mariadb.jdbc.Driver";
     private static final String DB_URL_PATTERN = "jdbc:mariadb://127.0.0.1:%d/%s";
 
-    private static final String[] copyResult = {"copyId", "state", "type", "msg", "loadedRows", "filterRows",
+    private static final String[] copyResult = {"id", "state", "type", "msg", "loadedRows", "filterRows",
             "unselectRows", "url"};
 
     private ThreadPoolExecutor executor = ThreadPoolManager.newDaemonCacheThreadPool(2, "SQL submitter", true);

@@ -35,9 +35,6 @@ suite("test_internal_stage") {
             )
             DUPLICATE KEY(C_CUSTKEY)
             DISTRIBUTED BY HASH(C_CUSTKEY) BUCKETS 1
-            PROPERTIES (
-                "replication_num" = "1"
-            )
         """
 
         def result = sql " copy into ${tableName} from @~('${fileName}') properties ('file.type' = 'csv', 'file.column_separator' = '|', 'copy.async' = 'false'); "

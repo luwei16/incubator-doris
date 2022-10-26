@@ -150,7 +150,7 @@ public class LoadJobFinalOperation extends TxnCommitAttachment implements Writab
                 + ", finishTimestamp=" + finishTimestamp
                 + ", jobState=" + jobState
                 + ", failMsg=" + failMsg
-                + ", copyId=" + copyId
+                + ", queryId=" + copyId
                 + ", loadFilePaths=" + loadFilePaths
                 + '}';
     }

@@ -70,7 +70,8 @@ public class CopyIntoTest extends TestWithFeService {
         List<StagePB> stages1 = Lists.newArrayList(stagePB1);
         String query2 = "create stage if not exists ex_stage_3 " + OBJ_INFO
                 + ", 'default.file.type' = 'csv', 'default.file.column_separator' = ',' "
-                + ", 'default.copy.on_error' = 'continue', 'default.copy.size_limit' = '100')";
+                + ", 'default.copy.on_error' = 'continue', 'default.copy.size_limit' = '100'"
+                + ", 'default.copy.strict_mode' = 'false')";
         StagePB stagePB2 = ((CreateStageStmt) UtFrameUtils.parseAndAnalyzeStmt(query2, connectContext)).toStageProto();
         List<StagePB> stages2 = Lists.newArrayList(stagePB2);
 
@@ -87,56 +88,63 @@ public class CopyIntoTest extends TestWithFeService {
         };
 
         String copySqlPrefix = "copy into t2 from @ex_stage_2 ";
-        checkCopyInto(copySqlPrefix, null, 0, true, 0);
+        checkCopyInto(copySqlPrefix, null, 0, true, 0, 0, false);
         String copySqlPrefix2 = "copy into t2 from @ex_stage_3 ";
-        checkCopyInto(copySqlPrefix2, "csv", 100, true, 4);
+        checkCopyInto(copySqlPrefix2, "csv", 100, true, 5, 1, false);
 
         String copyProperties = "properties ('file.type' = 'json', 'file.fuzzy_parse'='true', 'file.json_root'=\"{\", "
                 + "'copy.on_error' = 'continue', 'copy.size_limit' = '200', " + "'copy.async' = 'false')";
         String copySql = copySqlPrefix + copyProperties;
-        checkCopyInto(copySql, "json",  200, false, 6);
+        checkCopyInto(copySql, "json",  200, false, 6, 0, false);
         copySql = copySqlPrefix2 + copyProperties;
-        checkCopyInto(copySql, "json",  200, false, 7);
+        checkCopyInto(copySql, "json",  200, false, 8, 1, false);
 
         copyProperties = "properties ('file.type' = 'csv', 'file.fuzzy_parse'='true', 'file.json_root'=\"{\", "
                 + "'copy.on_error' = 'continue', 'copy.size_limit' = '300')";
         copySql = copySqlPrefix + copyProperties;
-        checkCopyInto(copySql, "csv",  300, true, 5);
+        checkCopyInto(copySql, "csv",  300, true, 5, 0, false);
         copySql = copySqlPrefix2 + copyProperties;
-        checkCopyInto(copySql, "csv",  300, true, 6);
+        checkCopyInto(copySql, "csv",  300, true, 7, 1, false);
 
         copyProperties = "properties ('file.type' = 'csv', 'file.fuzzy_parse'='true', 'file.json_root'=\"{\") ";
         copySql = copySqlPrefix + copyProperties;
-        checkCopyInto(copySql, "csv",  0, true, 3);
+        checkCopyInto(copySql, "csv",  0, true, 3, 0, false);
         copySql = copySqlPrefix2 + copyProperties;
-        checkCopyInto(copySql, "csv",  100, true, 6);
+        checkCopyInto(copySql, "csv",  100, true, 7, 1, false);
 
         copyProperties = "properties ('copy.on_error' = 'continue', 'copy.size_limit' = '400')";
         copySql = copySqlPrefix + copyProperties;
-        checkCopyInto(copySql, null,  400, true, 2);
+        checkCopyInto(copySql, null,  400, true, 2, 0, false);
         copySql = copySqlPrefix2 + copyProperties;
-        checkCopyInto(copySql, "csv",  400, true, 4);
+        checkCopyInto(copySql, "csv",  400, true, 5, 1, false);
 
         copyProperties = "properties('copy.async' = 'false')";
         copySql = copySqlPrefix + copyProperties;
-        checkCopyInto(copySql, null,  0, false, 1);
+        checkCopyInto(copySql, null,  0, false, 1, 0, false);
         copySql = copySqlPrefix2 + copyProperties;
-        checkCopyInto(copySql, "csv",  100, false, 5);
+        checkCopyInto(copySql, "csv",  100, false, 6, 1, false);
 
         copyProperties = "properties ('file.compression' = 'gz') ";
         copySql = copySqlPrefix + copyProperties;
-        checkCopyInto(copySql, null,  0, true, 1);
+        checkCopyInto(copySql, null,  0, true, 1, 0, false);
         copySql = copySqlPrefix2 + copyProperties;
-        checkCopyInto(copySql, null,  100, true, 5);
+        checkCopyInto(copySql, null,  100, true, 6, 1, false);
 
         copyProperties = "properties ('file.type' = 'csv', 'file.compression' = 'gz') ";
         copySql = copySqlPrefix + copyProperties;
-        checkCopyInto(copySql, null,  0, true, 2);
+        checkCopyInto(copySql, null,  0, true, 2, 0, false);
         copySql = copySqlPrefix2 + copyProperties;
-        checkCopyInto(copySql, null,  100, true, 5);
+        checkCopyInto(copySql, null,  100, true, 6, 1, false);
+
+        copyProperties = "properties('copy.strict_mode' = 'true')";
+        copySql = copySqlPrefix + copyProperties;
+        checkCopyInto(copySql, null,  0, true, 1, 1, true);
+        copySql = copySqlPrefix2 + copyProperties;
+        checkCopyInto(copySql, "csv",  100, true, 5, 1, true);
     }
 
-    private void checkCopyInto(String sql, String fileType, long sizeLimit, boolean async, int propertiesNum) {
+    private void checkCopyInto(String sql, String fileType, long sizeLimit, boolean async, int propertiesNum,
+            int execPropertiesNum, boolean strictMode) {
         try {
             CopyStmt copyStmt = (CopyStmt) UtFrameUtils.parseAndAnalyzeStmt(sql, connectContext);
             System.out.println("original sql: " + sql);
@@ -145,6 +153,11 @@ public class CopyIntoTest extends TestWithFeService {
             Assert.assertEquals(fileType, copyStmt.getCopyIntoProperties().getFileType());
             Assert.assertEquals(sizeLimit, copyStmt.getCopyIntoProperties().getSizeLimit());
             Assert.assertEquals(async, copyStmt.isAsync());
+            Assert.assertEquals(execPropertiesNum, copyStmt.getCopyIntoProperties().getExecProperties().size());
+            if (execPropertiesNum > 0) {
+                Assert.assertEquals(strictMode,
+                        Boolean.parseBoolean(copyStmt.getCopyIntoProperties().getExecProperties().get("strict_mode")));
+            }
         } catch (Exception e) {
             e.printStackTrace();
             Assert.fail("must be success.");

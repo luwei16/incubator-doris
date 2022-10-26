@@ -28,9 +28,6 @@ suite("test_external_stage") {
             )
             UNIQUE KEY(C_CUSTKEY)
             DISTRIBUTED BY HASH(C_CUSTKEY) BUCKETS 1
-            PROPERTIES (
-                "replication_num" = "1"
-            )
         """
 
         sql """

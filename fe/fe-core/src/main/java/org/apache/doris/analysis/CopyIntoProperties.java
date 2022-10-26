@@ -36,9 +36,13 @@ public class CopyIntoProperties extends CopyProperties {
             .add(PARAM_JSONROOT)
             .build();
 
+    private static final ImmutableSet<String> EXEC_PROPERTIES = new ImmutableSet.Builder<String>()
+            .add(STRICT_MODE)
+            .build();
+
     private static final ImmutableSet<String> COPY_PROPERTIES = new ImmutableSet.Builder<String>()
             .add(TYPE).add(COMPRESSION).add(COLUMN_SEPARATOR).add(SIZE_LIMIT).add(ON_ERROR).add(ASYNC)
-            .addAll(DATA_DESC_PROPERTIES).build();
+            .addAll(DATA_DESC_PROPERTIES).addAll(EXEC_PROPERTIES).build();
 
     public CopyIntoProperties(Map<String, String> properties) {
         super(properties, "");
@@ -49,6 +53,7 @@ public class CopyIntoProperties extends CopyProperties {
         analyzeSizeLimit();
         analyzeOnError();
         analyzeAsync();
+        analyzeStrictMode();
         for (Entry<String, String> entry : properties.entrySet()) {
             if (!COPY_PROPERTIES.contains(entry.getKey())) {
                 throw new AnalysisException("Property '" + entry.getKey() + "' is invalid");
@@ -57,13 +62,21 @@ public class CopyIntoProperties extends CopyProperties {
     }
 
     public Map<String, String> getDataDescriptionProperties() {
-        Map<String, String> dataDescProperties = new HashMap<>();
-        for (String property : DATA_DESC_PROPERTIES) {
+        return getKeysProperties(DATA_DESC_PROPERTIES);
+    }
+
+    public Map<String, String> getExecProperties() {
+        return getKeysProperties(EXEC_PROPERTIES);
+    }
+
+    private Map<String, String> getKeysProperties(ImmutableSet<String> keys) {
+        Map<String, String> result = new HashMap<>();
+        for (String property : keys) {
             if (properties.containsKey(property)) {
-                dataDescProperties.put(removeFilePrefix(property), properties.get(property));
+                result.put(removeFilePrefix(property), properties.get(property));
             }
         }
-        return dataDescProperties;
+        return result;
     }
 
     protected void mergeProperties(StageProperties stageProperties) {
@@ -78,6 +91,8 @@ public class CopyIntoProperties extends CopyProperties {
     private String removeFilePrefix(String key) {
         if (key.startsWith("file.")) {
             return key.substring("file.".length());
+        } else if (key.startsWith("copy.")) {
+            return key.substring("copy.".length());
         }
         return key;
     }

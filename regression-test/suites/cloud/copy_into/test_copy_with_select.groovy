@@ -56,9 +56,6 @@ suite("test_copy_with_select") {
             )
             UNIQUE KEY(C_CUSTKEY)
             DISTRIBUTED BY HASH(C_CUSTKEY) BUCKETS 1
-            PROPERTIES (
-                "replication_num" = "1"
-            )
             """
 
             def result = sql """ ${sql_prefix} ${copySql} ${sql_postfix} """
