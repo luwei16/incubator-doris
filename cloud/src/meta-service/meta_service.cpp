@@ -107,10 +107,10 @@ void MetaServiceImpl::begin_txn(::google::protobuf::RpcController* controller,
             (int*)0x01, [&code, &msg, &response, &ctrl, &closure_guard, &sw, &instance_id](int*) {
                 response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
-                closure_guard.reset(nullptr);
                 LOG(INFO) << __PRETTY_FUNCTION__ << " finish " << ctrl->remote_side()
                           << " response:\n"
-                          << response->DebugString();
+                          << proto_to_json(*response);
+                closure_guard.reset(nullptr);
                 if (config::use_detailed_metrics && !instance_id.empty()) {
                     g_bvar_ms_begin_txn.put(instance_id, sw.elapsed_us());
                 }
@@ -417,10 +417,10 @@ void MetaServiceImpl::precommit_txn(::google::protobuf::RpcController* controlle
             (int*)0x01, [&code, &msg, &response, &ctrl, &closure_guard, &sw, &instance_id](int*) {
                 response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
-                closure_guard.reset(nullptr);
                 LOG(INFO) << __PRETTY_FUNCTION__ << " finish " << ctrl->remote_side()
                           << " response:\n"
-                          << response->DebugString();
+                          << proto_to_json(*response);
+                closure_guard.reset(nullptr);
                 if (config::use_detailed_metrics && !instance_id.empty()) {
                     g_bvar_ms_precommit_txn.put(instance_id, sw.elapsed_us());
                 }
@@ -615,10 +615,10 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
                     response->clear_partition_ids();
                     response->clear_versions();
                 }
-                closure_guard.reset(nullptr);
                 LOG(INFO) << __PRETTY_FUNCTION__ << " finish " << ctrl->remote_side()
                           << " response:\n"
-                          << response->DebugString();
+                          << proto_to_json(*response);
+                closure_guard.reset(nullptr);
                 if (config::use_detailed_metrics && !instance_id.empty()) {
                     g_bvar_ms_commit_txn.put(instance_id, sw.elapsed_us());
                 }
@@ -1056,10 +1056,10 @@ void MetaServiceImpl::abort_txn(::google::protobuf::RpcController* controller,
             (int*)0x01, [&code, &msg, &response, &ctrl, &closure_guard, &sw, &instance_id](int*) {
                 response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
-                closure_guard.reset(nullptr);
                 LOG(INFO) << __PRETTY_FUNCTION__ << " finish " << ctrl->remote_side()
                           << " response:\n"
-                          << response->DebugString();
+                          << proto_to_json(*response);
+                closure_guard.reset(nullptr);
                 if (config::use_detailed_metrics && !instance_id.empty()) {
                     g_bvar_ms_abort_txn.put(instance_id, sw.elapsed_us());
                 }
@@ -1328,10 +1328,10 @@ void MetaServiceImpl::get_txn(::google::protobuf::RpcController* controller,
             (int*)0x01, [&code, &msg, &response, &ctrl, &closure_guard, &sw, &instance_id](int*) {
                 response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
-                closure_guard.reset(nullptr);
                 LOG(INFO) << __PRETTY_FUNCTION__ << " finish " << ctrl->remote_side()
                           << " response:\n"
-                          << response->DebugString();
+                          << proto_to_json(*response);
+                closure_guard.reset(nullptr);
                 if (config::use_detailed_metrics && !instance_id.empty()) {
                     g_bvar_ms_get_txn.put(instance_id, sw.elapsed_us());
                 }
@@ -1445,10 +1445,10 @@ void MetaServiceImpl::get_current_max_txn_id(::google::protobuf::RpcController* 
             (int*)0x01, [&code, &msg, &response, &ctrl, &closure_guard, &sw, &instance_id](int*) {
                 response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
-                closure_guard.reset(nullptr);
                 LOG(INFO) << __PRETTY_FUNCTION__ << " finish " << ctrl->remote_side()
                           << " response:\n"
-                          << response->DebugString();
+                          << proto_to_json(*response);
+                closure_guard.reset(nullptr);
                 if (config::use_detailed_metrics && !instance_id.empty()) {
                     g_bvar_ms_get_current_max_txn_id.put(instance_id, sw.elapsed_us());
                 }
@@ -1508,10 +1508,10 @@ void MetaServiceImpl::check_txn_conflict(::google::protobuf::RpcController* cont
             (int*)0x01, [&code, &msg, &response, &ctrl, &closure_guard, &sw, &instance_id](int*) {
                 response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
-                closure_guard.reset(nullptr);
                 LOG(INFO) << __PRETTY_FUNCTION__ << " finish " << ctrl->remote_side()
                           << " response:\n"
-                          << response->DebugString();
+                          << proto_to_json(*response);
+                closure_guard.reset(nullptr);
                 if (config::use_detailed_metrics && !instance_id.empty()) {
                     g_bvar_ms_check_txn_conflict.put(instance_id, sw.elapsed_us());
                 }
@@ -1624,9 +1624,9 @@ void MetaServiceImpl::get_version(::google::protobuf::RpcController* controller,
             (int*)0x01, [&code, &msg, &response, &ctrl, &closure_guard, &sw, &instance_id](int*) {
                 response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
-                closure_guard.reset(nullptr);
                 LOG(INFO) << "rpc from " << ctrl->remote_side()
-                          << " response=" << response->DebugString();
+                          << " response=" << proto_to_json(*response);
+                closure_guard.reset(nullptr);
                 if (config::use_detailed_metrics && !instance_id.empty()) {
                     g_bvar_ms_get_version.put(instance_id, sw.elapsed_us());
                 }
@@ -1803,9 +1803,9 @@ void MetaServiceImpl::create_tablets(::google::protobuf::RpcController* controll
             (int*)0x01, [&ret, &code, &msg, &response, &ctrl, &closure_guard, &sw, &instance_id](int*) {
                 response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
-                closure_guard.reset(nullptr);
                 LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
                           << ctrl->remote_side() << " " << msg;
+                closure_guard.reset(nullptr);
                 if (config::use_detailed_metrics && !instance_id.empty()) {
                     g_bvar_ms_create_tablets.put(instance_id, sw.elapsed_us());
                 }
@@ -2015,9 +2015,9 @@ void MetaServiceImpl::prepare_rowset(::google::protobuf::RpcController* controll
             (int*)0x01, [&code, &msg, &response, &ctrl, &closure_guard, &sw, &instance_id](int*) {
                 response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
-                closure_guard.reset(nullptr);
                 LOG(INFO) << (code == MetaServiceCode::OK ? "succ to " : "failed to ")
                           << __PRETTY_FUNCTION__ << " " << ctrl->remote_side() << " " << msg;
+                closure_guard.reset(nullptr);
                 if (config::use_detailed_metrics && !instance_id.empty()) {
                     g_bvar_ms_prepare_rowset.put(instance_id, sw.elapsed_us());
                 }
@@ -2128,9 +2128,9 @@ void MetaServiceImpl::commit_rowset(::google::protobuf::RpcController* controlle
             (int*)0x01, [&code, &msg, &response, &ctrl, &closure_guard, &sw, &instance_id](int*) {
                 response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
-                closure_guard.reset(nullptr);
                 LOG(INFO) << (code == MetaServiceCode::OK ? "succ to " : "failed to ")
                           << __PRETTY_FUNCTION__ << " " << ctrl->remote_side() << " " << msg;
+                closure_guard.reset(nullptr);
                 if (config::use_detailed_metrics && !instance_id.empty()) {
                     g_bvar_ms_commit_rowset.put(instance_id, sw.elapsed_us());
                 }
@@ -2362,9 +2362,9 @@ void MetaServiceImpl::get_rowset(::google::protobuf::RpcController* controller,
             (int*)0x01, [&code, &msg, &response, &ctrl, &closure_guard, &sw, &instance_id](int*) {
                 response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
-                closure_guard.reset(nullptr);
                 LOG(INFO) << (code == MetaServiceCode::OK ? "succ to " : "failed to ")
                           << __PRETTY_FUNCTION__ << " " << ctrl->remote_side() << " " << msg;
+                closure_guard.reset(nullptr);
                 if (config::use_detailed_metrics && !instance_id.empty()) {
                     g_bvar_ms_get_rowset.put(instance_id, sw.elapsed_us());
                 }
@@ -2505,10 +2505,10 @@ void MetaServiceImpl::prepare_index(::google::protobuf::RpcController* controlle
     std::string instance_id;
     std::unique_ptr<int, std::function<void(int*)>> defer_status(
             (int*)0x01, [&response, &ctrl, &closure_guard, &sw, &instance_id](int*) {
-                closure_guard.reset(nullptr);
                 LOG(INFO) << (response->status().code() == 0 ? "succ to " : "failed to ")
                           << __PRETTY_FUNCTION__ << " " << ctrl->remote_side() << " "
                           << response->status().msg();
+                closure_guard.reset(nullptr);
                 if (config::use_detailed_metrics && !instance_id.empty()) {
                     g_bvar_ms_prepare_index.put(instance_id, sw.elapsed_us());
                 }
@@ -2738,10 +2738,10 @@ void MetaServiceImpl::prepare_partition(::google::protobuf::RpcController* contr
     std::string instance_id;
     std::unique_ptr<int, std::function<void(int*)>> defer_status(
             (int*)0x01, [&response, &ctrl, &closure_guard, &sw, &instance_id](int*) {
-                closure_guard.reset(nullptr);
                 LOG(INFO) << (response->status().code() == 0 ? "succ to " : "failed to ")
                           << __PRETTY_FUNCTION__ << " " << ctrl->remote_side() << " "
                           << response->status().msg();
+                closure_guard.reset(nullptr);
                 if (config::use_detailed_metrics && !instance_id.empty()) {
                     g_bvar_ms_prepare_partition.put(instance_id, sw.elapsed_us());
                 }
@@ -2980,9 +2980,9 @@ void MetaServiceImpl::get_tablet_stats(::google::protobuf::RpcController* contro
             (int*)0x01, [&ret, &code, &msg, &response, &ctrl, &closure_guard, &sw, &instance_id](int*) {
                 response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
-                closure_guard.reset(nullptr);
                 LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
                           << ctrl->remote_side() << " " << msg;
+                closure_guard.reset(nullptr);
                 if (config::use_detailed_metrics && !instance_id.empty()) {
                     g_bvar_ms_get_tablet_stats.put(instance_id, sw.elapsed_us());
                 }
@@ -3472,9 +3472,9 @@ void MetaServiceImpl::get_obj_store_info(google::protobuf::RpcController* contro
             (int*)0x01, [&ret, &code, &msg, &response, &ctrl, &closure_guard, &sw, &instance_id](int*) {
                 response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
-                closure_guard.reset(nullptr);
                 LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
                           << ctrl->remote_side() << " " << msg;
+                closure_guard.reset(nullptr);
                 if (config::use_detailed_metrics && !instance_id.empty()) {
                     g_bvar_ms_get_obj_store_info.put(instance_id, sw.elapsed_us());
                 }
@@ -3548,9 +3548,9 @@ void MetaServiceImpl::alter_obj_store_info(google::protobuf::RpcController* cont
             (int*)0x01, [&ret, &code, &msg, &response, &ctrl, &closure_guard, &sw, &instance_id](int*) {
                 response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
-                closure_guard.reset(nullptr);
                 LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
                           << ctrl->remote_side() << " " << msg;
+                closure_guard.reset(nullptr);
                 if (config::use_detailed_metrics && !instance_id.empty()) {
                     g_bvar_ms_alter_obj_store_info.put(instance_id, sw.elapsed_us());
                 }
@@ -3755,9 +3755,9 @@ void MetaServiceImpl::create_instance(google::protobuf::RpcController* controlle
             (int*)0x01, [&ret, &code, &msg, &response, &ctrl, &closure_guard, &sw, &instance_id](int*) {
                 response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
-                closure_guard.reset(nullptr);
                 LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
                           << ctrl->remote_side() << " " << msg;
+                closure_guard.reset(nullptr);
                 if (config::use_detailed_metrics && !instance_id.empty()) {
                     g_bvar_ms_create_instance.put(instance_id, sw.elapsed_us());
                 }
@@ -3870,9 +3870,9 @@ void MetaServiceImpl::alter_instance(google::protobuf::RpcController* controller
             (int*)0x01, [&code, &msg, &response, &ctrl, &closure_guard, &sw, &instance_id](int*) {
                 response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
-                closure_guard.reset(nullptr);
                 LOG(INFO) << (code == MetaServiceCode::OK ? "succ to " : "failed to ")
                           << __PRETTY_FUNCTION__ << " " << ctrl->remote_side() << " " << msg;
+                closure_guard.reset(nullptr);
                 if (config::use_detailed_metrics && !instance_id.empty()) {
                     g_bvar_ms_alter_instance.put(instance_id, sw.elapsed_us());
                 }
@@ -3997,9 +3997,9 @@ void MetaServiceImpl::alter_cluster(google::protobuf::RpcController* controller,
                 msg = msg.empty() ? "OK" : msg;
                 response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
-                closure_guard.reset(nullptr);
                 LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
                           << ctrl->remote_side() << " " << msg;
+                closure_guard.reset(nullptr);
                 if (config::use_detailed_metrics && !instance_id.empty()) {
                     g_bvar_ms_alter_cluster.put(instance_id, sw.elapsed_us());
                 }
@@ -4175,9 +4175,9 @@ void MetaServiceImpl::get_cluster(google::protobuf::RpcController* controller,
             (int*)0x01, [&code, &msg, &response, &ctrl, &closure_guard, &sw, &instance_id](int*) {
                 response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
-                closure_guard.reset(nullptr);
                 LOG(INFO) << (code == MetaServiceCode::OK ? "succ to " : "failed to ")
                           << __PRETTY_FUNCTION__ << " " << ctrl->remote_side() << " " << msg;
+                closure_guard.reset(nullptr);
                 if (config::use_detailed_metrics && !instance_id.empty()) {
                     g_bvar_ms_get_cluster.put(instance_id, sw.elapsed_us());
                 }
@@ -4317,9 +4317,9 @@ void MetaServiceImpl::create_stage(::google::protobuf::RpcController* controller
             (int*)0x01, [&ret, &code, &msg, &response, &ctrl, &closure_guard, &sw, &instance_id](int*) {
                 response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
-                closure_guard.reset(nullptr);
                 LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
                           << ctrl->remote_side() << " " << msg;
+                closure_guard.reset(nullptr);
                 if (config::use_detailed_metrics && !instance_id.empty()) {
                     g_bvar_ms_create_stage.put(instance_id, sw.elapsed_us());
                 }
@@ -4454,9 +4454,9 @@ void MetaServiceImpl::get_stage(google::protobuf::RpcController* controller,
             (int*)0x01, [&ret, &code, &msg, &response, &ctrl, &closure_guard, &sw, &instance_id](int*) {
                 response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
-                closure_guard.reset(nullptr);
                 LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
                           << ctrl->remote_side() << " " << msg;
+                closure_guard.reset(nullptr);
                 if (config::use_detailed_metrics && !instance_id.empty()) {
                     g_bvar_ms_get_stage.put(instance_id, sw.elapsed_us());
                 }
@@ -4658,9 +4658,9 @@ void MetaServiceImpl::begin_copy(google::protobuf::RpcController* controller,
             (int*)0x01, [&ret, &code, &msg, &response, &ctrl, &closure_guard, &sw, &instance_id](int*) {
                 response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
-                closure_guard.reset(nullptr);
                 LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
                           << ctrl->remote_side() << " " << msg;
+                closure_guard.reset(nullptr);
                 if (config::use_detailed_metrics && !instance_id.empty()) {
                     g_bvar_ms_begin_copy.put(instance_id, sw.elapsed_us());
                 }
@@ -4810,9 +4810,9 @@ void MetaServiceImpl::finish_copy(google::protobuf::RpcController* controller,
             (int*)0x01, [&ret, &code, &msg, &response, &ctrl, &closure_guard, &sw, &instance_id](int*) {
                 response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
-                closure_guard.reset(nullptr);
                 LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
                           << ctrl->remote_side() << " " << msg;
+                closure_guard.reset(nullptr);
                 if (config::use_detailed_metrics && !instance_id.empty()) {
                     g_bvar_ms_finish_copy.put(instance_id, sw.elapsed_us());
                 }
@@ -4925,9 +4925,9 @@ void MetaServiceImpl::get_copy_files(google::protobuf::RpcController* controller
             (int*)0x01, [&ret, &code, &msg, &response, &ctrl, &closure_guard, &sw, &instance_id](int*) {
                 response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
-                closure_guard.reset(nullptr);
                 LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
                           << ctrl->remote_side() << " " << msg;
+                closure_guard.reset(nullptr);
                 if (config::use_detailed_metrics && !instance_id.empty()) {
                     g_bvar_ms_get_copy_files.put(instance_id, sw.elapsed_us());
                 }

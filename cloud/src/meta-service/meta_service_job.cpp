@@ -35,10 +35,10 @@
     std::unique_ptr<int, std::function<void(int*)>> defer_status((int*)0x01, [&](int*) {        \
         response->mutable_status()->set_code(code);                                             \
         response->mutable_status()->set_msg(msg);                                               \
-        closure_guard.reset(nullptr);                                                           \
         LOG(INFO) << "finish " << rpc_name << " from " << ctrl->remote_side() << " ret=" << ret \
                   << " code=" << code << " msg=\"" << msg << "\""                               \
-                  << " response=" << response->DebugString();                                   \
+                  << " response=" << proto_to_json(*response);                                  \
+        closure_guard.reset(nullptr);                                                           \
         if (config::use_detailed_metrics && !instance_id.empty()) {                             \
             g_bvar_ms_##func_name.put(instance_id, sw.elapsed_us());                            \
         }                                                                                       \
