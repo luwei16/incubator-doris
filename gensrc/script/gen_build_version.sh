@@ -27,13 +27,13 @@
 
 set -eo pipefail
 
-build_version_prefix="doris"
-build_version_major=0
+build_version_prefix="selectdb"
+build_version_major=2
 build_version_minor=0
 build_version_patch=0
 build_version_rc_version="trunk"
 
-build_version="${build_version_prefix}-${build_version_major}.${build_version_minor}.${build_version_patch}-${build_version_rc_version}"
+build_version="${build_version_major}.${build_version_minor}.${build_version_patch}"
 
 unset LANG
 unset LC_CTYPE
