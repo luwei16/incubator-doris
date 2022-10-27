@@ -132,6 +132,7 @@ import org.apache.doris.cluster.BaseParam;
 import org.apache.doris.cluster.ClusterNamespace;
 import org.apache.doris.common.AnalysisException;
 import org.apache.doris.common.CaseSensibility;
+import org.apache.doris.common.Config;
 import org.apache.doris.common.ConfigBase;
 import org.apache.doris.common.DdlException;
 import org.apache.doris.common.ErrorCode;
@@ -189,6 +190,7 @@ import org.apache.doris.thrift.TUnit;
 import org.apache.doris.transaction.GlobalTransactionMgrInterface;
 import org.apache.doris.transaction.TransactionStatus;
 
+import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Strings;
 import com.google.common.collect.Lists;
@@ -574,15 +576,31 @@ public class ShowExecutor {
     private void handleShowCluster() throws AnalysisException {
         final ShowClusterStmt showStmt = (ShowClusterStmt) stmt;
         final List<List<String>> rows = Lists.newArrayList();
-        final List<String> clusterNames = ctx.getEnv().getClusterNames();
-
+        List<String> clusterNames = null;
+        if (!Config.cloud_unique_id.isEmpty()) {
+            clusterNames = Env.getCurrentSystemInfo().getCloudClusterNames();
+        } else {
+            clusterNames = ctx.getEnv().getClusterNames();
+        }
         final Set<String> clusterNameSet = Sets.newTreeSet();
         for (String cluster : clusterNames) {
             clusterNameSet.add(cluster);
         }
 
         for (String clusterName : clusterNameSet) {
-            rows.add(Lists.newArrayList(clusterName));
+            ArrayList<String> row = Lists.newArrayList(clusterName);
+            // current_used, users
+            if (!Config.cloud_unique_id.isEmpty()) {
+                row.add(clusterName.equals(ctx.getCloudCluster()) ? "TRUE" : "FALSE");
+                List<String> users = Env.getCurrentEnv().getAuth().getCloudClusterUsers(clusterName);
+                // non-root do not display root information
+                if (!"root".equals(ctx.getQualifiedUser())) {
+                    users.remove("root");
+                }
+                String result = Joiner.on(", ").join(users);
+                row.add(result);
+            }
+            rows.add(row);
         }
 
         resultSet = new ShowResultSet(showStmt.getMetaData(), rows);

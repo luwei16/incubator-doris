@@ -4902,22 +4902,13 @@ public class Env {
                     + "' for cloud cluster '" + clusterName + "'", ErrorCode.ERR_CLUSTER_NO_PERMISSIONS);
         }
 
-        // check the privilege of the cluster to be used
-        String user = ClusterNamespace.getNameFromFullName(
-                ConnectContext.get().getCurrentUserIdentity().getQualifiedUser());
-
-        if (!Env.getCurrentSystemInfo().getMysqlUserNameToClusterPb().containsKey(user)) {
-            LOG.info("mysql user to cluster map can not get user: {}, can't use this cluster {}", user, clusterName);
-            throw new DdlException("You can not use this cluster, Please switch a cluster which you have permission",
-                    ErrorCode.ERR_CLUSTER_NO_PERMISSIONS);
+        if (!Env.getCurrentSystemInfo().getCloudClusterNames().contains(clusterName)) {
+            LOG.debug("current instance does not have a cluster name :{}", clusterName);
+            ctx.getState().setError(ErrorCode.ERR_ClOUD_CLUSTER_ERROR,
+                    String.format("Cluster %s not exist", clusterName));
+            return null;
         }
 
-        if (Env.getCurrentSystemInfo().getMysqlUserNameToClusterPb()
-                    .get(user).stream().noneMatch(cpb -> cpb.getClusterName().equals(clusterName))) {
-            LOG.info("user: {}, can't use this cluster {}", user, clusterName);
-            throw new DdlException("You can not use this cluster, Please switch a cluster which you have permission",
-                    ErrorCode.ERR_CLUSTER_NO_PERMISSIONS);
-        }
         try {
             Env.getCurrentSystemInfo().addCloudCluster(clusterName, "");
         } catch (UserException e) {

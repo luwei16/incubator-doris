@@ -19,6 +19,7 @@ package org.apache.doris.mysql.privilege;
 
 import org.apache.doris.analysis.UserIdentity;
 import org.apache.doris.catalog.Env;
+import org.apache.doris.cluster.ClusterNamespace;
 import org.apache.doris.common.AnalysisException;
 import org.apache.doris.common.Config;
 import org.apache.doris.common.DdlException;
@@ -38,6 +39,7 @@ import org.apache.logging.log4j.Logger;
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -147,6 +149,31 @@ public class UserPropertyMgr implements Writable {
         }
         return existProperty.getMaxQueryInstances();
     }
+
+    public String getDefaultCloudCluster(String user) throws DdlException {
+        UserProperty property = propertyMap.get(user);
+        if (property == null) {
+            throw new DdlException("Unknown user(" + user + ")");
+        }
+        return property.getDefaultCloudCluster();
+    }
+
+    public List<String> getCloudClusterUsers(List<String> users, String clusterName) {
+        List<String> ret = new ArrayList<>();
+        users.forEach(
+                u -> {
+                    UserProperty userProperty = propertyMap.get(u);
+                    if (userProperty == null) {
+                        return;
+                    }
+                    if (clusterName.equals(userProperty.getDefaultCloudCluster())) {
+                        ret.add(ClusterNamespace.getNameFromFullName(u));
+                    }
+                }
+        );
+        return ret;
+    }
+
 
     public Set<Tag> getResourceTags(String qualifiedUser) {
         UserProperty existProperty = propertyMap.get(qualifiedUser);

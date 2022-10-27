@@ -22,6 +22,7 @@ import org.apache.doris.catalog.Env;
 import org.apache.doris.catalog.ResourceGroup;
 import org.apache.doris.catalog.ResourceType;
 import org.apache.doris.common.AnalysisException;
+import org.apache.doris.common.Config;
 import org.apache.doris.common.DdlException;
 import org.apache.doris.common.FeMetaVersion;
 import org.apache.doris.common.LoadException;
@@ -70,6 +71,8 @@ public class UserProperty implements Writable {
     private static final String PROP_QUOTA = "quota";
     private static final String PROP_DEFAULT_LOAD_CLUSTER = "default_load_cluster";
 
+    public static final String DEFAULT_CLOUD_CLUSTER = "default_cloud_cluster";
+
     // for system user
     public static final Set<Pattern> ADVANCED_PROPERTIES = Sets.newHashSet();
     // for normal user
@@ -84,6 +87,8 @@ public class UserProperty implements Writable {
     // load cluster
     private String defaultLoadCluster = null;
     private Map<String, DppConfig> clusterToDppConfig = Maps.newHashMap();
+
+    private String defaultCloudCluster = null;
 
     /*
      *  We keep white list here to save Baidu domain name (BNS) or DNS as white list.
@@ -115,6 +120,7 @@ public class UserProperty implements Writable {
         COMMON_PROPERTIES.add(Pattern.compile("^" + PROP_DEFAULT_LOAD_CLUSTER + "$", Pattern.CASE_INSENSITIVE));
         COMMON_PROPERTIES.add(Pattern.compile("^" + PROP_LOAD_CLUSTER + "." + DppConfig.CLUSTER_NAME_REGEX + ".",
                 Pattern.CASE_INSENSITIVE));
+        COMMON_PROPERTIES.add(Pattern.compile("^" + DEFAULT_CLOUD_CLUSTER + "$", Pattern.CASE_INSENSITIVE));
     }
 
     public UserProperty() {
@@ -186,6 +192,7 @@ public class UserProperty implements Writable {
 
         UserResource newResource = resource.getCopiedUserResource();
         String newDefaultLoadCluster = defaultLoadCluster;
+        String newDefaultCloudCluster = defaultCloudCluster;
         Map<String, DppConfig> newDppConfigs = Maps.newHashMap(clusterToDppConfig);
 
         // update
@@ -257,6 +264,15 @@ public class UserProperty implements Writable {
                 }
 
                 newDefaultLoadCluster = value;
+            } else if (keyArr[0].equalsIgnoreCase(DEFAULT_CLOUD_CLUSTER)) {
+                // set property "DEFAULT_CLOUD_CLUSTER" = "cluster1"
+                if (keyArr.length != 1) {
+                    throw new DdlException(DEFAULT_CLOUD_CLUSTER + " format error");
+                }
+                if (value == null) {
+                    value = "";
+                }
+                newDefaultCloudCluster = value;
             } else if (keyArr[0].equalsIgnoreCase(PROP_MAX_QUERY_INSTANCES)) {
                 // set property "max_query_instances" = "1000"
                 if (keyArr.length != 1) {
@@ -343,6 +359,7 @@ public class UserProperty implements Writable {
             defaultLoadCluster = null;
         }
         clusterToDppConfig = newDppConfigs;
+        defaultCloudCluster = newDefaultCloudCluster;
     }
 
     private long getLongProperty(String key, String value, String[] keyArr, String propName) throws DdlException {
@@ -421,6 +438,10 @@ public class UserProperty implements Writable {
         return resource;
     }
 
+    public String getDefaultCloudCluster() {
+        return defaultCloudCluster;
+    }
+
     public String getDefaultLoadCluster() {
         return defaultLoadCluster;
     }
@@ -481,12 +502,23 @@ public class UserProperty implements Writable {
             result.add(Lists.newArrayList(PROP_QUOTA + dot + entry.getKey(), entry.getValue().toString()));
         }
 
-        // load cluster
-        if (defaultLoadCluster != null) {
-            result.add(Lists.newArrayList(PROP_DEFAULT_LOAD_CLUSTER, defaultLoadCluster));
-        } else {
-            result.add(Lists.newArrayList(PROP_DEFAULT_LOAD_CLUSTER, ""));
+        // ATTN: cloud mode doesn't show default_load_cluster
+        if (Config.cloud_unique_id.isEmpty()) {
+            // load cluster
+            if (defaultLoadCluster != null) {
+                result.add(Lists.newArrayList(PROP_DEFAULT_LOAD_CLUSTER, defaultLoadCluster));
+            } else {
+                result.add(Lists.newArrayList(PROP_DEFAULT_LOAD_CLUSTER, ""));
+            }
         }
+
+        // default cloud cluster
+        if (defaultCloudCluster != null) {
+            result.add(Lists.newArrayList(DEFAULT_CLOUD_CLUSTER, defaultCloudCluster));
+        } else {
+            result.add(Lists.newArrayList(DEFAULT_CLOUD_CLUSTER, ""));
+        }
+
 
         for (Map.Entry<String, DppConfig> entry : clusterToDppConfig.entrySet()) {
             String cluster = entry.getKey();
@@ -565,6 +597,14 @@ public class UserProperty implements Writable {
             entry.getValue().write(out);
         }
 
+        // default cloud cluster
+        if (defaultCloudCluster == null) {
+            out.writeBoolean(false);
+        } else {
+            out.writeBoolean(true);
+            Text.writeString(out, defaultCloudCluster);
+        }
+
         // whiteList
         whiteList.write(out);
 
@@ -594,6 +634,11 @@ public class UserProperty implements Writable {
             DppConfig dppConfig = new DppConfig();
             dppConfig.readFields(in);
             clusterToDppConfig.put(cluster, dppConfig);
+        }
+
+        // default cloud cluster
+        if (in.readBoolean()) {
+            defaultCloudCluster = Text.readString(in);
         }
 
         // whiteList

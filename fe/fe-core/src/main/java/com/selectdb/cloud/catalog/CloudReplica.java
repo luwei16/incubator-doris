@@ -17,6 +17,7 @@
 
 package com.selectdb.cloud.catalog;
 
+import com.google.common.base.Strings;
 import com.google.gson.annotations.SerializedName;
 import org.apache.doris.catalog.Env;
 import org.apache.doris.catalog.Partition;
@@ -96,6 +97,14 @@ public class CloudReplica extends Replica {
         // Not in a connect session
         if (ConnectContext.get() != null) {
             cluster = ConnectContext.get().getCloudCluster();
+        }
+        // check default cluster valid.
+        if (!Strings.isNullOrEmpty(cluster)) {
+            boolean exist = Env.getCurrentSystemInfo().getCloudClusterNames().contains(cluster);
+            if (!exist) {
+                //can't use this default cluster, plz change another
+                return -1;
+            }
         }
 
         if (cluster == null || cluster.isEmpty()) {

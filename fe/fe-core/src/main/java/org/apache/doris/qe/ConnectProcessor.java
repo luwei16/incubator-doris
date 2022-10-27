@@ -138,24 +138,13 @@ public class ConnectProcessor {
             return null;
         }
 
-        // check the privilege of the cluster to be used
-        String user = ClusterNamespace.getNameFromFullName(
-                ConnectContext.get().getCurrentUserIdentity().getQualifiedUser());
-
-        if (!Env.getCurrentSystemInfo().getMysqlUserNameToClusterPb().containsKey(user)) {
-            LOG.debug("mysql user to cluster map can not get user: {}, can't use this cluster {}", user, clusterName);
-            ctx.getState().setError(ErrorCode.ERR_CLUSTER_NO_PERMISSIONS,
-                    "You can not use this cluster, Please switch a cluster which you have permission");
+        if (!Env.getCurrentSystemInfo().getCloudClusterNames().contains(clusterName)) {
+            LOG.debug("current instance does not have a cluster name :{}", clusterName);
+            ctx.getState().setError(ErrorCode.ERR_ClOUD_CLUSTER_ERROR,
+                    String.format("Cluster %s not exist", clusterName));
             return null;
         }
 
-        if (Env.getCurrentSystemInfo().getMysqlUserNameToClusterPb()
-                    .get(user).stream().noneMatch(cpb -> cpb.getClusterName().equals(clusterName))) {
-            LOG.debug("user: {}, can't use this cluster {}", user, clusterName);
-            ctx.getState().setError(ErrorCode.ERR_CLUSTER_NO_PERMISSIONS,
-                    "You can not use this cluster, Please switch a cluster which you have permission");
-            return null;
-        }
         try {
             Env.getCurrentSystemInfo().addCloudCluster(clusterName, "");
         } catch (UserException e) {

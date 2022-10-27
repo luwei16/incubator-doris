@@ -210,7 +210,7 @@ public class Tablet extends MetaObject implements Writable {
             ReplicaState state = replica.getState();
             long backendId = replica.getBackendId();
             if (backendId == -1 && !Config.cloud_unique_id.isEmpty()) {
-                throw new UserException(InternalErrorCode.META_NOT_FOUND_ERR, "Not using any cloud clusters, "
+                throw new UserException(InternalErrorCode.META_NOT_FOUND_ERR, "Not using valid cloud clusters, "
                     + "please use a cluster before issuing any queries");
             }
             if (infoService.checkBackendLoadAvailable(backendId) && state.canLoad()) {

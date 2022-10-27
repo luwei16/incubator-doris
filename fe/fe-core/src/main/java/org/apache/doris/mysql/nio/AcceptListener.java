@@ -18,10 +18,8 @@
 package org.apache.doris.mysql.nio;
 
 import org.apache.doris.catalog.Env;
-import org.apache.doris.cluster.ClusterNamespace;
 import org.apache.doris.common.Config;
 import org.apache.doris.common.ErrorCode;
-import org.apache.doris.common.UserException;
 import org.apache.doris.mysql.MysqlProto;
 import org.apache.doris.qe.ConnectContext;
 import org.apache.doris.qe.ConnectProcessor;
@@ -82,19 +80,10 @@ public class AcceptListener implements ChannelListener<AcceptingChannel<StreamCo
                         throw new AfterConnectedException("Reach limit of connections");
                     }
                     if (!Config.cloud_unique_id.isEmpty()) {
-                        String userName = ClusterNamespace.getNameFromFullName(context.getQualifiedUser());
-                        if (Strings.isNullOrEmpty(userName)) {
-                            LOG.warn("use cloud cluster, but can't get user name.");
-                        }
-
-                        try {
-                            String clusterName = Env.getCurrentSystemInfo().addCloudCluster("", userName);
-                            LOG.info("Success set userName {} clusterName {}", userName, clusterName);
-                            context.setCloudCluster(clusterName);
-                        } catch (UserException e) {
-                            context.getState().setError(e.getMysqlErrorCode(), e.getMessage());
-                            LOG.warn("cant get userName {} cluster info, errCode: {} errMsg: {}", userName,
-                                    e.getMysqlErrorCode(), e.getMessage());
+                        String defaultCloudCluster = Env.getCurrentEnv().getAuth()
+                                .getDefaultCloudCluster(context.getQualifiedUser());
+                        if (!Strings.isNullOrEmpty(defaultCloudCluster)) {
+                            context.setCloudCluster(defaultCloudCluster);
                         }
                     }
                     context.setStartTime();
