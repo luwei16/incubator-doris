@@ -187,6 +187,7 @@ import com.selectdb.cloud.catalog.CloudReplica;
 import com.selectdb.cloud.proto.SelectdbCloud;
 import com.selectdb.cloud.proto.SelectdbCloud.AlterClusterRequest.Operation;
 import com.selectdb.cloud.proto.SelectdbCloud.FinishCopyRequest.Action;
+import com.selectdb.cloud.proto.SelectdbCloud.MetaServiceCode;
 import com.selectdb.cloud.proto.SelectdbCloud.MetaServiceResponseStatus;
 import com.selectdb.cloud.proto.SelectdbCloud.ObjectFilePB;
 import com.selectdb.cloud.proto.SelectdbCloud.StagePB;
@@ -3875,17 +3876,34 @@ public class InternalCatalog implements CatalogIf<Database> {
             builder.setStageName(stageName);
         }
         SelectdbCloud.GetStageResponse response = null;
-        try {
-            response = MetaServiceProxy.getInstance().getStage(builder.build());
-            if (response.getStatus().getCode() != SelectdbCloud.MetaServiceCode.OK) {
+        int retryTime = 0;
+        while (retryTime++ < 3) {
+            try {
+                response = MetaServiceProxy.getInstance().getStage(builder.build());
+                LOG.debug("get stage, stageType={}, userName={}, stageName:{}, retry:{}, response: {}",
+                        stageType, userName, stageName, retryTime, response);
+                // just retry kv conflict
+                if (response.getStatus().getCode() != MetaServiceCode.KV_TXN_CONFLICT
+                        && response.getStatus().getCode() != MetaServiceCode.KV_TXN_COMMIT_ERR) {
+                    break;
+                }
+            } catch (RpcException e) {
                 LOG.warn("getStage response: {} ", response);
-                throw new DdlException(response.getStatus().getMsg());
             }
-            return response.getStageList();
-        } catch (RpcException e) {
-            LOG.warn("getStage response: {} ", response);
-            throw new DdlException(e.getMessage());
+            // sleep random millis [20, 200] ms, avoid txn conflict
+            int randomMillis = 20 + (int) (Math.random() * (200 - 20));
+            LOG.debug("randomMillis:{}", randomMillis);
+            try {
+                Thread.sleep(randomMillis);
+            } catch (InterruptedException e) {
+                LOG.info("InterruptedException: ", e);
+            }
         }
+        if (response.getStatus().getCode() != SelectdbCloud.MetaServiceCode.OK) {
+            LOG.warn("getStage response: {} ", response);
+            throw new DdlException("internal error, try later");
+        }
+        return response.getStageList();
     }
 
     public List<ObjectFilePB> beginCopy(String stageId, SelectdbCloud.StagePB.StageType stageType, long tableId,
