@@ -1852,6 +1852,9 @@ public class Config extends ConfigBase {
     @ConfField
     public static boolean replication_num_forced_in_cloud_mode = false;
 
+    @ConfField
+    public static boolean ignore_unsupported_properties_in_cloud_mode = false;
+
     @ConfField(mutable = false)
     public static int statement_submitter_threads_num = 64;
 

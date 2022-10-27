@@ -1767,6 +1767,7 @@ public class InternalCatalog implements CatalogIf<Database> {
                     throw new DdlException("Replication property are not allowed to be set in cloud mode");
                 }
             }
+            PropertyAnalyzer.checkCloudTableProperty(stmt.getProperties());
         } else {
             if (replicaAlloc.isNotSet()) {
                 replicaAlloc = ReplicaAllocation.DEFAULT_ALLOCATION;

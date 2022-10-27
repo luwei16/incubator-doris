@@ -48,6 +48,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -660,6 +661,29 @@ public class PropertyAnalyzer {
             tagMap.put(defaultValue.type, defaultValue.value);
         }
         return tagMap;
+    }
+
+    public static void checkCloudTableProperty(Map<String, String> properties) throws AnalysisException {
+        if (Config.ignore_unsupported_properties_in_cloud_mode) {
+            return;
+        }
+
+        List<String> unsupportedProperties = new ArrayList<String>();
+        unsupportedProperties.add(PROPERTIES_INMEMORY);
+
+        unsupportedProperties.add(PROPERTIES_STORAGE_MEDIUM);
+        unsupportedProperties.add(PROPERTIES_STORAGE_FORMAT);
+        unsupportedProperties.add(PROPERTIES_STORAGE_POLICY);
+        unsupportedProperties.add(PROPERTIES_REMOTE_STORAGE_POLICY);
+        unsupportedProperties.add(PROPERTIES_STORAGE_COOLDOWN_TIME);
+        unsupportedProperties.add(PROPERTIES_DISABLE_AUTO_COMPACTION);
+        unsupportedProperties.add(ENABLE_UNIQUE_KEY_MERGE_ON_WRITE);
+
+        for (String property : unsupportedProperties) {
+            if (properties.containsKey(property)) {
+                throw new AnalysisException("Unsupported property: " + property + " in cloud mode");
+            }
+        }
     }
 
     // There are 2 kinds of replication property:
