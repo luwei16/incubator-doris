@@ -23,6 +23,7 @@ import org.apache.doris.analysis.SysVariableDesc;
 import org.apache.doris.catalog.Env;
 import org.apache.doris.catalog.Type;
 import org.apache.doris.common.AnalysisException;
+import org.apache.doris.common.Config;
 import org.apache.doris.common.DdlException;
 import org.apache.doris.common.ErrorCode;
 import org.apache.doris.common.ErrorReport;
@@ -150,6 +151,10 @@ public class VariableMgr {
                     } else if (value.equalsIgnoreCase("OFF")
                             || value.equalsIgnoreCase("FALSE")
                             || value.equalsIgnoreCase("0")) {
+                        if (!Config.cloud_unique_id.isEmpty()
+                                && field.getName().equals("enableVectorizedEngine")) {
+                            ErrorReport.reportDdlException(ErrorCode.ERR_WRONG_VALUE_FOR_VAR, attr.name(), value);
+                        }
                         field.setBoolean(obj, false);
                     } else {
                         throw new IllegalAccessException();
