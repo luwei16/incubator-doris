@@ -71,4 +71,7 @@ CONF_Int32(expired_txn_scan_key_nums, "1000");
 // This is to avoid too many version num.
 CONF_Int64(max_tablet_version_num, "2000");
 
+// metrics config
+CONF_Bool(use_detailed_metrics, "true");
+
 } // namespace selectdb::config

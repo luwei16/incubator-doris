@@ -1,9 +1,12 @@
 
 // clang-format off
 #include <gen_cpp/selectdb_cloud.pb.h>
+#include "common/stopwatch.h"
 #include "meta_service.h"
 
 #include "meta-service/keys.h"
+#include "common/bvars.h"
+#include "common/config.h"
 #include "common/logging.h"
 #include "common/util.h"
 #include "common/sync_point.h"
@@ -15,7 +18,9 @@
 #include <chrono>
 // clang-format on
 
-#define RPC_PREPROCESS()                                                                        \
+
+#define RPC_PREPROCESS(func_name)                                                               \
+    StopWatch sw;                                                                               \
     auto ctrl = static_cast<brpc::Controller*>(controller);                                     \
     std::string rpc_name(__PRETTY_FUNCTION__);                                                  \
     rpc_name = rpc_name.substr(0, rpc_name.find('(')) + "()";                                   \
@@ -26,12 +31,17 @@
     [[maybe_unused]] std::stringstream ss;                                                      \
     [[maybe_unused]] MetaServiceCode code = MetaServiceCode::OK;                                \
     [[maybe_unused]] std::string msg = "OK";                                                    \
+    [[maybe_unused]] std::string instance_id;                                                   \
     std::unique_ptr<int, std::function<void(int*)>> defer_status((int*)0x01, [&](int*) {        \
         response->mutable_status()->set_code(code);                                             \
         response->mutable_status()->set_msg(msg);                                               \
+        closure_guard.reset(nullptr);                                                           \
         LOG(INFO) << "finish " << rpc_name << " from " << ctrl->remote_side() << " ret=" << ret \
                   << " code=" << code << " msg=\"" << msg << "\""                               \
                   << " response=" << response->DebugString();                                   \
+        if (config::use_detailed_metrics && !instance_id.empty()) {                             \
+            g_bvar_ms_##func_name.put(instance_id, sw.elapsed_us());                            \
+        }                                                                                       \
     });
 
 // Empty string not is not processed
@@ -281,9 +291,9 @@ void MetaServiceImpl::start_tablet_job(::google::protobuf::RpcController* contro
                                        const ::selectdb::StartTabletJobRequest* request,
                                        ::selectdb::StartTabletJobResponse* response,
                                        ::google::protobuf::Closure* done) {
-    RPC_PREPROCESS();
+    RPC_PREPROCESS(start_tablet_job);
     std::string cloud_unique_id = request->cloud_unique_id();
-    std::string instance_id = get_instance_id(resource_mgr_, cloud_unique_id);
+    instance_id = get_instance_id(resource_mgr_, cloud_unique_id);
     if (instance_id.empty()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
         SS << "cannot find instance_id with cloud_unique_id="
@@ -917,9 +927,9 @@ void MetaServiceImpl::finish_tablet_job(::google::protobuf::RpcController* contr
                                         const ::selectdb::FinishTabletJobRequest* request,
                                         ::selectdb::FinishTabletJobResponse* response,
                                         ::google::protobuf::Closure* done) {
-    RPC_PREPROCESS();
+    RPC_PREPROCESS(finish_tablet_job);
     std::string cloud_unique_id = request->cloud_unique_id();
-    std::string instance_id = get_instance_id(resource_mgr_, cloud_unique_id);
+    instance_id = get_instance_id(resource_mgr_, cloud_unique_id);
     if (instance_id.empty()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
         SS << "cannot find instance_id with cloud_unique_id="

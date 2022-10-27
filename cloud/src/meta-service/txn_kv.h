@@ -394,7 +394,7 @@ public:
 
     /**
      *
-     *@return 0 for success otehrwise error
+     *@return 0 for success, -1 for conflict, -2 for otehrwise error
      */
     int commit() override;
 

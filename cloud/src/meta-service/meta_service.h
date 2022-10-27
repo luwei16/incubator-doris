@@ -192,23 +192,23 @@ public:
 
 private:
     // returns 0 for index exists, 1 for not exist, negative for error
-    int index_exists(const ::selectdb::IndexRequest* request,
+    int index_exists(std::string& instance_id, const ::selectdb::IndexRequest* request,
                      ::selectdb::MetaServiceGenericResponse* response);
 
-    void put_recycle_index_kv(const ::selectdb::IndexRequest* request,
+    void put_recycle_index_kv(std::string& instance_id, const ::selectdb::IndexRequest* request,
                               ::selectdb::MetaServiceGenericResponse* response);
 
-    void remove_recycle_index_kv(const ::selectdb::IndexRequest* request,
+    void remove_recycle_index_kv(std::string& instance_id, const ::selectdb::IndexRequest* request,
                                  ::selectdb::MetaServiceGenericResponse* response);
 
     // returns 0 for partition exists, 1 for not exist, negative for error
-    int partition_exists(const ::selectdb::PartitionRequest* request,
+    int partition_exists(std::string& instance_id, const ::selectdb::PartitionRequest* request,
                          ::selectdb::MetaServiceGenericResponse* response);
 
-    void put_recycle_partition_kv(const ::selectdb::PartitionRequest* request,
+    void put_recycle_partition_kv(std::string& instance_id, const ::selectdb::PartitionRequest* request,
                                   ::selectdb::MetaServiceGenericResponse* response);
 
-    void remove_recycle_partition_kv(const ::selectdb::PartitionRequest* request,
+    void remove_recycle_partition_kv(std::string& instance_id, const ::selectdb::PartitionRequest* request,
                                      ::selectdb::MetaServiceGenericResponse* response);
 
     static std::vector<std::pair<int64_t, int64_t>> calc_sync_versions(

@@ -7,6 +7,8 @@
 #include "common/config.h"
 #include "common/logging.h"
 #include "common/util.h"
+#include "common/bvars.h"
+#include "common/stopwatch.h"
 #include "common/sync_point.h"
 
 #include "brpc/channel.h"
@@ -18,6 +20,7 @@
 #include "rapidjson/schema.h"
 
 #include <chrono>
+#include <cstddef>
 #include <iomanip>
 #include <ios>
 #include <limits>
@@ -31,7 +34,6 @@
 using namespace std::chrono;
 
 namespace selectdb {
-
 /**
  * Nodtifies other metaservice to refresh instance
  */
@@ -91,6 +93,7 @@ void MetaServiceImpl::begin_txn(::google::protobuf::RpcController* controller,
                                 const ::selectdb::BeginTxnRequest* request,
                                 ::selectdb::BeginTxnResponse* response,
                                 ::google::protobuf::Closure* done) {
+    StopWatch sw;
     auto ctrl = static_cast<brpc::Controller*>(controller);
     LOG(INFO) << __PRETTY_FUNCTION__ << " rpc from " << ctrl->remote_side() << " request:\n"
               << request->DebugString();
@@ -99,14 +102,18 @@ void MetaServiceImpl::begin_txn(::google::protobuf::RpcController* controller,
     MetaServiceCode code = MetaServiceCode::OK;
     std::string msg = "OK";
     [[maybe_unused]] std::stringstream ss;
-
+    std::string instance_id;
     std::unique_ptr<int, std::function<void(int*)>> defer_status(
-            (int*)0x01, [&code, &msg, &response, &ctrl](int*) {
+            (int*)0x01, [&code, &msg, &response, &ctrl, &closure_guard, &sw, &instance_id](int*) {
                 response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
+                closure_guard.reset(nullptr);
                 LOG(INFO) << __PRETTY_FUNCTION__ << " finish " << ctrl->remote_side()
                           << " response:\n"
                           << response->DebugString();
+                if (config::use_detailed_metrics && !instance_id.empty()) {
+                    g_bvar_ms_begin_txn.put(instance_id, sw.elapsed_us());
+                }
             });
 
     if (!request->has_txn_info()) {
@@ -127,7 +134,7 @@ void MetaServiceImpl::begin_txn(::google::protobuf::RpcController* controller,
     }
 
     std::string cloud_unique_id = request->has_cloud_unique_id() ? request->cloud_unique_id() : "";
-    std::string instance_id = get_instance_id(resource_mgr_, cloud_unique_id);
+    instance_id = get_instance_id(resource_mgr_, cloud_unique_id);
     if (instance_id.empty()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
         ss << "cannot find instance_id with cloud_unique_id="
@@ -397,6 +404,7 @@ void MetaServiceImpl::precommit_txn(::google::protobuf::RpcController* controlle
                                     const ::selectdb::PrecommitTxnRequest* request,
                                     ::selectdb::PrecommitTxnResponse* response,
                                     ::google::protobuf::Closure* done) {
+    StopWatch sw;
     auto ctrl = static_cast<brpc::Controller*>(controller);
     LOG(INFO) << "rpc from " << ctrl->remote_side() << " request:\n" << request->DebugString();
     brpc::ClosureGuard closure_guard(done);
@@ -404,13 +412,18 @@ void MetaServiceImpl::precommit_txn(::google::protobuf::RpcController* controlle
     MetaServiceCode code = MetaServiceCode::OK;
     std::string msg = "OK";
     [[maybe_unused]] std::stringstream ss;
+    std::string instance_id;
     std::unique_ptr<int, std::function<void(int*)>> defer_status(
-            (int*)0x01, [&code, &msg, &response, &ctrl](int*) {
+            (int*)0x01, [&code, &msg, &response, &ctrl, &closure_guard, &sw, &instance_id](int*) {
                 response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
+                closure_guard.reset(nullptr);
                 LOG(INFO) << __PRETTY_FUNCTION__ << " finish " << ctrl->remote_side()
                           << " response:\n"
                           << response->DebugString();
+                if (config::use_detailed_metrics && !instance_id.empty()) {
+                    g_bvar_ms_precommit_txn.put(instance_id, sw.elapsed_us());
+                }
             });
 
     int64_t txn_id = request->has_txn_id() ? request->txn_id() : -1;
@@ -424,7 +437,7 @@ void MetaServiceImpl::precommit_txn(::google::protobuf::RpcController* controlle
     }
 
     std::string cloud_unique_id = request->has_cloud_unique_id() ? request->cloud_unique_id() : "";
-    std::string instance_id = get_instance_id(resource_mgr_, cloud_unique_id);
+    instance_id = get_instance_id(resource_mgr_, cloud_unique_id);
     if (instance_id.empty()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
         ss << "cannot find instance_id with cloud_unique_id="
@@ -583,6 +596,7 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
                                  const ::selectdb::CommitTxnRequest* request,
                                  ::selectdb::CommitTxnResponse* response,
                                  ::google::protobuf::Closure* done) {
+    StopWatch sw;
     auto ctrl = static_cast<brpc::Controller*>(controller);
     LOG(INFO) << __PRETTY_FUNCTION__ << " rpc from " << ctrl->remote_side() << " request:\n"
               << request->DebugString();
@@ -591,9 +605,9 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
     MetaServiceCode code = MetaServiceCode::OK;
     std::string msg = "OK";
     [[maybe_unused]] std::stringstream ss;
-
+    std::string instance_id;
     std::unique_ptr<int, std::function<void(int*)>> defer_status(
-            (int*)0x01, [&code, &msg, &response, &ctrl](int*) {
+            (int*)0x01, [&code, &msg, &response, &ctrl, &closure_guard, &sw, &instance_id](int*) {
                 response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
                 if (code != MetaServiceCode::OK) {
@@ -601,9 +615,13 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
                     response->clear_partition_ids();
                     response->clear_versions();
                 }
+                closure_guard.reset(nullptr);
                 LOG(INFO) << __PRETTY_FUNCTION__ << " finish " << ctrl->remote_side()
                           << " response:\n"
                           << response->DebugString();
+                if (config::use_detailed_metrics && !instance_id.empty()) {
+                    g_bvar_ms_commit_txn.put(instance_id, sw.elapsed_us());
+                }
             });
 
     if (!request->has_txn_id()) {
@@ -615,7 +633,7 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
     int64_t txn_id = request->txn_id();
 
     std::string cloud_unique_id = request->has_cloud_unique_id() ? request->cloud_unique_id() : "";
-    std::string instance_id = get_instance_id(resource_mgr_, cloud_unique_id);
+    instance_id = get_instance_id(resource_mgr_, cloud_unique_id);
     if (instance_id.empty()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
         msg = "empty instance_id";
@@ -1024,6 +1042,7 @@ void MetaServiceImpl::abort_txn(::google::protobuf::RpcController* controller,
                                 const ::selectdb::AbortTxnRequest* request,
                                 ::selectdb::AbortTxnResponse* response,
                                 ::google::protobuf::Closure* done) {
+    StopWatch sw;
     auto ctrl = static_cast<brpc::Controller*>(controller);
     LOG(INFO) << __PRETTY_FUNCTION__ << " rpc from " << ctrl->remote_side() << " request:\n"
               << request->DebugString();
@@ -1032,13 +1051,18 @@ void MetaServiceImpl::abort_txn(::google::protobuf::RpcController* controller,
     MetaServiceCode code = MetaServiceCode::OK;
     std::string msg = "OK";
     [[maybe_unused]] std::stringstream ss;
+    std::string instance_id;
     std::unique_ptr<int, std::function<void(int*)>> defer_status(
-            (int*)0x01, [&code, &msg, &response, &ctrl](int*) {
+            (int*)0x01, [&code, &msg, &response, &ctrl, &closure_guard, &sw, &instance_id](int*) {
                 response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
+                closure_guard.reset(nullptr);
                 LOG(INFO) << __PRETTY_FUNCTION__ << " finish " << ctrl->remote_side()
                           << " response:\n"
                           << response->DebugString();
+                if (config::use_detailed_metrics && !instance_id.empty()) {
+                    g_bvar_ms_abort_txn.put(instance_id, sw.elapsed_us());
+                }
             });
 
     // Get txn id
@@ -1054,7 +1078,7 @@ void MetaServiceImpl::abort_txn(::google::protobuf::RpcController* controller,
     }
 
     std::string cloud_unique_id = request->has_cloud_unique_id() ? request->cloud_unique_id() : "";
-    std::string instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
+    instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
     if (instance_id.empty()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
         ss << "cannot find instance_id with cloud_unique_id="
@@ -1290,6 +1314,7 @@ void MetaServiceImpl::get_txn(::google::protobuf::RpcController* controller,
                               const ::selectdb::GetTxnRequest* request,
                               ::selectdb::GetTxnResponse* response,
                               ::google::protobuf::Closure* done) {
+    StopWatch sw;
     auto ctrl = static_cast<brpc::Controller*>(controller);
     LOG(INFO) << __PRETTY_FUNCTION__ << " rpc from " << ctrl->remote_side() << " request:\n"
               << request->DebugString();
@@ -1298,13 +1323,18 @@ void MetaServiceImpl::get_txn(::google::protobuf::RpcController* controller,
     MetaServiceCode code = MetaServiceCode::OK;
     std::string msg = "OK";
     [[maybe_unused]] std::stringstream ss;
+    std::string instance_id;
     std::unique_ptr<int, std::function<void(int*)>> defer_status(
-            (int*)0x01, [&code, &msg, &response, &ctrl](int*) {
+            (int*)0x01, [&code, &msg, &response, &ctrl, &closure_guard, &sw, &instance_id](int*) {
                 response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
+                closure_guard.reset(nullptr);
                 LOG(INFO) << __PRETTY_FUNCTION__ << " finish " << ctrl->remote_side()
                           << " response:\n"
                           << response->DebugString();
+                if (config::use_detailed_metrics && !instance_id.empty()) {
+                    g_bvar_ms_get_txn.put(instance_id, sw.elapsed_us());
+                }
             });
 
     int64_t txn_id = request->has_txn_id() ? request->txn_id() : -1;
@@ -1317,7 +1347,7 @@ void MetaServiceImpl::get_txn(::google::protobuf::RpcController* controller,
     }
 
     std::string cloud_unique_id = request->has_cloud_unique_id() ? request->cloud_unique_id() : "";
-    std::string instance_id = get_instance_id(resource_mgr_, cloud_unique_id);
+    instance_id = get_instance_id(resource_mgr_, cloud_unique_id);
     if (instance_id.empty()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
         ss << "cannot find instance_id with cloud_unique_id="
@@ -1400,6 +1430,7 @@ void MetaServiceImpl::get_current_max_txn_id(::google::protobuf::RpcController* 
                                              const ::selectdb::GetCurrentMaxTxnRequest* request,
                                              ::selectdb::GetCurrentMaxTxnResponse* response,
                                              ::google::protobuf::Closure* done) {
+    StopWatch sw;
     auto ctrl = static_cast<brpc::Controller*>(controller);
     LOG(INFO) << __PRETTY_FUNCTION__ << " rpc from " << ctrl->remote_side() << " request:\n"
               << request->DebugString();
@@ -1409,18 +1440,23 @@ void MetaServiceImpl::get_current_max_txn_id(::google::protobuf::RpcController* 
     std::string msg = "OK";
     std::unique_ptr<Transaction> txn;
     [[maybe_unused]] std::stringstream ss;
+    std::string instance_id;
     std::unique_ptr<int, std::function<void(int*)>> defer_status(
-            (int*)0x01, [&code, &msg, &response, &ctrl](int*) {
+            (int*)0x01, [&code, &msg, &response, &ctrl, &closure_guard, &sw, &instance_id](int*) {
                 response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
+                closure_guard.reset(nullptr);
                 LOG(INFO) << __PRETTY_FUNCTION__ << " finish " << ctrl->remote_side()
                           << " response:\n"
                           << response->DebugString();
+                if (config::use_detailed_metrics && !instance_id.empty()) {
+                    g_bvar_ms_get_current_max_txn_id.put(instance_id, sw.elapsed_us());
+                }
             });
 
     // TODO: For auth
     std::string cloud_unique_id = request->has_cloud_unique_id() ? request->cloud_unique_id() : "";
-    std::string instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
+    instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
     if (instance_id.empty()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
         msg = "empty instance_id";
@@ -1456,6 +1492,7 @@ void MetaServiceImpl::check_txn_conflict(::google::protobuf::RpcController* cont
                                          const ::selectdb::CheckTxnConflictRequest* request,
                                          ::selectdb::CheckTxnConflictResponse* response,
                                          ::google::protobuf::Closure* done) {
+    StopWatch sw;
     auto ctrl = static_cast<brpc::Controller*>(controller);
     LOG(INFO) << __PRETTY_FUNCTION__ << " rpc from " << ctrl->remote_side() << " request:\n"
               << request->DebugString();
@@ -1466,14 +1503,18 @@ void MetaServiceImpl::check_txn_conflict(::google::protobuf::RpcController* cont
 
     std::string msg = "OK";
     [[maybe_unused]] std::stringstream ss;
-
+    std::string instance_id;
     std::unique_ptr<int, std::function<void(int*)>> defer_status(
-            (int*)0x01, [&code, &msg, &response, &ctrl](int*) {
+            (int*)0x01, [&code, &msg, &response, &ctrl, &closure_guard, &sw, &instance_id](int*) {
                 response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
+                closure_guard.reset(nullptr);
                 LOG(INFO) << __PRETTY_FUNCTION__ << " finish " << ctrl->remote_side()
                           << " response:\n"
                           << response->DebugString();
+                if (config::use_detailed_metrics && !instance_id.empty()) {
+                    g_bvar_ms_check_txn_conflict.put(instance_id, sw.elapsed_us());
+                }
             });
 
     if (!request->has_db_id() || !request->has_end_txn_id() || (request->table_ids_size() <= 0)) {
@@ -1484,7 +1525,7 @@ void MetaServiceImpl::check_txn_conflict(::google::protobuf::RpcController* cont
     }
     // TODO: For auth
     std::string cloud_unique_id = request->has_cloud_unique_id() ? request->cloud_unique_id() : "";
-    std::string instance_id = get_instance_id(resource_mgr_, cloud_unique_id);
+    instance_id = get_instance_id(resource_mgr_, cloud_unique_id);
     if (instance_id.empty()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
         ss << "cannot find instance_id with cloud_unique_id="
@@ -1570,6 +1611,7 @@ void MetaServiceImpl::get_version(::google::protobuf::RpcController* controller,
                                   const ::selectdb::GetVersionRequest* request,
                                   ::selectdb::GetVersionResponse* response,
                                   ::google::protobuf::Closure* done) {
+    StopWatch sw;
     auto ctrl = static_cast<brpc::Controller*>(controller);
     LOG(INFO) << "rpc from " << ctrl->remote_side() << " request=" << request->DebugString();
     brpc::ClosureGuard closure_guard(done);
@@ -1577,12 +1619,17 @@ void MetaServiceImpl::get_version(::google::protobuf::RpcController* controller,
     int ret = 0;
     MetaServiceCode code = MetaServiceCode::OK;
     std::string msg = "OK";
+    std::string instance_id;
     std::unique_ptr<int, std::function<void(int*)>> defer_status(
-            (int*)0x01, [&code, &msg, &response, &ctrl](int*) {
+            (int*)0x01, [&code, &msg, &response, &ctrl, &closure_guard, &sw, &instance_id](int*) {
                 response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
+                closure_guard.reset(nullptr);
                 LOG(INFO) << "rpc from " << ctrl->remote_side()
                           << " response=" << response->DebugString();
+                if (config::use_detailed_metrics && !instance_id.empty()) {
+                    g_bvar_ms_get_version.put(instance_id, sw.elapsed_us());
+                }
             });
 
     // TODO(dx): For auth
@@ -1603,7 +1650,7 @@ void MetaServiceImpl::get_version(::google::protobuf::RpcController* controller,
         return;
     }
 
-    std::string instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
+    instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
     if (instance_id.empty()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
         msg = "empty instance_id";
@@ -1744,18 +1791,24 @@ void MetaServiceImpl::create_tablets(::google::protobuf::RpcController* controll
                                     const ::selectdb::CreateTabletsRequest* request,
                                     ::selectdb::MetaServiceGenericResponse* response,
                                     ::google::protobuf::Closure* done) {
+    StopWatch sw;
     auto ctrl = static_cast<brpc::Controller*>(controller);
     LOG(INFO) << "rpc from " << ctrl->remote_side() << " request=" << request->DebugString();
     brpc::ClosureGuard closure_guard(done);
     int ret = 0;
     MetaServiceCode code = MetaServiceCode::OK;
     std::string msg = "OK";
+    std::string instance_id;
     std::unique_ptr<int, std::function<void(int*)>> defer_status(
-            (int*)0x01, [&ret, &code, &msg, &response, &ctrl](int*) {
+            (int*)0x01, [&ret, &code, &msg, &response, &ctrl, &closure_guard, &sw, &instance_id](int*) {
                 response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
+                closure_guard.reset(nullptr);
                 LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
                           << ctrl->remote_side() << " " << msg;
+                if (config::use_detailed_metrics && !instance_id.empty()) {
+                    g_bvar_ms_create_tablets.put(instance_id, sw.elapsed_us());
+                }
             });
 
     if (request->tablet_metas_size() == 0) {
@@ -1763,7 +1816,7 @@ void MetaServiceImpl::create_tablets(::google::protobuf::RpcController* controll
         code = MetaServiceCode::INVALID_ARGUMENT;
         return;
     }
-    std::string instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
+    instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
     if (instance_id.empty()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
         msg = "empty instance_id";
@@ -1834,18 +1887,24 @@ void MetaServiceImpl::update_tablet(::google::protobuf::RpcController* controlle
                                     const ::selectdb::UpdateTabletRequest* request,
                                     ::selectdb::MetaServiceGenericResponse* response,
                                     ::google::protobuf::Closure* done) {
+    StopWatch sw;
     auto ctrl = static_cast<brpc::Controller*>(controller);
     LOG(INFO) << "rpc from " << ctrl->remote_side() << " request=" << request->DebugString();
     brpc::ClosureGuard closure_guard(done);
     MetaServiceResponseStatus status;
+    std::string instance_id;
     std::unique_ptr<int, std::function<void(int*)>> defer_status(
-            (int*)0x01, [&status, &response, &ctrl](int*) {
+            (int*)0x01, [&status, &response, &ctrl, &closure_guard, &sw, &instance_id](int*) {
                 LOG(INFO) << (status.code() == MetaServiceCode::OK ? "succ to " : "failed to ")
                           << __PRETTY_FUNCTION__ << " " << ctrl->remote_side() << " "
                           << status.msg() << " code=" << status.code();
                 *response->mutable_status() = std::move(status);
+                closure_guard.reset(nullptr);
+                if (config::use_detailed_metrics && !instance_id.empty()) {
+                    g_bvar_ms_update_tablet.put(instance_id, sw.elapsed_us());
+                }
             });
-    std::string instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
+    instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
     if (instance_id.empty()) {
         status.set_code(MetaServiceCode::INVALID_ARGUMENT);
         status.set_msg("empty instance_id");
@@ -1897,18 +1956,24 @@ void MetaServiceImpl::get_tablet(::google::protobuf::RpcController* controller,
                                  const ::selectdb::GetTabletRequest* request,
                                  ::selectdb::GetTabletResponse* response,
                                  ::google::protobuf::Closure* done) {
+    StopWatch sw;
     auto ctrl = static_cast<brpc::Controller*>(controller);
     LOG(INFO) << "rpc from " << ctrl->remote_side() << " request=" << request->DebugString();
     brpc::ClosureGuard closure_guard(done);
     MetaServiceResponseStatus status;
+    std::string instance_id;
     std::unique_ptr<int, std::function<void(int*)>> defer_status(
-            (int*)0x01, [&status, &response, &ctrl](int*) {
+            (int*)0x01, [&status, &response, &ctrl, &closure_guard, &sw, &instance_id](int*) {
                 LOG(INFO) << (status.code() == MetaServiceCode::OK ? "succ to " : "failed to ")
                           << __PRETTY_FUNCTION__ << " " << ctrl->remote_side() << " "
                           << status.msg() << " code=" << status.code();
                 *response->mutable_status() = std::move(status);
+                closure_guard.reset(nullptr);
+                if (config::use_detailed_metrics && !instance_id.empty()) {
+                    g_bvar_ms_get_tablet.put(instance_id, sw.elapsed_us());
+                }
             });
-    std::string instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
+    instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
     if (instance_id.empty()) {
         status.set_code(MetaServiceCode::INVALID_ARGUMENT);
         status.set_msg("empty instance_id");
@@ -1938,25 +2003,31 @@ void MetaServiceImpl::prepare_rowset(::google::protobuf::RpcController* controll
                                      const ::selectdb::CreateRowsetRequest* request,
                                      ::selectdb::CreateRowsetResponse* response,
                                      ::google::protobuf::Closure* done) {
+    StopWatch sw;
     auto ctrl = static_cast<brpc::Controller*>(controller);
     LOG(INFO) << "rpc from " << ctrl->remote_side() << " request=" << request->DebugString();
     brpc::ClosureGuard closure_guard(done);
     int ret = 0;
     MetaServiceCode code = MetaServiceCode::OK;
     std::string msg = "OK";
+    std::string instance_id;
     std::unique_ptr<int, std::function<void(int*)>> defer_status(
-            (int*)0x01, [&code, &msg, &response, &ctrl](int*) {
+            (int*)0x01, [&code, &msg, &response, &ctrl, &closure_guard, &sw, &instance_id](int*) {
                 response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
+                closure_guard.reset(nullptr);
                 LOG(INFO) << (code == MetaServiceCode::OK ? "succ to " : "failed to ")
                           << __PRETTY_FUNCTION__ << " " << ctrl->remote_side() << " " << msg;
+                if (config::use_detailed_metrics && !instance_id.empty()) {
+                    g_bvar_ms_prepare_rowset.put(instance_id, sw.elapsed_us());
+                }
             });
     if (!request->has_rowset_meta()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
         msg = "no rowset meta";
         return;
     }
-    std::string instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
+    instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
     if (instance_id.empty()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
         msg = "empty instance_id";
@@ -2045,25 +2116,31 @@ void MetaServiceImpl::commit_rowset(::google::protobuf::RpcController* controlle
                                     const ::selectdb::CreateRowsetRequest* request,
                                     ::selectdb::CreateRowsetResponse* response,
                                     ::google::protobuf::Closure* done) {
+    StopWatch sw;
     auto ctrl = static_cast<brpc::Controller*>(controller);
     LOG(INFO) << "rpc from " << ctrl->remote_side() << " request=" << request->DebugString();
     brpc::ClosureGuard closure_guard(done);
     int ret = 0;
     MetaServiceCode code = MetaServiceCode::OK;
     std::string msg = "OK";
+    std::string instance_id;
     std::unique_ptr<int, std::function<void(int*)>> defer_status(
-            (int*)0x01, [&code, &msg, &response, &ctrl](int*) {
+            (int*)0x01, [&code, &msg, &response, &ctrl, &closure_guard, &sw, &instance_id](int*) {
                 response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
+                closure_guard.reset(nullptr);
                 LOG(INFO) << (code == MetaServiceCode::OK ? "succ to " : "failed to ")
                           << __PRETTY_FUNCTION__ << " " << ctrl->remote_side() << " " << msg;
+                if (config::use_detailed_metrics && !instance_id.empty()) {
+                    g_bvar_ms_commit_rowset.put(instance_id, sw.elapsed_us());
+                }
             });
     if (!request->has_rowset_meta()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
         msg = "no rowset meta";
         return;
     }
-    std::string instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
+    instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
     if (instance_id.empty()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
         msg = "empty instance_id";
@@ -2272,6 +2349,7 @@ void MetaServiceImpl::get_rowset(::google::protobuf::RpcController* controller,
                                  const ::selectdb::GetRowsetRequest* request,
                                  ::selectdb::GetRowsetResponse* response,
                                  ::google::protobuf::Closure* done) {
+    StopWatch sw;
     auto ctrl = static_cast<brpc::Controller*>(controller);
     LOG(INFO) << "rpc from " << ctrl->remote_side() << " request: " << request->DebugString();
     brpc::ClosureGuard closure_guard(done);
@@ -2279,15 +2357,20 @@ void MetaServiceImpl::get_rowset(::google::protobuf::RpcController* controller,
     MetaServiceCode code = MetaServiceCode::OK;
     std::string msg = "OK";
     std::stringstream ss;
+    std::string instance_id;
     std::unique_ptr<int, std::function<void(int*)>> defer_status(
-            (int*)0x01, [&code, &msg, &response, &ctrl](int*) {
+            (int*)0x01, [&code, &msg, &response, &ctrl, &closure_guard, &sw, &instance_id](int*) {
                 response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
+                closure_guard.reset(nullptr);
                 LOG(INFO) << (code == MetaServiceCode::OK ? "succ to " : "failed to ")
                           << __PRETTY_FUNCTION__ << " " << ctrl->remote_side() << " " << msg;
+                if (config::use_detailed_metrics && !instance_id.empty()) {
+                    g_bvar_ms_get_rowset.put(instance_id, sw.elapsed_us());
+                }
             });
 
-    std::string instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
+    instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
     if (instance_id.empty()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
         msg = "empty instance_id";
@@ -2414,17 +2497,23 @@ void MetaServiceImpl::prepare_index(::google::protobuf::RpcController* controlle
                                     const ::selectdb::IndexRequest* request,
                                     ::selectdb::MetaServiceGenericResponse* response,
                                     ::google::protobuf::Closure* done) {
+    StopWatch sw;
     auto ctrl = static_cast<brpc::Controller*>(controller);
     LOG(INFO) << "prepare_index rpc from " << ctrl->remote_side()
               << " request: " << request->DebugString();
     brpc::ClosureGuard closure_guard(done);
+    std::string instance_id;
     std::unique_ptr<int, std::function<void(int*)>> defer_status(
-            (int*)0x01, [&response, &ctrl](int*) {
+            (int*)0x01, [&response, &ctrl, &closure_guard, &sw, &instance_id](int*) {
+                closure_guard.reset(nullptr);
                 LOG(INFO) << (response->status().code() == 0 ? "succ to " : "failed to ")
                           << __PRETTY_FUNCTION__ << " " << ctrl->remote_side() << " "
                           << response->status().msg();
+                if (config::use_detailed_metrics && !instance_id.empty()) {
+                    g_bvar_ms_prepare_index.put(instance_id, sw.elapsed_us());
+                }
             });
-    int ret = index_exists(request, response);
+    int ret = index_exists(instance_id, request, response);
     if (ret < 0) {
         return;
     } else if (ret == 0) {
@@ -2432,38 +2521,51 @@ void MetaServiceImpl::prepare_index(::google::protobuf::RpcController* controlle
         response->mutable_status()->set_msg("index already existed");
         return;
     }
-    put_recycle_index_kv(request, response);
+    instance_id = "";
+    put_recycle_index_kv(instance_id, request, response);
 }
 
 void MetaServiceImpl::commit_index(::google::protobuf::RpcController* controller,
                                    const ::selectdb::IndexRequest* request,
                                    ::selectdb::MetaServiceGenericResponse* response,
                                    ::google::protobuf::Closure* done) {
+    StopWatch sw;
     auto ctrl = static_cast<brpc::Controller*>(controller);
     LOG(INFO) << "commit_index rpc from " << ctrl->remote_side()
               << " request: " << request->DebugString();
     brpc::ClosureGuard closure_guard(done);
-    remove_recycle_index_kv(request, response);
+    std::string instance_id;
+    remove_recycle_index_kv(instance_id, request, response);
     LOG(INFO) << (response->status().code() == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__
               << " " << ctrl->remote_side() << " " << response->status().msg();
+    closure_guard.reset(nullptr);
+    if (config::use_detailed_metrics && !instance_id.empty()) {
+        g_bvar_ms_commit_index.put(instance_id, sw.elapsed_us());
+    }
 }
 
 void MetaServiceImpl::drop_index(::google::protobuf::RpcController* controller,
                                  const ::selectdb::IndexRequest* request,
                                  ::selectdb::MetaServiceGenericResponse* response,
                                  ::google::protobuf::Closure* done) {
+    StopWatch sw;
     auto ctrl = static_cast<brpc::Controller*>(controller);
     LOG(INFO) << "drop_index rpc from " << ctrl->remote_side()
               << " request: " << request->DebugString();
     brpc::ClosureGuard closure_guard(done);
-    put_recycle_index_kv(request, response);
+    std::string instance_id;
+    put_recycle_index_kv(instance_id, request, response);
     LOG(INFO) << (response->status().code() == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__
               << " " << ctrl->remote_side() << " " << response->status().msg();
+    closure_guard.reset(nullptr);
+    if (config::use_detailed_metrics && !instance_id.empty()) {
+        g_bvar_ms_drop_index.put(instance_id, sw.elapsed_us());
+    }
 }
 
-int MetaServiceImpl::index_exists(const ::selectdb::IndexRequest* request,
+int MetaServiceImpl::index_exists(std::string& instance_id, const ::selectdb::IndexRequest* request,
                                   ::selectdb::MetaServiceGenericResponse* response) {
-    std::string instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
+    instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
     if (instance_id.empty()) {
         response->mutable_status()->set_code(MetaServiceCode::INVALID_ARGUMENT);
         response->mutable_status()->set_msg("empty instance_id");
@@ -2504,7 +2606,7 @@ int MetaServiceImpl::index_exists(const ::selectdb::IndexRequest* request,
     return 0;
 }
 
-void MetaServiceImpl::put_recycle_index_kv(const ::selectdb::IndexRequest* request,
+void MetaServiceImpl::put_recycle_index_kv(std::string& instance_id, const ::selectdb::IndexRequest* request,
                                            ::selectdb::MetaServiceGenericResponse* response) {
     int ret = 0;
     MetaServiceCode code = MetaServiceCode::OK;
@@ -2515,7 +2617,7 @@ void MetaServiceImpl::put_recycle_index_kv(const ::selectdb::IndexRequest* reque
                 response->mutable_status()->set_msg(msg);
             });
 
-    std::string instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
+    instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
     if (instance_id.empty()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
         msg = "empty instance_id";
@@ -2568,7 +2670,7 @@ void MetaServiceImpl::put_recycle_index_kv(const ::selectdb::IndexRequest* reque
     }
 }
 
-void MetaServiceImpl::remove_recycle_index_kv(const ::selectdb::IndexRequest* request,
+void MetaServiceImpl::remove_recycle_index_kv(std::string& instance_id, const ::selectdb::IndexRequest* request,
                                               ::selectdb::MetaServiceGenericResponse* response) {
     int ret = 0;
     MetaServiceCode code = MetaServiceCode::OK;
@@ -2579,7 +2681,7 @@ void MetaServiceImpl::remove_recycle_index_kv(const ::selectdb::IndexRequest* re
                 response->mutable_status()->set_msg(msg);
             });
 
-    std::string instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
+    instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
     if (instance_id.empty()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
         msg = "empty instance_id";
@@ -2628,17 +2730,23 @@ void MetaServiceImpl::prepare_partition(::google::protobuf::RpcController* contr
                                         const ::selectdb::PartitionRequest* request,
                                         ::selectdb::MetaServiceGenericResponse* response,
                                         ::google::protobuf::Closure* done) {
+    StopWatch sw;
     auto ctrl = static_cast<brpc::Controller*>(controller);
     LOG(INFO) << "prepare_partition rpc from " << ctrl->remote_side()
               << " request: " << request->DebugString();
     brpc::ClosureGuard closure_guard(done);
+    std::string instance_id;
     std::unique_ptr<int, std::function<void(int*)>> defer_status(
-            (int*)0x01, [&response, &ctrl](int*) {
+            (int*)0x01, [&response, &ctrl, &closure_guard, &sw, &instance_id](int*) {
+                closure_guard.reset(nullptr);
                 LOG(INFO) << (response->status().code() == 0 ? "succ to " : "failed to ")
                           << __PRETTY_FUNCTION__ << " " << ctrl->remote_side() << " "
                           << response->status().msg();
+                if (config::use_detailed_metrics && !instance_id.empty()) {
+                    g_bvar_ms_prepare_partition.put(instance_id, sw.elapsed_us());
+                }
             });
-    int ret = partition_exists(request, response);
+    int ret = partition_exists(instance_id, request, response);
     if (ret < 0) {
         return;
     } else if (ret == 0) {
@@ -2646,38 +2754,51 @@ void MetaServiceImpl::prepare_partition(::google::protobuf::RpcController* contr
         response->mutable_status()->set_msg("partition already existed");
         return;
     }
-    put_recycle_partition_kv(request, response);
+    instance_id = "";
+    put_recycle_partition_kv(instance_id, request, response);
 }
 
 void MetaServiceImpl::commit_partition(::google::protobuf::RpcController* controller,
                                        const ::selectdb::PartitionRequest* request,
                                        ::selectdb::MetaServiceGenericResponse* response,
                                        ::google::protobuf::Closure* done) {
+    StopWatch sw;
     auto ctrl = static_cast<brpc::Controller*>(controller);
     LOG(INFO) << "commit_partition rpc from " << ctrl->remote_side()
               << " request: " << request->DebugString();
     brpc::ClosureGuard closure_guard(done);
-    remove_recycle_partition_kv(request, response);
+    std::string instance_id;
+    remove_recycle_partition_kv(instance_id, request, response);
     LOG(INFO) << (response->status().code() == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__
               << " " << ctrl->remote_side() << " " << response->status().msg();
+    closure_guard.reset(nullptr);
+    if (config::use_detailed_metrics && !instance_id.empty()) {
+        g_bvar_ms_commit_partition.put(instance_id, sw.elapsed_us());
+    }
 }
 
 void MetaServiceImpl::drop_partition(::google::protobuf::RpcController* controller,
                                      const ::selectdb::PartitionRequest* request,
                                      ::selectdb::MetaServiceGenericResponse* response,
                                      ::google::protobuf::Closure* done) {
+    StopWatch sw;
     auto ctrl = static_cast<brpc::Controller*>(controller);
     LOG(INFO) << "drop_partition rpc from " << ctrl->remote_side()
               << " request: " << request->DebugString();
     brpc::ClosureGuard closure_guard(done);
-    put_recycle_partition_kv(request, response);
+    std::string instance_id;
+    put_recycle_partition_kv(instance_id, request, response);
     LOG(INFO) << (response->status().code() == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__
               << " " << ctrl->remote_side() << " " << response->status().msg();
+    closure_guard.reset(nullptr);
+    if (config::use_detailed_metrics && !instance_id.empty()) {
+        g_bvar_ms_drop_partition.put(instance_id, sw.elapsed_us());
+    }
 }
 
-int MetaServiceImpl::partition_exists(const ::selectdb::PartitionRequest* request,
+int MetaServiceImpl::partition_exists(std::string& instance_id, const ::selectdb::PartitionRequest* request,
                                       ::selectdb::MetaServiceGenericResponse* response) {
-    std::string instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
+    instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
     if (instance_id.empty()) {
         response->mutable_status()->set_code(MetaServiceCode::INVALID_ARGUMENT);
         response->mutable_status()->set_msg("empty instance_id");
@@ -2719,7 +2840,7 @@ int MetaServiceImpl::partition_exists(const ::selectdb::PartitionRequest* reques
     return 0;
 }
 
-void MetaServiceImpl::put_recycle_partition_kv(const ::selectdb::PartitionRequest* request,
+void MetaServiceImpl::put_recycle_partition_kv(std::string& instance_id, const ::selectdb::PartitionRequest* request,
                                                ::selectdb::MetaServiceGenericResponse* response) {
     int ret = 0;
     MetaServiceCode code = MetaServiceCode::OK;
@@ -2730,7 +2851,7 @@ void MetaServiceImpl::put_recycle_partition_kv(const ::selectdb::PartitionReques
                 response->mutable_status()->set_msg(msg);
             });
 
-    std::string instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
+    instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
     if (instance_id.empty()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
         msg = "empty instance_id";
@@ -2786,6 +2907,7 @@ void MetaServiceImpl::put_recycle_partition_kv(const ::selectdb::PartitionReques
 }
 
 void MetaServiceImpl::remove_recycle_partition_kv(
+        std::string& instance_id,
         const ::selectdb::PartitionRequest* request,
         ::selectdb::MetaServiceGenericResponse* response) {
     int ret = 0;
@@ -2797,7 +2919,7 @@ void MetaServiceImpl::remove_recycle_partition_kv(
                 response->mutable_status()->set_msg(msg);
             });
 
-    std::string instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
+    instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
     if (instance_id.empty()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
         msg = "empty instance_id";
@@ -2846,21 +2968,27 @@ void MetaServiceImpl::get_tablet_stats(::google::protobuf::RpcController* contro
                                        const ::selectdb::GetTabletStatsRequest* request,
                                        ::selectdb::GetTabletStatsResponse* response,
                                        ::google::protobuf::Closure* done) {
+    StopWatch sw;
     auto ctrl = static_cast<brpc::Controller*>(controller);
     LOG(INFO) << "rpc from " << ctrl->remote_side() << " rpc=MetaServiceImpl::get_tablet_stats";
     brpc::ClosureGuard closure_guard(done);
     int ret = 0;
     MetaServiceCode code = MetaServiceCode::OK;
     std::string msg = "OK";
+    std::string instance_id;
     std::unique_ptr<int, std::function<void(int*)>> defer_status(
-            (int*)0x01, [&ret, &code, &msg, &response, &ctrl](int*) {
+            (int*)0x01, [&ret, &code, &msg, &response, &ctrl, &closure_guard, &sw, &instance_id](int*) {
                 response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
+                closure_guard.reset(nullptr);
                 LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
                           << ctrl->remote_side() << " " << msg;
+                if (config::use_detailed_metrics && !instance_id.empty()) {
+                    g_bvar_ms_get_tablet_stats.put(instance_id, sw.elapsed_us());
+                }
             });
 
-    std::string instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
+    instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
     if (instance_id.empty()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
         msg = "empty instance_id";
@@ -3332,18 +3460,24 @@ void MetaServiceImpl::get_obj_store_info(google::protobuf::RpcController* contro
                                          const ::selectdb::GetObjStoreInfoRequest* request,
                                          ::selectdb::GetObjStoreInfoResponse* response,
                                          ::google::protobuf::Closure* done) {
+    StopWatch sw;
     auto ctrl = static_cast<brpc::Controller*>(controller);
     LOG(INFO) << "rpc from " << ctrl->remote_side() << " request=" << request->DebugString();
     brpc::ClosureGuard closure_guard(done);
     int ret = 0;
     MetaServiceCode code = MetaServiceCode::OK;
     std::string msg = "OK";
+    std::string instance_id;
     std::unique_ptr<int, std::function<void(int*)>> defer_status(
-            (int*)0x01, [&ret, &code, &msg, &response, &ctrl](int*) {
+            (int*)0x01, [&ret, &code, &msg, &response, &ctrl, &closure_guard, &sw, &instance_id](int*) {
                 response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
+                closure_guard.reset(nullptr);
                 LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
                           << ctrl->remote_side() << " " << msg;
+                if (config::use_detailed_metrics && !instance_id.empty()) {
+                    g_bvar_ms_get_obj_store_info.put(instance_id, sw.elapsed_us());
+                }
             });
 
     // Prepare data
@@ -3354,7 +3488,7 @@ void MetaServiceImpl::get_obj_store_info(google::protobuf::RpcController* contro
         return;
     }
 
-    std::string instance_id = get_instance_id(resource_mgr_, cloud_unique_id);
+    instance_id = get_instance_id(resource_mgr_, cloud_unique_id);
     if (instance_id.empty()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
         msg = "empty instance_id";
@@ -3402,18 +3536,24 @@ void MetaServiceImpl::alter_obj_store_info(google::protobuf::RpcController* cont
                                            const ::selectdb::AlterObjStoreInfoRequest* request,
                                            ::selectdb::MetaServiceGenericResponse* response,
                                            ::google::protobuf::Closure* done) {
+    StopWatch sw;
     auto ctrl = static_cast<brpc::Controller*>(controller);
     LOG(INFO) << "rpc from " << ctrl->remote_side() << " request=" << request->DebugString();
     brpc::ClosureGuard closure_guard(done);
     int ret = 0;
     MetaServiceCode code = MetaServiceCode::OK;
     std::string msg = "OK";
+    std::string instance_id;
     std::unique_ptr<int, std::function<void(int*)>> defer_status(
-            (int*)0x01, [&ret, &code, &msg, &response, &ctrl](int*) {
+            (int*)0x01, [&ret, &code, &msg, &response, &ctrl, &closure_guard, &sw, &instance_id](int*) {
                 response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
+                closure_guard.reset(nullptr);
                 LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
                           << ctrl->remote_side() << " " << msg;
+                if (config::use_detailed_metrics && !instance_id.empty()) {
+                    g_bvar_ms_alter_obj_store_info.put(instance_id, sw.elapsed_us());
+                }
             });
 
     // Prepare data
@@ -3448,7 +3588,7 @@ void MetaServiceImpl::alter_obj_store_info(google::protobuf::RpcController* cont
         return;
     }
 
-    std::string instance_id = get_instance_id(resource_mgr_, cloud_unique_id);
+    instance_id = get_instance_id(resource_mgr_, cloud_unique_id);
     if (instance_id.empty()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
         msg = "empty instance_id";
@@ -3603,20 +3743,25 @@ void MetaServiceImpl::create_instance(google::protobuf::RpcController* controlle
                                       const ::selectdb::CreateInstanceRequest* request,
                                       ::selectdb::MetaServiceGenericResponse* response,
                                       ::google::protobuf::Closure* done) {
+    StopWatch sw;
     auto ctrl = static_cast<brpc::Controller*>(controller);
     LOG(INFO) << "rpc from " << ctrl->remote_side() << " request=" << request->DebugString();
     brpc::ClosureGuard closure_guard(done);
     int ret = 0;
     MetaServiceCode code = MetaServiceCode::OK;
     std::string msg = "OK";
+    std::string instance_id = request->has_instance_id() ? request->instance_id() : "";
     std::unique_ptr<int, std::function<void(int*)>> defer_status(
-            (int*)0x01, [&ret, &code, &msg, &response, &ctrl](int*) {
+            (int*)0x01, [&ret, &code, &msg, &response, &ctrl, &closure_guard, &sw, &instance_id](int*) {
                 response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
+                closure_guard.reset(nullptr);
                 LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
                           << ctrl->remote_side() << " " << msg;
+                if (config::use_detailed_metrics && !instance_id.empty()) {
+                    g_bvar_ms_create_instance.put(instance_id, sw.elapsed_us());
+                }
             });
-
     // Prepare data
     auto& obj = request->obj_info();
     std::string ak = obj.has_ak() ? obj.ak() : "";
@@ -3713,18 +3858,24 @@ void MetaServiceImpl::alter_instance(google::protobuf::RpcController* controller
                                      const ::selectdb::AlterInstanceRequest* request,
                                      ::selectdb::MetaServiceGenericResponse* response,
                                      ::google::protobuf::Closure* done) {
+    StopWatch sw;
     auto ctrl = static_cast<brpc::Controller*>(controller);
     LOG(INFO) << "rpc from " << ctrl->remote_side() << " request=" << request->DebugString();
     brpc::ClosureGuard closure_guard(done);
     MetaServiceCode code = MetaServiceCode::OK;
     std::string msg = "OK";
     [[maybe_unused]] std::stringstream ss;
+    std::string instance_id = request->has_instance_id() ? request->instance_id() : "";
     std::unique_ptr<int, std::function<void(int*)>> defer_status(
-            (int*)0x01, [&code, &msg, &response, &ctrl](int*) {
+            (int*)0x01, [&code, &msg, &response, &ctrl, &closure_guard, &sw, &instance_id](int*) {
                 response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
+                closure_guard.reset(nullptr);
                 LOG(INFO) << (code == MetaServiceCode::OK ? "succ to " : "failed to ")
                           << __PRETTY_FUNCTION__ << " " << ctrl->remote_side() << " " << msg;
+                if (config::use_detailed_metrics && !instance_id.empty()) {
+                    g_bvar_ms_alter_instance.put(instance_id, sw.elapsed_us());
+                }
             });
 
     std::pair<MetaServiceCode, std::string> ret;
@@ -3832,6 +3983,7 @@ void MetaServiceImpl::alter_cluster(google::protobuf::RpcController* controller,
                                     const ::selectdb::AlterClusterRequest* request,
                                     ::selectdb::MetaServiceGenericResponse* response,
                                     ::google::protobuf::Closure* done) {
+    StopWatch sw;
     auto ctrl = static_cast<brpc::Controller*>(controller);
     LOG(INFO) << "rpc from " << ctrl->remote_side() << " request=" << request->DebugString();
     brpc::ClosureGuard closure_guard(done);
@@ -3839,17 +3991,22 @@ void MetaServiceImpl::alter_cluster(google::protobuf::RpcController* controller,
     MetaServiceCode code = MetaServiceCode::OK;
     std::string msg;
     [[maybe_unused]] std::stringstream ss;
+    std::string instance_id;
     std::unique_ptr<int, std::function<void(int*)>> defer_status(
-            (int*)0x01, [&ret, &code, &msg, &response, &ctrl](int*) {
+            (int*)0x01, [&ret, &code, &msg, &response, &ctrl, &closure_guard, &sw, &instance_id](int*) {
                 msg = msg.empty() ? "OK" : msg;
                 response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
+                closure_guard.reset(nullptr);
                 LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
                           << ctrl->remote_side() << " " << msg;
+                if (config::use_detailed_metrics && !instance_id.empty()) {
+                    g_bvar_ms_alter_cluster.put(instance_id, sw.elapsed_us());
+                }
             });
 
     std::string cloud_unique_id = request->has_cloud_unique_id() ? request->cloud_unique_id() : "";
-    std::string instance_id = request->has_instance_id() ? request->instance_id() : "";
+    instance_id = request->has_instance_id() ? request->instance_id() : "";
     if (!cloud_unique_id.empty() && instance_id.empty()) {
         instance_id = get_instance_id(resource_mgr_, cloud_unique_id);
         if (instance_id.empty()) {
@@ -4006,18 +4163,24 @@ void MetaServiceImpl::get_cluster(google::protobuf::RpcController* controller,
                                   const ::selectdb::GetClusterRequest* request,
                                   ::selectdb::GetClusterResponse* response,
                                   ::google::protobuf::Closure* done) {
+    StopWatch sw;
     auto ctrl = static_cast<brpc::Controller*>(controller);
     LOG(INFO) << "rpc from " << ctrl->remote_side() << " request=" << request->DebugString();
     brpc::ClosureGuard closure_guard(done);
     MetaServiceCode code = MetaServiceCode::OK;
     std::string msg = "OK";
     [[maybe_unused]] std::stringstream ss;
+    std::string instance_id;
     std::unique_ptr<int, std::function<void(int*)>> defer_status(
-            (int*)0x01, [&code, &msg, &response, &ctrl](int*) {
+            (int*)0x01, [&code, &msg, &response, &ctrl, &closure_guard, &sw, &instance_id](int*) {
                 response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
+                closure_guard.reset(nullptr);
                 LOG(INFO) << (code == MetaServiceCode::OK ? "succ to " : "failed to ")
                           << __PRETTY_FUNCTION__ << " " << ctrl->remote_side() << " " << msg;
+                if (config::use_detailed_metrics && !instance_id.empty()) {
+                    g_bvar_ms_get_cluster.put(instance_id, sw.elapsed_us());
+                }
             });
 
     std::string cloud_unique_id = request->has_cloud_unique_id() ? request->cloud_unique_id() : "";
@@ -4031,7 +4194,7 @@ void MetaServiceImpl::get_cluster(google::protobuf::RpcController* controller,
         return;
     }
 
-    std::string instance_id = get_instance_id(resource_mgr_, cloud_unique_id);
+    instance_id = get_instance_id(resource_mgr_, cloud_unique_id);
     if (instance_id.empty()) {
         if (request->has_instance_id()) {
             instance_id = request->instance_id();
@@ -4142,18 +4305,24 @@ void MetaServiceImpl::create_stage(::google::protobuf::RpcController* controller
                                    const ::selectdb::CreateStageRequest* request,
                                    ::selectdb::CreateStageResponse* response,
                                    ::google::protobuf::Closure* done) {
+    StopWatch sw;
     auto ctrl = static_cast<brpc::Controller*>(controller);
     LOG(INFO) << "rpc from " << ctrl->remote_side() << " request=" << request->DebugString();
     brpc::ClosureGuard closure_guard(done);
     int ret = 0;
     MetaServiceCode code = MetaServiceCode::OK;
     std::string msg = "OK";
+    std::string instance_id;
     std::unique_ptr<int, std::function<void(int*)>> defer_status(
-            (int*)0x01, [&ret, &code, &msg, &response, &ctrl](int*) {
+            (int*)0x01, [&ret, &code, &msg, &response, &ctrl, &closure_guard, &sw, &instance_id](int*) {
                 response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
+                closure_guard.reset(nullptr);
                 LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
                           << ctrl->remote_side() << " " << msg;
+                if (config::use_detailed_metrics && !instance_id.empty()) {
+                    g_bvar_ms_create_stage.put(instance_id, sw.elapsed_us());
+                }
             });
 
     std::string cloud_unique_id = request->has_cloud_unique_id() ? request->cloud_unique_id() : "";
@@ -4163,7 +4332,7 @@ void MetaServiceImpl::create_stage(::google::protobuf::RpcController* controller
         return;
     }
 
-    std::string instance_id = get_instance_id(resource_mgr_, cloud_unique_id);
+    instance_id = get_instance_id(resource_mgr_, cloud_unique_id);
     if (instance_id.empty()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
         msg = "empty instance_id";
@@ -4273,18 +4442,24 @@ void MetaServiceImpl::get_stage(google::protobuf::RpcController* controller,
                                 const ::selectdb::GetStageRequest* request,
                                 ::selectdb::GetStageResponse* response,
                                 ::google::protobuf::Closure* done) {
+    StopWatch sw;
     auto ctrl = static_cast<brpc::Controller*>(controller);
     LOG(INFO) << "rpc from " << ctrl->remote_side() << " request=" << request->DebugString();
     brpc::ClosureGuard closure_guard(done);
     int ret = 0;
     MetaServiceCode code = MetaServiceCode::OK;
     std::string msg = "OK";
+    std::string instance_id;
     std::unique_ptr<int, std::function<void(int*)>> defer_status(
-            (int*)0x01, [&ret, &code, &msg, &response, &ctrl](int*) {
+            (int*)0x01, [&ret, &code, &msg, &response, &ctrl, &closure_guard, &sw, &instance_id](int*) {
                 response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
+                closure_guard.reset(nullptr);
                 LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
                           << ctrl->remote_side() << " " << msg;
+                if (config::use_detailed_metrics && !instance_id.empty()) {
+                    g_bvar_ms_get_stage.put(instance_id, sw.elapsed_us());
+                }
             });
 
     std::string cloud_unique_id = request->has_cloud_unique_id() ? request->cloud_unique_id() : "";
@@ -4294,7 +4469,7 @@ void MetaServiceImpl::get_stage(google::protobuf::RpcController* controller,
         return;
     }
 
-    std::string instance_id = get_instance_id(resource_mgr_, cloud_unique_id);
+    instance_id = get_instance_id(resource_mgr_, cloud_unique_id);
     if (instance_id.empty()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
         msg = "empty instance_id";
@@ -4471,18 +4646,24 @@ void MetaServiceImpl::begin_copy(google::protobuf::RpcController* controller,
                                  const ::selectdb::BeginCopyRequest* request,
                                  ::selectdb::BeginCopyResponse* response,
                                  ::google::protobuf::Closure* done) {
+    StopWatch sw;
     auto ctrl = static_cast<brpc::Controller*>(controller);
     LOG(INFO) << "rpc from " << ctrl->remote_side() << " request=" << request->DebugString();
     brpc::ClosureGuard closure_guard(done);
     int ret = 0;
     MetaServiceCode code = MetaServiceCode::OK;
     std::string msg = "OK";
+    std::string instance_id;
     std::unique_ptr<int, std::function<void(int*)>> defer_status(
-            (int*)0x01, [&ret, &code, &msg, &response, &ctrl](int*) {
+            (int*)0x01, [&ret, &code, &msg, &response, &ctrl, &closure_guard, &sw, &instance_id](int*) {
                 response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
+                closure_guard.reset(nullptr);
                 LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
                           << ctrl->remote_side() << " " << msg;
+                if (config::use_detailed_metrics && !instance_id.empty()) {
+                    g_bvar_ms_begin_copy.put(instance_id, sw.elapsed_us());
+                }
             });
 
     std::string cloud_unique_id = request->has_cloud_unique_id() ? request->cloud_unique_id() : "";
@@ -4492,7 +4673,7 @@ void MetaServiceImpl::begin_copy(google::protobuf::RpcController* controller,
         return;
     }
 
-    std::string instance_id = get_instance_id(resource_mgr_, cloud_unique_id);
+    instance_id = get_instance_id(resource_mgr_, cloud_unique_id);
     if (instance_id.empty()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
         msg = "empty instance_id";
@@ -4617,18 +4798,24 @@ void MetaServiceImpl::finish_copy(google::protobuf::RpcController* controller,
                                   const ::selectdb::FinishCopyRequest* request,
                                   ::selectdb::FinishCopyResponse* response,
                                   ::google::protobuf::Closure* done) {
+    StopWatch sw;
     auto ctrl = static_cast<brpc::Controller*>(controller);
     LOG(INFO) << "rpc from " << ctrl->remote_side() << " request=" << request->DebugString();
     brpc::ClosureGuard closure_guard(done);
     int ret = 0;
     MetaServiceCode code = MetaServiceCode::OK;
     std::string msg = "OK";
+    std::string instance_id;
     std::unique_ptr<int, std::function<void(int*)>> defer_status(
-            (int*)0x01, [&ret, &code, &msg, &response, &ctrl](int*) {
+            (int*)0x01, [&ret, &code, &msg, &response, &ctrl, &closure_guard, &sw, &instance_id](int*) {
                 response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
+                closure_guard.reset(nullptr);
                 LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
                           << ctrl->remote_side() << " " << msg;
+                if (config::use_detailed_metrics && !instance_id.empty()) {
+                    g_bvar_ms_finish_copy.put(instance_id, sw.elapsed_us());
+                }
             });
 
     std::string cloud_unique_id = request->has_cloud_unique_id() ? request->cloud_unique_id() : "";
@@ -4638,7 +4825,7 @@ void MetaServiceImpl::finish_copy(google::protobuf::RpcController* controller,
         return;
     }
 
-    std::string instance_id = get_instance_id(resource_mgr_, cloud_unique_id);
+    instance_id = get_instance_id(resource_mgr_, cloud_unique_id);
     if (instance_id.empty()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
         msg = "empty instance_id";
@@ -4726,18 +4913,24 @@ void MetaServiceImpl::get_copy_files(google::protobuf::RpcController* controller
                                      const ::selectdb::GetCopyFilesRequest* request,
                                      ::selectdb::GetCopyFilesResponse* response,
                                      ::google::protobuf::Closure* done) {
+    StopWatch sw;
     auto ctrl = static_cast<brpc::Controller*>(controller);
     LOG(INFO) << "rpc from " << ctrl->remote_side() << " request=" << request->DebugString();
     brpc::ClosureGuard closure_guard(done);
     int ret = 0;
     MetaServiceCode code = MetaServiceCode::OK;
     std::string msg = "OK";
+    std::string instance_id;
     std::unique_ptr<int, std::function<void(int*)>> defer_status(
-            (int*)0x01, [&ret, &code, &msg, &response, &ctrl](int*) {
+            (int*)0x01, [&ret, &code, &msg, &response, &ctrl, &closure_guard, &sw, &instance_id](int*) {
                 response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
+                closure_guard.reset(nullptr);
                 LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
                           << ctrl->remote_side() << " " << msg;
+                if (config::use_detailed_metrics && !instance_id.empty()) {
+                    g_bvar_ms_get_copy_files.put(instance_id, sw.elapsed_us());
+                }
             });
 
     std::string cloud_unique_id = request->has_cloud_unique_id() ? request->cloud_unique_id() : "";
@@ -4747,7 +4940,7 @@ void MetaServiceImpl::get_copy_files(google::protobuf::RpcController* controller
         return;
     }
 
-    std::string instance_id = get_instance_id(resource_mgr_, cloud_unique_id);
+    instance_id = get_instance_id(resource_mgr_, cloud_unique_id);
     if (instance_id.empty()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
         msg = "empty instance_id";
