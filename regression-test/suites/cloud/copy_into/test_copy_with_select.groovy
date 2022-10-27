@@ -1,32 +1,22 @@
 suite("test_copy_with_select") {
     def tableName = "customer_copy_with_select"
-    def externalStageName = "regression_test_copy_stage"
-    def prefix = "regression/tpch/sf1"
-
-    def getProvider = { endpoint ->
-        def providers = ["cos", "oss", "s3", "obs", "bos"]
-        for (final def provider in providers) {
-            if (endpoint.containsIgnoreCase(provider)) {
-                return provider
-            }
-        }
-        return ""
-    }
+    def externalStageName = "regression_test_tpch"
+    def prefix = "tpch/sf1"
 
     sql """
         create stage if not exists ${externalStageName} 
         properties ('endpoint' = '${getS3Endpoint()}' ,
         'region' = '${getS3Region()}' ,
         'bucket' = '${getS3BucketName()}' ,
-        'prefix' = '${prefix}' ,
+        'prefix' = 'regression' ,
         'ak' = '${getS3AK()}' ,
         'sk' = '${getS3SK()}' ,
-        'provider' = '${getProvider(getS3Endpoint())}',
+        'provider' = '${getProvider()}',
         'default.file.column_separator' = "|");
     """
 
     def sql_prefix = """ copy into ${tableName} from ("""
-    def sql_stage = """  from @${externalStageName}('customer.csv.gz')"""
+    def sql_stage = """  from @${externalStageName}('${prefix}/customer.csv.gz')"""
     def sql_postfix = """) properties ('file.type' = 'null', 'copy.async' = 'false');"""
 
     def sqls = [

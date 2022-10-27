@@ -1,17 +1,7 @@
 suite("test_external_stage") {
     def tableName = "customer_external_stage"
-    def externalStageName = "regression_test_copy_stage"
-    def prefix = "regression/tpch/sf1"
-
-    def getProvider = { endpoint ->
-        def providers = ["cos", "oss", "s3", "obs", "bos"]
-        for (final def provider in providers) {
-            if (endpoint.containsIgnoreCase(provider)) {
-                return provider
-            }
-        }
-        return ""
-    }
+    def externalStageName = "regression_test_tpch"
+    def prefix = "tpch/sf1"
 
     try {
         sql """ DROP TABLE IF EXISTS ${tableName}; """
@@ -35,21 +25,21 @@ suite("test_external_stage") {
             properties ('endpoint' = '${getS3Endpoint()}' ,
             'region' = '${getS3Region()}' ,
             'bucket' = '${getS3BucketName()}' ,
-            'prefix' = '${prefix}' ,
+            'prefix' = 'regression' ,
             'ak' = '${getS3AK()}' ,
             'sk' = '${getS3SK()}' ,
-            'provider' = '${getProvider(getS3Endpoint())}', 
+            'provider' = '${getProvider()}', 
             'default.file.column_separator' = "|");
         """
 
-        def result = sql " copy into ${tableName} from @${externalStageName}('customer.csv.gz') properties ('file.type' = 'csv', 'file.compression' = 'gz', 'copy.async' = 'false'); "
+        def result = sql " copy into ${tableName} from @${externalStageName}('${prefix}/customer.csv.gz') properties ('file.type' = 'csv', 'file.compression' = 'gz', 'copy.async' = 'false'); "
         logger.info("copy result: " + result)
         assertTrue(result.size() == 1)
         assertTrue(result[0].size() == 8)
         assertTrue(result[0][1].equals("FINISHED"), "Finish copy into, state=" + result[0][1] + ", expected state=FINISHED")
         qt_sql " SELECT COUNT(*) FROM ${tableName}; "
 
-        result = sql " copy into ${tableName} from @${externalStageName}('customer.csv.gz') properties ('copy.async' = 'false'); "
+        result = sql " copy into ${tableName} from @${externalStageName}('${prefix}/customer.csv.gz') properties ('copy.async' = 'false'); "
         logger.info("copy result: " + result)
         assertTrue(result.size() == 1)
         assertTrue(result[0].size() == 8)
