@@ -3476,6 +3476,10 @@ public class Env {
             // properties
             sb.append("\nPROPERTIES (\n");
 
+            // persistent
+            sb.append("\"").append(PropertyAnalyzer.PROPERTIES_PERSISTENT).append("\" = \"");
+            sb.append(olapTable.isPersistent()).append("\"");
+
             // bloom filter
             Set<String> bfColumnNames = olapTable.getCopiedBfColumns();
             if (bfColumnNames != null) {
@@ -3513,20 +3517,10 @@ public class Env {
                 sb.append(olapTable.getDataSortInfo().toSql());
             }
 
-            // persistent
-            sb.append(",\n\"").append(PropertyAnalyzer.PROPERTIES_PERSISTENT).append("\" = \"");
-            sb.append(olapTable.isPersistent()).append("\"");
-
             // compression type
             if (olapTable.getCompressionType() != TCompressionType.LZ4F) {
                 sb.append(",\n\"").append(PropertyAnalyzer.PROPERTIES_COMPRESSION).append("\" = \"");
                 sb.append(olapTable.getCompressionType()).append("\"");
-            }
-
-            // show lightSchemaChange only when it is set true
-            if (olapTable.getEnableLightSchemaChange()) {
-                sb.append(",\n\"").append(PropertyAnalyzer.PROPERTIES_ENABLE_LIGHT_SCHEMA_CHANGE).append("\" = \"");
-                sb.append(olapTable.getEnableLightSchemaChange()).append("\"");
             }
 
             // sequence type

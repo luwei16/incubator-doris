@@ -671,13 +671,13 @@ public class PropertyAnalyzer {
     }
 
     public static void checkCloudTableProperty(Map<String, String> properties) throws AnalysisException {
-        if (Config.ignore_unsupported_properties_in_cloud_mode) {
+        if (Config.ignore_unsupported_properties_in_cloud_mode
+                || properties == null || properties.isEmpty()) {
             return;
         }
 
         List<String> unsupportedProperties = new ArrayList<String>();
         unsupportedProperties.add(PROPERTIES_INMEMORY);
-
         unsupportedProperties.add(PROPERTIES_STORAGE_MEDIUM);
         unsupportedProperties.add(PROPERTIES_STORAGE_FORMAT);
         unsupportedProperties.add(PROPERTIES_STORAGE_POLICY);
@@ -685,6 +685,7 @@ public class PropertyAnalyzer {
         unsupportedProperties.add(PROPERTIES_STORAGE_COOLDOWN_TIME);
         unsupportedProperties.add(PROPERTIES_DISABLE_AUTO_COMPACTION);
         unsupportedProperties.add(ENABLE_UNIQUE_KEY_MERGE_ON_WRITE);
+        unsupportedProperties.add(PROPERTIES_ENABLE_LIGHT_SCHEMA_CHANGE);
 
         for (String property : unsupportedProperties) {
             if (properties.containsKey(property)) {
