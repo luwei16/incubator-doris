@@ -163,9 +163,9 @@ Status parse_conf_store_paths(const string& config_path, std::vector<StorePath>*
 
 /** format:   
  *  [
- *    {"path": "storage1", "normal":50,"persistent":20,"query_limit": "10"},
- *    {"path": "storage2", "normal":50,"persistent":20},
- *    {"path": "storage3", "normal":50,"persistent":20},
+ *    {"path": "storage1", "normal":53687091200,"persistent":21474836480,"query_limit": "10737418240"},
+ *    {"path": "storage2", "normal":53687091200,"persistent":21474836480},
+ *    {"path": "storage3", "normal":53687091200,"persistent":21474836480},
  *  ]
  */
 Status parse_conf_cache_paths(const std::string& config_path, std::vector<CachePath>& paths) {
@@ -185,14 +185,18 @@ Status parse_conf_cache_paths(const std::string& config_path, std::vector<CacheP
                         ? map.FindMember(CACHE_PERSISTENT_SIZE.c_str())->value.GetInt64()
                         : 0;
         int query_limit_bytes = 0;
-        if (config::enable_query_cache_limit) {
+        if (config::enable_file_cache_query_limit) {
             query_limit_bytes =
                     map.HasMember(CACHE_QUERY_LIMIT_SIZE.c_str())
                             ? map.FindMember(CACHE_QUERY_LIMIT_SIZE.c_str())->value.GetInt64()
-                            : normal_size / 2;
+                            : normal_size / 5;
         }
-        paths.emplace_back(std::move(path), normal_size * GB, persistent_size * GB,
-                           query_limit_bytes * GB);
+        if (normal_size <= 0 || persistent_size <= 0) {
+            LOG(WARNING)
+                    << "normal or persistent size should not less than or equal to zero";
+            return Status::OLAPInternalError(OLAP_ERR_INPUT_PARAMETER_ERROR);
+        }
+        paths.emplace_back(std::move(path), normal_size, persistent_size, query_limit_bytes);
     }
     if (paths.empty()) {
         LOG(WARNING) << "fail to parse storage_root_path config. value=[" << config_path << "]";
@@ -205,11 +209,14 @@ io::FileCacheSettings CachePath::init_settings() const {
     io::FileCacheSettings settings;
     settings.max_size = normal_bytes;
     settings.persistent_max_size = persistent_bytes;
-    settings.max_elements = config::file_cache_max_elements == 0 ? settings.max_elements
-                                                                 : config::file_cache_max_elements;
-    settings.persistent_max_elements = settings.max_elements;
-    settings.max_query_cache_size = query_limit_bytes;
     settings.max_file_segment_size = config::file_cache_max_file_segment_size;
+
+    settings.max_elements = std::max<size_t>(
+            normal_bytes / config::file_cache_max_file_segment_size, settings.max_elements);
+    settings.persistent_max_elements =
+            std::max<size_t>(persistent_bytes / config::file_cache_max_file_segment_size,
+                             settings.persistent_max_elements);
+    settings.max_query_cache_size = query_limit_bytes;
     return settings;
 }
 

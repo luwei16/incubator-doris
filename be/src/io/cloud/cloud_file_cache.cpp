@@ -46,7 +46,7 @@ std::string IFileCache::get_path_in_local_cache(const Key& key) const {
 IFileCache::QueryContextHolderPtr IFileCache::get_query_context_holder(const TUniqueId& query_id) {
     std::lock_guard cache_lock(_mutex);
 
-    if (!_enable_query_cache_limit) {
+    if (!_enable_file_cache_query_limit) {
         return {};
     }
 

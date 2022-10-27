@@ -186,7 +186,7 @@ protected:
 
     QueryContextMap _query_map;
 
-    bool _enable_query_cache_limit = config::enable_query_cache_limit;
+    bool _enable_file_cache_query_limit = config::enable_file_cache_query_limit;
 
     QueryContextPtr get_query_context(const TUniqueId& query_id, std::lock_guard<std::mutex>&);
 

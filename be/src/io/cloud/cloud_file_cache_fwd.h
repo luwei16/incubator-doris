@@ -10,8 +10,7 @@ namespace io {
 
 using uint128_t = vectorized::UInt128;
 using UInt128Hash = vectorized::UInt128Hash;
-// DEFAULT: max_elements * max_file_segment_size = 100GB
-static constexpr size_t REMOTE_FS_OBJECTS_CACHE_DEFAULT_MAX_ELEMENTS = 100 * 1024;
+static constexpr size_t REMOTE_FS_OBJECTS_CACHE_DEFAULT_ELEMENTS = 100 * 1024;
 
 struct FileCacheSettings;
 } // namespace io
