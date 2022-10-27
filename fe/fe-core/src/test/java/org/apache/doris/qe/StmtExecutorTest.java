@@ -597,6 +597,9 @@ public class StmtExecutorTest {
                 // Mock ddl
                 DdlExecutor.execute((Env) any, (DdlStmt) any);
                 minTimes = 0;
+                QueryState tmpState = new QueryState();
+                tmpState.setOk();
+                result = tmpState;
             }
         };
 

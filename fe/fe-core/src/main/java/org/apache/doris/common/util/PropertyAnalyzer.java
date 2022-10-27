@@ -472,8 +472,15 @@ public class PropertyAnalyzer {
         if (value.equalsIgnoreCase("true")) {
             return true;
         }
+        if (!Config.cloud_unique_id.isEmpty()) {
+            throw new AnalysisException(PROPERTIES_ENABLE_LIGHT_SCHEMA_CHANGE
+                    + " must be `true`");
+        }
+        if (value.equalsIgnoreCase("false")) {
+            return false;
+        }
         throw new AnalysisException(PROPERTIES_ENABLE_LIGHT_SCHEMA_CHANGE
-                + " must be `true`");
+                    + " must be true or false");
     }
 
     public static Boolean analyzeDisableAutoCompaction(Map<String, String> properties) throws AnalysisException {
@@ -798,7 +805,14 @@ public class PropertyAnalyzer {
         if (value.equals("false")) {
             return false;
         }
+        if (!Config.cloud_unique_id.isEmpty()) {
+            throw new AnalysisException(PropertyAnalyzer.ENABLE_UNIQUE_KEY_MERGE_ON_WRITE
+                    + " must be `false`");
+        }
+        if (value.equals("true")) {
+            return true;
+        }
         throw new AnalysisException(PropertyAnalyzer.ENABLE_UNIQUE_KEY_MERGE_ON_WRITE
-                                    + " must be `false`");
+                + " must be true or false");
     }
 }

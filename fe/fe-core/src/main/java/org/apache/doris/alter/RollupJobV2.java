@@ -179,9 +179,6 @@ public class RollupJobV2 extends AlterJobV2 implements GsonPostProcessable {
     private void createRollupReplica() throws AlterCancelException {
         Database db = Env.getCurrentInternalCatalog()
                 .getDbOrException(dbId, s -> new AlterCancelException("Database " + s + " does not exist"));
-        if (!checkTableStable(db)) {
-            return;
-        }
 
         // 1. create rollup replicas
         AgentBatchTask batchTask = new AgentBatchTask();
@@ -366,6 +363,11 @@ public class RollupJobV2 extends AlterJobV2 implements GsonPostProcessable {
         LOG.info("begin to send create rollup replica tasks. job: {}", jobId);
 
         if (Config.cloud_unique_id.isEmpty()) {
+            Database db = Env.getCurrentInternalCatalog()
+                    .getDbOrException(dbId, s -> new AlterCancelException("Database " + s + " does not exist"));
+            if (!checkTableStable(db)) {
+                return;
+            }
             createRollupReplica();
         } else {
             createCloudRollupReplica();

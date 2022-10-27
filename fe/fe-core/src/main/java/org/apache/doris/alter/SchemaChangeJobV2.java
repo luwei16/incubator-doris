@@ -402,6 +402,11 @@ public class SchemaChangeJobV2 extends AlterJobV2 {
         LOG.info("begin to send create replica tasks. job: {}", jobId);
 
         if (Config.cloud_unique_id.isEmpty()) {
+            Database db = Env.getCurrentInternalCatalog()
+                    .getDbOrException(dbId, s -> new AlterCancelException("Database " + s + " does not exist"));
+            if (!checkTableStable(db)) {
+                return;
+            }
             createShadowIndexReplica();
         } else {
             createCloudShadowIndexReplica();

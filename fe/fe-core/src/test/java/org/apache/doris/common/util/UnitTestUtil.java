@@ -112,6 +112,7 @@ public class UnitTestUtil {
         partitionInfo.setDataProperty(partitionId, DataProperty.DEFAULT_DATA_PROPERTY);
         partitionInfo.setReplicaAllocation(partitionId, new ReplicaAllocation((short) 3));
         partitionInfo.setIsInMemory(partitionId, false);
+        partitionInfo.setIsPersistent(partitionId, false);
         partitionInfo.setTabletType(partitionId, TTabletType.TABLET_TYPE_DISK);
         OlapTable table = new OlapTable(tableId, TABLE_NAME, columns,
                                         KeysType.AGG_KEYS, partitionInfo, distributionInfo);
