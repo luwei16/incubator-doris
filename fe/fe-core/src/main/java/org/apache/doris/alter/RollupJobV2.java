@@ -73,6 +73,7 @@ import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.gson.annotations.SerializedName;
+import com.selectdb.cloud.proto.SelectdbCloud;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -320,14 +321,17 @@ public class RollupJobV2 extends AlterJobV2 implements GsonPostProcessable {
                     TTabletType tabletType = tbl.getPartitionInfo().getTabletType(partitionId);
                     MaterializedIndex rollupIndex = entry.getValue();
 
+                    SelectdbCloud.CreateTabletsRequest.Builder requestBuilder =
+                            SelectdbCloud.CreateTabletsRequest.newBuilder();
                     for (Tablet rollupTablet : rollupIndex.getTablets()) {
-                        Env.getCurrentInternalCatalog().createCloudTabletMeta(tableId, rollupIndexId, partitionId,
-                                rollupTablet, tabletType, rollupSchemaHash,
+                        Env.getCurrentInternalCatalog().createCloudTabletMetaBuilder(tableId, rollupIndexId,
+                                partitionId, rollupTablet, tabletType, rollupSchemaHash,
                                 rollupKeysType, rollupShortKeyColumnCount, tbl.getCopiedBfColumns(),
                                 tbl.getBfFpp(), tbl.getCopiedIndexes(), rollupSchema,
                                 tbl.getDataSortInfo(), tbl.getCompressionType(), tbl.getStoragePolicy(),
                                 tbl.isInMemory(), tbl.isPersistent(), true);
                     } // end for rollupTablets
+                    Env.getCurrentInternalCatalog().sendCreateTabletsRpc(requestBuilder);
                 }
             } catch (Exception e) {
                 LOG.warn("createCloudShadowIndexReplica Exception:{}", e);

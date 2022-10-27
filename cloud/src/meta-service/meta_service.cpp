@@ -1644,41 +1644,9 @@ void MetaServiceImpl::get_version(::google::protobuf::RpcController* controller,
     code = MetaServiceCode::KV_TXN_GET_ERR;
 }
 
-void MetaServiceImpl::create_tablet(::google::protobuf::RpcController* controller,
-                                    const ::selectdb::CreateTabletRequest* request,
-                                    ::selectdb::MetaServiceGenericResponse* response,
-                                    ::google::protobuf::Closure* done) {
-    auto ctrl = static_cast<brpc::Controller*>(controller);
-    LOG(INFO) << "rpc from " << ctrl->remote_side() << " request=" << request->DebugString();
-    brpc::ClosureGuard closure_guard(done);
-    int ret = 0;
-    MetaServiceCode code = MetaServiceCode::OK;
-    std::string msg = "OK";
-    std::unique_ptr<int, std::function<void(int*)>> defer_status(
-            (int*)0x01, [&ret, &code, &msg, &response, &ctrl](int*) {
-                response->mutable_status()->set_code(code);
-                response->mutable_status()->set_msg(msg);
-                LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
-                          << ctrl->remote_side() << " " << msg;
-            });
-
-    if (!request->has_tablet_meta()) {
-        msg = "no tablet meta";
-        code = MetaServiceCode::INVALID_ARGUMENT;
-        return;
-    }
-    std::string instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
-    if (instance_id.empty()) {
-        code = MetaServiceCode::INVALID_ARGUMENT;
-        msg = "empty instance_id";
-        LOG(INFO) << msg << ", cloud_unique_id=" << request->cloud_unique_id();
-        return;
-    }
-
-    auto& tablet_meta = const_cast<doris::TabletMetaPB&>(request->tablet_meta());
-    // TODO:
-    // process multiple initial rowsets so that we can create table with
-    // data -- boostrap
+MetaServiceResponseStatus internal_create_tablet(doris::TabletMetaPB& tablet_meta,
+        std::shared_ptr<TxnKv> txn_kv, const std::string& instance_id) {
+    MetaServiceResponseStatus st;
     bool has_first_rowset = tablet_meta.rs_metas_size() > 0;
     doris::RowsetMetaPB first_rowset;
     if (has_first_rowset) {
@@ -1693,16 +1661,16 @@ void MetaServiceImpl::create_tablet(::google::protobuf::RpcController* controlle
     int64_t tablet_id = tablet_meta.tablet_id();
 
     std::unique_ptr<Transaction> txn;
-    ret = txn_kv_->create_txn(&txn);
+    int ret = txn_kv->create_txn(&txn);
 
     MetaTabletKeyInfo key_info {instance_id, table_id, index_id, partition_id, tablet_id};
     std::string key;
     std::string val;
     meta_tablet_key(key_info, &key);
     if (!tablet_meta.SerializeToString(&val)) {
-        code = MetaServiceCode::PROTOBUF_SERIALIZE_ERR;
-        msg = "failed to serialize tablet meta";
-        return;
+        st.set_code(MetaServiceCode::PROTOBUF_SERIALIZE_ERR);
+        st.set_msg("failed to serialize tablet meta");
+        return st;
     }
     txn->put(key, val);
     LOG(INFO) << "xxx put tablet_key=" << hex(key);
@@ -1714,9 +1682,9 @@ void MetaServiceImpl::create_tablet(::google::protobuf::RpcController* controlle
         MetaRowsetKeyInfo rs_key_info {instance_id, tablet_id, first_rowset.end_version()};
         meta_rowset_key(rs_key_info, &rs_key);
         if (!first_rowset.SerializeToString(&rs_val)) {
-            code = MetaServiceCode::PROTOBUF_SERIALIZE_ERR;
-            msg = "failed to serialize first rowset meta";
-            return;
+            st.set_code(MetaServiceCode::PROTOBUF_SERIALIZE_ERR);
+            st.set_msg("failed to serialize first rowset meta");
+            return st;
         }
         txn->put(rs_key, rs_val);
         LOG(INFO) << "xxx rowset key=" << hex(rs_key);
@@ -1734,9 +1702,9 @@ void MetaServiceImpl::create_tablet(::google::protobuf::RpcController* controlle
     tablet_table.set_partition_id(partition_id);
     tablet_table.set_tablet_id(tablet_id);
     if (!tablet_table.SerializeToString(&val1)) {
-        code = MetaServiceCode::PROTOBUF_SERIALIZE_ERR;
-        msg = "failed to serialize tablet table value";
-        return;
+        st.set_code(MetaServiceCode::PROTOBUF_SERIALIZE_ERR);
+        st.set_msg("failed to serialize tablet table value");
+        return st;
     }
     txn->put(key1, val1);
     LOG(INFO) << "put tablet_idx tablet_id=" << tablet_id << " key=" << hex(key1);
@@ -1762,9 +1730,53 @@ void MetaServiceImpl::create_tablet(::google::protobuf::RpcController* controlle
 
     ret = txn->commit();
     if (ret != 0) {
-        code = ret == -1 ? MetaServiceCode::KV_TXN_CONFLICT : MetaServiceCode::KV_TXN_COMMIT_ERR;
-        msg = "failed to save tablet meta";
+        st.set_code(ret == -1 ? MetaServiceCode::KV_TXN_CONFLICT : MetaServiceCode::KV_TXN_COMMIT_ERR);
+        st.set_msg("failed to save tablet meta");
+        return st;
+    }
+
+    st.set_code(MetaServiceCode::OK);
+    st.set_msg("OK");
+    return st;
+}
+
+void MetaServiceImpl::create_tablets(::google::protobuf::RpcController* controller,
+                                    const ::selectdb::CreateTabletsRequest* request,
+                                    ::selectdb::MetaServiceGenericResponse* response,
+                                    ::google::protobuf::Closure* done) {
+    auto ctrl = static_cast<brpc::Controller*>(controller);
+    LOG(INFO) << "rpc from " << ctrl->remote_side() << " request=" << request->DebugString();
+    brpc::ClosureGuard closure_guard(done);
+    int ret = 0;
+    MetaServiceCode code = MetaServiceCode::OK;
+    std::string msg = "OK";
+    std::unique_ptr<int, std::function<void(int*)>> defer_status(
+            (int*)0x01, [&ret, &code, &msg, &response, &ctrl](int*) {
+                response->mutable_status()->set_code(code);
+                response->mutable_status()->set_msg(msg);
+                LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
+                          << ctrl->remote_side() << " " << msg;
+            });
+
+    if (request->tablet_metas_size() == 0) {
+        msg = "no tablet meta";
+        code = MetaServiceCode::INVALID_ARGUMENT;
         return;
+    }
+    std::string instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
+    if (instance_id.empty()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "empty instance_id";
+        LOG(INFO) << msg << ", cloud_unique_id=" << request->cloud_unique_id();
+        return;
+    }
+
+    for (auto& tablet_meta : request->tablet_metas()) {
+        auto& meta = const_cast<doris::TabletMetaPB&>(tablet_meta);
+        MetaServiceResponseStatus st = internal_create_tablet(meta, txn_kv_, instance_id);
+        if (st.code() != MetaServiceCode::OK) {
+            ret = -1;
+        }
     }
 }
 

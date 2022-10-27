@@ -55,8 +55,8 @@ public:
                      ::selectdb::GetVersionResponse* response,
                      ::google::protobuf::Closure* done) override;
 
-    void create_tablet(::google::protobuf::RpcController* controller,
-                       const ::selectdb::CreateTabletRequest* request,
+    void create_tablets(::google::protobuf::RpcController* controller,
+                       const ::selectdb::CreateTabletsRequest* request,
                        ::selectdb::MetaServiceGenericResponse* response,
                        ::google::protobuf::Closure* done) override;
 

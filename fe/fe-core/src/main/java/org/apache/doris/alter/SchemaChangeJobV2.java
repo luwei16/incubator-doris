@@ -66,6 +66,7 @@ import com.google.common.collect.Maps;
 import com.google.common.collect.Table;
 import com.google.common.collect.Table.Cell;
 import com.google.gson.annotations.SerializedName;
+import com.selectdb.cloud.proto.SelectdbCloud;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -356,13 +357,16 @@ public class SchemaChangeJobV2 extends AlterJobV2 {
                         long originIndexId = indexIdMap.get(shadowIdxId);
                         KeysType originKeysType = tbl.getKeysTypeByIndexId(originIndexId);
 
+                        SelectdbCloud.CreateTabletsRequest.Builder requestBuilder =
+                                SelectdbCloud.CreateTabletsRequest.newBuilder();
                         for (Tablet shadowTablet : shadowIdx.getTablets()) {
-                            Env.getCurrentInternalCatalog().createCloudTabletMeta(tableId, shadowIdxId, partitionId,
-                                    shadowTablet, tbl.getPartitionInfo().getTabletType(partitionId), shadowSchemaHash,
-                                    originKeysType, shadowShortKeyColumnCount, bfColumns, bfFpp, indexes, shadowSchema,
-                                    tbl.getDataSortInfo(), tbl.getCompressionType(), tbl.getStoragePolicy(),
-                                    tbl.isInMemory(), tbl.isPersistent(), true);
+                            Env.getCurrentInternalCatalog().createCloudTabletMetaBuilder(tableId, shadowIdxId,
+                                    partitionId, shadowTablet, tbl.getPartitionInfo().getTabletType(partitionId),
+                                    shadowSchemaHash, originKeysType, shadowShortKeyColumnCount, bfColumns,
+                                    bfFpp, indexes, shadowSchema, tbl.getDataSortInfo(), tbl.getCompressionType(),
+                                    tbl.getStoragePolicy(), tbl.isInMemory(), tbl.isPersistent(), true);
                         } // end for rollupTablets
+                        Env.getCurrentInternalCatalog().sendCreateTabletsRpc(requestBuilder);
                     }
                 }
             } catch (Exception e) {
