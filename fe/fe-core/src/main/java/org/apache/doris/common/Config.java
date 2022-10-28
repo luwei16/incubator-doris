@@ -1860,4 +1860,7 @@ public class Config extends ConfigBase {
 
     @ConfField(mutable = false)
     public static int cloud_copy_txn_conflict_error_retry_num = 5;
+
+    @ConfField
+    public static boolean range_desc_read_by_column_def = true;
 }
