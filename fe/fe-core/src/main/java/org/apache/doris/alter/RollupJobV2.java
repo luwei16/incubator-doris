@@ -52,6 +52,7 @@ import org.apache.doris.common.util.SqlParserUtils;
 import org.apache.doris.common.util.TimeUtils;
 import org.apache.doris.persist.gson.GsonPostProcessable;
 import org.apache.doris.persist.gson.GsonUtils;
+import org.apache.doris.proto.OlapFile;
 import org.apache.doris.qe.ConnectContext;
 import org.apache.doris.qe.OriginStatement;
 import org.apache.doris.qe.SqlModeHelper;
@@ -321,12 +322,14 @@ public class RollupJobV2 extends AlterJobV2 implements GsonPostProcessable {
                     SelectdbCloud.CreateTabletsRequest.Builder requestBuilder =
                             SelectdbCloud.CreateTabletsRequest.newBuilder();
                     for (Tablet rollupTablet : rollupIndex.getTablets()) {
-                        Env.getCurrentInternalCatalog().createCloudTabletMetaBuilder(tableId, rollupIndexId,
+                        OlapFile.TabletMetaPB.Builder builder =
+                                Env.getCurrentInternalCatalog().createCloudTabletMetaBuilder(tableId, rollupIndexId,
                                 partitionId, rollupTablet, tabletType, rollupSchemaHash,
                                 rollupKeysType, rollupShortKeyColumnCount, tbl.getCopiedBfColumns(),
                                 tbl.getBfFpp(), tbl.getCopiedIndexes(), rollupSchema,
                                 tbl.getDataSortInfo(), tbl.getCompressionType(), tbl.getStoragePolicy(),
                                 tbl.isInMemory(), tbl.isPersistent(), true);
+                        requestBuilder.addTabletMetas(builder);
                     } // end for rollupTablets
                     Env.getCurrentInternalCatalog().sendCreateTabletsRpc(requestBuilder);
                 }

@@ -47,6 +47,7 @@ import org.apache.doris.common.SchemaVersionAndHash;
 import org.apache.doris.common.io.Text;
 import org.apache.doris.common.util.TimeUtils;
 import org.apache.doris.persist.gson.GsonUtils;
+import org.apache.doris.proto.OlapFile;
 import org.apache.doris.task.AgentBatchTask;
 import org.apache.doris.task.AgentTask;
 import org.apache.doris.task.AgentTaskExecutor;
@@ -360,11 +361,13 @@ public class SchemaChangeJobV2 extends AlterJobV2 {
                         SelectdbCloud.CreateTabletsRequest.Builder requestBuilder =
                                 SelectdbCloud.CreateTabletsRequest.newBuilder();
                         for (Tablet shadowTablet : shadowIdx.getTablets()) {
-                            Env.getCurrentInternalCatalog().createCloudTabletMetaBuilder(tableId, shadowIdxId,
+                            OlapFile.TabletMetaPB.Builder builder =
+                                    Env.getCurrentInternalCatalog().createCloudTabletMetaBuilder(tableId, shadowIdxId,
                                     partitionId, shadowTablet, tbl.getPartitionInfo().getTabletType(partitionId),
                                     shadowSchemaHash, originKeysType, shadowShortKeyColumnCount, bfColumns,
                                     bfFpp, indexes, shadowSchema, tbl.getDataSortInfo(), tbl.getCompressionType(),
                                     tbl.getStoragePolicy(), tbl.isInMemory(), tbl.isPersistent(), true);
+                            requestBuilder.addTabletMetas(builder);
                         } // end for rollupTablets
                         Env.getCurrentInternalCatalog().sendCreateTabletsRpc(requestBuilder);
                     }
