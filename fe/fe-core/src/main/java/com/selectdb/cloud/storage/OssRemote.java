@@ -66,7 +66,8 @@ public class OssRemote extends DefaultRemote {
             ListObjectsV2Result result = ossClient.listObjectsV2(request);
             List<ObjectFile> objectFiles = new ArrayList<>();
             for (OSSObjectSummary s : result.getObjectSummaries()) {
-                objectFiles.add(new ObjectFile(s.getKey(), getRelativePath(s.getKey()), s.getETag(), s.getSize()));
+                objectFiles.add(
+                        new ObjectFile(s.getKey(), getRelativePath(s.getKey()), formatEtag(s.getETag()), s.getSize()));
             }
             return new ListObjectsResult(objectFiles, result.isTruncated(), result.getNextContinuationToken());
         } catch (OSSException e) {

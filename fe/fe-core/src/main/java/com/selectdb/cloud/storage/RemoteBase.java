@@ -94,4 +94,17 @@ public abstract class RemoteBase {
         }
         return key.substring(expectedPrefix.length());
     }
+
+    // The etag returned by S3 SDK contains quota in the head and tail, such as "9de7058b7d5816b72d90544810740c1c"
+    // The etag returned by OSS SDK does not contain quota, such as 9de7058b7d5816b72d90544810740c1c
+    // So add quota for etag returned by OSS SDK.
+    protected String formatEtag(String etag) {
+        if (!etag.startsWith("\"") && !etag.endsWith("\"")) {
+            return String.format("\"%s\"", etag);
+        }
+        if (etag.startsWith("\"") && etag.endsWith("\"")) {
+            return etag;
+        }
+        throw new IllegalArgumentException("Invalid etag=" + etag);
+    }
 }

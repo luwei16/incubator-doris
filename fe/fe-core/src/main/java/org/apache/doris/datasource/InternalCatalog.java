@@ -3901,6 +3901,9 @@ public class InternalCatalog implements CatalogIf<Database> {
         }
         if (response.getStatus().getCode() != SelectdbCloud.MetaServiceCode.OK) {
             LOG.warn("getStage response: {} ", response);
+            if (response.getStatus().getCode() == MetaServiceCode.STAGE_NOT_FOUND) {
+                throw new DdlException("Stage does not exists: " + stageName);
+            }
             throw new DdlException("internal error, try later");
         }
         return response.getStageList();

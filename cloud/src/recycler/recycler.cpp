@@ -1368,14 +1368,15 @@ void InstanceRecycler::recycle_copy_jobs() {
                                      << ", ret=" << ret;
                         return false;
                     }
+                    LOG_INFO("check if external stage object exists")
+                            .tag("instance_id", instance_id_)
+                            .tag("stage_id", stage_id)
+                            .tag("table_id", table_id)
+                            .tag("query_id", copy_id)
+                            .tag("relative_path", file.relative_path())
+                            .tag("etag", file.etag())
+                            .tag("exist", exist);
                     if (exist) {
-                        LOG_INFO("external stage object exist, skip recycle")
-                                .tag("instance_id", instance_id_)
-                                .tag("stage_id", stage_id)
-                                .tag("table_id", table_id)
-                                .tag("query_id", copy_id)
-                                .tag("relative_path", file.relative_path())
-                                .tag("etag", file.etag());
                         return false;
                     }
                 }
