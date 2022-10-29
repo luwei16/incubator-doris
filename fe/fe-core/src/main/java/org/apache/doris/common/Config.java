@@ -1849,10 +1849,7 @@ public class Config extends ConfigBase {
     @ConfField(mutable = false)
     public static int statistic_task_scheduler_execution_interval_ms = 60 * 1000;
 
-    @ConfField
-    public static boolean replication_num_forced_in_cloud_mode = false;
-
-    @ConfField
+    @ConfField(mutable = true)
     public static boolean ignore_unsupported_properties_in_cloud_mode = false;
 
     @ConfField(mutable = false)

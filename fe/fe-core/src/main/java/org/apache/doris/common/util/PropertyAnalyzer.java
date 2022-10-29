@@ -21,6 +21,7 @@ import org.apache.doris.analysis.DataSortInfo;
 import org.apache.doris.analysis.DateLiteral;
 import org.apache.doris.catalog.Column;
 import org.apache.doris.catalog.DataProperty;
+import org.apache.doris.catalog.DynamicPartitionProperty;
 import org.apache.doris.catalog.Env;
 import org.apache.doris.catalog.KeysType;
 import org.apache.doris.catalog.Partition;
@@ -686,6 +687,12 @@ public class PropertyAnalyzer {
         unsupportedProperties.add(PROPERTIES_DISABLE_AUTO_COMPACTION);
         unsupportedProperties.add(ENABLE_UNIQUE_KEY_MERGE_ON_WRITE);
         unsupportedProperties.add(PROPERTIES_ENABLE_LIGHT_SCHEMA_CHANGE);
+        unsupportedProperties.add(PROPERTIES_REPLICATION_ALLOCATION);
+        unsupportedProperties.add(PROPERTIES_REPLICATION_NUM);
+
+        unsupportedProperties.add(DynamicPartitionProperty.REPLICATION_NUM);
+        unsupportedProperties.add(DynamicPartitionProperty.REPLICATION_ALLOCATION);
+        unsupportedProperties.add(DynamicPartitionProperty.REMOTE_STORAGE_POLICY);
 
         for (String property : unsupportedProperties) {
             if (properties.containsKey(property)) {
@@ -703,6 +710,9 @@ public class PropertyAnalyzer {
     // prefix is for property key such as "dynamic_partition.replication_num", which prefix is "dynamic_partition"
     public static ReplicaAllocation analyzeReplicaAllocation(Map<String, String> properties, String prefix)
             throws AnalysisException {
+        if (!Config.cloud_unique_id.isEmpty()) {
+            return new ReplicaAllocation((short) 1);
+        }
         if (properties == null || properties.isEmpty()) {
             return ReplicaAllocation.NOT_SET;
         }

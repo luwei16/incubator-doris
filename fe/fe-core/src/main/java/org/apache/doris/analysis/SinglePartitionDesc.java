@@ -21,7 +21,6 @@ import org.apache.doris.analysis.PartitionKeyDesc.PartitionKeyValueType;
 import org.apache.doris.catalog.DataProperty;
 import org.apache.doris.catalog.ReplicaAllocation;
 import org.apache.doris.common.AnalysisException;
-import org.apache.doris.common.Config;
 import org.apache.doris.common.FeNameFormat;
 import org.apache.doris.common.util.PrintableMap;
 import org.apache.doris.common.util.PropertyAnalyzer;
@@ -138,20 +137,8 @@ public class SinglePartitionDesc {
 
         // analyze replication num
         replicaAlloc = PropertyAnalyzer.analyzeReplicaAllocation(properties, "");
-        if (!Config.cloud_unique_id.isEmpty()) {
-            if (Config.replication_num_forced_in_cloud_mode) {
-                replicaAlloc = new ReplicaAllocation((short) 1);
-            } else {
-                if (replicaAlloc.isNotSet()) {
-                    replicaAlloc = new ReplicaAllocation((short) 1);
-                } else {
-                    throw new AnalysisException("Replication property are not allowed to be set in cloud mode");
-                }
-            }
-        } else {
-            if (replicaAlloc.isNotSet()) {
-                replicaAlloc = ReplicaAllocation.DEFAULT_ALLOCATION;
-            }
+        if (replicaAlloc.isNotSet()) {
+            replicaAlloc = ReplicaAllocation.DEFAULT_ALLOCATION;
         }
 
         // analyze version info

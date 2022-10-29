@@ -1756,23 +1756,14 @@ public class InternalCatalog implements CatalogIf<Database> {
         List<Column> baseSchema = stmt.getColumns();
         validateColumns(baseSchema);
 
+        if (!Config.cloud_unique_id.isEmpty()) {
+            PropertyAnalyzer.checkCloudTableProperty(stmt.getProperties());
+        }
+
         // analyze replica allocation
         ReplicaAllocation replicaAlloc = PropertyAnalyzer.analyzeReplicaAllocation(stmt.getProperties(), "");
-        if (!Config.cloud_unique_id.isEmpty()) {
-            if (Config.replication_num_forced_in_cloud_mode) {
-                replicaAlloc = new ReplicaAllocation((short) 1);
-            } else {
-                if (replicaAlloc.isNotSet()) {
-                    replicaAlloc = new ReplicaAllocation((short) 1);
-                } else {
-                    throw new DdlException("Replication property are not allowed to be set in cloud mode");
-                }
-            }
-            PropertyAnalyzer.checkCloudTableProperty(stmt.getProperties());
-        } else {
-            if (replicaAlloc.isNotSet()) {
-                replicaAlloc = ReplicaAllocation.DEFAULT_ALLOCATION;
-            }
+        if (replicaAlloc.isNotSet()) {
+            replicaAlloc = ReplicaAllocation.DEFAULT_ALLOCATION;
         }
 
         long bufferSize = IdGeneratorUtil.getBufferSizeForCreateTable(stmt, replicaAlloc);

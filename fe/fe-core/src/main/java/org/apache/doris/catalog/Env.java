@@ -5584,6 +5584,9 @@ public class Env {
         int tryCnt = 0;
         while (true) {
             try {
+                if (indexs.isEmpty()) {
+                    break;
+                }
                 Env.getCurrentInternalCatalog().dropCloudMaterializedIndex(olapTable, indexs);
                 tryCnt++;
             } catch (Exception e) {
