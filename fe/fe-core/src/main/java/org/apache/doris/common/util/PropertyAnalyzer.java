@@ -711,6 +711,18 @@ public class PropertyAnalyzer {
     public static ReplicaAllocation analyzeReplicaAllocation(Map<String, String> properties, String prefix)
             throws AnalysisException {
         if (!Config.cloud_unique_id.isEmpty()) {
+            if (properties != null && !properties.isEmpty()) {
+                String propKey = Strings.isNullOrEmpty(prefix) ? PROPERTIES_REPLICATION_ALLOCATION
+                        : prefix + "." + PROPERTIES_REPLICATION_ALLOCATION;
+                properties.remove(propKey);
+            }
+
+            if (properties != null && !properties.isEmpty()) {
+                String propKey = Strings.isNullOrEmpty(prefix) ? PROPERTIES_REPLICATION_NUM
+                        : prefix + "." + PROPERTIES_REPLICATION_NUM;
+                properties.remove(propKey);
+            }
+
             return new ReplicaAllocation((short) 1);
         }
         if (properties == null || properties.isEmpty()) {
