@@ -169,6 +169,7 @@ public class CloudLoadAction extends RestBaseController {
                 return ResponseEntityBuilder.badRequest("POST body must contain [sql] root object");
             }
 
+            String clusterName = (String) jsonObject.getOrDefault("cluster", "");
             StatementBase copyIntoStmt = StatementSubmitter.analyzeStmt(copyIntoSql);
             if (!(copyIntoStmt instanceof CopyStmt)) {
                 return ResponseEntityBuilder.badRequest("just support copy into sql: " + copyIntoSql);
@@ -178,7 +179,7 @@ public class CloudLoadAction extends RestBaseController {
 
             ConnectContext.get().changeDefaultCatalog(InternalCatalog.INTERNAL_CATALOG_NAME);
 
-            return executeQuery(authInfo, copyIntoSql, response);
+            return executeQuery(authInfo, copyIntoSql, response, clusterName);
         } catch (DorisHttpException e) {
             // status code  should conforms to HTTP semantic
             resultMap.put("code", e.getCode().code());
@@ -198,9 +199,9 @@ public class CloudLoadAction extends RestBaseController {
      * @return response
      */
     private ResponseEntity executeQuery(ActionAuthorizationInfo authInfo,
-                                        String copyIntoStmt, HttpServletResponse response) {
+                                        String copyIntoStmt, HttpServletResponse response, String clusterName) {
         StatementSubmitter.StmtContext stmtCtx = new StatementSubmitter.StmtContext(copyIntoStmt,
-                authInfo.fullUserName, authInfo.password, 1000, false, response);
+                authInfo.fullUserName, authInfo.password, 1000, false, response, clusterName);
         Future<ExecutionResultSet> future = stmtSubmitter.submitBlock(stmtCtx);
 
         try {

@@ -95,9 +95,20 @@ public class CloudReplica extends Replica {
     public long getBackendId() {
         String cluster = null;
         // Not in a connect session
-        if (ConnectContext.get() != null) {
-            cluster = ConnectContext.get().getCloudCluster();
+        ConnectContext context = ConnectContext.get();
+        if (context != null) {
+            cluster = context.getCloudCluster();
+            if (Strings.isNullOrEmpty(cluster)) {
+                // try set default cluster
+                String defaultCloudCluster = Env.getCurrentEnv().getAuth()
+                        .getDefaultCloudCluster(context.getQualifiedUser());
+                if (!Strings.isNullOrEmpty(defaultCloudCluster)) {
+                    context.setCloudCluster(defaultCloudCluster);
+                    cluster = defaultCloudCluster;
+                }
+            }
         }
+
         // check default cluster valid.
         if (!Strings.isNullOrEmpty(cluster)) {
             boolean exist = Env.getCurrentSystemInfo().getCloudClusterNames().contains(cluster);
