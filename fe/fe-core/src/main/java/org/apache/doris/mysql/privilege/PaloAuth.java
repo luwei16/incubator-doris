@@ -172,11 +172,10 @@ public class PaloAuth implements Writable {
         try {
             cluster = propertyMgr.getDefaultCloudCluster(user);
         } catch (DdlException e) {
-            readUnlock();
             LOG.warn("cant get default cloud cluster , user {}", user);
-            cluster = "";
+        } finally {
+            readUnlock();
         }
-        readUnlock();
         return cluster;
     }
 
