@@ -230,7 +230,7 @@ public:
                     ++v;
                     _rid++;
                     _index_writer->addDocument(_doc, _default_analyzer);
-                    _CLDELETE(act_value);
+                    _CLDELETE_ARRAY(act_value);
                 } else if (_parser_type == InvertedIndexParserType::PARSER_STANDARD) {
                     auto field_value =
                             lucene::util::Misc::_charToWide(v->get_data(), v->get_size());
