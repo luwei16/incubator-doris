@@ -940,7 +940,9 @@ CONF_Int32(inverted_index_searcher_cache_capacity, "1000000");
 // Cache for inverted index cache size
 CONF_String(inverted_index_searcher_cache_limit, "10%");
 // inverted index
-CONF_Int32(query_bkd_inverted_index_limit_percent, "10"); // 10%
+CONF_Int32(query_bkd_inverted_index_limit_percent, "5"); // 5%
+// tree depth for bkd
+CONF_Int32(max_depth_in_bkd_tree, "32");
 
 CONF_Bool(enable_index_compaction, "false");
 

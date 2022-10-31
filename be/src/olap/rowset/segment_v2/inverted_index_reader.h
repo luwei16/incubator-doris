@@ -133,32 +133,31 @@ private:
 
 class InvertedIndexVisitor : public lucene::util::bkd::bkd_reader::intersect_visitor {
 private:
-    const uint8_t* queryMin;
-    const uint8_t* queryMax;
     roaring::Roaring* hits;
     uint32_t num_hits;
     bool only_count;
     //std::shared_ptr<lucene::util::BitSet> hits;
     lucene::util::bkd::bkd_reader* reader;
     InvertedIndexQueryType query_type;
-
 public:
-    InvertedIndexVisitor(const uint8_t* queryMin, const uint8_t* queryMax, roaring::Roaring* hits,
+    std::string queryMin;
+    std::string queryMax;
+public:
+    InvertedIndexVisitor(roaring::Roaring* hits,
                          InvertedIndexQueryType query_type, bool only_count = false);
     virtual ~InvertedIndexVisitor() = default;
 
     void set_reader(lucene::util::bkd::bkd_reader* r) { reader = r; };
-    void set_min(const uint8_t* qm) {
-        queryMin = qm;
-    }
-    void set_max(const uint8_t* qm) {
-        queryMax = qm;
-    }
+    lucene::util::bkd::bkd_reader* get_reader() { return reader; };
 
     void visit(int rowID) override;
+    void visit(roaring::Roaring &r) override;
+    void visit(roaring::Roaring &&r) ;
+    void visit(Roaring *docID, std::vector<uint8_t> &packedValue) ;
     bool matches(uint8_t* packedValue);
 
     void visit(int rowID, std::vector<uint8_t>& packedValue) override;
+    void visit(lucene::util::bkd::bkd_docID_set_iterator *iter, std::vector<uint8_t> &packedValue) override;
 
     lucene::util::bkd::relation compare(std::vector<uint8_t>& minPacked,
                                         std::vector<uint8_t>& maxPacked) override;
@@ -189,6 +188,7 @@ public:
                  uint32_t* count) override;
     Status bkd_query(const std::string& column_name, const void* query_value,
                                      InvertedIndexQueryType query_type,
+				     std::shared_ptr<lucene::util::bkd::bkd_reader>&& r,
                                      InvertedIndexVisitor* visitor);
 
     InvertedIndexReaderType type() override;

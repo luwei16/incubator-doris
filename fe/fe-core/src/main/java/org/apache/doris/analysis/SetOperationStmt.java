@@ -503,6 +503,11 @@ public class SetOperationStmt extends QueryStmt {
             slotDesc.setLabel(getColLabels().get(i));
             slotDesc.setType(expr.getType());
             slotDesc.setIsNullable(expr.isNullable());
+            if (expr instanceof SlotRef) {
+                if (((SlotRef) expr).getColumn() != null) {
+                    slotDesc.setColumn(((SlotRef) expr).getColumn());
+                }
+            }
             // TODO(zc)
             // slotDesc.setStats(columnStats.get(i));
             SlotRef outputSlotRef = new SlotRef(slotDesc);

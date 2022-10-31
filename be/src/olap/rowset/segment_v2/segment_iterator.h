@@ -153,9 +153,6 @@ private:
         return Status::OK();
     }
 
-    void _build_match_return_column(vectorized::Block* block, const std::string& match_column_sign,
-                                    const roaring::Roaring& inverted_bitmap);
-
     bool _is_handle_predicate_by_fulltext(ColumnPredicate* predicate);
 
     bool _can_evaluated_by_vectorized(ColumnPredicate* predicate);
@@ -202,10 +199,12 @@ private:
     std::string _gen_predicate_sign(ColumnPredicate* predicate);
     std::string _gen_predicate_sign(ColumnPredicateInfo* predicate_info);
 
-    void _build_index_return_column(vectorized::Block* block, const std::string& index_result_column_sign,
+    void _build_index_return_column(uint16_t* sel_rowid_idx, uint16_t select_size,
+                                    vectorized::Block* block, 
+                                    const std::string& index_result_column_sign,
                                     const roaring::Roaring& index_result);
 
-    void _output_index_return_column(vectorized::Block* block);
+    void _output_index_return_column(uint16_t* sel_rowid_idx, uint16_t select_size, vectorized::Block* block);
 
     bool _check_apply_by_bitmap_index(ColumnPredicate* pred);
     bool _check_apply_by_inverted_index(ColumnPredicate* pred);
@@ -256,7 +255,7 @@ private:
     std::vector<ColumnId>
             _short_cir_pred_column_ids; // keep columnId of columns for short circuit predicate evaluation
     std::vector<bool> _is_pred_column; // columns hold by segmentIter
-    std::vector<bool> _is_handle_by_index; // columns hold by indexIter
+    std::map<uint32_t, bool> _need_read_data_indices;
     vectorized::MutableColumns _current_return_columns;
     std::vector<ColumnPredicate*> _pre_eval_block_predicate;
     std::vector<ColumnPredicate*> _short_cir_eval_predicate;

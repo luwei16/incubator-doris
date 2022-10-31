@@ -258,9 +258,6 @@ public class SortInfo {
         // backup before substitute orderingExprs
         origOrderingExprs = orderingExprs;
 
-        // backup before substitute orderingExprs
-        origOrderingExprs = orderingExprs;
-
         // The ordering exprs are evaluated against the sort tuple, so they must reflect the
         // materialization decision above.
         substituteOrderingExprs(substOrderBy, analyzer);

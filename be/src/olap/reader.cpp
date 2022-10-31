@@ -458,6 +458,7 @@ void TabletReader::_init_conditions_param(const ReaderParams& read_params) {
         if (predicate != nullptr) {
             auto predicate_params = predicate->predicate_params();
             predicate_params->value = condition.condition_values[0];
+            predicate_params->marked_by_runtime_filter = condition.marked_by_runtime_filter;
             if (_tablet_schema->column_by_uid(condition_col_uid).aggregation() !=
                 FieldAggregationMethod::OLAP_FIELD_AGGREGATION_NONE) {
                 _value_col_predicates.push_back(predicate);

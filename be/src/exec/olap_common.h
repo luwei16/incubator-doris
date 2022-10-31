@@ -187,6 +187,7 @@ public:
             if (TYPE_MIN != _low_value || FILTER_LARGER_OR_EQUAL != _low_op) {
                 low.__set_column_name(_column_name);
                 low.__set_condition_op((_low_op == FILTER_LARGER_OR_EQUAL ? ">=" : ">>"));
+                low.__set_marked_by_runtime_filter(_marked_runtime_filter_predicate);
                 low.condition_values.push_back(
                         cast_to_string<primitive_type, CppType>(_low_value, _scale));
             }
@@ -199,6 +200,7 @@ public:
             if (TYPE_MAX != _high_value || FILTER_LESS_OR_EQUAL != _high_op) {
                 high.__set_column_name(_column_name);
                 high.__set_condition_op((_high_op == FILTER_LESS_OR_EQUAL ? "<=" : "<<"));
+                high.__set_marked_by_runtime_filter(_marked_runtime_filter_predicate);
                 high.condition_values.push_back(
                         cast_to_string<primitive_type, CppType>(_high_value, _scale));
             }
@@ -226,6 +228,7 @@ public:
         condition.__set_column_name(_column_name);
         condition.__set_condition_op(is_in ? "*=" : "!*=");
         condition.__set_compound_type(_compound_type);
+        condition.__set_marked_by_runtime_filter(_marked_runtime_filter_predicate);
 
         for (const auto& value : _fixed_values) {
             condition.condition_values.push_back(
@@ -323,6 +326,10 @@ public:
         _compound_type = compound_type;
     }
 
+    void mark_runtime_filter_predicate(bool is_runtime_filter_predicate) {
+        _marked_runtime_filter_predicate = is_runtime_filter_predicate;
+    }
+
     TCompoundType::type get_compound_type() const;
 
     int scale() const { return _scale; }
@@ -393,6 +400,7 @@ private:
 
     std::set<std::pair<SQLFilterOp, CppType>> _boundary_values; // range boundary value in CompoundPredicate
     TCompoundType::type _compound_type = TCompoundType::UNKNOWN;
+    bool _marked_runtime_filter_predicate = false;
 };
 
 class OlapScanKeys {

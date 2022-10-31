@@ -223,6 +223,7 @@ Status VScanNode::_acquire_runtime_filter() {
             _is_all_rf_applied = false;
         }
     }
+
     RETURN_IF_ERROR(_append_rf_into_conjuncts(vexprs));
 
     return Status::OK();
@@ -411,6 +412,7 @@ VExpr* VScanNode::_normalize_predicate(VExpr* conjunct_expr_root) {
             auto impl = conjunct_expr_root->get_impl();
             // If impl is not null, which means this a conjuncts from runtime filter.
             VExpr* cur_expr = impl ? const_cast<VExpr*>(impl) : conjunct_expr_root;
+            bool is_runtimer_filter_predicate = _rf_vexpr_set.find(conjunct_expr_root) != _rf_vexpr_set.end();
             bool is_compound_predicate = TExprNodeType::COMPOUND_PRED == cur_expr->node_type();
             SlotDescriptor* slot = nullptr;
             ColumnValueRangeType* range = nullptr;
@@ -423,6 +425,9 @@ VExpr* VScanNode::_normalize_predicate(VExpr* conjunct_expr_root) {
                 _is_predicate_acting_on_slot(cur_expr, eq_predicate_checker, &slot, &range)) {
                 std::visit(
                         [&](auto& value_range) {
+                            Defer mark_runtime_filter_flag {[&]() {
+                                value_range.mark_runtime_filter_predicate(is_runtimer_filter_predicate);
+                            }};
                             RETURN_IF_PUSH_DOWN(_normalize_in_and_eq_predicate(
                                     cur_expr, *(_vconjunct_ctx_ptr.get()), slot, value_range,
                                     &pdt));

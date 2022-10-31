@@ -102,7 +102,7 @@ public:
         int32_t total_point_count = std::numeric_limits<std::int32_t>::max();
         _bkd_writer = std::make_shared<lucene::util::bkd::bkd_writer>(
                 max_doc, DIMS, DIMS, value_length, MAX_LEAF_COUNT, MAXMBSortInHeap,
-                total_point_count, true);
+                total_point_count, true, config::max_depth_in_bkd_tree);
         return Status::OK();
     }
 
@@ -220,10 +220,17 @@ public:
             for (int i = 0; i < count; ++i) {
                 if (_parser_type == InvertedIndexParserType::PARSER_NONE) {
                     //auto field_value = lucene::util::Misc::_charToWide(v->get_data(), v->get_size());
-                    _field->setValue(v->mutable_data(), v->get_size());
+                    char* value = v->mutable_data();
+                    char* act_value = _CL_NEWARRAY(char, v->get_size() + 1);
+                    for (auto i = 0; i < v->get_size(); i++) {
+                        act_value[i] = value[i];
+                    }
+                    auto len = strlen(act_value);
+                    _field->setValue(act_value, len);
                     ++v;
                     _rid++;
                     _index_writer->addDocument(_doc, _default_analyzer);
+                    _CLDELETE(act_value);
                 } else if (_parser_type == InvertedIndexParserType::PARSER_STANDARD) {
                     auto field_value =
                             lucene::util::Misc::_charToWide(v->get_data(), v->get_size());

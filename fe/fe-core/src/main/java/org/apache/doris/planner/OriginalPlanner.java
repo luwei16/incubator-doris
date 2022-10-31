@@ -50,6 +50,7 @@ import org.apache.logging.log4j.Logger;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 
 /**
@@ -155,8 +156,7 @@ public class OriginalPlanner extends Planner {
         }
 
         if (analyzer.getContext() != null
-                && analyzer.getContext().getSessionVariable().isEnableProjection()
-                && statement instanceof SelectStmt) {
+                && analyzer.getContext().getSessionVariable().isEnableProjection()) {
             ProjectPlanner projectPlanner = new ProjectPlanner(analyzer);
             projectPlanner.projectSingleNodePlan(queryStmt.getResultExprs(), singleNodePlan);
         }
@@ -256,7 +256,7 @@ public class OriginalPlanner extends Planner {
         pushDownResultFileSink(analyzer);
 
         if (VectorizedUtil.isVectorized()) {
-            pushOutExprsToOlapScan(rootFragment);
+            pushOutColumnUniqueIdsToOlapScan(rootFragment, analyzer);
         }
 
         if (queryStmt instanceof SelectStmt) {
@@ -405,15 +405,31 @@ public class OriginalPlanner extends Planner {
     /**
      * push output exprs to olap scan.
     */
-    private void pushOutExprsToOlapScan(PlanFragment rootFragment) {
+    private void pushOutColumnUniqueIdsToOlapScan(PlanFragment rootFragment, Analyzer analyzer) {
+        HashSet<Integer> outputColumnUniqueIds =  new HashSet<>();
         ArrayList<Expr> outputExprs = rootFragment.getOutputExprs();
+        for (Expr expr : outputExprs) {
+            if (expr instanceof SlotRef) {
+                if (((SlotRef) expr).getColumn() != null) {
+                    outputColumnUniqueIds.add(((SlotRef) expr).getColumn().getUniqueId());
+                }
+            }
+        }
 
         for (PlanFragment fragment : fragments) {
             PlanNode node = fragment.getPlanRoot();
-
-            // OlapScanNode is the last node.
-            // So, just get the last node and check if it is OlapScan.
             while (node.getChildren().size() != 0) {
+                for (PlanNode childNode : node.getChildren()) {
+                    List<SlotId> outputSlotIds = childNode.getOutputSlotIds();
+                    if (outputSlotIds != null) {
+                        for (SlotId sid : outputSlotIds) {
+                            SlotDescriptor slotDesc = analyzer.getSlotDesc(sid);
+                            outputColumnUniqueIds.add(slotDesc.getUniqueId());
+                        }
+                    }
+                }
+                // OlapScanNode is the last node.
+                // So, just get the last node and check if it is OlapScan.
                 node = node.getChildren().get(0);
             }
             if (!(node instanceof OlapScanNode)) {
@@ -421,7 +437,7 @@ public class OriginalPlanner extends Planner {
             }
 
             OlapScanNode scanNode = (OlapScanNode) node;
-            scanNode.setOutputExprs(outputExprs);
+            scanNode.setOutputColumnUniqueIds(outputColumnUniqueIds);
         }
     }
 

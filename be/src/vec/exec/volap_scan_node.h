@@ -192,7 +192,7 @@ private:
     std::vector<FunctionFilter> _push_down_functions;
 
     std::set<int32_t> _pruned_column_ids;
-    std::set<int32_t> _no_condition_column_ids;
+    std::set<int32_t> _maybe_read_column_ids;
 
     // Pool for storing allocated scanner objects.  We don't want to use the
     // runtime pool to ensure that the scanner objects are deleted before this

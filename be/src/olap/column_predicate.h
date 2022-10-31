@@ -36,6 +36,7 @@ class RowBlockV2;
 
 struct PredicateParams {
     std::string value;
+    bool marked_by_runtime_filter = false;
 };
 
 enum class PredicateType {

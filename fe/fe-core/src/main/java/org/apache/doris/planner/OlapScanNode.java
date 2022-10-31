@@ -81,7 +81,6 @@ import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
-import org.apache.commons.collections.CollectionUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -154,7 +153,7 @@ public class OlapScanNode extends ScanNode {
 
     private SortInfo sortInfo = null;
     private List<Expr> orderingExprs;
-    private ArrayList<Expr> outputExprs = Lists.newArrayList();
+    private HashSet<Integer> outputColumnUniqueIds = new HashSet<>();
 
     // When scan match sort_info, we can push limit into OlapScanNode.
     // It's limit for scanner instead of scanNode so we add a new limit.
@@ -786,8 +785,8 @@ public class OlapScanNode extends ScanNode {
         LOG.debug("distribution prune cost: {} ms", (System.currentTimeMillis() - start));
     }
 
-    public void setOutputExprs(ArrayList<Expr> outputExprs) {
-        this.outputExprs = outputExprs;
+    public void setOutputColumnUniqueIds(HashSet<Integer> outputColumnUniqueIds) {
+        this.outputColumnUniqueIds = outputColumnUniqueIds;
     }
 
     public void setOrderingExprs(List<Expr> orderingExprs) {
@@ -875,17 +874,6 @@ public class OlapScanNode extends ScanNode {
     @Override
     public String getNodeExplainString(String prefix, TExplainLevel detailLevel) {
         StringBuilder output = new StringBuilder();
-        if (CollectionUtils.isNotEmpty(outputExprs)) {
-            output.append(prefix).append("OUTPUT EXPRS:");
-            output.append(outputExprs.stream().map(Expr::toSql).collect(Collectors.joining(" | ")));
-        }
-        output.append("\n");
-
-        if (CollectionUtils.isNotEmpty(orderingExprs)) {
-            output.append(prefix).append("ORDER BY:");
-            output.append(orderingExprs.stream().map(Expr::toSql).collect(Collectors.joining(" | ")));
-        }
-        output.append("\n");
 
         String indexName = olapTable.getIndexNameById(selectedIndexId);
         output.append(prefix).append("TABLE: ").append(olapTable.getQualifiedName())
@@ -992,8 +980,8 @@ public class OlapScanNode extends ScanNode {
             msg.olap_scan_node.setPushDownAggTypeOpt(pushDownAggNoGroupingOp);
         }
 
-        if (outputExprs != null) {
-            msg.olap_scan_node.setOutputExprs(Expr.treesToThrift(outputExprs));
+        if (outputColumnUniqueIds != null) {
+            msg.olap_scan_node.setOutputColumnUniqueIds(outputColumnUniqueIds);
         }
 
         if (orderingExprs != null) {
