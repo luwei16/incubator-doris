@@ -849,7 +849,7 @@ Status SegmentIterator::_init_return_column_iterators() {
     }
     for (auto cid : _schema.column_ids()) {
         int32_t unique_id = _opts.tablet_schema->column(cid).unique_id();
-        if (!_need_read_data(cid)) {
+        if (_opts.tablet_schema->column(cid).name() == BeConsts::ROWID_COL) {
             _column_iterators[unique_id] = new RowIdColumnIterator(
                         _opts.tablet_id, _opts.rowset_id, _segment->id());
             continue;
