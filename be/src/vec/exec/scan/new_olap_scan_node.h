@@ -73,6 +73,7 @@ private:
     std::unique_ptr<MemTracker> _scanner_mem_tracker;
 
     std::set<int32_t> _pruned_column_ids;
+    // If column id in this set, indicate that we need to read data after index filtering
     std::set<int32_t> _maybe_read_column_ids;
 
 private:

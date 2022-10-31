@@ -560,17 +560,12 @@ bool SegmentIterator::_is_handle_predicate_by_fulltext(ColumnPredicate* predicat
 
 bool SegmentIterator::_need_read_data(ColumnId cid) {
     int32_t unique_id = _schema.unique_id(cid);
-    if (_schema.rowid_col_idx() > 0) {
-        // column lazy materialize in coordinator node(like top-n node)
-        if (_opts.tablet_schema->column(cid).name() == BeConsts::ROWID_COL) {
-            return false;
-        }
-    }
-
     if (_need_read_data_indices.count(unique_id) > 0
             && !_need_read_data_indices[unique_id]
             && _output_columns.count(unique_id) < 1
             && _all_compound_col_predicates.empty()) {
+        VLOG_DEBUG << "SegmentIterator no need read data for column: "
+                << _opts.tablet_schema->column_by_uid(unique_id).name();
         return false;
     }
     return true;
@@ -849,7 +844,8 @@ Status SegmentIterator::_init_return_column_iterators() {
     }
     for (auto cid : _schema.column_ids()) {
         int32_t unique_id = _opts.tablet_schema->column(cid).unique_id();
-        if (_opts.tablet_schema->column(cid).name() == BeConsts::ROWID_COL) {
+        if (_opts.tablet_schema->column_by_uid(unique_id).name() == BeConsts::ROWID_COL) {
+            VLOG_DEBUG << "SegmentIterator using RowIdColumnIterator to get rowids";
             _column_iterators[unique_id] = new RowIdColumnIterator(
                         _opts.tablet_id, _opts.rowset_id, _segment->id());
             continue;
@@ -1399,9 +1395,6 @@ void SegmentIterator::_vec_init_char_column_id() {
 
 bool SegmentIterator::_prune_column(ColumnId cid, vectorized::MutableColumnPtr& column,
                  bool fill_defaults, size_t num_of_defaults) {
-    if (_opts.tablet_schema->column(cid).name() == BeConsts::ROWID_COL) {
-        return true;
-    }
     if (_need_read_data(cid)) {
         return false;
     }

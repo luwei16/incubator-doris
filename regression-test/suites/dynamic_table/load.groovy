@@ -79,7 +79,11 @@ suite("regression_test_dynamic_table", "dynamic_table"){
         sql """
             CREATE TABLE IF NOT EXISTS ${table_name} (
                 qid bigint,
+		creationDate datetime,
                 `answers.date` array<datetime>,
+                `title` string,
+		INDEX creation_date_idx(`creationDate`) USING INVERTED COMMENT 'creationDate index',
+ 		INDEX title_idx(`title`) USING INVERTED PROPERTIES("parser"="standard") COMMENT 'title index',
 		...
             )
             DUPLICATE KEY(`qid`)

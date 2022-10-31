@@ -59,7 +59,6 @@ bool NewOlapScanNode::is_pruned_column(int32_t col_unique_id) {
 bool NewOlapScanNode::_maybe_prune_columns() {
     // an id collection of ordering column id, key column id, conjuncts column id
     std::set<int32_t> output_columns;
-
     // ordering column ids
     if (!_olap_scan_node.ordering_exprs.empty()) {
         for (auto i = 0; i < _olap_scan_node.ordering_exprs.size(); ++i) {
@@ -69,29 +68,30 @@ bool NewOlapScanNode::_maybe_prune_columns() {
                 if (col_id < 0) {
                     continue;
                 }
-                output_columns.emplace(col_id);
+                _maybe_read_column_ids.emplace(col_id);
+                output_columns.emplace(col_id); 
             }
         }
     }
 
-    if (!_olap_scan_node.output_column_unique_ids.empty()) {
-        for (auto uid : _olap_scan_node.output_column_unique_ids) {
-            if (uid < 0) {
-                continue;
-            }
-            output_columns.emplace(uid);
-        }
-    }
-
-    // get no condition column ids
-    std::copy(output_columns.cbegin(), output_columns.cend(),
-              std::inserter(_maybe_read_column_ids,
-                            _maybe_read_column_ids.begin()));
-
-    // If last column is rowid column, we should try our best to prune seeking columns
+    // When tow phase read enabled, those from output_column_unique_ids which is in select expr list,
+    // should avoid to read actual column data from segment iterator, since it will be read in
+    // second phase fetch.But we still need the column in reading schema for index filtering,
+    // so we don't need to put them into _maybe_read_column_ids.
+    // In SegmentIterator, these column may be filled with default values(see SegmentIterator::_need_read_data).
+    // Otherwise we, need to put them into _maybe_read_column_ids.
     if (_output_tuple_desc->slots().back()->col_name() != BeConsts::ROWID_COL) {
+        if (!_olap_scan_node.output_column_unique_ids.empty()) {
+            for (auto uid : _olap_scan_node.output_column_unique_ids) {
+                if (uid < 0) {
+                    continue;
+                }
+                _maybe_read_column_ids.emplace(uid);
+            }
+        }
         return false;
     }
+    // If last column is rowid column, we should try our best to prune seeking columns
 
     std::set<int32_t> output_tuple_column_unique_ids;
     for (auto slot : _output_tuple_desc->slots()) {
