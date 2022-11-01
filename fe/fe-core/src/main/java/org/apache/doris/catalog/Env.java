@@ -1496,10 +1496,13 @@ public class Env {
 
         // Alter
         getAlterInstance().start();
-        // Consistency checker
-        getConsistencyChecker().start();
-        // Backup handler
-        getBackupHandler().start();
+
+        if (Config.cloud_unique_id.isEmpty()) {
+            // Consistency checker
+            getConsistencyChecker().start();
+            // Backup handler
+            getBackupHandler().start();
+        }
         // catalog recycle bin
         getRecycleBin().start();
         // time printer

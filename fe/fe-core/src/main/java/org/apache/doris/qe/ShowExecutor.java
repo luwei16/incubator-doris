@@ -384,6 +384,10 @@ public class ShowExecutor {
         } else if (stmt instanceof ShowAnalyzeStmt) {
             handleShowAnalyze();
         } else if (stmt instanceof AdminCopyTabletStmt) {
+            if (!Config.cloud_unique_id.isEmpty()) {
+                LOG.info("stmt={}, not supported in cloud mode", stmt.toString());
+                throw new AnalysisException("Unsupported operaiton");
+            }
             handleCopyTablet();
         } else if (stmt instanceof ShowStageStmt) {
             handleShowStage();

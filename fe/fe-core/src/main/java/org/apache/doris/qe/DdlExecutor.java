@@ -126,6 +126,8 @@ import org.apache.doris.load.loadv2.LoadJob;
 import org.apache.doris.load.sync.SyncJobManager;
 
 import com.google.common.collect.Lists;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import java.util.List;
 import java.util.Map;
@@ -137,6 +139,8 @@ public class DdlExecutor {
     /**
      * Execute ddl.
      **/
+    private static final Logger LOG = LogManager.getLogger(DdlExecutor.class);
+
     public static void execute(Env env, DdlStmt ddlStmt) throws Exception {
         if (ddlStmt instanceof CreateClusterStmt) {
             CreateClusterStmt stmt = (CreateClusterStmt) ddlStmt;
@@ -194,6 +198,10 @@ public class DdlExecutor {
                         + " Try using broker load. See 'help broker load;'");
             }
             if (jobType == EtlJobType.HADOOP) {
+                if (!Config.cloud_unique_id.isEmpty()) {
+                    LOG.info("stmt={}, not supported in cloud mode", ddlStmt.toString());
+                    throw new DdlException("Unsupported operaiton");
+                }
                 env.getLoadManager().createLoadJobV1FromStmt(loadStmt, jobType, System.currentTimeMillis());
             } else {
                 env.getLoadManager().createLoadJobFromStmt(loadStmt);
@@ -253,14 +261,34 @@ public class DdlExecutor {
         } else if (ddlStmt instanceof CreateViewStmt) {
             env.createView((CreateViewStmt) ddlStmt);
         } else if (ddlStmt instanceof BackupStmt) {
+            if (!Config.cloud_unique_id.isEmpty()) {
+                LOG.info("stmt={}, not supported in cloud mode", ddlStmt.toString());
+                throw new DdlException("Unsupported operaiton");
+            }
             env.backup((BackupStmt) ddlStmt);
         } else if (ddlStmt instanceof RestoreStmt) {
+            if (!Config.cloud_unique_id.isEmpty()) {
+                LOG.info("stmt={}, not supported in cloud mode", ddlStmt.toString());
+                throw new DdlException("Unsupported operaiton");
+            }
             env.restore((RestoreStmt) ddlStmt);
         } else if (ddlStmt instanceof CancelBackupStmt) {
+            if (!Config.cloud_unique_id.isEmpty()) {
+                LOG.info("stmt={}, not supported in cloud mode", ddlStmt.toString());
+                throw new DdlException("Unsupported operaiton");
+            }
             env.cancelBackup((CancelBackupStmt) ddlStmt);
         } else if (ddlStmt instanceof CreateRepositoryStmt) {
+            if (!Config.cloud_unique_id.isEmpty()) {
+                LOG.info("stmt={}, not supported in cloud mode", ddlStmt.toString());
+                throw new DdlException("Unsupported operaiton");
+            }
             env.getBackupHandler().createRepository((CreateRepositoryStmt) ddlStmt);
         } else if (ddlStmt instanceof DropRepositoryStmt) {
+            if (!Config.cloud_unique_id.isEmpty()) {
+                LOG.info("stmt={}, not supported in cloud mode", ddlStmt.toString());
+                throw new DdlException("Unsupported operaiton");
+            }
             env.getBackupHandler().dropRepository((DropRepositoryStmt) ddlStmt);
         } else if (ddlStmt instanceof SyncStmt) {
             return;
@@ -283,6 +311,10 @@ public class DdlExecutor {
         } else if (ddlStmt instanceof UninstallPluginStmt) {
             env.uninstallPlugin((UninstallPluginStmt) ddlStmt);
         } else if (ddlStmt instanceof AdminCheckTabletsStmt) {
+            if (!Config.cloud_unique_id.isEmpty()) {
+                LOG.info("stmt={}, not supported in cloud mode", ddlStmt.toString());
+                throw new DdlException("Unsupported operaiton");
+            }
             env.checkTablets((AdminCheckTabletsStmt) ddlStmt);
         } else if (ddlStmt instanceof AdminSetReplicaStatusStmt) {
             env.setReplicaStatus((AdminSetReplicaStatusStmt) ddlStmt);
@@ -326,12 +358,20 @@ public class DdlExecutor {
         } else if (ddlStmt instanceof AnalyzeStmt) {
             env.getStatisticsJobManager().createStatisticsJob((AnalyzeStmt) ddlStmt);
         } else if (ddlStmt instanceof AlterResourceStmt) {
+            if (!Config.cloud_unique_id.isEmpty()) {
+                LOG.info("stmt={}, not supported in cloud mode", ddlStmt.toString());
+                throw new DdlException("Unsupported operaiton");
+            }
             env.getResourceMgr().alterResource((AlterResourceStmt) ddlStmt);
         } else if (ddlStmt instanceof CreatePolicyStmt) {
             env.getPolicyMgr().createPolicy((CreatePolicyStmt) ddlStmt);
         } else if (ddlStmt instanceof DropPolicyStmt) {
             env.getPolicyMgr().dropPolicy((DropPolicyStmt) ddlStmt);
         } else if (ddlStmt instanceof AlterPolicyStmt) {
+            if (!Config.cloud_unique_id.isEmpty()) {
+                LOG.info("stmt={}, not supported in cloud mode", ddlStmt.toString());
+                throw new DdlException("Unsupported operaiton");
+            }
             env.getPolicyMgr().alterPolicy((AlterPolicyStmt) ddlStmt);
         } else if (ddlStmt instanceof CreateCatalogStmt) {
             env.getCatalogMgr().createCatalog((CreateCatalogStmt) ddlStmt);
