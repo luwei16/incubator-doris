@@ -119,10 +119,34 @@ private:
                                              SlotDescriptor* slot, ColumnValueRange<T>& range,
                                              bool* push_down);
 
+    Status _normalize_compound_predicate(vectorized::VExpr* expr, 
+                    VExprContext* expr_ctx, 
+                    bool* push_down,
+                    std::vector<ColumnValueRangeType>* column_value_rangs,
+                    const std::function<bool(const std::vector<VExpr*>&, const VSlotRef**, VExpr**)>& in_predicate_checker,
+                    const std::function<bool(const std::vector<VExpr*>&, const VSlotRef**, VExpr**)>& eq_predicate_checker);
+
+    template <PrimitiveType T>
+    Status _normalize_binary_in_compound_predicate(
+                vectorized::VExpr* expr, VExprContext* expr_ctx,
+                SlotDescriptor* slot, ColumnValueRange<T>& range,
+                bool* push_down, const TCompoundType::type& compound_type);
+
+    template <PrimitiveType T>
+    Status _normalize_match_in_compound_predicate(vectorized::VExpr* expr, VExprContext* expr_ctx,
+                SlotDescriptor* slot, ColumnValueRange<T>& range,
+                bool* push_down, const TCompoundType::type& compound_type);
+
+    TCompoundType::type _get_compound_type_by_fn_name(const std::string& fn_name);
+
     template <PrimitiveType T>
     Status _normalize_is_null_predicate(vectorized::VExpr* expr, VExprContext* expr_ctx,
                                         SlotDescriptor* slot, ColumnValueRange<T>& range,
                                         bool* push_down);
+    template <PrimitiveType T>
+    Status _normalize_match_predicate(vectorized::VExpr* expr, VExprContext* expr_ctx,
+                                      SlotDescriptor* slot, ColumnValueRange<T>& range,
+                                      bool* push_down);
 
     Status _normalize_bloom_filter(vectorized::VExpr* expr, VExprContext* expr_ctx,
                                    SlotDescriptor* slot, bool* push_down);
@@ -175,12 +199,14 @@ private:
 
     // column -> ColumnValueRange map
     std::map<std::string, ColumnValueRangeType> _column_value_ranges;
+    std::vector<std::vector<ColumnValueRangeType>> _compound_value_ranges;
 
     OlapScanKeys _scan_keys;
 
     std::vector<std::unique_ptr<TPaloScanRange>> _scan_ranges;
 
     std::vector<TCondition> _olap_filter;
+    std::vector<std::vector<TCondition>> _compound_filters;
     // push down bloom filters to storage engine.
     // 1. std::pair.first :: column name
     // 2. std::pair.second :: shared_ptr of BloomFilterFuncBase

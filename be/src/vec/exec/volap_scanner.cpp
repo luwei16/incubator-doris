@@ -172,6 +172,11 @@ TabletStorageType VOlapScanner::get_storage_type() {
     return TabletStorageType::STORAGE_TYPE_REMOTE_AND_LOCAL;
 }
 
+void VOlapScanner::set_compound_filters(
+        const std::vector<std::vector<TCondition>>& compound_filters) {
+    _compound_filters = compound_filters;
+}
+
 // it will be called under tablet read lock because capture rs readers need
 Status VOlapScanner::_init_tablet_reader_params(
         const std::vector<OlapScanRange*>& key_ranges, const std::vector<TCondition>& filters,
@@ -216,6 +221,20 @@ Status VOlapScanner::_init_tablet_reader_params(
     for (auto& filter : filters) {
         _tablet_reader_params.conditions.push_back(filter);
     }
+
+    for (auto& filters : _compound_filters) {
+        for (auto& filter : filters) {
+            if (is_match_condition(filter.condition_op) &&
+                !_tablet_schema->is_inverted_index(_tablet_schema->field_index(filter.column_name))) {
+                return Status::NotSupported("Match query must with inverted index, column `" +
+                                            filter.column_name + "` is not inverted index column");
+            }
+        }
+    }
+    std::copy(_compound_filters.cbegin(), _compound_filters.cend(),
+            std::inserter(_tablet_reader_params.compound_conditions,
+                        _tablet_reader_params.compound_conditions.begin()));
+
     std::copy(bloom_filters.cbegin(), bloom_filters.cend(),
               std::inserter(_tablet_reader_params.bloom_filters,
                             _tablet_reader_params.bloom_filters.begin()));

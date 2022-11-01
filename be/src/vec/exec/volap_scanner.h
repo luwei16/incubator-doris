@@ -54,6 +54,8 @@ public:
     Status get_batch(RuntimeState* state, RowBatch* row_batch, bool* eos) {
         return Status::NotSupported("Not Implemented VOlapScanNode Node::get_next scalar");
     }
+    
+    void set_compound_filters(const std::vector<std::vector<TCondition>>& compound_filters);
 
     RuntimeState* runtime_state() { return _runtime_state; }
 
@@ -149,6 +151,7 @@ private:
     TabletSchemaSPtr _tablet_schema;
 
     std::vector<VExprContext*> _stale_vexpr_ctxs;
+    std::vector<std::vector<TCondition>> _compound_filters;
 };
 
 } // namespace vectorized

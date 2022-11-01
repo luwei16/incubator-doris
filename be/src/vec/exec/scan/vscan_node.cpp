@@ -461,6 +461,7 @@ VExpr* VScanNode::_normalize_predicate(VExpr* conjunct_expr_root) {
                                 &pdt, &column_value_rangs,
                                 in_predicate_checker, eq_predicate_checker);
                 _compound_value_ranges.push_back(column_value_rangs);
+                return conjunct_expr_root;
             }
 
             if (pdt == PushDownType::ACCEPTABLE && _is_key_column(slot->col_name())) {
