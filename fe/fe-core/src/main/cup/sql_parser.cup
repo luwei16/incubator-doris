@@ -2822,6 +2822,10 @@ drop_stmt ::=
     {:
         RESULT = new DropPolicyStmt(PolicyTypeEnum.STORAGE, ifExists, policyName, null, null);
     :}
+    | KW_DROP KW_STAGE opt_if_exists:ifExists ident:stageName
+    {:
+        RESULT = new DropStageStmt(ifExists, stageName);
+    :}
     ;
 
 // Recover statement

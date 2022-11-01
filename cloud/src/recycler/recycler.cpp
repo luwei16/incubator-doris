@@ -1325,10 +1325,11 @@ void InstanceRecycler::recycle_copy_jobs() {
                         }
                     }
                     if (object_store_info.endpoint().empty()) {
-                        // TODO if stage does not exist, should remove these jobs
-                        LOG(WARNING) << "failed to get stage with instance_id=" << instance_id_
-                                     << ", stage_id=" << stage_id;
-                        return false;
+                        // if stage does not exist, should remove these jobs
+                        LOG(INFO) << "Recycle nonexisted external stage copy jobs. instance_id="
+                                  << instance_id_ << ", stage_id=" << stage_id;
+                        ++num_recycled;
+                        return true;
                     }
 #ifdef UNIT_TEST
                     // In unit test, external use the same accessor as the internal stage

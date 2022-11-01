@@ -730,6 +730,7 @@ TEST(RecyclerTest, recycle_copy_jobs) {
     // create internal/external stage
     std::string internal_stage_id = "internal";
     std::string external_stage_id = "external";
+    std::string non_exist_stage_id = "non_exist";
 
     InstanceInfoPB instance_info;
     create_instance(prefix, internal_stage_id, external_stage_id, instance_info);
@@ -801,6 +802,18 @@ TEST(RecyclerTest, recycle_copy_jobs) {
         create_copy_job(txn_kv.get(), internal_stage_id, 4, StagePB::INTERNAL, CopyJobPB::LOADING,
                         object_files, 9963904963479L);
     }
+    // create external stage copy job with deleted stage id
+    {
+        std::vector<ObjectFilePB> object_files;
+        for (int i = 0; i < 10; ++i) {
+            ObjectFilePB object_file;
+            object_file.set_relative_path(non_exist_stage_id + "_5/obj_" + std::to_string(i));
+            object_files.push_back(object_file);
+        }
+        ASSERT_EQ(create_object_files(accessor.get(), &object_files), 0);
+        ASSERT_EQ(0, create_copy_job(txn_kv.get(), non_exist_stage_id, 5, StagePB::EXTERNAL,
+                                     CopyJobPB::FINISH, object_files, 0));
+    }
     {
         // check copy files
         int file_num = 0;
@@ -814,6 +827,8 @@ TEST(RecyclerTest, recycle_copy_jobs) {
         ASSERT_EQ(10, file_num);
         ASSERT_EQ(0, get_copy_file_num(txn_kv.get(), internal_stage_id, 4, &file_num));
         ASSERT_EQ(10, file_num);
+        ASSERT_EQ(0, get_copy_file_num(txn_kv.get(), non_exist_stage_id, 5, &file_num));
+        ASSERT_EQ(0, file_num);
     }
 
     recycler.recycle_copy_jobs();
@@ -825,6 +840,7 @@ TEST(RecyclerTest, recycle_copy_jobs) {
     prefix_and_files_list.emplace_back(external_stage_id + "_2/", 10);
     prefix_and_files_list.emplace_back(internal_stage_id + "_3/", 10);
     prefix_and_files_list.emplace_back(internal_stage_id + "_4/", 10);
+    prefix_and_files_list.emplace_back(non_exist_stage_id + "_5/", 10);
     for (const auto& [relative_path, file_num] : prefix_and_files_list) {
         std::vector<std::string> object_files;
         ASSERT_EQ(0, accessor->list(relative_path, &object_files));
@@ -845,6 +861,8 @@ TEST(RecyclerTest, recycle_copy_jobs) {
         ASSERT_EQ(false, exist);
         ASSERT_EQ(0, copy_job_exists(txn_kv.get(), internal_stage_id, 4, &exist));
         ASSERT_EQ(true, exist);
+        ASSERT_EQ(0, copy_job_exists(txn_kv.get(), non_exist_stage_id, 5, &exist));
+        ASSERT_EQ(false, exist);
 
         // check copy files
         int file_num = 0;
@@ -858,6 +876,8 @@ TEST(RecyclerTest, recycle_copy_jobs) {
         ASSERT_EQ(0, file_num);
         ASSERT_EQ(0, get_copy_file_num(txn_kv.get(), internal_stage_id, 4, &file_num));
         ASSERT_EQ(10, file_num);
+        ASSERT_EQ(0, get_copy_file_num(txn_kv.get(), non_exist_stage_id, 5, &file_num));
+        ASSERT_EQ(0, file_num);
     }
     accessor->delete_objects_by_prefix(prefix);
 }

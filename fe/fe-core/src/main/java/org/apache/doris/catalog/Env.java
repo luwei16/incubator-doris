@@ -60,6 +60,7 @@ import org.apache.doris.analysis.DropDbStmt;
 import org.apache.doris.analysis.DropFunctionStmt;
 import org.apache.doris.analysis.DropMaterializedViewStmt;
 import org.apache.doris.analysis.DropPartitionClause;
+import org.apache.doris.analysis.DropStageStmt;
 import org.apache.doris.analysis.DropTableStmt;
 import org.apache.doris.analysis.FunctionName;
 import org.apache.doris.analysis.InstallPluginStmt;
@@ -243,6 +244,7 @@ import com.selectdb.cloud.catalog.CloudReplica;
 import com.selectdb.cloud.catalog.CloudTabletRebalancer;
 import com.selectdb.cloud.proto.SelectdbCloud;
 import com.selectdb.cloud.proto.SelectdbCloud.NodeInfoPB;
+import com.selectdb.cloud.proto.SelectdbCloud.StagePB;
 import com.sleepycat.je.rep.InsufficientLogException;
 import com.sleepycat.je.rep.NetworkRestore;
 import com.sleepycat.je.rep.NetworkRestoreConfig;
@@ -5791,5 +5793,12 @@ public class Env {
             throw new DdlException("stage is only supported in cloud mode");
         }
         getInternalCatalog().createStage(stmt.toStageProto(), stmt.isIfNotExists());
+    }
+
+    public void dropStage(DropStageStmt stmt) throws DdlException {
+        if (Config.cloud_unique_id.isEmpty()) {
+            throw new DdlException("stage is only supported in cloud mode");
+        }
+        getInternalCatalog().dropStage(StagePB.StageType.EXTERNAL, null, stmt.getStageName(), stmt.isIfExists());
     }
 }

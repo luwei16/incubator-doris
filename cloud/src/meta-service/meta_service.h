@@ -175,6 +175,11 @@ public:
                    ::selectdb::GetStageResponse* response,
                    ::google::protobuf::Closure* done) override;
 
+    void drop_stage(google::protobuf::RpcController* controller,
+                   const ::selectdb::DropStageRequest* request,
+                   ::selectdb::DropStageResponse* response,
+                   ::google::protobuf::Closure* done) override;
+
     void begin_copy(google::protobuf::RpcController* controller,
                     const ::selectdb::BeginCopyRequest* request,
                     ::selectdb::BeginCopyResponse* response,

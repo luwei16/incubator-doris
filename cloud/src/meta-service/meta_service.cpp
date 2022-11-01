@@ -4642,6 +4642,124 @@ void MetaServiceImpl::get_stage(google::protobuf::RpcController* controller,
     code = MetaServiceCode::STAGE_NOT_FOUND;
 }
 
+void MetaServiceImpl::drop_stage(google::protobuf::RpcController* controller,
+                                 const ::selectdb::DropStageRequest* request,
+                                 ::selectdb::DropStageResponse* response,
+                                 ::google::protobuf::Closure* done) {
+    StopWatch sw;
+    auto ctrl = static_cast<brpc::Controller*>(controller);
+    LOG(INFO) << "rpc from " << ctrl->remote_side() << " request=" << request->DebugString();
+    brpc::ClosureGuard closure_guard(done);
+    int ret = 0;
+    MetaServiceCode code = MetaServiceCode::OK;
+    std::string msg = "OK";
+    std::string instance_id;
+    std::unique_ptr<int, std::function<void(int*)>> defer_status(
+            (int*)0x01, [&ret, &code, &msg, &response, &ctrl, &closure_guard, &sw, &instance_id](int*) {
+                response->mutable_status()->set_code(code);
+                response->mutable_status()->set_msg(msg);
+                LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
+                          << ctrl->remote_side() << " " << msg;
+                closure_guard.reset(nullptr);
+                if (config::use_detailed_metrics && !instance_id.empty()) {
+                    g_bvar_ms_drop_stage.put(instance_id, sw.elapsed_us());
+                }
+            });
+
+    std::string cloud_unique_id = request->has_cloud_unique_id() ? request->cloud_unique_id() : "";
+    if (cloud_unique_id.empty()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "cloud unique id not set";
+        return;
+    }
+
+    instance_id = get_instance_id(resource_mgr_, cloud_unique_id);
+    if (instance_id.empty()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "empty instance_id";
+        LOG(INFO) << msg << ", cloud_unique_id=" << cloud_unique_id;
+        return;
+    }
+
+    if (!request->has_type()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "stage type not set";
+        return;
+    }
+    auto type = request->type();
+
+    InstanceKeyInfo key_info {instance_id};
+    std::string key;
+    std::string val;
+    instance_key(key_info, &key);
+
+    std::unique_ptr<Transaction> txn;
+    ret = txn_kv_->create_txn(&txn);
+    if (ret != 0) {
+        code = MetaServiceCode::KV_TXN_CREATE_ERR;
+        msg = "failed to create txn";
+        LOG(WARNING) << msg << " ret=" << ret;
+        return;
+    }
+
+    ret = txn->get(key, &val);
+    LOG(INFO) << "get instance_key=" << hex(key);
+    std::stringstream ss;
+    if (ret != 0) {
+        code = MetaServiceCode::KV_TXN_GET_ERR;
+        ss << "failed to get instance, instance_id=" << instance_id << " ret=" << ret;
+        msg = ss.str();
+        return;
+    }
+
+    InstanceInfoPB instance;
+    if (!instance.ParseFromString(val)) {
+        code = MetaServiceCode::PROTOBUF_PARSE_ERR;
+        msg = "failed to parse InstanceInfoPB";
+        return;
+    }
+
+    if (type != StagePB::EXTERNAL) {
+        ss << "unsupported drop stage " << proto_to_json(*request);
+        msg = ss.str();
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        return;
+    }
+
+    int idx = -1;
+    for (int i = 0; i < instance.stages_size(); ++i) {
+        auto& s = instance.stages(i);
+        if (s.type() == type && s.name() == request->stage_name()) {
+            idx = i;
+            break;
+        }
+    }
+    if (idx == -1) {
+        ss << "stage not found with " << proto_to_json(*request);
+        msg = ss.str();
+        code = MetaServiceCode::STAGE_NOT_FOUND;
+        return;
+    }
+
+    auto& stages = const_cast<std::decay_t<decltype(instance.stages())>&>(instance.stages());
+    stages.DeleteSubrange(idx, 1); // Remove it
+    val = instance.SerializeAsString();
+    if (val.empty()) {
+        msg = "failed to serialize";
+        code = MetaServiceCode::PROTOBUF_SERIALIZE_ERR;
+        return;
+    }
+    txn->put(key, val);
+    LOG(INFO) << "put instance_id=" << instance_id << " instance_key=" << hex(key)
+              << " json=" << proto_to_json(instance);
+    ret = txn->commit();
+    if (ret != 0) {
+        code = ret == -1 ? MetaServiceCode::KV_TXN_CONFLICT : MetaServiceCode::KV_TXN_COMMIT_ERR;
+        msg = "failed to commit kv txn";
+        LOG(WARNING) << msg << " ret=" << ret;
+    }
+}
+
 void MetaServiceImpl::begin_copy(google::protobuf::RpcController* controller,
                                  const ::selectdb::BeginCopyRequest* request,
                                  ::selectdb::BeginCopyResponse* response,

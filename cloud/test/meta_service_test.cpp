@@ -1430,12 +1430,11 @@ TEST(MetaServiceTest, StageTest) {
             ASSERT_EQ("ex_id_1", res.stage().at(0).stage_id());
         }
 
+        GetStageRequest req;
+        req.set_cloud_unique_id(cloud_unique_id);
+        req.set_type(StagePB::EXTERNAL);
         // get all stages
         {
-            GetStageRequest req;
-            req.set_cloud_unique_id(cloud_unique_id);
-            req.set_type(StagePB::EXTERNAL);
-
             GetStageResponse res;
             meta_service->get_stage(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
                                     &req, &res, nullptr);
@@ -1443,6 +1442,31 @@ TEST(MetaServiceTest, StageTest) {
             ASSERT_EQ(2, res.stage().size());
             ASSERT_EQ("ex_id_0", res.stage().at(0).stage_id());
             ASSERT_EQ("ex_id_1", res.stage().at(1).stage_id());
+        }
+
+        // drop one stage
+        {
+            DropStageRequest drop_stage_req;
+            drop_stage_req.set_cloud_unique_id(cloud_unique_id);
+            drop_stage_req.set_type(StagePB::EXTERNAL);
+            drop_stage_req.set_stage_name("tmp");
+            DropStageResponse res;
+            meta_service->drop_stage(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
+                                    &drop_stage_req, &res, nullptr);
+            ASSERT_EQ(res.status().code(), MetaServiceCode::STAGE_NOT_FOUND);
+
+            drop_stage_req.set_stage_name("ex_name_1");
+            meta_service->drop_stage(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
+                                     &drop_stage_req, &res, nullptr);
+            ASSERT_EQ(res.status().code(), MetaServiceCode::OK);
+
+            // get all stage
+            GetStageResponse get_stage_res;
+            meta_service->get_stage(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
+                                    &req, &get_stage_res, nullptr);
+            ASSERT_EQ(get_stage_res.status().code(), MetaServiceCode::OK);
+            ASSERT_EQ(1, get_stage_res.stage().size());
+            ASSERT_EQ("ex_name_0", get_stage_res.stage().at(0).name());
         }
     }
 }

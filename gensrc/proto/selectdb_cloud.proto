@@ -681,6 +681,17 @@ message GetStageResponse {
     repeated StagePB stage = 2;
 }
 
+message DropStageRequest {
+    optional string cloud_unique_id = 1;
+    optional string stage_name = 2;
+    optional string mysql_user_name = 3;
+    optional StagePB.StageType type = 4;
+}
+
+message DropStageResponse {
+    optional MetaServiceResponseStatus status = 1;
+}
+
 message StartTabletJobRequest {
     optional string cloud_unique_id = 1; // For auth
     optional TabletJobInfoPB job = 2;
@@ -839,6 +850,7 @@ service MetaService {
     // stage
     rpc create_stage(CreateStageRequest) returns (CreateStageResponse);
     rpc get_stage(GetStageRequest) returns (GetStageResponse);
+    rpc drop_stage(DropStageRequest) returns (DropStageResponse);
     // copy into
     rpc begin_copy(BeginCopyRequest) returns (BeginCopyResponse);
     rpc finish_copy(FinishCopyRequest) returns (FinishCopyResponse);

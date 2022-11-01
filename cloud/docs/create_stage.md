@@ -4,7 +4,7 @@
 
 建议：用户可以建立一个专门用于数据导入的子账号，使用bucket policy授予该子账号特定prefix的读权限，便于SelectDB读取需要导入的对象数据源。
 
-相关文档:[show stage](show_stage.md)
+相关文档:[show stage](show_stage.md), [drop stage](drop_stage.md)
 
 ## 语法
 
