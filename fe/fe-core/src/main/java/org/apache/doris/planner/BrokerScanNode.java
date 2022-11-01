@@ -533,6 +533,8 @@ public class BrokerScanNode extends LoadScanNode {
                         rangeDesc.setNumAsString(context.fileGroup.isNumAsString());
                         rangeDesc.setReadJsonByLine(context.fileGroup.isReadJsonByLine());
                     }
+                    // See http://jira.selectdb.com:8090/browse/CORE-785 for more details
+                    rangeDesc.setReadByColumnDef(Config.range_desc_read_by_column_def);
                     curLocations.getScanRange().getBrokerScanRange().addToRanges(rangeDesc);
                     curFileOffset += rangeBytes;
 

@@ -334,12 +334,10 @@ std::string S3FileSystem::get_key(const Path& path) const {
 struct TmpFileMgr {
     using file_key = std::pair<Path, size_t>;
 
-    TmpFileMgr(size_t max_cache_size) : max_cache_size(max_cache_size * GB) {
-        DCHECK(max_cache_size != 0);
-    }
+    TmpFileMgr(size_t max_cache_size) : max_cache_size(max_cache_size) {}
 
     static TmpFileMgr* instance() {
-        static TmpFileMgr s_tmp_file_mgr(config::max_s3_cache_file_size);
+        static TmpFileMgr s_tmp_file_mgr(config::tmp_file_cache_total_size_bytes);
         return &s_tmp_file_mgr;
     }
 

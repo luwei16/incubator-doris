@@ -90,7 +90,7 @@ public class ShowCopyStmt extends ShowLoadStmt {
                 hasLabel = true;
             } else if (leftKey.equalsIgnoreCase("state")) {
                 hasState = true;
-            } else if (leftKey.equalsIgnoreCase("copyId")) {
+            } else if (leftKey.equalsIgnoreCase("id")) {
                 hasCopyId = true;
             } else {
                 valid = false;
@@ -147,7 +147,7 @@ public class ShowCopyStmt extends ShowLoadStmt {
         if (!valid) {
             throw new AnalysisException("Where clause should looks like: LABEL = \"your_load_label\","
                     + " or LABEL LIKE \"matcher\", " + " or STATE = \"PENDING|ETL|LOADING|FINISHED|CANCELLED\", "
-                    + " or copyId = \"your_copy_id\", or copyId LIKE \"matcher\", "
+                    + " or id = \"your_query_id\", or id LIKE \"matcher\", "
                     + " or compound predicate with operator AND");
         }
     }

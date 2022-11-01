@@ -191,6 +191,11 @@ public class UserPrivTable extends PrivTable {
             .map(UserIdentity::getUser).map(ClusterNamespace::getNameFromFullName).collect(Collectors.toSet());
     }
 
+    public List<String> getAllQualifiedUser() {
+        return entries.stream().map(PrivEntry::getUserIdent).map(UserIdentity::getUser).collect(Collectors.toList());
+    }
+
+
     @Override
     public void write(DataOutput out) throws IOException {
         if (!isClassNameWrote) {

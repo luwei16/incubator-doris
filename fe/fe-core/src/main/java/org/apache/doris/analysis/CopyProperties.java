@@ -49,6 +49,7 @@ public class CopyProperties {
     public static final String ON_ERROR_CONTINUE = "continue";
     public static final String ON_ERROR_ABORT_STATEMENT = "abort_statement";
     public static final String ON_ERROR_MAX_FILTER_RATIO = LoadStmt.MAX_FILTER_RATIO_PROPERTY + "_";
+    public static final String STRICT_MODE = COPY_PREFIX + LoadStmt.STRICT_MODE;
 
     public CopyProperties(Map<String, String> properties, String prefix) {
         this.properties = properties;
@@ -97,7 +98,15 @@ public class CopyProperties {
     }
 
     protected void analyzeAsync() throws AnalysisException {
-        String key = addKeyPrefix(ASYNC);
+        analyzeBooleanProperty(ASYNC);
+    }
+
+    protected void analyzeStrictMode() throws AnalysisException {
+        analyzeBooleanProperty(STRICT_MODE);
+    }
+
+    private void analyzeBooleanProperty(String keyWithoutPrefix) throws AnalysisException {
+        String key = addKeyPrefix(keyWithoutPrefix);
         if (properties.containsKey(key)) {
             String value = properties.get(key);
             if (!value.equalsIgnoreCase("true") && !value.equalsIgnoreCase("false")) {

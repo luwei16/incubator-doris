@@ -7,10 +7,10 @@ namespace io {
 
 struct FileCacheSettings {
     size_t max_size = 0;
-    size_t max_elements = REMOTE_FS_OBJECTS_CACHE_DEFAULT_MAX_ELEMENTS;
+    size_t max_elements = REMOTE_FS_OBJECTS_CACHE_DEFAULT_ELEMENTS;
     // use a priority policy to eliminate
     size_t persistent_max_size = 0;
-    size_t persistent_max_elements = REMOTE_FS_OBJECTS_CACHE_DEFAULT_MAX_ELEMENTS;
+    size_t persistent_max_elements = REMOTE_FS_OBJECTS_CACHE_DEFAULT_ELEMENTS / 10;
 
     size_t max_file_segment_size = 0;
     size_t max_query_cache_size = 0;

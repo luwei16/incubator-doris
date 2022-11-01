@@ -10,6 +10,8 @@
 
 namespace selectdb {
 
+static std::atomic_int64_t seq = 0;
+
 int ResourceManager::init() {
     // Scan all instances
     std::unique_ptr<Transaction> txn;
@@ -828,7 +830,7 @@ std::string ResourceManager::modify_nodes(const std::string& instance_id,
 
 std::pair<MetaServiceCode, std::string> ResourceManager::refresh_instance(
         const std::string& instance_id) {
-    LOG(INFO) << "begin to refresh instance, instance_id=" << instance_id;
+    LOG(INFO) << "begin to refresh instance, instance_id=" << instance_id << " seq=" << ++seq;
     std::pair<MetaServiceCode, std::string> ret0 {MetaServiceCode::OK, "OK"};
     auto& [code, msg] = ret0;
     std::unique_ptr<int, std::function<void(int*)>> defer_log(
@@ -868,7 +870,7 @@ std::pair<MetaServiceCode, std::string> ResourceManager::refresh_instance(
     for (int i = 0; i < instance.clusters_size(); ++i) {
         add_cluster_to_index_no_lock(instance_id, instance.clusters(i));
     }
-
+    LOG(INFO) << "finish refresing instance, instance_id=" << instance_id << " seq=" << seq;
     return ret0;
 }
 

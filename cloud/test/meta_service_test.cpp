@@ -41,8 +41,30 @@ int main(int argc, char** argv) {
 using namespace selectdb;
 
 std::unique_ptr<MetaServiceImpl> get_meta_service() {
-    auto txn_kv = std::dynamic_pointer_cast<TxnKv>(std::make_shared<MemTxnKv>());
+    int ret = 0;
+    // MemKv
+    static auto txn_kv = std::dynamic_pointer_cast<TxnKv>(std::make_shared<MemTxnKv>());
+    if (txn_kv != nullptr) {
+        ret = txn_kv->init();
+        [&] { ASSERT_EQ(ret, 0); }();
+    }
     [&] { ASSERT_NE(txn_kv.get(), nullptr); }();
+
+    // FdbKv
+    //     config::fdb_cluster_file_path = "fdb.cluster";
+    //     static auto txn_kv = std::dynamic_pointer_cast<TxnKv>(std::make_shared<FdbTxnKv>());
+    //     static std::atomic<bool> init {false};
+    //     bool tmp = false;
+    //     if (init.compare_exchange_strong(tmp, true)) {
+    //         int ret = txn_kv->init();
+    //         [&] { ASSERT_EQ(ret, 0); ASSERT_NE(txn_kv.get(), nullptr); }();
+    //     }
+
+    std::unique_ptr<Transaction> txn;
+    txn_kv->create_txn(&txn);
+    txn->remove("\x00", "\xfe"); // This is dangerous if the fdb is not correctly set
+    txn->commit();
+
     auto rs = std::make_shared<MockResourceManager>(txn_kv);
     auto meta_service = std::make_unique<MetaServiceImpl>(txn_kv, rs);
     return meta_service;
@@ -268,14 +290,12 @@ TEST(MetaServiceTest, BeginTxnTest) {
 
         std::mutex go_mutex;
         std::condition_variable go_cv;
-        std::unique_lock<std::mutex> go_lock(go_mutex);
         bool go = false;
         auto sp = selectdb::SyncPoint::get_instance();
 
         std::atomic<int32_t> count_txn1 = {0};
         std::atomic<int32_t> count_txn2 = {0};
-        std::mutex flow_mutex_1;
-        std::condition_variable flow_cv_1;
+        std::atomic<int32_t> count_txn3 = {0};
 
         int64_t db_id = 1928354123;
         int64_t table_id = 12131231231;
@@ -283,25 +303,59 @@ TEST(MetaServiceTest, BeginTxnTest) {
 
         std::atomic<int32_t> success_txn = {0};
 
-        sp->set_call_back("begin_txn:after:commit_txn:1", [&](void* args) {
+        sp->set_call_back("begin_txn:before:commit_txn:1", [&](void* args) {
             std::string label = *reinterpret_cast<std::string*>(args);
-            if (count_txn1.load() == 1) {
-                std::unique_lock<std::mutex> flow_lock_1(flow_mutex_1);
-                flow_cv_1.wait(flow_lock_1);
-            }
             count_txn1++;
             LOG(INFO) << "count_txn1:" << count_txn1 << " label=" << label;
+            if (count_txn1 == 1) {
+                {
+                    std::unique_lock<std::mutex> _lock(go_mutex);
+                    go = false;
+                    LOG(INFO) << "count_txn1:" << count_txn1 << " label=" << label << " go=" << go;
+                    go_cv.wait(_lock, [&] { return go; });
+                }
+            }
+
+            if (count_txn1 == 2) {
+                {
+                    std::unique_lock<std::mutex> _lock(go_mutex);
+                    go = true;
+                    LOG(INFO) << "count_txn1:" << count_txn1 << " label=" << label << " go=" << go;
+                    go_cv.notify_all();
+                }
+            }
+        });
+
+        sp->set_call_back("begin_txn:after:commit_txn:1", [&](void* args) {
+            std::string label = *reinterpret_cast<std::string*>(args);
+            count_txn2++;
+            LOG(INFO) << "count_txn2:" << count_txn2 << " label=" << label;
+            if (count_txn2 == 1) {
+                {
+                    std::unique_lock<std::mutex> _lock(go_mutex);
+                    go = false;
+                    LOG(INFO) << "count_txn2:" << count_txn2 << " label=" << label << " go=" << go;
+                    go_cv.wait(_lock, [&] { return go; });
+                }
+            }
+
+            if (count_txn2 == 2) {
+                {
+                    std::unique_lock<std::mutex> _lock(go_mutex);
+                    go = true;
+                    LOG(INFO) << "count_txn2:" << count_txn2 << " label=" << label << " go=" << go;
+                    go_cv.notify_all();
+                }
+            }
         });
 
         sp->set_call_back("begin_txn:after:commit_txn:2", [&](void* args) {
             int64_t txn_id = *reinterpret_cast<int64_t*>(args);
-            while (count_txn2.load() == 0 && count_txn1.load() == 1) {
-                sleep(1);
-                flow_cv_1.notify_all();
-            }
-            count_txn2++;
-            LOG(INFO) << "count_txn2:" << count_txn2 << " txn_id=" << txn_id;
+            count_txn3++;
+            LOG(INFO) << "count_txn3:" << count_txn3 << " txn_id=" << txn_id;
         });
+
+        sp->enable_processing();
 
         std::thread thread1([&] {
             {
@@ -326,7 +380,7 @@ TEST(MetaServiceTest, BeginTxnTest) {
             if (res.status().code() == MetaServiceCode::OK) {
                 success_txn++;
             } else {
-                ASSERT_EQ(res.status().code(), MetaServiceCode::TXN_LABEL_ALREADY_USED);
+                ASSERT_EQ(res.status().code(), MetaServiceCode::KV_TXN_CONFLICT);
             }
         });
 
@@ -353,11 +407,11 @@ TEST(MetaServiceTest, BeginTxnTest) {
             if (res.status().code() == MetaServiceCode::OK) {
                 success_txn++;
             } else {
-                ASSERT_EQ(res.status().code(), MetaServiceCode::TXN_LABEL_ALREADY_USED);
+                ASSERT_EQ(res.status().code(), MetaServiceCode::KV_TXN_CONFLICT);
             }
         });
 
-        sp->enable_processing();
+        std::unique_lock<std::mutex> go_lock(go_mutex);
         go = true;
         go_lock.unlock();
         go_cv.notify_all();
@@ -382,11 +436,9 @@ TEST(MetaServiceTest, BeginTxnTest) {
         //       commit_txn2            |
         //         |                    |
         //         v                    v
-        //
 
         std::mutex go_mutex;
         std::condition_variable go_cv;
-        std::unique_lock<std::mutex> go_lock(go_mutex);
         bool go = false;
         auto sp = selectdb::SyncPoint::get_instance();
 
@@ -402,7 +454,7 @@ TEST(MetaServiceTest, BeginTxnTest) {
 
         std::atomic<int32_t> success_txn = {0};
 
-        sp->set_call_back("begin_txn:after:commit_txn:1", [&](void* args) {
+        sp->set_call_back("begin_txn:before:commit_txn:1", [&](void* args) {
             std::string label = *reinterpret_cast<std::string*>(args);
             if (count_txn1.load() == 1) {
                 std::unique_lock<std::mutex> flow_lock_1(flow_mutex_1);
@@ -421,6 +473,7 @@ TEST(MetaServiceTest, BeginTxnTest) {
             count_txn2++;
             LOG(INFO) << "count_txn2:" << count_txn2 << " txn_id=" << txn_id;
         });
+        sp->enable_processing();
 
         std::thread thread1([&] {
             {
@@ -476,7 +529,7 @@ TEST(MetaServiceTest, BeginTxnTest) {
             }
         });
 
-        sp->enable_processing();
+        std::unique_lock<std::mutex> go_lock(go_mutex);
         go = true;
         go_lock.unlock();
         go_cv.notify_all();

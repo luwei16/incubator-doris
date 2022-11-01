@@ -89,6 +89,10 @@ public class UseCloudClusterStmt extends StatementBase {
                 + "' for cloud cluster '" + cluster + "'");
         }
 
+        if (!Env.getCurrentSystemInfo().getCloudClusterNames().contains(cluster)) {
+            ErrorReport.reportAnalysisException(ErrorCode.ERR_ClOUD_CLUSTER_ERROR, cluster);
+        }
+
         if (Strings.isNullOrEmpty(database)) {
             return;
         }

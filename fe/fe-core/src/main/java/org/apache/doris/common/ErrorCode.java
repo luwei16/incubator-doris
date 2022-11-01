@@ -1697,7 +1697,9 @@ public enum ErrorCode {
     ERR_NONSUPPORT_HMS_TABLE(5088, new byte[]{'4', '2', '0', '0', '0'},
             "Nonsupport hive metastore table named '%s' in database '%s' with catalog '%s'."),
     ERR_NO_CLUSTER_ERROR(5089, new byte[]{'4', '2', '0', '0', '0'}, "No cluster selected"),
-    ERR_UNSUPPORTED_OPERATION_ERROR(5090, new byte[]{'4', '2', '0', '0', '0'}, "Unsupported operation");
+    ERR_UNSUPPORTED_OPERATION_ERROR(5090, new byte[]{'4', '2', '0', '0', '0'}, "Unsupported operation"),
+
+    ERR_ClOUD_CLUSTER_ERROR(5091, new byte[]{'4', '2', '0', '0', '0'}, "Cluster %s not exist, use SQL 'SHOW CLUSTERS' to get a valid cluster");
 
     // This is error code
     private final int code;

@@ -802,7 +802,7 @@ public class CatalogRecycleBin extends MasterDaemon implements Writable {
         }
 
         public boolean isPersistent() {
-            return isPersistent();
+            return isPersistent;
         }
 
         @Override

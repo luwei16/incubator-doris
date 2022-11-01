@@ -67,21 +67,15 @@ import com.google.common.base.Preconditions;
 import com.google.common.base.Strings;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
-import com.selectdb.cloud.proto.SelectdbCloud.ClusterPB;
-import com.selectdb.cloud.proto.SelectdbCloud.MetaServiceCode;
-import com.selectdb.cloud.proto.SelectdbCloud.MetaServiceResponseStatus;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.stream.Collectors;
@@ -170,6 +164,24 @@ public class PaloAuth implements Writable {
 
     public PasswordPolicyManager getPasswdPolicyManager() {
         return passwdPolicyManager;
+    }
+
+    public String getDefaultCloudCluster(String user) {
+        String cluster = "";
+        readLock();
+        try {
+            cluster = propertyMgr.getDefaultCloudCluster(user);
+        } catch (DdlException e) {
+            LOG.warn("cant get default cloud cluster , user {}", user);
+        } finally {
+            readUnlock();
+        }
+        return cluster;
+    }
+
+
+    public List<String> getCloudClusterUsers(String clusterName) {
+        return propertyMgr.getCloudClusterUsers(userPrivTable.getAllQualifiedUser(), clusterName);
     }
 
     private ResourcePrivTable getCloudPrivTable(ResourceTypeEnum type) {
@@ -320,44 +332,6 @@ public class PaloAuth implements Writable {
         } catch (AnalysisException e) {
             throw new DdlException(e.getMessage());
         }
-        // notify meta service use alter_cluster rpc,  add user use cluster permissions
-        Map<String, String> cloudClusterNameToId = Env.getCurrentSystemInfo().getCloudClusterNameToId();
-        String clusterId = cloudClusterNameToId.getOrDefault(cloudClusterName, "");
-        if ("".equals(clusterId)) {
-            LOG.warn("cant get clusterId by clusterName {}", cloudClusterName);
-            throw new DdlException("grant use cluster permissions failed, try later");
-        }
-
-        Map<String, List<ClusterPB>> mysqlUserNameToClusterPb =
-                Env.getCurrentSystemInfo().getMysqlUserNameToClusterPb();
-
-        String user = ClusterNamespace.getNameFromFullName(userIdentity.getUser());
-        // root has all cluster's info
-        Optional<ClusterPB> clusterPB = mysqlUserNameToClusterPb.getOrDefault("root", new ArrayList<>())
-                .stream().filter(pb -> pb.getClusterId().equals(clusterId)).findAny();
-        if (!clusterPB.isPresent()) {
-            LOG.warn("mysqlUserNameToClusterPb cant find clusterId, clusterName {}, clusterId {}, userName {}",
-                    cloudClusterName, clusterId, user);
-            throw new DdlException("grant use cluster permissions failed, try later");
-        }
-
-        // cluster origin owned users.
-        List<String> mysqlUserNameList = clusterPB.get().getMysqlUserNameList();
-        Set<String> toAddSet = new HashSet<>(mysqlUserNameList);
-        toAddSet.add(user);
-
-        // get fe's all userName
-        MetaServiceResponseStatus metaServiceResponseStatus =
-                Env.getCurrentInternalCatalog().alterCluster(clusterId, toAddSet);
-        if (metaServiceResponseStatus.getCode() != MetaServiceCode.OK) {
-            LOG.warn("notify meta service failed, clusterName {}, "
-                    + "clusterId {}, origin userNames {} to add user {} response {}",
-                    cloudClusterName, clusterId, toAddSet, user, metaServiceResponseStatus);
-            throw new DdlException("grant use cluster permissions failed, try later");
-        }
-        LOG.debug("grant notify meta service succ, clusterName {}, "
-                + "clusterId {}, origin userNames {} to add user {} response {}",
-                cloudClusterName, clusterId, toAddSet, user, metaServiceResponseStatus);
         cloudClusterPrivTable.addEntry(entry, errOnExist, errOnNonExist);
         LOG.info("cloud cluster add list {}", cloudClusterPrivTable);
     }
@@ -402,44 +376,6 @@ public class PaloAuth implements Writable {
         }
 
         cloudClusterPrivTable.revoke(entry, errOnNonExist, true /* delete entry when empty */);
-        // notify meta service use alter_cluster rpc,  add user use cluster permissions
-        Map<String, List<ClusterPB>> mysqlUserNameToClusterPb =
-                Env.getCurrentSystemInfo().getMysqlUserNameToClusterPb();
-
-        String user = ClusterNamespace.getNameFromFullName(userIdentity.getUser());
-        String clusterId = Env.getCurrentSystemInfo().getCloudClusterNameToId().getOrDefault(cloudClusterName, "");
-        // if failed notify, ignore it
-        if ("".equals(clusterId)) {
-            LOG.warn("cant get clusterId by clusterName {}", cloudClusterName);
-            return;
-        }
-        // root has all cluster's info
-        Optional<ClusterPB> clusterPB = mysqlUserNameToClusterPb.getOrDefault("root", new ArrayList<>())
-                .stream().filter(pb -> pb.getClusterId().equals(clusterId)).findAny();
-        // if failed notify, ignore it
-        if (!clusterPB.isPresent()) {
-            LOG.warn("mysqlUserNameToClusterPb cant find clusterId, clusterName {}, clusterId {}, userName {}",
-                    cloudClusterName, clusterId, user);
-            return;
-        }
-
-        // cluster origin owned users.
-        List<String> mysqlUserNameList = clusterPB.get().getMysqlUserNameList();
-        Set<String> toDelSet = new HashSet<>(mysqlUserNameList);
-        toDelSet.remove(user);
-
-        // get fe's all userName
-        MetaServiceResponseStatus metaServiceResponseStatus =
-                Env.getCurrentInternalCatalog().alterCluster(clusterId, toDelSet);
-        // if failed notify, ignore it
-        if (metaServiceResponseStatus.getCode() != MetaServiceCode.OK) {
-            LOG.warn("notify meta service failed, clusterName {}, clusterId {}, "
-                    + "origin userNames {} to del user {} response {}",
-                    cloudClusterName, clusterId, mysqlUserNameList, user, metaServiceResponseStatus);
-        }
-        LOG.debug("revoke notify meta service succ, clusterName {}, clusterId {}, "
-                + "origin userNames {} to del user {} response {}",
-                cloudClusterName, clusterId, mysqlUserNameList, user, metaServiceResponseStatus);
         LOG.info("cloud cluster revoke list {}", cloudClusterPrivTable);
     }
 
@@ -936,8 +872,8 @@ public class PaloAuth implements Writable {
                 // other user properties
                 propertyMgr.addUserResource(userIdent.getQualifiedUser(), false /* not system user */);
 
-                if (!userIdent.getQualifiedUser().equals(ROOT_USER) && !userIdent.getQualifiedUser()
-                        .equals(ADMIN_USER)) {
+                if (!userIdent.getQualifiedUser().equals(ROOT_USER)
+                        && !userIdent.getQualifiedUser().equals(ADMIN_USER)) {
                     // grant read privs to database information_schema
                     TablePattern tblPattern = new TablePattern(DEFAULT_CATALOG, InfoSchemaDb.DATABASE_NAME, "*");
                     try {

@@ -9,5 +9,6 @@ add_library(Common
     sync_point.cpp
     util.cpp
     logging.cpp
+    bvars.cpp
 )
 # vim: et tw=120 ts=4 sw=4 cc=80:

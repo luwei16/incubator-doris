@@ -113,14 +113,14 @@ public class MetaServiceProxy {
     }
 
     public SelectdbCloud.MetaServiceGenericResponse
-            createTablet(SelectdbCloud.CreateTabletRequest request) throws RpcException {
+            createTablets(SelectdbCloud.CreateTabletsRequest request) throws RpcException {
         if (metaServiceHostPort == null) {
             throw new RpcException("", "cloud mode, please configure cloud_unique_id and meta_service_endpoint");
         }
         TNetworkAddress metaAddress = new TNetworkAddress(metaServiceHostPort.first, metaServiceHostPort.second);
         try {
             final MetaServiceClient client = getProxy(metaAddress);
-            return client.createTablet(request);
+            return client.createTablets(request);
         } catch (Exception e) {
             throw new RpcException(metaAddress.hostname, e.getMessage(), e);
         }

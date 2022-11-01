@@ -1277,7 +1277,7 @@ void InstanceRecycler::recycle_copy_jobs() {
                                 .tag("instance_id", instance_id_)
                                 .tag("stage_id", stage_id)
                                 .tag("table_id", table_id)
-                                .tag("copy_id", copy_id)
+                                .tag("query_id", copy_id)
                                 .tag("obj_prefix", obj_prefix)
                                 .tag("stage_prefix", stage_prefix)
                                 .tag("relative_path", relative_path)
@@ -1287,7 +1287,7 @@ void InstanceRecycler::recycle_copy_jobs() {
                                 .tag("instance_id", instance_id_)
                                 .tag("stage_id", stage_id)
                                 .tag("table_id", table_id)
-                                .tag("copy_id", copy_id)
+                                .tag("query_id", copy_id)
                                 .tag("obj_prefix", obj_prefix)
                                 .tag("stage_prefix", stage_prefix)
                                 .tag("relative_path", relative_path);
@@ -1297,7 +1297,7 @@ void InstanceRecycler::recycle_copy_jobs() {
                         .tag("instance_id", instance_id_)
                         .tag("stage_id", stage_id)
                         .tag("table_id", table_id)
-                        .tag("copy_id", copy_id)
+                        .tag("query_id", copy_id)
                         .tag("num_objects", relative_paths.size());
 
                 // TODO delete objects with key and etag is not supported
@@ -1307,7 +1307,7 @@ void InstanceRecycler::recycle_copy_jobs() {
                             .tag("instance_id", instance_id_)
                             .tag("stage_id", stage_id)
                             .tag("table_id", table_id)
-                            .tag("copy_id", copy_id)
+                            .tag("query_id", copy_id)
                             .tag("num_objects", relative_paths.size());
                     return false;
                 }
@@ -1362,20 +1362,21 @@ void InstanceRecycler::recycle_copy_jobs() {
                                      << instance_id_
                                      << ", stage_id=" << stage_id
                                      << ", table_id=" << table_id
-                                     << ", copy_id=" << copy_id
+                                     << ", query_id=" << copy_id
                                      << ", relative_path=" << file.relative_path()
                                      << ", etag=" << file.etag()
                                      << ", ret=" << ret;
                         return false;
                     }
+                    LOG_INFO("check if external stage object exists")
+                            .tag("instance_id", instance_id_)
+                            .tag("stage_id", stage_id)
+                            .tag("table_id", table_id)
+                            .tag("query_id", copy_id)
+                            .tag("relative_path", file.relative_path())
+                            .tag("etag", file.etag())
+                            .tag("exist", exist);
                     if (exist) {
-                        LOG_INFO("external stage object exist, skip recycle")
-                                .tag("instance_id", instance_id_)
-                                .tag("stage_id", stage_id)
-                                .tag("table_id", table_id)
-                                .tag("copy_id", copy_id)
-                                .tag("relative_path", file.relative_path())
-                                .tag("etag", file.etag());
                         return false;
                     }
                 }
@@ -1409,7 +1410,7 @@ void InstanceRecycler::recycle_copy_jobs() {
                           << ", instance_id=" << instance_id_
                           << ", stage_id=" << stage_id
                           << ", table_id=" << table_id
-                          << ", copy_id=" << copy_id;
+                          << ", query_id=" << copy_id;
             }
             if (txn->commit() != 0) {
                 LOG(WARNING) << "failed to commit txn";

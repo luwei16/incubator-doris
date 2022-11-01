@@ -64,6 +64,7 @@ public class CopyLoadPendingTask extends BrokerLoadPendingTask {
     public CopyLoadPendingTask(CopyJob loadTaskCallback,
             Map<FileGroupAggKey, List<BrokerFileGroup>> aggKeyToBrokerFileGroups, BrokerDesc brokerDesc) {
         super(loadTaskCallback, aggKeyToBrokerFileGroups, brokerDesc);
+        retryTime = 0;
     }
 
     @Override
@@ -127,12 +128,15 @@ public class CopyLoadPendingTask extends BrokerLoadPendingTask {
             }
             if (fileStatusList.stream().flatMap(List::stream).map(l -> l.second).count() == 0) {
                 retryTime = 0;
+                LOG.warn(NO_FILES_ERROR_MSG + ", matched {} files, filtered {} files "
+                                + "because files may be loading or loaded, queryId={}" + reachLimitStr, matchedFileNum,
+                        loadedFileNum, copyJob.getCopyId());
                 throw new UserException(String.format(NO_FILES_ERROR_MSG + ", matched %d files, "
                         + "filtered %d files because files may be loading or loaded"
                         + reachLimitStr, matchedFileNum, loadedFileNum));
             }
             fileStatusMap.put(aggKey, fileStatusList);
-            LOG.info("get {} files to be loaded. total size: {}. cost: {} ms, job: {}, copyId: {}", tableTotalFileNum,
+            LOG.info("get {} files to be loaded. total size: {}. cost: {} ms, job: {}, queryId: {}", tableTotalFileNum,
                     tableTotalFileSize, (System.currentTimeMillis() - start), callback.getCallbackId(),
                     copyJob.getCopyId());
         }
@@ -158,14 +162,19 @@ public class CopyLoadPendingTask extends BrokerLoadPendingTask {
                             copyJob.getCopyId(), 0, startTime, timeoutTime, objectFiles);
             if (filteredObjectFiles.isEmpty()) {
                 retryTime = 0;
+                LOG.warn(NO_FILES_ERROR_MSG + ", matched {} files, filtered {} files "
+                                + "because files may be loading or loaded" + reachLimitStr
+                                + ", {} files left after beginCopy, queryId={}", matchedFileNum, loadedFileNum, 0,
+                        copyJob.getCopyId());
                 throw new UserException(String.format(NO_FILES_ERROR_MSG + ", matched %d files, "
                         + "filtered %d files because files may be loading or loaded" + reachLimitStr
                         + ", %d files left after beginCopy", matchedFileNum, loadedFileNum, 0));
             }
             Set<String> filteredObjectSet = filteredObjectFiles.stream()
                     .map(f -> getFileInfoUniqueId(f)).collect(Collectors.toSet());
-            LOG.debug("Begin copy for stage={}, table={}, before objectSize={}, filtered objectSize={}",
-                    copyJob.getStageId(), fileGroupAggKey.getTableId(), objectFiles.size(), filteredObjectSet.size());
+            LOG.debug("Begin copy for stage={}, table={}, queryId={}, before objectSize={}, filtered objectSize={}",
+                    copyJob.getStageId(), fileGroupAggKey.getTableId(), copyJob.getCopyId(), objectFiles.size(),
+                    filteredObjectSet.size());
 
             List<List<TBrokerFileStatus>> fileStatusList = new ArrayList<>();
             long tableTotalFileSize = 0;
@@ -237,7 +246,7 @@ public class CopyLoadPendingTask extends BrokerLoadPendingTask {
                 listFileNum += listObjectsResult.getObjectInfoList().size();
                 long costSeconds = (System.currentTimeMillis() - startTimestamp) / 1000;
                 if (costSeconds >= 3600 || listFileNum >= 1000000) {
-                    throw new DdlException("Abort list object for copyId=" + ((CopyJob) callback).getCopyId()
+                    throw new DdlException("Abort list object for queryId=" + ((CopyJob) callback).getCopyId()
                             + ". We don't collect enough files to load, after listing " + listFileNum + " objects for "
                             + costSeconds + " seconds, please check if your pattern " + pattern + " is correct.");
                 }

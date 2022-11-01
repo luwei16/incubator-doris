@@ -362,6 +362,31 @@ int main(int argc, char** argv) {
         LOG(FATAL) << "All disks are broken, exit.";
         exit(-1);
     }
+
+    // initialize libcurl here to avoid concurrent initialization
+    auto curl_ret = curl_global_init(CURL_GLOBAL_ALL);
+    if (curl_ret != 0) {
+        LOG(FATAL) << "fail to initialize libcurl, curl_ret=" << curl_ret;
+        exit(-1);
+    }
+    // add logger for thrift internal
+    apache::thrift::GlobalOutput.setOutputFunction(doris::thrift_output);
+
+    Status status = Status::OK();
+#ifdef LIBJVM
+    // Init jni
+    status = doris::JniUtil::Init();
+    if (!status.ok()) {
+        LOG(WARNING) << "Failed to initialize JNI: " << status.get_error_msg();
+        doris::shutdown_logging();
+        exit(1);
+    }
+#endif
+
+    doris::Daemon daemon;
+    daemon.init(argc, argv, paths);
+    daemon.start();
+
     if (doris::config::enable_file_cache) {
         std::vector<doris::CachePath> cache_paths;
         olap_res = doris::parse_conf_cache_paths(doris::config::file_cache_path, cache_paths);
@@ -392,30 +417,6 @@ int main(int argc, char** argv) {
         }
     }
 
-    // initialize libcurl here to avoid concurrent initialization
-    auto curl_ret = curl_global_init(CURL_GLOBAL_ALL);
-    if (curl_ret != 0) {
-        LOG(FATAL) << "fail to initialize libcurl, curl_ret=" << curl_ret;
-        exit(-1);
-    }
-    // add logger for thrift internal
-    apache::thrift::GlobalOutput.setOutputFunction(doris::thrift_output);
-
-    Status status = Status::OK();
-#ifdef LIBJVM
-    // Init jni
-    status = doris::JniUtil::Init();
-    if (!status.ok()) {
-        LOG(WARNING) << "Failed to initialize JNI: " << status.get_error_msg();
-        doris::shutdown_logging();
-        exit(1);
-    }
-#endif
-
-    doris::Daemon daemon;
-    daemon.init(argc, argv, paths);
-    daemon.start();
-
     doris::ResourceTls::init();
     if (!doris::BackendOptions::init()) {
         exit(-1);
@@ -441,6 +442,12 @@ int main(int argc, char** argv) {
 
     doris::io::global_local_filesystem()->delete_directory(doris::config::tmp_file_dir);
     doris::io::global_local_filesystem()->create_directory(doris::config::tmp_file_dir);
+    if (doris::config::enable_write_as_cache &&
+        doris::config::tmp_file_cache_total_size_bytes <= 0) {
+        LOG(FATAL) << "if enable_write_as_cache is true, tmp_file_cache_total_size_bytes should "
+                      "not less than or equal to zero ";
+        exit(-1);
+    }
     // start all background threads of storage engine.
     // SHOULD be called after exec env is initialized.
 #ifdef CLOUD_MODE

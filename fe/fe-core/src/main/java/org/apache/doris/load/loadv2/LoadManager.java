@@ -43,6 +43,7 @@ import org.apache.doris.load.FailMsg;
 import org.apache.doris.load.FailMsg.CancelType;
 import org.apache.doris.load.Load;
 import org.apache.doris.persist.CleanLabelOperationLog;
+import org.apache.doris.qe.ConnectContext;
 import org.apache.doris.thrift.TUniqueId;
 import org.apache.doris.transaction.DatabaseTransactionMgr;
 import org.apache.doris.transaction.NativeGlobalTransactionMgr;
@@ -154,9 +155,9 @@ public class LoadManager implements Writable {
                                 + " frontends, " + Config.cluster_max_waiting_copy_jobs
                                 + " copy jobs , please retry later. ");
             }
-            loadJob = new CopyJob(dbId, stmt.getLabel().getLabelName(), stmt.getBrokerDesc(), stmt.getOrigStmt(),
-                    stmt.getUserInfo(), stmt.getStageId(), stmt.getStageType(), stmt.getSizeLimit(),
-                    stmt.getPattern(), stmt.getObjectInfo());
+            loadJob = new CopyJob(dbId, stmt.getLabel().getLabelName(), ConnectContext.get().queryId(),
+                    stmt.getBrokerDesc(), stmt.getOrigStmt(), stmt.getUserInfo(), stmt.getStageId(),
+                    stmt.getStageType(), stmt.getSizeLimit(), stmt.getPattern(), stmt.getObjectInfo());
             loadJob.setJobProperties(stmt.getProperties());
             loadJob.checkAndSetDataSourceInfo(database, stmt.getDataDescriptions());
             createLoadJob(loadJob);

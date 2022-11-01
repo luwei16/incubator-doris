@@ -285,7 +285,7 @@ public class QueryStmtTest {
         // reAnalyze
         reAnalyze(stmt, ctx);
         Assert.assertTrue(stmt.toSql().contains("Apache License, Version 2.0"));
-        Assert.assertTrue(stmt.toSql().contains("/palo/share/english/"));
+        Assert.assertTrue(stmt.toSql().contains("/selectdb_cloud/share/english/"));
 
         // test sysVariableDescs
         sql = "SELECT\n"
@@ -306,7 +306,7 @@ public class QueryStmtTest {
         // reAnalyze
         reAnalyze(stmt, ctx);
         Assert.assertTrue(stmt.toSql().contains("Apache License, Version 2.0"));
-        Assert.assertTrue(stmt.toSql().contains("/palo/share/english/"));
+        Assert.assertTrue(stmt.toSql().contains("/selectdb_cloud/share/english/"));
 
         // test informationFunctions
         sql = "SELECT\n"

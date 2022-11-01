@@ -17,6 +17,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <memory>
+#include <random>
 #include <thread>
 // clang-format on
 
@@ -130,10 +131,14 @@ MetaServerRegister::MetaServerRegister(std::shared_ptr<TxnKv> txn_kv)
             cv_.wait_for(l, std::chrono::seconds(config::meta_server_register_interval_ms));
         }
         LOG(INFO) << "register thread begins to run";
+        std::mt19937 gen(std::random_device("/dev/urandom")());
+        std::uniform_int_distribution<int> rd_len(50, 300);
+
         while (running_.load()) {
             std::string key = system_meta_service_registry_key();
             std::string val;
             std::unique_ptr<Transaction> txn;
+            int tried = 0;
             do {
                 int ret = txn_kv_->create_txn(&txn);
                 if (ret != 0) break;
@@ -152,7 +157,9 @@ MetaServerRegister::MetaServerRegister(std::shared_ptr<TxnKv> txn_kv)
                 ret = txn->commit();
                 if (ret != 0) {
                     LOG(WARNING) << "failed to commit registry, key=" << hex(key)
-                                 << " val=" << proto_to_json(reg);
+                                 << " val=" << proto_to_json(reg) << " retry times=" << ++tried;
+                    std::this_thread::sleep_for(std::chrono::milliseconds(rd_len(gen)));
+                    continue;
                 }
             } while (false);
             std::unique_lock l(mtx_);

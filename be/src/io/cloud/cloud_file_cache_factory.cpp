@@ -32,15 +32,22 @@ void FileCacheFactory::create_file_cache(const std::string& cache_base_path,
 
     std::unique_ptr<IFileCache> cache =
             std::make_unique<LRUFileCache>(cache_base_path, file_cache_settings);
-
+    std::string file_cache_type;
     switch (type) {
     case NORMAL:
         _caches.push_back(std::move(cache));
+        file_cache_type = "NORMAL";
         break;
     case DISPOSABLE:
         _disposable_cache.push_back(std::move(cache));
+        file_cache_type = "DISPOSABLE";
         break;
     }
+    LOG(INFO) << "[FileCache] path: " << cache_base_path << " type: " << file_cache_type
+              << " normal_size: " << file_cache_settings.max_size
+              << " normal_element_size: " << file_cache_settings.max_elements
+              << " persistent_size: " << file_cache_settings.persistent_max_size
+              << " persistent_element_size: " << file_cache_settings.persistent_max_elements;
 }
 
 CloudFileCachePtr FileCacheFactory::getByPath(const IFileCache::Key& key) {

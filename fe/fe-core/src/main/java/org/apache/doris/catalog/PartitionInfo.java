@@ -328,6 +328,7 @@ public class PartitionInfo implements Writable {
 
         Preconditions.checkState(idToDataProperty.size() == idToReplicaAllocation.size());
         Preconditions.checkState(idToInMemory.keySet().equals(idToReplicaAllocation.keySet()));
+        Preconditions.checkState(idToPersistent.keySet().equals(idToReplicaAllocation.keySet()));
         out.writeInt(idToDataProperty.size());
         for (Map.Entry<Long, DataProperty> entry : idToDataProperty.entrySet()) {
             out.writeLong(entry.getKey());

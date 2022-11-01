@@ -50,8 +50,7 @@ public final class GlobalVariable {
     public static final long VALIDATE_PASSWORD_POLICY_STRONG = 2;
 
     @VariableMgr.VarAttr(name = VERSION_COMMENT, flag = VariableMgr.READ_ONLY)
-    public static String versionComment = "Doris version "
-            + Version.DORIS_BUILD_VERSION + "-" + Version.DORIS_BUILD_SHORT_HASH;
+    public static String versionComment = "SelectDB Core version: " + Version.DORIS_BUILD_VERSION;
 
     @VariableMgr.VarAttr(name = VERSION, flag = VariableMgr.READ_ONLY)
     public static String version = MysqlHandshakePacket.SERVER_VERSION;
@@ -66,7 +65,7 @@ public final class GlobalVariable {
     public static String license = "Apache License, Version 2.0";
 
     @VariableMgr.VarAttr(name = LANGUAGE, flag = VariableMgr.READ_ONLY)
-    public static String language = "/palo/share/english/";
+    public static String language = "/selectdb_cloud/share/english/";
 
     // A string to be executed by the server for each client that connects
     @VariableMgr.VarAttr(name = INIT_CONNECT, flag = VariableMgr.GLOBAL)

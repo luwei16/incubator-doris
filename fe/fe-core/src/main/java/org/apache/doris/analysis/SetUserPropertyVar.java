@@ -81,6 +81,11 @@ public class SetUserPropertyVar extends SetVar {
                     ErrorReport.reportAnalysisException(ErrorCode.ERR_SPECIFIC_ACCESS_DENIED_ERROR,
                                                         "GRANT");
                 }
+                // check value, clusterName is valid.
+                if (key.equals(UserProperty.DEFAULT_CLOUD_CLUSTER)
+                        && !Env.getCurrentSystemInfo().getCloudClusterNames().contains(value)) {
+                    ErrorReport.reportAnalysisException(ErrorCode.ERR_ClOUD_CLUSTER_ERROR, value);
+                }
                 return;
             }
         }

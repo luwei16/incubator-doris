@@ -337,6 +337,17 @@ class Suite implements GroovyInterceptable {
         return s3Url
     }
 
+    String getProvider() {
+        String s3Endpoint = context.config.otherConfigs.get("s3Endpoint")
+        def providers = ["cos", "oss", "s3", "obs", "bos"]
+        for (final def provider in providers) {
+            if (s3Endpoint.containsIgnoreCase(provider)) {
+                return provider
+            }
+        }
+        return ""
+    }
+
     int getTotalLine(String filePath) {
         def file = new File(filePath)
         int lines = 0;

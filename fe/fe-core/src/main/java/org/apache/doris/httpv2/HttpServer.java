@@ -132,7 +132,8 @@ public class HttpServer extends SpringBootServletInitializer {
         Map<String, Object> cloud = new HashMap<>();
         cloud.put("server.port", cloudPort);
         cloud.put("server.servlet.context-path", "/");
-        cloud.put("spring.resources.static-locations", "classpath:/static");
+        cloud.put("spring.mvc.static-path-pattern", "/cloud/**");
+        cloud.put("spring.resources.static-locations", "classpath:/cloud/");
         cloud.put("spring.http.encoding.charset", "UTF-8");
         cloud.put("spring.http.encoding.enabled", true);
         cloud.put("spring.http.encoding.force", true);

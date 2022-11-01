@@ -73,7 +73,7 @@ public class StatementSubmitter {
     private static final String JDBC_DRIVER = "org.mariadb.jdbc.Driver";
     private static final String DB_URL_PATTERN = "jdbc:mariadb://127.0.0.1:%d/%s";
 
-    private static final String[] copyResult = {"copyId", "state", "type", "msg", "loadedRows", "filterRows",
+    private static final String[] copyResult = {"id", "state", "type", "msg", "loadedRows", "filterRows",
             "unselectRows", "url"};
 
     private ThreadPoolExecutor executor = ThreadPoolManager.newDaemonCacheThreadPool(2, "SQL submitter", true);
@@ -113,6 +113,10 @@ public class StatementSubmitter {
                 conn = DriverManager.getConnection(dbUrl, queryCtx.user, queryCtx.passwd);
                 long startTime = System.currentTimeMillis();
                 if (stmtBase instanceof QueryStmt || stmtBase instanceof ShowStmt || stmtBase instanceof CopyStmt) {
+                    if (!queryCtx.clusterName.isEmpty()) {
+                        Statement useStmt = conn.createStatement();
+                        useStmt.execute("use @" + queryCtx.clusterName);
+                    }
                     stmt = conn.prepareStatement(
                             queryCtx.stmt, ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY);
                     // set fetch size to 1 to enable streaming result set to avoid OOM.
@@ -268,15 +272,17 @@ public class StatementSubmitter {
         // used for stream Work
         public boolean isStream;
         public HttpServletResponse response;
+        public String clusterName;
 
         public StmtContext(String stmt, String user, String passwd, long limit,
-                            boolean isStream, HttpServletResponse response) {
+                            boolean isStream, HttpServletResponse response, String clusterName) {
             this.stmt = stmt;
             this.user = user;
             this.passwd = passwd;
             this.limit = limit;
             this.isStream = isStream;
             this.response = response;
+            this.clusterName = clusterName;
         }
     }
 }

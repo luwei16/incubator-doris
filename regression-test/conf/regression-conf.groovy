@@ -32,6 +32,12 @@ feCloudHttpAddress = "127.0.0.1:8035"
 feCloudHttpUser = "root"
 feCloudHttpPassword = ""
 
+// for cloud mode
+instanceId = "clickbench"
+cloudUniqueId = "cloud_unique_id_xxx"
+metaServiceHttpAddress = "127.0.0.1:5000"
+recycleServiceHttpAddress = "127.0.0.1:5001"
+
 // set DORIS_HOME by system properties
 // e.g. java -DDORIS_HOME=./
 suitePath = "${DORIS_HOME}/regression-test/suites"

@@ -316,7 +316,7 @@ LRUFileCache::FileSegmentCell* LRUFileCache::add_cell(const Key& key, bool is_pe
 bool LRUFileCache::try_reserve(const Key& key, const TUniqueId& query_id, bool is_persistent,
                                size_t offset, size_t size,
                                std::lock_guard<std::mutex>& cache_lock) {
-    auto query_context = _enable_query_cache_limit && (query_id.hi != 0 || query_id.lo != 0)
+    auto query_context = _enable_file_cache_query_limit && (query_id.hi != 0 || query_id.lo != 0)
                                  ? get_query_context(query_id, cache_lock)
                                  : nullptr;
     if (!query_context) {
@@ -337,9 +337,8 @@ bool LRUFileCache::try_reserve(const Key& key, const TUniqueId& query_id, bool i
     size_t max_size = is_persistent ? _persistent_max_size : _max_size;
     size_t max_element_size = is_persistent ? _persistent_max_element_size : _max_element_size;
     auto is_overflow = [&] {
-        return (max_size != 0 &&
-                queue->get_total_cache_size(cache_lock) + size - removed_size > max_size) ||
-               (max_element_size != 0 && queue_size > max_element_size) ||
+        return (queue->get_total_cache_size(cache_lock) + size - removed_size > max_size) ||
+               queue_size > max_element_size ||
                (query_context->get_cache_size(cache_lock) + size - removed_size >
                 query_context->get_max_cache_size());
     };
@@ -419,10 +418,8 @@ bool LRUFileCache::try_reserve_for_main_list(const Key& key, QueryContextPtr que
     size_t max_size = is_persistent ? _persistent_max_size : _max_size;
     size_t max_element_size = is_persistent ? _persistent_max_element_size : _max_element_size;
     auto is_overflow = [&] {
-        /// max_size == 0 means unlimited cache size, max_element_size means unlimited number of cache elements.
-        return (max_size != 0 &&
-                queue->get_total_cache_size(cache_lock) + size - removed_size > max_size) ||
-               (max_element_size != 0 && queue_size >= max_element_size);
+        return (queue->get_total_cache_size(cache_lock) + size - removed_size > max_size) ||
+               queue_size >= max_element_size;
     };
 
     std::vector<FileSegmentCell*> to_evict;

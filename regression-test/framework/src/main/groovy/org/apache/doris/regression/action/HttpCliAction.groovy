@@ -67,6 +67,10 @@ class HttpCliAction implements SuiteAction {
         this.body = body
     }
 
+    void result(Object result) {
+        this.result = result
+    }
+
     @Override
     void run() {
         try {
@@ -79,6 +83,7 @@ class HttpCliAction implements SuiteAction {
                         body,
                         ContentType.APPLICATION_JSON);
                 httpPost.setEntity(requestEntity)
+
                 client.execute(httpPost).withCloseable { resp ->
                     resp.withCloseable {
                         String respJson = EntityUtils.toString(resp.getEntity())
@@ -87,11 +92,13 @@ class HttpCliAction implements SuiteAction {
                     }
                 }
             }
+            log.info("result:${result}".toString())
+            log.info("this.result:${this.result}".toString())
             if (check != null) {
                 check.call(result.respCode, result.body)
             } else {
                 if (this.result != null) {
-                    Assert.assertEquals(this.result, result.body)
+                    Assert.assertEquals(this.result, result)
                 }
             }
         } catch (Throwable t) {

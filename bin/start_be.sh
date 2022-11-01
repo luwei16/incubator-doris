@@ -192,7 +192,7 @@ echo "start time: $(date)" >>"${LOG_DIR}/be.out"
 if [[ ! -f '/bin/limit3' ]]; then
     LIMIT=''
 else
-    LIMIT="/bin/limit3 -c 0 -n 65536"
+    LIMIT="/bin/limit3 -c 0 -n 1000000"
 fi
 
 ## If you are not running in aws cloud, disable this env since https://github.com/aws/aws-sdk-cpp/issues/1410.
@@ -235,7 +235,7 @@ set_tcmalloc_heap_limit() {
     export TCMALLOC_HEAP_LIMIT_MB=${mem_limit_mb}
 }
 
-set_tcmalloc_heap_limit || exit 1
+# set_tcmalloc_heap_limit || exit 1
 
 ## set hdfs conf
 export LIBHDFS3_CONF="${DORIS_HOME}/conf/hdfs-site.xml"

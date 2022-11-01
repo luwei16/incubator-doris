@@ -268,12 +268,19 @@ public class CloudGlobalTransactionMgr implements GlobalTransactionMgrInterface 
                 LOG.info("commitTxn, transactionId={}, commitTxnRequest:{}", transactionId, commitTxnRequest);
                 commitTxnResponse = MetaServiceProxy.getInstance().commitTxn(commitTxnRequest);
                 LOG.info("commitTxn, transactionId={}, commitTxnResponse: {}", transactionId, commitTxnResponse);
-                if (commitTxnResponse.getStatus().getCode() == MetaServiceCode.OK
-                        || commitTxnResponse.getStatus().getCode() == MetaServiceCode.TXN_ALREADY_VISIBLE) {
+                if (commitTxnResponse.getStatus().getCode() != MetaServiceCode.KV_TXN_CONFLICT) {
                     break;
                 }
             } catch (Exception e) {
                 LOG.warn("ignore commitTxn exception, transactionId={}, retryTime={}", transactionId, retryTime, e);
+            }
+            // sleep random millis [20, 200] ms, avoid txn conflict
+            int randomMillis = 20 + (int) (Math.random() * (200 - 20));
+            LOG.debug("randomMillis:{}", randomMillis);
+            try {
+                Thread.sleep(randomMillis);
+            } catch (InterruptedException e) {
+                LOG.info("InterruptedException: ", e);
             }
         }
 
@@ -281,7 +288,7 @@ public class CloudGlobalTransactionMgr implements GlobalTransactionMgrInterface 
                 && commitTxnResponse.getStatus().getCode() != MetaServiceCode.TXN_ALREADY_VISIBLE) {
             LOG.warn("commitTxn failed, transactionId={}, for {} times, commitTxnResponse:{}",
                     transactionId, retryTime, commitTxnResponse);
-            throw new UserException(commitTxnResponse.getStatus().getMsg());
+            throw new UserException("internal error, try later");
         }
 
         TransactionState txnState = TxnUtil.transactionStateFromPb(commitTxnResponse.getTxnInfo());

@@ -52,6 +52,7 @@ import org.apache.doris.common.util.SqlParserUtils;
 import org.apache.doris.common.util.TimeUtils;
 import org.apache.doris.persist.gson.GsonPostProcessable;
 import org.apache.doris.persist.gson.GsonUtils;
+import org.apache.doris.proto.OlapFile;
 import org.apache.doris.qe.ConnectContext;
 import org.apache.doris.qe.OriginStatement;
 import org.apache.doris.qe.SqlModeHelper;
@@ -73,6 +74,7 @@ import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.gson.annotations.SerializedName;
+import com.selectdb.cloud.proto.SelectdbCloud;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -178,9 +180,6 @@ public class RollupJobV2 extends AlterJobV2 implements GsonPostProcessable {
     private void createRollupReplica() throws AlterCancelException {
         Database db = Env.getCurrentInternalCatalog()
                 .getDbOrException(dbId, s -> new AlterCancelException("Database " + s + " does not exist"));
-        if (!checkTableStable(db)) {
-            return;
-        }
 
         // 1. create rollup replicas
         AgentBatchTask batchTask = new AgentBatchTask();
@@ -320,14 +319,19 @@ public class RollupJobV2 extends AlterJobV2 implements GsonPostProcessable {
                     TTabletType tabletType = tbl.getPartitionInfo().getTabletType(partitionId);
                     MaterializedIndex rollupIndex = entry.getValue();
 
+                    SelectdbCloud.CreateTabletsRequest.Builder requestBuilder =
+                            SelectdbCloud.CreateTabletsRequest.newBuilder();
                     for (Tablet rollupTablet : rollupIndex.getTablets()) {
-                        Env.getCurrentInternalCatalog().createCloudTabletMeta(tableId, rollupIndexId, partitionId,
-                                rollupTablet, tabletType, rollupSchemaHash,
+                        OlapFile.TabletMetaPB.Builder builder =
+                                Env.getCurrentInternalCatalog().createCloudTabletMetaBuilder(tableId, rollupIndexId,
+                                partitionId, rollupTablet, tabletType, rollupSchemaHash,
                                 rollupKeysType, rollupShortKeyColumnCount, tbl.getCopiedBfColumns(),
                                 tbl.getBfFpp(), tbl.getCopiedIndexes(), rollupSchema,
                                 tbl.getDataSortInfo(), tbl.getCompressionType(), tbl.getStoragePolicy(),
                                 tbl.isInMemory(), tbl.isPersistent(), true, tbl.isDynamicSchema());
+                        requestBuilder.addTabletMetas(builder);
                     } // end for rollupTablets
+                    Env.getCurrentInternalCatalog().sendCreateTabletsRpc(requestBuilder);
                 }
             } catch (Exception e) {
                 LOG.warn("createCloudShadowIndexReplica Exception:{}", e);
@@ -362,6 +366,11 @@ public class RollupJobV2 extends AlterJobV2 implements GsonPostProcessable {
         LOG.info("begin to send create rollup replica tasks. job: {}", jobId);
 
         if (Config.cloud_unique_id.isEmpty()) {
+            Database db = Env.getCurrentInternalCatalog()
+                    .getDbOrException(dbId, s -> new AlterCancelException("Database " + s + " does not exist"));
+            if (!checkTableStable(db)) {
+                return;
+            }
             createRollupReplica();
         } else {
             createCloudRollupReplica();

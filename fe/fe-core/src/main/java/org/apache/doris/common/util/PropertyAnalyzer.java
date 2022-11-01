@@ -21,6 +21,7 @@ import org.apache.doris.analysis.DataSortInfo;
 import org.apache.doris.analysis.DateLiteral;
 import org.apache.doris.catalog.Column;
 import org.apache.doris.catalog.DataProperty;
+import org.apache.doris.catalog.DynamicPartitionProperty;
 import org.apache.doris.catalog.Env;
 import org.apache.doris.catalog.KeysType;
 import org.apache.doris.catalog.Partition;
@@ -48,6 +49,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -474,8 +476,15 @@ public class PropertyAnalyzer {
         if (value.equalsIgnoreCase("true")) {
             return true;
         }
+        if (!Config.cloud_unique_id.isEmpty()) {
+            throw new AnalysisException(PROPERTIES_ENABLE_LIGHT_SCHEMA_CHANGE
+                    + " must be `true`");
+        }
+        if (value.equalsIgnoreCase("false")) {
+            return false;
+        }
         throw new AnalysisException(PROPERTIES_ENABLE_LIGHT_SCHEMA_CHANGE
-                + " must be `true`");
+                    + " must be true or false");
     }
 
     public static Boolean analyzeDisableAutoCompaction(Map<String, String> properties) throws AnalysisException {
@@ -665,6 +674,36 @@ public class PropertyAnalyzer {
         return tagMap;
     }
 
+    public static void checkCloudTableProperty(Map<String, String> properties) throws AnalysisException {
+        if (Config.ignore_unsupported_properties_in_cloud_mode
+                || properties == null || properties.isEmpty()) {
+            return;
+        }
+
+        List<String> unsupportedProperties = new ArrayList<String>();
+        unsupportedProperties.add(PROPERTIES_INMEMORY);
+        unsupportedProperties.add(PROPERTIES_STORAGE_MEDIUM);
+        unsupportedProperties.add(PROPERTIES_STORAGE_FORMAT);
+        unsupportedProperties.add(PROPERTIES_STORAGE_POLICY);
+        unsupportedProperties.add(PROPERTIES_REMOTE_STORAGE_POLICY);
+        unsupportedProperties.add(PROPERTIES_STORAGE_COOLDOWN_TIME);
+        unsupportedProperties.add(PROPERTIES_DISABLE_AUTO_COMPACTION);
+        unsupportedProperties.add(ENABLE_UNIQUE_KEY_MERGE_ON_WRITE);
+        unsupportedProperties.add(PROPERTIES_ENABLE_LIGHT_SCHEMA_CHANGE);
+        unsupportedProperties.add(PROPERTIES_REPLICATION_ALLOCATION);
+        unsupportedProperties.add(PROPERTIES_REPLICATION_NUM);
+
+        unsupportedProperties.add(DynamicPartitionProperty.REPLICATION_NUM);
+        unsupportedProperties.add(DynamicPartitionProperty.REPLICATION_ALLOCATION);
+        unsupportedProperties.add(DynamicPartitionProperty.REMOTE_STORAGE_POLICY);
+
+        for (String property : unsupportedProperties) {
+            if (properties.containsKey(property)) {
+                throw new AnalysisException("Unsupported property: " + property + " in cloud mode");
+            }
+        }
+    }
+
     // There are 2 kinds of replication property:
     // 1. "replication_num" = "3"
     // 2. "replication_allocation" = "tag.location.zone1: 2, tag.location.zone2: 1"
@@ -674,6 +713,21 @@ public class PropertyAnalyzer {
     // prefix is for property key such as "dynamic_partition.replication_num", which prefix is "dynamic_partition"
     public static ReplicaAllocation analyzeReplicaAllocation(Map<String, String> properties, String prefix)
             throws AnalysisException {
+        if (!Config.cloud_unique_id.isEmpty()) {
+            if (properties != null && !properties.isEmpty()) {
+                String propKey = Strings.isNullOrEmpty(prefix) ? PROPERTIES_REPLICATION_ALLOCATION
+                        : prefix + "." + PROPERTIES_REPLICATION_ALLOCATION;
+                properties.remove(propKey);
+            }
+
+            if (properties != null && !properties.isEmpty()) {
+                String propKey = Strings.isNullOrEmpty(prefix) ? PROPERTIES_REPLICATION_NUM
+                        : prefix + "." + PROPERTIES_REPLICATION_NUM;
+                properties.remove(propKey);
+            }
+
+            return new ReplicaAllocation((short) 1);
+        }
         if (properties == null || properties.isEmpty()) {
             return ReplicaAllocation.NOT_SET;
         }
@@ -777,7 +831,14 @@ public class PropertyAnalyzer {
         if (value.equals("false")) {
             return false;
         }
+        if (!Config.cloud_unique_id.isEmpty()) {
+            throw new AnalysisException(PropertyAnalyzer.ENABLE_UNIQUE_KEY_MERGE_ON_WRITE
+                    + " must be `false`");
+        }
+        if (value.equals("true")) {
+            return true;
+        }
         throw new AnalysisException(PropertyAnalyzer.ENABLE_UNIQUE_KEY_MERGE_ON_WRITE
-                                    + " must be `false`");
+                + " must be true or false");
     }
 }

@@ -187,6 +187,7 @@ import com.selectdb.cloud.catalog.CloudReplica;
 import com.selectdb.cloud.proto.SelectdbCloud;
 import com.selectdb.cloud.proto.SelectdbCloud.AlterClusterRequest.Operation;
 import com.selectdb.cloud.proto.SelectdbCloud.FinishCopyRequest.Action;
+import com.selectdb.cloud.proto.SelectdbCloud.MetaServiceCode;
 import com.selectdb.cloud.proto.SelectdbCloud.MetaServiceResponseStatus;
 import com.selectdb.cloud.proto.SelectdbCloud.ObjectFilePB;
 import com.selectdb.cloud.proto.SelectdbCloud.StagePB;
@@ -1766,22 +1767,14 @@ public class InternalCatalog implements CatalogIf<Database> {
         List<Column> baseSchema = stmt.getColumns();
         validateColumns(baseSchema);
 
+        if (!Config.cloud_unique_id.isEmpty()) {
+            PropertyAnalyzer.checkCloudTableProperty(stmt.getProperties());
+        }
+
         // analyze replica allocation
         ReplicaAllocation replicaAlloc = PropertyAnalyzer.analyzeReplicaAllocation(stmt.getProperties(), "");
-        if (!Config.cloud_unique_id.isEmpty()) {
-            if (Config.replication_num_forced_in_cloud_mode) {
-                replicaAlloc = new ReplicaAllocation((short) 1);
-            } else {
-                if (replicaAlloc.isNotSet()) {
-                    replicaAlloc = new ReplicaAllocation((short) 1);
-                } else {
-                    throw new DdlException("Replication property are not allowed to be set in cloud mode");
-                }
-            }
-        } else {
-            if (replicaAlloc.isNotSet()) {
-                replicaAlloc = ReplicaAllocation.DEFAULT_ALLOCATION;
-            }
+        if (replicaAlloc.isNotSet()) {
+            replicaAlloc = ReplicaAllocation.DEFAULT_ALLOCATION;
         }
 
         long bufferSize = IdGeneratorUtil.getBufferSizeForCreateTable(stmt, replicaAlloc);
@@ -3502,7 +3495,8 @@ public class InternalCatalog implements CatalogIf<Database> {
         return rowsetBuilder;
     }
 
-    public void createCloudTabletMeta(long tableId, long indexId, long partitionId, Tablet tablet,
+    public OlapFile.TabletMetaPB.Builder createCloudTabletMetaBuilder(long tableId, long indexId,
+                long partitionId, Tablet tablet,
                 TTabletType tabletType, int schemaHash, KeysType keysType, short shortKeyColumnCount,
                 Set<String> bfColumns, double bfFpp, List<Index> indexes, List<Column> schemaColumns,
                 DataSortInfo dataSortInfo, TCompressionType compressionType, String storagePolicy,
@@ -3608,26 +3602,7 @@ public class InternalCatalog implements CatalogIf<Database> {
         OlapFile.RowsetMetaPB.Builder rowsetBuilder = createInitialRowset(tablet, partitionId,
                 schemaHash, schema);
         builder.addRsMetas(rowsetBuilder);
-
-        OlapFile.TabletMetaPB tabletMetaPb = builder.build();
-        SelectdbCloud.CreateTabletRequest.Builder requestBuilder
-                = SelectdbCloud.CreateTabletRequest.newBuilder();
-        requestBuilder.setTabletMeta(tabletMetaPb)
-                        .setCloudUniqueId(Config.cloud_unique_id);
-        SelectdbCloud.CreateTabletRequest createTableReq = requestBuilder.build();
-        LOG.info("createTableReq: {} ", createTableReq);
-
-        SelectdbCloud.MetaServiceGenericResponse response;
-        try {
-            response = MetaServiceProxy.getInstance().createTablet(createTableReq);
-        } catch (RpcException e) {
-            throw new RuntimeException(e);
-        }
-        LOG.info("response: {} ", response);
-
-        if (response.getStatus().getCode() != SelectdbCloud.MetaServiceCode.OK) {
-            throw new DdlException(response.getStatus().getMsg());
-        }
+        return builder;
     }
 
     private Partition createCloudPartitionWithIndices(String clusterName, long dbId, long tableId, long baseIndexId,
@@ -3641,7 +3616,7 @@ public class InternalCatalog implements CatalogIf<Database> {
         Preconditions.checkArgument(baseIndexId != -1);
         MaterializedIndex baseIndex = new MaterializedIndex(baseIndexId, IndexState.NORMAL);
 
-        LOG.info("lw test create partition");
+        LOG.info("begin create cloud partition");
         // create partition with base index
         Partition partition = new CloudPartition(partitionId, partitionName, baseIndex,
                 distributionInfo, dbId, tableId);
@@ -3678,26 +3653,47 @@ public class InternalCatalog implements CatalogIf<Database> {
             createCloudTablets(clusterName, index, ReplicaState.NORMAL, distributionInfo, version, replicaAlloc,
                     tabletMeta, tabletIdSet);
 
-            // boolean ok = false;
-            // String errMsg = null;
-
             short shortKeyColumnCount = indexMeta.getShortKeyColumnCount();
             // TStorageType storageType = indexMeta.getStorageType();
             List<Column> columns = indexMeta.getSchema();
             KeysType keysType = indexMeta.getKeysType();
 
+            SelectdbCloud.CreateTabletsRequest.Builder requestBuilder = SelectdbCloud.CreateTabletsRequest.newBuilder();
             for (Tablet tablet : index.getTablets()) {
-                createCloudTabletMeta(tableId, indexId, partitionId, tablet, tabletType, schemaHash,
-                        keysType, shortKeyColumnCount, bfColumns, bfFpp, indexes, columns, dataSortInfo,
-                        compressionType, storagePolicy, isInMemory, isPersistent, false, isDynamicSchema);
+                OlapFile.TabletMetaPB.Builder builder = createCloudTabletMetaBuilder(tableId, indexId,
+                        partitionId, tablet, tabletType, schemaHash, keysType, shortKeyColumnCount,
+                        bfColumns, bfFpp, indexes, columns, dataSortInfo, compressionType,
+                        storagePolicy, isInMemory, isPersistent, false, isDynamicSchema);
+                requestBuilder.addTabletMetas(builder);
             }
 
+            LOG.info("create tablets, dbId: {}, tableId: {}, partitionId: {} indexId: {}",
+                    dbId, tableId, partitionId, indexId);
+            sendCreateTabletsRpc(requestBuilder);
             if (index.getId() != baseIndexId) {
                 // add rollup index to partition
                 partition.createRollupIndex(index);
             }
         } // end for indexMap
         return partition;
+    }
+
+    public void sendCreateTabletsRpc(SelectdbCloud.CreateTabletsRequest.Builder requestBuilder) throws DdlException  {
+        requestBuilder.setCloudUniqueId(Config.cloud_unique_id);
+        SelectdbCloud.CreateTabletsRequest createTabletsReq = requestBuilder.build();
+
+        LOG.info("send create tablets rpc, createTabletsReq: {}", createTabletsReq);
+        SelectdbCloud.MetaServiceGenericResponse response;
+        try {
+            response = MetaServiceProxy.getInstance().createTablets(createTabletsReq);
+        } catch (RpcException e) {
+            throw new RuntimeException(e);
+        }
+        LOG.info("create tablets response: {}", response);
+
+        if (response.getStatus().getCode() != SelectdbCloud.MetaServiceCode.OK) {
+            throw new DdlException(response.getStatus().getMsg());
+        }
     }
 
     public void createCloudTable(CreateTableStmt stmt) throws UserException {
@@ -3737,7 +3733,6 @@ public class InternalCatalog implements CatalogIf<Database> {
             LOG.warn("prepareIndex response: {} ", response);
             throw new DdlException(response.getStatus().getMsg());
         }
-
     }
 
     public void commitCloudMaterializedIndex(OlapTable olapTable, List<Long> indexIds) throws DdlException {
@@ -3762,7 +3757,6 @@ public class InternalCatalog implements CatalogIf<Database> {
             throw new DdlException(response.getStatus().getMsg());
         }
     }
-
 
     public void dropCloudMaterializedIndex(OlapTable olapTable, List<Long> indexIds) throws DdlException {
         //drop for index
@@ -3891,17 +3885,37 @@ public class InternalCatalog implements CatalogIf<Database> {
             builder.setStageName(stageName);
         }
         SelectdbCloud.GetStageResponse response = null;
-        try {
-            response = MetaServiceProxy.getInstance().getStage(builder.build());
-            if (response.getStatus().getCode() != SelectdbCloud.MetaServiceCode.OK) {
+        int retryTime = 0;
+        while (retryTime++ < 3) {
+            try {
+                response = MetaServiceProxy.getInstance().getStage(builder.build());
+                LOG.debug("get stage, stageType={}, userName={}, stageName:{}, retry:{}, response: {}",
+                        stageType, userName, stageName, retryTime, response);
+                // just retry kv conflict
+                if (response.getStatus().getCode() != MetaServiceCode.KV_TXN_CONFLICT
+                        && response.getStatus().getCode() != MetaServiceCode.KV_TXN_COMMIT_ERR) {
+                    break;
+                }
+            } catch (RpcException e) {
                 LOG.warn("getStage response: {} ", response);
-                throw new DdlException(response.getStatus().getMsg());
             }
-            return response.getStageList();
-        } catch (RpcException e) {
-            LOG.warn("getStage response: {} ", response);
-            throw new DdlException(e.getMessage());
+            // sleep random millis [20, 200] ms, avoid txn conflict
+            int randomMillis = 20 + (int) (Math.random() * (200 - 20));
+            LOG.debug("randomMillis:{}", randomMillis);
+            try {
+                Thread.sleep(randomMillis);
+            } catch (InterruptedException e) {
+                LOG.info("InterruptedException: ", e);
+            }
         }
+        if (response.getStatus().getCode() != SelectdbCloud.MetaServiceCode.OK) {
+            LOG.warn("getStage response: {} ", response);
+            if (response.getStatus().getCode() == MetaServiceCode.STAGE_NOT_FOUND) {
+                throw new DdlException("Stage does not exists: " + stageName);
+            }
+            throw new DdlException("internal error, try later");
+        }
+        return response.getStageList();
     }
 
     public List<ObjectFilePB> beginCopy(String stageId, SelectdbCloud.StagePB.StageType stageType, long tableId,
@@ -3921,7 +3935,7 @@ public class InternalCatalog implements CatalogIf<Database> {
                 }
                 if (retry < Config.cloud_copy_txn_conflict_error_retry_num
                         && response.getStatus().getCode() == SelectdbCloud.MetaServiceCode.KV_TXN_CONFLICT) {
-                    LOG.warn("begin copy error with kv txn conflict, tableId={}, stageId={}, copyId={}, retry={}",
+                    LOG.warn("begin copy error with kv txn conflict, tableId={}, stageId={}, queryId={}, retry={}",
                             tableId, stageId, copyJobId, retry);
                     retry++;
                     continue;
@@ -3951,7 +3965,7 @@ public class InternalCatalog implements CatalogIf<Database> {
                 }
                 if (retry < Config.cloud_copy_txn_conflict_error_retry_num
                         && response.getStatus().getCode() == SelectdbCloud.MetaServiceCode.KV_TXN_CONFLICT) {
-                    LOG.warn("finish copy error with kv txn conflict, tableId={}, stageId={}, copyId={}, retry={}",
+                    LOG.warn("finish copy error with kv txn conflict, tableId={}, stageId={}, queryId={}, retry={}",
                             tableId, stageId, copyJobId, retry);
                     retry++;
                     continue;

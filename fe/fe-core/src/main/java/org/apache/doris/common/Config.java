@@ -1849,8 +1849,8 @@ public class Config extends ConfigBase {
     @ConfField(mutable = false)
     public static int statistic_task_scheduler_execution_interval_ms = 60 * 1000;
 
-    @ConfField
-    public static boolean replication_num_forced_in_cloud_mode = false;
+    @ConfField(mutable = true)
+    public static boolean ignore_unsupported_properties_in_cloud_mode = false;
 
     @ConfField(mutable = false)
     public static int statement_submitter_threads_num = 64;
@@ -1860,4 +1860,7 @@ public class Config extends ConfigBase {
 
     @ConfField(mutable = false)
     public static int topn_two_phase_limit_threshold = 4096;
+
+    @ConfField
+    public static boolean range_desc_read_by_column_def = true;
 }

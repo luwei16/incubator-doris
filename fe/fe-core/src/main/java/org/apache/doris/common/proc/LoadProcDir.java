@@ -38,7 +38,7 @@ public class LoadProcDir implements ProcDirInterface {
             .add("URL").add("JobDetails").add("TransactionId").add("ErrorTablets")
             .build();
     public static final ImmutableList<String> COPY_TITLE_NAMES = new ImmutableList.Builder<String>()
-            .add("CopyId").addAll(TITLE_NAMES).add("Files").build();
+            .add("Id").addAll(TITLE_NAMES).add("Files").build();
 
     // label and state column index of result
     public static final int LABEL_INDEX = 1;

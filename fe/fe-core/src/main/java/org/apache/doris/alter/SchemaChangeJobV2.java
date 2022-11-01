@@ -47,6 +47,7 @@ import org.apache.doris.common.SchemaVersionAndHash;
 import org.apache.doris.common.io.Text;
 import org.apache.doris.common.util.TimeUtils;
 import org.apache.doris.persist.gson.GsonUtils;
+import org.apache.doris.proto.OlapFile;
 import org.apache.doris.task.AgentBatchTask;
 import org.apache.doris.task.AgentTask;
 import org.apache.doris.task.AgentTaskExecutor;
@@ -68,6 +69,7 @@ import com.google.common.collect.Maps;
 import com.google.common.collect.Table;
 import com.google.common.collect.Table.Cell;
 import com.google.gson.annotations.SerializedName;
+import com.selectdb.cloud.proto.SelectdbCloud;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -396,13 +398,19 @@ public class SchemaChangeJobV2 extends AlterJobV2 {
                         long originIndexId = indexIdMap.get(shadowIdxId);
                         KeysType originKeysType = tbl.getKeysTypeByIndexId(originIndexId);
 
+                        SelectdbCloud.CreateTabletsRequest.Builder requestBuilder =
+                                SelectdbCloud.CreateTabletsRequest.newBuilder();
                         for (Tablet shadowTablet : shadowIdx.getTablets()) {
-                            Env.getCurrentInternalCatalog().createCloudTabletMeta(tableId, shadowIdxId, partitionId,
-                                    shadowTablet, tbl.getPartitionInfo().getTabletType(partitionId), shadowSchemaHash,
-                                    originKeysType, shadowShortKeyColumnCount, bfColumns, bfFpp, indexes, shadowSchema,
-                                    tbl.getDataSortInfo(), tbl.getCompressionType(), tbl.getStoragePolicy(),
-                                    tbl.isInMemory(), tbl.isPersistent(), true, tbl.isDynamicSchema());
+                            OlapFile.TabletMetaPB.Builder builder =
+                                    Env.getCurrentInternalCatalog().createCloudTabletMetaBuilder(tableId, shadowIdxId,
+                                    partitionId, shadowTablet, tbl.getPartitionInfo().getTabletType(partitionId),
+                                    shadowSchemaHash, originKeysType, shadowShortKeyColumnCount, bfColumns,
+                                    bfFpp, indexes, shadowSchema, tbl.getDataSortInfo(), tbl.getCompressionType(),
+                                    tbl.getStoragePolicy(), tbl.isInMemory(), tbl.isPersistent(), true,
+                                    tbl.isDynamicSchema());
+                            requestBuilder.addTabletMetas(builder);
                         } // end for rollupTablets
+                        Env.getCurrentInternalCatalog().sendCreateTabletsRpc(requestBuilder);
                     }
                 }
             } catch (Exception e) {
@@ -438,6 +446,11 @@ public class SchemaChangeJobV2 extends AlterJobV2 {
         LOG.info("begin to send create replica tasks. job: {}", jobId);
 
         if (Config.cloud_unique_id.isEmpty()) {
+            Database db = Env.getCurrentInternalCatalog()
+                    .getDbOrException(dbId, s -> new AlterCancelException("Database " + s + " does not exist"));
+            if (!checkTableStable(db)) {
+                return;
+            }
             createShadowIndexReplica();
         } else {
             createCloudShadowIndexReplica();
