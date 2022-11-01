@@ -1794,7 +1794,7 @@ public class Config extends ConfigBase {
     public static double cloud_rebalance_percent_threshold = 0.1;
 
     @ConfField
-    public static double cloud_rebalance_number_threshold = 0.1;
+    public static long cloud_rebalance_number_threshold = 3;
 
     /**
      * if set to false, auth check will be disable,  in case something goes wrong with the new privilege system.
