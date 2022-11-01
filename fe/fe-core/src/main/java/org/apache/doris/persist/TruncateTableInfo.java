@@ -18,14 +18,12 @@
 package org.apache.doris.persist;
 
 import org.apache.doris.catalog.Partition;
-import org.apache.doris.common.Config;
 import org.apache.doris.common.io.Text;
 import org.apache.doris.common.io.Writable;
 import org.apache.doris.persist.gson.GsonUtils;
 
 import com.google.common.collect.Lists;
 import com.google.gson.annotations.SerializedName;
-import com.selectdb.cloud.catalog.CloudPartition;
 
 import java.io.DataInput;
 import java.io.DataOutput;
@@ -87,13 +85,7 @@ public class TruncateTableInfo implements Writable {
         tblId = in.readLong();
         int size = in.readInt();
         for (int i = 0; i < size; i++) {
-            Partition partition;
-            if (Config.cloud_unique_id.isEmpty()) {
-                partition = Partition.read(in);
-            } else {
-                partition = CloudPartition.read(in);
-            }
-
+            Partition partition = Partition.read(in);
             partitions.add(partition);
         }
     }
