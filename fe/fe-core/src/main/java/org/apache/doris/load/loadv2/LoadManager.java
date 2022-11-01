@@ -37,7 +37,6 @@ import org.apache.doris.common.UserException;
 import org.apache.doris.common.io.Writable;
 import org.apache.doris.common.util.LogBuilder;
 import org.apache.doris.common.util.LogKey;
-import org.apache.doris.ha.FrontendNodeType;
 import org.apache.doris.load.EtlJobType;
 import org.apache.doris.load.FailMsg;
 import org.apache.doris.load.FailMsg.CancelType;
@@ -141,19 +140,10 @@ public class LoadManager implements Writable {
         BrokerLoadJob loadJob = null;
         writeLock();
         try {
-            if (unprotectedGetUnfinishedJobNum() >= Config.desired_max_waiting_jobs) {
+            long unfinishedCopyJobNum = unprotectedGetUnfinishedCopyJobNum();
+            if (unfinishedCopyJobNum >= Config.cluster_max_waiting_copy_jobs) {
                 throw new DdlException(
-                        "There are more than " + Config.desired_max_waiting_jobs
-                                + " unfinished load jobs, please retry later. "
-                                + "You can use `SHOW LOAD` to view submitted jobs");
-            }
-            int frontendNum = Env.getCurrentEnv().getFrontends(FrontendNodeType.OBSERVER).size() + 1;
-            int copyJobNumPerNode = Config.cluster_max_waiting_copy_jobs / frontendNum;
-            if (unprotectedGetUnfinishedCopyJobNum() >= copyJobNumPerNode) {
-                throw new DdlException(
-                        "There are more than " + copyJobNumPerNode + " unfinished copy jobs, " + frontendNum
-                                + " frontends, " + Config.cluster_max_waiting_copy_jobs
-                                + " copy jobs , please retry later. ");
+                        "There are more than " + unfinishedCopyJobNum + " unfinished copy jobs, please retry later.");
             }
             loadJob = new CopyJob(dbId, stmt.getLabel().getLabelName(), ConnectContext.get().queryId(),
                     stmt.getBrokerDesc(), stmt.getOrigStmt(), stmt.getUserInfo(), stmt.getStageId(),

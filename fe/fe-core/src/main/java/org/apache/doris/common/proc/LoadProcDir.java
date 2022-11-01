@@ -104,9 +104,17 @@ public class LoadProcDir implements ProcDirInterface {
     }
 
     public static int analyzeColumn(String columnName) throws AnalysisException {
-        for (String title : TITLE_NAMES) {
+        return analyzeColumn(TITLE_NAMES, columnName);
+    }
+
+    public static int analyzeCopyColumn(String columnName) throws AnalysisException {
+        return analyzeColumn(COPY_TITLE_NAMES, columnName);
+    }
+
+    private static int analyzeColumn(ImmutableList<String> titleNames, String columnName) throws AnalysisException {
+        for (String title : titleNames) {
             if (title.equalsIgnoreCase(columnName)) {
-                return TITLE_NAMES.indexOf(title);
+                return titleNames.indexOf(title);
             }
         }
 

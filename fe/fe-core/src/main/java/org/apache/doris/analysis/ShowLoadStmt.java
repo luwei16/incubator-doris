@@ -162,11 +162,15 @@ public class ShowLoadStmt extends ShowStmt {
                     throw new AnalysisException("Should order by column");
                 }
                 SlotRef slotRef = (SlotRef) orderByElement.getExpr();
-                int index = LoadProcDir.analyzeColumn(slotRef.getColumnName());
+                int index = analyzeColumn(slotRef.getColumnName());
                 OrderByPair orderByPair = new OrderByPair(index, !orderByElement.getIsAsc());
                 orderByPairs.add(orderByPair);
             }
         }
+    }
+
+    protected int analyzeColumn(String columnName) throws AnalysisException {
+        return LoadProcDir.analyzeColumn(columnName);
     }
 
     private void checkPredicateName(Expr leftChild, Expr rightChild) throws AnalysisException {

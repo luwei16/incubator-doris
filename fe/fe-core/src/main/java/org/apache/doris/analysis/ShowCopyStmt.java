@@ -151,4 +151,8 @@ public class ShowCopyStmt extends ShowLoadStmt {
                     + " or compound predicate with operator AND");
         }
     }
+
+    protected int analyzeColumn(String columnName) throws AnalysisException {
+        return LoadProcDir.analyzeCopyColumn(columnName);
+    }
 }

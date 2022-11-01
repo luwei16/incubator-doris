@@ -643,7 +643,7 @@ nonterminal ValueList value_clause;
 // No return.
 nonterminal describe_command, opt_full, opt_inner, opt_outer, from_or_in, keys_or_index, opt_storage, opt_wild_where,
             charset, equal, transaction_characteristics, isolation_level,
-            transaction_access_mode, isolation_types;
+            transaction_access_mode, isolation_types, opt_where;
 
 // String
 nonterminal String user, opt_user;
@@ -3523,12 +3523,12 @@ show_param ::=
         RESULT = new ShowLoadWarningsStmt(null, url, null, null);
     :}
     /* Show load statement */
-    | KW_LOAD opt_db:db opt_wild_where order_by_clause:orderByClause limit_clause:limitClause
+    | KW_LOAD opt_db:db opt_where order_by_clause:orderByClause limit_clause:limitClause
     {:
         RESULT = new ShowLoadStmt(db, parser.where, orderByClause, limitClause);
     :}
     /* Show copy statement */
-    | KW_COPY opt_db:db opt_wild_where order_by_clause:orderByClause limit_clause:limitClause
+    | KW_COPY opt_db:db opt_where order_by_clause:orderByClause limit_clause:limitClause
     {:
         RESULT = new ShowCopyStmt(db, parser.where, orderByClause, limitClause);
     :}
@@ -3824,6 +3824,14 @@ opt_wild_where ::=
     {:
         parser.wild = wild;
     :}
+    | KW_WHERE expr:where
+    {:
+        parser.where = where;
+    :}
+    ;
+
+opt_where ::=
+    /* empty */
     | KW_WHERE expr:where
     {:
         parser.where = where;
