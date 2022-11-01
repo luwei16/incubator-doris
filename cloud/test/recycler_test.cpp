@@ -314,20 +314,18 @@ static int create_copy_job(TxnKv* txn_kv, const std::string& stage_id, int64_t t
 
     std::vector<std::string> file_keys;
     std::string file_val;
-    if (job_status == CopyJobPB::LOADING) {
-        CopyFilePB copy_file;
-        copy_file.set_copy_id("copy_id");
-        copy_file.set_group_id(0);
-        file_val = copy_file.SerializeAsString();
+    CopyFilePB copy_file;
+    copy_file.set_copy_id("copy_id");
+    copy_file.set_group_id(0);
+    file_val = copy_file.SerializeAsString();
 
-        // create job files
-        for (const auto& file : object_files) {
-            CopyFileKeyInfo file_info {instance_id, stage_id, table_id, file.relative_path(),
-                                       file.etag()};
-            std::string file_key;
-            copy_file_key(file_info, &file_key);
-            file_keys.push_back(file_key);
-        }
+    // create job files
+    for (const auto& file : object_files) {
+        CopyFileKeyInfo file_info {instance_id, stage_id, table_id, file.relative_path(),
+                                   file.etag()};
+        std::string file_key;
+        copy_file_key(file_info, &file_key);
+        file_keys.push_back(file_key);
     }
 
     std::unique_ptr<Transaction> txn;
@@ -818,11 +816,11 @@ TEST(RecyclerTest, recycle_copy_jobs) {
         // check copy files
         int file_num = 0;
         ASSERT_EQ(0, get_copy_file_num(txn_kv.get(), internal_stage_id, 0, &file_num));
-        ASSERT_EQ(0, file_num);
+        ASSERT_EQ(10, file_num);
         ASSERT_EQ(0, get_copy_file_num(txn_kv.get(), external_stage_id, 1, &file_num));
-        ASSERT_EQ(0, file_num);
+        ASSERT_EQ(10, file_num);
         ASSERT_EQ(0, get_copy_file_num(txn_kv.get(), external_stage_id, 2, &file_num));
-        ASSERT_EQ(0, file_num);
+        ASSERT_EQ(10, file_num);
         ASSERT_EQ(0, get_copy_file_num(txn_kv.get(), internal_stage_id, 3, &file_num));
         ASSERT_EQ(10, file_num);
         ASSERT_EQ(0, get_copy_file_num(txn_kv.get(), internal_stage_id, 4, &file_num));
@@ -871,7 +869,7 @@ TEST(RecyclerTest, recycle_copy_jobs) {
         ASSERT_EQ(0, get_copy_file_num(txn_kv.get(), external_stage_id, 1, &file_num));
         ASSERT_EQ(0, file_num);
         ASSERT_EQ(0, get_copy_file_num(txn_kv.get(), external_stage_id, 2, &file_num));
-        ASSERT_EQ(0, file_num);
+        ASSERT_EQ(10, file_num);
         ASSERT_EQ(0, get_copy_file_num(txn_kv.get(), internal_stage_id, 3, &file_num));
         ASSERT_EQ(0, file_num);
         ASSERT_EQ(0, get_copy_file_num(txn_kv.get(), internal_stage_id, 4, &file_num));
@@ -879,6 +877,5 @@ TEST(RecyclerTest, recycle_copy_jobs) {
         ASSERT_EQ(0, get_copy_file_num(txn_kv.get(), non_exist_stage_id, 5, &file_num));
         ASSERT_EQ(0, file_num);
     }
-    accessor->delete_objects_by_prefix(prefix);
 }
 } // namespace selectdb

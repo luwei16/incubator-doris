@@ -1220,9 +1220,13 @@ void InstanceRecycler::recycle_copy_jobs() {
         const auto& table_id = std::get<int64_t>(std::get<0>(out[4]));
         const auto& copy_id = std::get<std::string>(std::get<0>(out[5]));
 
+        bool recycle = false;
         if (copy_job.job_status() == CopyJobPB::FINISH) {
             ++num_finished;
             if (copy_job.stage_type() == StagePB::INTERNAL) {
+                // 1. delete objects on storage
+                // 2. delete copy file kvs
+                // 3. delete copy job kv
                 StagePB stage;
                 for (auto& s : instance_info_.stages()) {
                     if (s.stage_id() == stage_id) {
@@ -1311,9 +1315,12 @@ void InstanceRecycler::recycle_copy_jobs() {
                             .tag("num_objects", relative_paths.size());
                     return false;
                 }
-                ++num_recycled;
-                return true;
+
+                recycle = true;
             } else if (copy_job.stage_type() == StagePB::EXTERNAL) {
+                // 1. check if objects on storage are deleted. If all deleted, do the step 2 and 3:
+                // 2. delete copy file kvs
+                // 3. delete copy job kv
                 auto it = external_stage_accessor_map.find(stage_id);
                 std::shared_ptr<ObjStoreAccessor> accessor;
                 if (it == external_stage_accessor_map.end()) {
@@ -1382,15 +1389,19 @@ void InstanceRecycler::recycle_copy_jobs() {
                     }
                 }
 
-                ++num_recycled;
-                return true;
+                recycle = true;
             }
         } else if (copy_job.job_status() == CopyJobPB::LOADING) {
+            // 1. if copy job is timeout:
+            // 2. delete all copy file kv
+            // 3. delete copy job kv
             if (current_time <= copy_job.timeout_time()) {
                 return false;
             }
             ++num_expired;
-
+            recycle = true;
+        }
+        if (recycle) {
             // delete all copy files
             std::vector<std::string> copy_file_keys;
             for (auto& file : copy_job.object_files()) {
@@ -1407,7 +1418,7 @@ void InstanceRecycler::recycle_copy_jobs() {
             }
             for (const auto& key : copy_file_keys) {
                 txn->remove(key);
-                LOG(INFO) << "remove timeout copy_file_key=" << hex(key)
+                LOG(INFO) << "remove copy_file_key=" << hex(key)
                           << ", instance_id=" << instance_id_
                           << ", stage_id=" << stage_id
                           << ", table_id=" << table_id

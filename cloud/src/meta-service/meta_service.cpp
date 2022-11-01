@@ -4808,48 +4808,6 @@ void MetaServiceImpl::begin_copy(google::protobuf::RpcController* controller,
         return;
     }
 
-    // scan loading or loaded files in copy jobs
-    auto object_files = request->object_files();
-    std::set<int> remove_index;
-    CopyJobKeyInfo key_info0 {instance_id, request->stage_id(), request->table_id(), "", 0};
-    CopyJobKeyInfo key_info1 {instance_id, request->stage_id(), request->table_id() + 1, "", 0};
-    std::string key0;
-    std::string key1;
-    copy_job_key(key_info0, &key0);
-    copy_job_key(key_info1, &key1);
-    std::unique_ptr<RangeGetIterator> it;
-    do {
-        ret = txn->get(key0, key1, &it);
-        if (ret != 0) {
-            code = MetaServiceCode::KV_TXN_GET_ERR;
-            msg = "failed to get copy jobs";
-            LOG(WARNING) << msg << " ret=" << ret;
-            return;
-        }
-
-        while (it->has_next()) {
-            auto [k, v] = it->next();
-            if (!it->has_next()) key0 = k;
-            CopyJobPB copy_job;
-            if (!copy_job.ParseFromArray(v.data(), v.size())) {
-                code = MetaServiceCode::PROTOBUF_PARSE_ERR;
-                msg = "failed to parse CopyJobPB";
-                return;
-            }
-            // TODO check if job is timeout
-            for (const auto& file : copy_job.object_files()) {
-                for (auto i = 0; i < object_files.size(); ++i) {
-                    if (!remove_index.count(i) &&
-                        object_files.at(i).relative_path() == file.relative_path() &&
-                        object_files.at(i).etag() == file.etag()) {
-                        remove_index.insert(i);
-                    }
-                }
-            }
-        }
-        key0.push_back('\x00');
-    } while (it->more());
-
     // copy job key
     CopyJobKeyInfo key_info {instance_id, request->stage_id(), request->table_id(),
                              request->copy_id(), request->group_id()};
@@ -4864,28 +4822,37 @@ void MetaServiceImpl::begin_copy(google::protobuf::RpcController* controller,
     copy_job.set_timeout_time(request->timeout_time());
 
     std::vector<std::pair<std::string, std::string>> copy_files;
+    auto object_files = request->object_files();
     for (auto i = 0; i < object_files.size(); ++i) {
-        if (remove_index.count(i)) {
-            continue;
-        }
         auto& file = object_files.at(i);
-        copy_job.add_object_files()->CopyFrom(file);
-        // copy file key
+        // 1. get copy file kv to check if file is loading or loaded
         CopyFileKeyInfo file_key_info {instance_id, request->stage_id(), request->table_id(),
                                        file.relative_path(), file.etag()};
         std::string file_key;
         copy_file_key(file_key_info, &file_key);
-        // copy file value
+        std::string file_val;
+        ret = txn->get(file_key, &file_val);
+        if (ret == 0) { // found key
+            continue;
+        } else if (ret < 0) { // error
+            code = MetaServiceCode::KV_TXN_GET_ERR;
+            msg = "failed to get copy file";
+            LOG(WARNING) << msg << " ret=" << ret;
+            return;
+        }
+        // 2. put copy file kv
         CopyFilePB copy_file;
         copy_file.set_copy_id(request->copy_id());
         copy_file.set_group_id(request->group_id());
-        std::string file_val = copy_file.SerializeAsString();
-        if (file_val.empty()) {
+        std::string copy_file_val = copy_file.SerializeAsString();
+        if (copy_file_val.empty()) {
             msg = "failed to serialize";
             code = MetaServiceCode::PROTOBUF_SERIALIZE_ERR;
             return;
         }
-        copy_files.emplace_back(std::move(file_key), std::move(file_val));
+        copy_files.emplace_back(std::move(file_key), std::move(copy_file_val));
+        // 3. add file to copy job value
+        copy_job.add_object_files()->CopyFrom(file);
         response->add_filtered_object_files()->CopyFrom(file);
     }
 
@@ -4984,17 +4951,8 @@ void MetaServiceImpl::finish_copy(google::protobuf::RpcController* controller,
     }
 
     std::vector<std::string> copy_files;
-    for (const auto& file : copy_job.object_files()) {
-        // copy file key
-        CopyFileKeyInfo file_key_info {instance_id, request->stage_id(), request->table_id(),
-                                       file.relative_path(), file.etag()};
-        std::string file_key;
-        copy_file_key(file_key_info, &file_key);
-        copy_files.emplace_back(std::move(file_key));
-    }
-
     if (request->action() == FinishCopyRequest::COMMIT) {
-        // update copy job status from Loading to Finish
+        // 1. update copy job status from Loading to Finish
         copy_job.set_job_status(CopyJobPB::FINISH);
         val = copy_job.SerializeAsString();
         if (val.empty()) {
@@ -5005,18 +4963,26 @@ void MetaServiceImpl::finish_copy(google::protobuf::RpcController* controller,
         txn->put(key, val);
         LOG(INFO) << "put finished copy_job_key=" << hex(key);
     } else if (request->action() == FinishCopyRequest::ABORT) {
-        // remove copy job
+        // 1. remove copy job kv
+        // 2. remove copy file kvs
         txn->remove(key);
         LOG(INFO) << "remove aborted copy_job_key=" << hex(key);
+        for (const auto& file : copy_job.object_files()) {
+            // copy file key
+            CopyFileKeyInfo file_key_info {instance_id, request->stage_id(), request->table_id(),
+                                           file.relative_path(), file.etag()};
+            std::string file_key;
+            copy_file_key(file_key_info, &file_key);
+            copy_files.emplace_back(std::move(file_key));
+        }
+        for (const auto& k : copy_files) {
+            txn->remove(k);
+            LOG(INFO) << "remove copy_file_key=" << hex(k);
+        }
     } else {
         msg = "Unhandled action";
         code = MetaServiceCode::UNDEFINED_ERR;
         return;
-    }
-    // remove copy file
-    for (const auto& k : copy_files) {
-        txn->remove(k);
-        LOG(INFO) << "remove copy_file_key=" << hex(k);
     }
 
     ret = txn->commit();

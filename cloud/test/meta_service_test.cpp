@@ -1138,7 +1138,7 @@ TEST(MetaServiceTest, CopyJobTest) {
         std::string get_val;
         int ret = meta_service->txn_kv_->create_txn(&txn);
         ASSERT_EQ(ret, 0);
-        // 0 copy files
+        // 20 copy files
         {
             CopyFileKeyInfo key_info0 {instance_id, stage_id, table_id, "", ""};
             CopyFileKeyInfo key_info1 {instance_id, stage_id, table_id + 1, "", ""};
@@ -1149,8 +1149,20 @@ TEST(MetaServiceTest, CopyJobTest) {
             std::unique_ptr<RangeGetIterator> it;
             ret = txn->get(key0, key1, &it);
             ASSERT_EQ(ret, 0);
-            ASSERT_EQ(it->has_next(), false);
-            ASSERT_EQ(it->more(), false);
+            int file_cnt = 0;
+            do {
+                ret = txn->get(key0, key1, &it);
+                ASSERT_EQ(ret, 0);
+                while (it->has_next()) {
+                    auto [k, v] = it->next();
+                    ++file_cnt;
+                    if (!it->has_next()) {
+                        key0 = k;
+                    }
+                }
+                key0.push_back('\x00');
+            } while (it->more());
+            ASSERT_EQ(file_cnt, 20);
         }
         // 1 copy job with finish status
         {
@@ -1172,6 +1184,9 @@ TEST(MetaServiceTest, CopyJobTest) {
                     ASSERT_EQ(copy_job.object_files_size(), 20);
                     ASSERT_EQ(copy_job.job_status(), CopyJobPB::FINISH);
                     ++job_cnt;
+                    if (!it->has_next()) {
+                        key0 = k;
+                    }
                 }
                 key0.push_back('\x00');
             } while (it->more());
