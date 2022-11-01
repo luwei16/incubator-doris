@@ -252,7 +252,6 @@ void Transaction::atomic_set_ver_value(std::string_view key, std::string_view va
 void Transaction::atomic_add(std::string_view key, int64_t to_add) {
     std::lock_guard<std::mutex> l(lock_);
     std::string k(key.data(), key.size());
-    unreadable_keys_.insert(k);
     op_list_.emplace_back(ModifyOpType::ATOMIC_ADD, k, std::to_string(to_add));
 }
 

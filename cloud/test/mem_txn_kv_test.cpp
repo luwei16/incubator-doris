@@ -1,5 +1,6 @@
 
 // clang-format off
+#include <gtest/gtest-death-test.h>
 #include <memory>
 #include "common/config.h"
 #include "common/util.h"
@@ -432,7 +433,7 @@ static void modify_snapshot_test(std::shared_ptr<selectdb::TxnKv> txn_kv) {
         txn_1->put("test", "version1");
         ASSERT_EQ(txn_1->commit(), 0);
 
-        // txn_2: read the key set by atomic_xxx before commit
+        // txn_2: read the key set by atomic_set_xxx before commit
         txn_kv->create_txn(&txn_2);
         txn_2->atomic_set_ver_value("test", "");
         ret = txn_2->get("test", &get_val);
@@ -730,4 +731,132 @@ TEST(TxnMemKvTest, ConflictTest) {
     ASSERT_EQ(val, val2); // First wins
     std::cout << "final val=" << val << std::endl;
 }
+
+static void txn_behavior_test(std::shared_ptr<selectdb::TxnKv> txn_kv) {
+    using namespace selectdb;
+    std::string txn_kv_class = dynamic_cast<MemTxnKv*>(txn_kv.get()) != nullptr ? " memkv" : " fdb";
+    std::unique_ptr<Transaction> txn_1;
+    std::unique_ptr<Transaction> txn_2;
+    // av: atomic_set_ver_value
+    // ak: atomic_set_ver_key
+    // ad: atmoic_add
+    // c : commit
+
+    // txn_1: --- put<key, v1> -- av<key, v1> --------------- c
+    // txn_2: ------------------------------- ad<key, v1> ----- put<key, v2> --- c
+    // result: <key v2>
+    {
+        int ret = txn_kv->create_txn(&txn_1);
+        ASSERT_EQ(ret, 0);
+        txn_1->put("key", "v1");
+        txn_1->atomic_set_ver_value("key", "v1");
+
+        txn_kv->create_txn(&txn_2);
+        txn_2->atomic_add("key", 1);
+
+        ASSERT_EQ(txn_1->commit(), 0);
+
+        txn_2->put("key", "v2");
+        ASSERT_EQ(txn_2->commit(), 0);
+
+        std::string get_val;
+        txn_kv->create_txn(&txn_2);
+        ASSERT_EQ(txn_2->get("key", &get_val), 0);
+        ASSERT_EQ(get_val, "v2");
+    }
+
+    // txn_1: --- ad<"key",1> --- av<"key", "v1"> ------ c
+    // txn_2: ------------------- av<"key", "v2"> ---- c
+    // result: <"key", "version"+"v1">
+    {
+        int ret = txn_kv->create_txn(&txn_1);
+        ASSERT_EQ(ret, 0);
+        txn_1->atomic_add("key", 1);
+        txn_1->atomic_set_ver_value("key", "v1");
+
+        txn_kv->create_txn(&txn_2);
+        txn_2->atomic_set_ver_value("key", "v2");
+
+        ASSERT_EQ(txn_2->commit(), 0);
+
+        ASSERT_EQ(txn_1->commit(), 0);
+
+        std::string get_val;
+        txn_kv->create_txn(&txn_2);
+        ASSERT_EQ(txn_2->get("key", &get_val), 0);
+        std::cout << get_val << std::endl;
+    }
+
+    // txn_1: --- put<"key", "1"> --- get<"key"> --- c
+    // result: can get "1" and commit success
+    {
+        std::string get_val;
+        int ret = txn_kv->create_txn(&txn_1);
+        ASSERT_EQ(ret, 0);
+        txn_1->put("key", "1");
+        ASSERT_EQ(txn_1->get("key", &get_val), 0) << txn_kv_class;
+        ASSERT_EQ(get_val, "1") << txn_kv_class;
+        ASSERT_EQ(txn_1->commit(), 0);
+    }
+
+    // txn_1: --- ad<"key",1> --- get<"key"> --- c
+    // result: commit success
+    {
+        std::string get_val;
+        txn_kv->create_txn(&txn_1);
+        txn_1->atomic_add("key", 1);
+        ASSERT_EQ(txn_1->get("key", &get_val), 0) << txn_kv_class;
+        ASSERT_EQ(txn_1->commit(), 0) << txn_kv_class;
+    }
+
+    // txn_1: --- av<"key", "1"> --- get<"key"> --- c
+    // result: can not read the unreadable key and commit error
+    {
+        std::string get_val;
+        int ret = txn_kv->create_txn(&txn_1);
+
+        txn_kv->create_txn(&txn_1);
+        txn_1->atomic_set_ver_value("key", "1");
+        ret = txn_1->get("key", &get_val);
+        // can not read the unreadable key
+        ASSERT_EQ(ret != 0 && ret != 1, true) << txn_kv_class;
+        ASSERT_NE(txn_1->commit(), 0) << txn_kv_class;
+    }
+
+    // txn_1: --- get<"keyNotExit"> --- put<"keyNotExit", "1"> --- get<"keyNotExit"> --- c
+    // txn_2: --- get<"keyNotExit"> --- put<"keyNotExit", "1"> --- get<"keyNotExit"> ------ c
+    // result: txn_2 commit conflict
+    {
+        std::string get_val;
+        int ret = txn_kv->create_txn(&txn_1);
+        ASSERT_EQ(ret, 0);
+        txn_1->remove("keyNotExit");
+        ASSERT_EQ(txn_1->commit(), 0);
+
+        txn_kv->create_txn(&txn_1);
+        ASSERT_EQ(txn_1->get("keyNotExit", &get_val), 1);
+        txn_1->put("keyNotExit", "1");
+        ASSERT_EQ(txn_1->get("keyNotExit", &get_val), 0);
+        ASSERT_EQ(get_val, "1");
+
+        txn_kv->create_txn(&txn_2);
+        ASSERT_EQ(txn_2->get("keyNotExit", &get_val), 1);
+        txn_2->put("keyNotExit", "1");
+        ASSERT_EQ(txn_2->get("keyNotExit", &get_val), 0);
+        ASSERT_EQ(get_val, "1");
+
+        ASSERT_EQ(txn_1->commit(), 0) << txn_kv_class;
+        ASSERT_NE(txn_2->commit(), 0) << txn_kv_class;
+    }
+}
+
+TEST(TxnMemKvTest, TxnBehaviorTest) {
+    using namespace selectdb;
+    auto mem_txn_kv = std::dynamic_pointer_cast<TxnKv>(std::make_shared<MemTxnKv>());
+    ASSERT_NE(mem_txn_kv.get(), nullptr);
+
+    txn_behavior_test(mem_txn_kv);
+    txn_behavior_test(fdb_txn_kv);
+}
+
 // vim: et tw=100 ts=4 sw=4 cc=80:
