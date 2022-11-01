@@ -4,11 +4,15 @@ import com.aliyun.oss.ClientException;
 import com.aliyun.oss.HttpMethod;
 import com.aliyun.oss.OSS;
 import com.aliyun.oss.OSSClientBuilder;
+import com.aliyun.oss.OSSErrorCode;
 import com.aliyun.oss.OSSException;
 import com.aliyun.oss.model.GeneratePresignedUrlRequest;
+import com.aliyun.oss.model.HeadObjectRequest;
 import com.aliyun.oss.model.ListObjectsV2Request;
 import com.aliyun.oss.model.ListObjectsV2Result;
 import com.aliyun.oss.model.OSSObjectSummary;
+import com.aliyun.oss.model.ObjectMetadata;
+import com.google.common.collect.Lists;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.doris.common.DdlException;
 import org.apache.logging.log4j.LogManager;
@@ -56,10 +60,41 @@ public class OssRemote extends DefaultRemote {
 
     @Override
     public ListObjectsResult listObjects(String continuationToken) throws DdlException {
+        return listObjectsInner(normalizePrefix(), continuationToken);
+    }
+
+    @Override
+    public ListObjectsResult listObjects(String subPrefix, String continuationToken) throws DdlException {
+        return listObjectsInner(normalizePrefix(subPrefix), continuationToken);
+    }
+
+    @Override
+    public ListObjectsResult headObject(String subKey) throws DdlException {
+        initClient();
+        try {
+            String key = normalizePrefix(subKey);
+            HeadObjectRequest request = new HeadObjectRequest(obj.getBucket(), key);
+            ObjectMetadata metadata = ossClient.headObject(request);
+            ObjectFile objectFile = new ObjectFile(key, getRelativePath(key), formatEtag(metadata.getETag()),
+                    metadata.getContentLength());
+            return new ListObjectsResult(Lists.newArrayList(objectFile), false, null);
+        } catch (OSSException e) {
+            if (e.getErrorCode().equals(OSSErrorCode.NO_SUCH_KEY)) {
+                LOG.warn("NoSuchKey when head object for OSS, subKey={}", subKey);
+                return new ListObjectsResult(Lists.newArrayList(), false, null);
+            }
+            LOG.warn("Failed to head object for OSS, subKey={}", subKey, e);
+            throw new DdlException(
+                    "Failed to head object for OSS, subKey=" + subKey + ", Error code=" + e.getErrorCode()
+                            + ", Error message=" + e.getErrorMessage());
+        }
+    }
+
+    private ListObjectsResult listObjectsInner(String prefix, String continuationToken) throws DdlException {
         initClient();
         try {
             ListObjectsV2Request request = new ListObjectsV2Request().withBucketName(obj.getBucket())
-                    .withPrefix(normalizePrefix());
+                    .withPrefix(prefix);
             if (!StringUtils.isEmpty(continuationToken)) {
                 request.setContinuationToken(continuationToken);
             }

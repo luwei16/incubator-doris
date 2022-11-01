@@ -19,4 +19,10 @@ public class ListObjectsResult {
         this.isTruncated = isTruncated;
         this.continuationToken = continuationToken;
     }
+
+    @Override
+    public String toString() {
+        return "ListObjectsResult{" + "objectInfoList=" + objectInfoList + ", isTruncated=" + isTruncated
+                + ", continuationToken='" + continuationToken + '\'' + '}';
+    }
 }
