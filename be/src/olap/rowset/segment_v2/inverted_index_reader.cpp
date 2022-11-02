@@ -412,16 +412,23 @@ Status BkdIndexReader::get_bkd_reader(lucene::util::bkd::bkd_reader*& bkdReader)
                                          fmt::format("bkd index input file not found"));
     }
     CLuceneError err;
-    lucene::store::IndexInput* in;
+    lucene::store::IndexInput* data_in;
+    lucene::store::IndexInput* meta_in;
+    lucene::store::IndexInput* index_in;
+
     if (!compoundReader->openInput(
-                InvertedIndexDescriptor::get_temporary_bkd_index_file_name().c_str(), in, err)) {
+                InvertedIndexDescriptor::get_temporary_bkd_index_data_file_name().c_str(), data_in, err) ||
+        !compoundReader->openInput(InvertedIndexDescriptor::get_temporary_bkd_index_meta_file_name().c_str(), meta_in, err) ||
+        !compoundReader->openInput(InvertedIndexDescriptor::get_temporary_bkd_index_file_name().c_str(), index_in, err)) {
         return Status::OLAPInternalError(OLAP_ERR_INVERTED_INDEX_FILE_NOT_FOUND,
                                          fmt::format("bkd index input error: {}", err.what()));
     }
 
-    bkdReader = new lucene::util::bkd::bkd_reader(in);
-    bkdReader->read_type();
-    bkdReader->read_index();
+    bkdReader = new lucene::util::bkd::bkd_reader(data_in);
+    bkdReader->read_meta(meta_in);
+
+    //bkdReader->read_type();
+    bkdReader->read_index(index_in);
 
     _type_info = get_scalar_type_info((FieldType)bkdReader->type);
     if (_type_info == nullptr) {
@@ -526,32 +533,18 @@ bool InvertedIndexVisitor::matches(uint8_t* packedValue) {
     return true;
 }
 
-void InvertedIndexVisitor::visit(lucene::util::bkd::bkd_docID_set_iterator* iter,
-                                 std::vector<uint8_t>& packedValue) {
+void InvertedIndexVisitor::visit(std::vector<char>& docID, std::vector<uint8_t>& packedValue) {
     if (!matches(packedValue.data())) {
         return;
     }
-    if (iter->length() > 0) {
-        int32_t docID = iter->nextDoc();
-        while (docID != lucene::util::bkd::bkd_docID_set_iterator::NO_MORE_DOCS) {
-            if (only_count) {
-                num_hits++;
-            } else {
-                hits->add(docID);
-            }
-            docID = iter->nextDoc();
-        }
-    } else {
-        if (iter->docIDs_bitmap.cardinality() > 0) {
-            visit(iter->docIDs_bitmap);
-        }
-    }
+    visit(roaring::Roaring::read(docID.data(), false));
 }
-void InvertedIndexVisitor::visit(Roaring *docID, std::vector<uint8_t> &packedValue) {
-       if (!matches(packedValue.data())) {
-           return;
-       }
-       visit(*docID);
+
+void InvertedIndexVisitor::visit(Roaring* docID, std::vector<uint8_t>& packedValue) {
+    if (!matches(packedValue.data())) {
+        return;
+    }
+    visit(*docID);
 }
 
 void InvertedIndexVisitor::visit(roaring::Roaring&& r) {
@@ -578,6 +571,22 @@ void InvertedIndexVisitor::visit(int rowID) {
     }
     if (0) {
         std::wcout << L"visit docID=" << rowID << std::endl;
+    }
+}
+
+void InvertedIndexVisitor::visit(lucene::util::bkd::bkd_docID_set_iterator* iter,
+                                 std::vector<uint8_t>& packedValue) {
+    if (!matches(packedValue.data())) {
+        return;
+    }
+    int32_t docID = iter->docID_set->nextDoc();
+    while (docID != lucene::util::bkd::bkd_docID_set::NO_MORE_DOCS) {
+        if (only_count) {
+            num_hits++;
+        } else {
+            hits->add(docID);
+        }
+        docID = iter->docID_set->nextDoc();
     }
 }
 
@@ -628,17 +637,27 @@ lucene::util::bkd::relation InvertedIndexVisitor::compare(std::vector<uint8_t>& 
                 return lucene::util::bkd::relation::CELL_OUTSIDE_QUERY;
             }
         }
-
-        crosses |= lucene::util::FutureArrays::CompareUnsigned(
-                           minPacked.data(), offset, offset + reader->bytes_per_dim_,
-                           (const uint8_t*)queryMin.c_str(), offset,
-                           offset + reader->bytes_per_dim_) < 0 ||
-                   lucene::util::FutureArrays::CompareUnsigned(
-                           maxPacked.data(), offset, offset + reader->bytes_per_dim_,
-                           (const uint8_t*)queryMax.c_str(), offset,
-                           offset + reader->bytes_per_dim_) > 0;
+        if (query_type == InvertedIndexQueryType::LESS_THAN_QUERY ||
+            query_type == InvertedIndexQueryType::GREATER_THAN_QUERY) {
+            crosses |= lucene::util::FutureArrays::CompareUnsigned(
+                               minPacked.data(), offset, offset + reader->bytes_per_dim_,
+                               (const uint8_t*)queryMin.c_str(), offset,
+                               offset + reader->bytes_per_dim_) <= 0 ||
+                       lucene::util::FutureArrays::CompareUnsigned(
+                               maxPacked.data(), offset, offset + reader->bytes_per_dim_,
+                               (const uint8_t*)queryMax.c_str(), offset,
+                               offset + reader->bytes_per_dim_) >= 0;
+        } else {
+            crosses |= lucene::util::FutureArrays::CompareUnsigned(
+                               minPacked.data(), offset, offset + reader->bytes_per_dim_,
+                               (const uint8_t*)queryMin.c_str(), offset,
+                               offset + reader->bytes_per_dim_) < 0 ||
+                       lucene::util::FutureArrays::CompareUnsigned(
+                               maxPacked.data(), offset, offset + reader->bytes_per_dim_,
+                               (const uint8_t*)queryMax.c_str(), offset,
+                               offset + reader->bytes_per_dim_) > 0;
+        }
     }
-
     if (crosses) {
         return lucene::util::bkd::relation::CELL_CROSSES_QUERY;
     } else {

@@ -163,13 +163,12 @@ public:
 
     void visit(int rowID) override;
     void visit(roaring::Roaring &r) override;
-    void visit(roaring::Roaring &&r) ;
-    void visit(Roaring *docID, std::vector<uint8_t> &packedValue) ;
-    bool matches(uint8_t* packedValue);
-
+    void visit(roaring::Roaring &&r) override;
+    void visit(roaring::Roaring *docID, std::vector<uint8_t> &packedValue) override;
+    void visit(std::vector<char>& docID, std::vector<uint8_t> &packedValue) override;
     void visit(int rowID, std::vector<uint8_t>& packedValue) override;
     void visit(lucene::util::bkd::bkd_docID_set_iterator *iter, std::vector<uint8_t> &packedValue) override;
-
+    bool matches(uint8_t* packedValue);
     lucene::util::bkd::relation compare(std::vector<uint8_t>& minPacked,
                                         std::vector<uint8_t>& maxPacked) override;
     uint32_t get_num_hits() const {

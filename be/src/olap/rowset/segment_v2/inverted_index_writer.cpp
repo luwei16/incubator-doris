@@ -222,18 +222,11 @@ public:
             auto* v = (Slice*)values;
             for (int i = 0; i < count; ++i) {
                 if (_parser_type == InvertedIndexParserType::PARSER_NONE) {
-                    //auto field_value = lucene::util::Misc::_charToWide(v->get_data(), v->get_size());
                     char* value = v->mutable_data();
-                    char* act_value = _CL_NEWARRAY(char, v->get_size() + 1);
-                    for (auto i = 0; i < v->get_size(); i++) {
-                        act_value[i] = value[i];
-                    }
-                    auto len = strlen(act_value);
-                    _field->setValue(act_value, len);
+                    _field->setValue(value, strnlen(value, v->get_size()));
                     ++v;
                     _rid++;
                     _index_writer->addDocument(_doc, _default_analyzer);
-                    _CLDELETE_ARRAY(act_value);
                 } else if (_parser_type == InvertedIndexParserType::PARSER_STANDARD) {
                     auto field_value =
                             lucene::util::Misc::_charToWide(v->get_data(), v->get_size());
@@ -371,10 +364,16 @@ public:
 #endif
             _bkd_writer->max_doc_ = _rid;
             _bkd_writer->docs_seen_ = _row_ids_seen_for_bkd;
-            std::unique_ptr<lucene::store::IndexOutput> out(dir->createOutput(
+            std::unique_ptr<lucene::store::IndexOutput> data_out(dir->createOutput(
+                    InvertedIndexDescriptor::get_temporary_bkd_index_data_file_name().c_str()));
+            std::unique_ptr<lucene::store::IndexOutput> meta_out(dir->createOutput(
+                    InvertedIndexDescriptor::get_temporary_bkd_index_meta_file_name().c_str()));
+            std::unique_ptr<lucene::store::IndexOutput> index_out(dir->createOutput(
                     InvertedIndexDescriptor::get_temporary_bkd_index_file_name().c_str()));
-            _bkd_writer->meta_finish(out.get(), _bkd_writer->finish(out.get()), field_type);
-            out->close();
+            _bkd_writer->meta_finish(meta_out.get(), _bkd_writer->finish(data_out.get(), index_out.get()), field_type);
+            meta_out->close();
+            data_out->close();
+            index_out->close();
             dir->close();
             _CLDELETE(dir)
         } else if constexpr (field_is_slice_type(field_type)) {
