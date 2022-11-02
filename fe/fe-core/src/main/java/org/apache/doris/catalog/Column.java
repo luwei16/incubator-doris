@@ -493,10 +493,6 @@ public class Column implements Writable {
                 if (index.getIndexType() == IndexDef.IndexType.BITMAP) {
                     builder.setHasBitmapIndex(true);
                     break;
-                } else if (index.getIndexType() == IndexDef.IndexType.INVERTED) {
-                    builder.setHasInvertedIndex(true);
-                    builder.setInvertedIndexParser(index.getInvertedIndexParser());
-                    break;
                 }
             }
         }
@@ -799,12 +795,6 @@ public class Column implements Writable {
                 List<String> columns = index.getColumns();
                 if (tColumn.getColumnName().equals(columns.get(0))) {
                     tColumn.setHasBitmapIndex(true);
-                }
-            } else if (index.getIndexType() == IndexDef.IndexType.INVERTED) {
-                List<String> columns = index.getColumns();
-                if (tColumn.getColumnName().equals(columns.get(0))) {
-                    tColumn.setHasInvertedIndex(true);
-                    tColumn.setInvertedIndexParser(index.getInvertedIndexParser());
                 }
             }
         }

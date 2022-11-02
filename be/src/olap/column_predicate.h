@@ -53,6 +53,7 @@ enum class PredicateType {
     IS_NOT_NULL = 10,
     BF = 11, // BloomFilter
     MATCH = 12, // fulltext match
+    RANGE = 13, // range predicate for bkd index
 };
 
 struct PredicateTypeTraits {
@@ -162,6 +163,8 @@ public:
             return "bf";
         case PredicateType::MATCH:
             return "match";
+        case PredicateType::RANGE:
+            return "range";
         default:
             return "unknown";
         }

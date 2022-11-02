@@ -1191,6 +1191,8 @@ SchemaChangeForInvertedIndex::SchemaChangeForInvertedIndex(
 
 SchemaChangeForInvertedIndex::~SchemaChangeForInvertedIndex() {
     VLOG_NOTICE << "~SchemaChangeForInvertedIndex()";
+    _inverted_index_builders.clear();
+    _index_metas.clear();
 }
 
 Status SchemaChangeForInvertedIndex::_add_nullable(const std::string& column_name,
@@ -1323,18 +1325,14 @@ Status SchemaChangeForInvertedIndex::process(
             auto unique_id = column.unique_id();
 
             std::unique_ptr<Field> field(FieldFactory::create(column));
-            std::string parser_type = "not_set";
-            if (inverted_index.__isset.properties &&
-                inverted_index.properties.find("parser") != inverted_index.properties.end()) {
-                parser_type = inverted_index.properties.at("parser");
-            }
-            doris::InvertedIndexParserType type = get_inverted_index_parser_type_from_string(parser_type);
+            _index_metas.emplace_back(new TabletIndex());
+            _index_metas.back()->init_from_thrift(inverted_index, *_tablet_schema);
             std::unique_ptr<segment_v2::InvertedIndexColumnWriter> inverted_index_builder;
             try {
                 RETURN_IF_ERROR(segment_v2::InvertedIndexColumnWriter::create(field.get(), &inverted_index_builder,
                                                               unique_id, segment_filename,
                                                               tablet_path,
-                                                              type,
+                                                              _index_metas.back().get(),
                                                               fs));
             } catch (const std::exception& e) {
                 LOG(WARNING) << "CLuceneError occured: " << e.what();
@@ -1416,6 +1414,7 @@ Status SchemaChangeForInvertedIndex::process(
         }
     }
     _inverted_index_builders.clear();
+    _index_metas.clear();
     
     LOG(INFO) << "all row nums. source_rows=" << rowset_reader->rowset()->num_rows();
     return res;
@@ -2137,7 +2136,8 @@ Status SchemaChangeHandler::_drop_inverted_index(
                 auto column = tablet_schema->column(column_name);
                 auto col_uuid = column.unique_id();
 
-                std::string inverted_index_file = InvertedIndexDescriptor::get_index_file_name(segment_path, col_uuid);
+                std::string inverted_index_file =
+                    InvertedIndexDescriptor::get_index_file_name(segment_path, inverted_index.index_id);
                 bool file_exist = false;
                 fs->exists(inverted_index_file, &file_exist);
                 if (!file_exist) {
@@ -2198,50 +2198,6 @@ Status SchemaChangeHandler::_add_inverted_index(
     return Status::OK();
 }
 
-Status SchemaChangeHandler::_update_column_describe(const TAlterInvertedIndexReq& request, 
-        TabletSharedPtr tablet, const TabletSchemaSPtr& tablet_schema) {
-    std::vector<TOlapTableIndex> alter_inverted_indexs;
-    if (request.__isset.alter_inverted_indexes) {
-        alter_inverted_indexs = request.alter_inverted_indexes;
-    }
-
-    std::unordered_map<std::string, std::string> inverted_index_infos;
-    for (auto& inverted_index: alter_inverted_indexs) {
-        auto column_name = inverted_index.columns[0];
-        std::string parser_type = "not_set";
-        if (inverted_index.__isset.properties &&
-            inverted_index.properties.find("parser") != inverted_index.properties.end()) {
-            parser_type = inverted_index.properties.at("parser");
-        }
-
-        inverted_index_infos.emplace(std::make_pair(column_name, parser_type));
-    }
-
-    if (!request.columns.empty() && request.columns[0].col_unique_id >= 0) {
-        tablet_schema->clear_columns();
-        for (auto t_column : request.columns) {
-            if (inverted_index_infos.count(t_column.column_name)) {
-                if (request.__isset.is_drop_op && request.is_drop_op) {
-                    t_column.__set_inverted_index_parser("");
-                } else {
-                    t_column.__set_inverted_index_parser(inverted_index_infos[t_column.column_name]);
-                }
-            }
-            tablet_schema->append_column(TabletColumn(t_column));
-        }
-    }
-
-    {
-        std::lock_guard<std::shared_mutex> wlock(tablet->get_header_lock());
-        for (RowsetMetaSharedPtr rowset_meta : tablet->tablet_meta()->all_mutable_rs_metas()) {
-            rowset_meta->tablet_schema()->update_column_from(*tablet_schema);
-        }
-        tablet->save_meta();
-    }
-    
-    return Status::OK();
-}
-
 Status SchemaChangeHandler::_do_process_alter_inverted_index(TabletSharedPtr tablet, const TAlterInvertedIndexReq& request) {
     Status res = Status::OK();
     std::shared_lock base_migration_rlock(tablet->get_migration_lock(), std::try_to_lock);
@@ -2275,7 +2231,27 @@ Status SchemaChangeHandler::_do_process_alter_inverted_index(TabletSharedPtr tab
         return res;
     }
 
-    RETURN_IF_ERROR(_update_column_describe(request, tablet, tablet_schema));
+    // TODO xk fe set new schema version
+    // update indexes in tablet_schema
+    {
+        // update tablet level schema
+        auto new_tablet_schema = std::make_shared<TabletSchema>();
+        new_tablet_schema->copy_from(*tablet->tablet_schema());
+        new_tablet_schema->update_indexes_from_thrift(request.indexes);
+        tablet->update_max_version_schema(new_tablet_schema, true);
+
+        std::lock_guard<std::shared_mutex> wlock(tablet->get_header_lock());
+
+        // update tablet level schema
+        for (RowsetMetaSharedPtr rowset_meta : tablet->tablet_meta()->all_mutable_rs_metas()) {
+            auto new_tablet_schema = std::make_shared<TabletSchema>();
+            new_tablet_schema->copy_from(*rowset_meta->tablet_schema());
+            new_tablet_schema->update_indexes_from_thrift(request.indexes);
+            rowset_meta->set_tablet_schema(new_tablet_schema);
+        }
+
+        tablet->save_meta();
+    }
     
     return Status::OK();
 }

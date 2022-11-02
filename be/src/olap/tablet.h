@@ -411,7 +411,8 @@ public:
 
     bool check_all_rowset_segment();
 
-    void update_max_version_schema(const TabletSchemaSPtr& tablet_schema);
+    void update_max_version_schema(const TabletSchemaSPtr& tablet_schema,
+                                   bool update_same_version = false);
 
     bool is_in_memory() const { return _tablet_meta->is_in_memory(); }
     bool is_persistent() const { return _tablet_meta->is_persistent(); }

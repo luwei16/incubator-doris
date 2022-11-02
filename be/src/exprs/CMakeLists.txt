@@ -50,6 +50,7 @@ add_library(Exprs
   is_null_predicate.cpp
   like_predicate.cpp
   match_predicate.cpp
+  range_predicate.cpp
   math_functions.cpp
   null_literal.cpp  
   scalar_fn_call.cpp

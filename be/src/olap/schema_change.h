@@ -204,6 +204,7 @@ private:
 
     // "segment_id_unique_id" -> InvertedIndexColumnWriter
     std::unordered_map<std::string, std::unique_ptr<segment_v2::InvertedIndexColumnWriter>>  _inverted_index_builders;
+    std::vector<std::unique_ptr<TabletIndex>> _index_metas;
 };
 
 // @brief schema change without sorting.
@@ -389,9 +390,6 @@ private:
             const TabletSchemaSPtr& tablet_schema,
             TabletSharedPtr tablet,
             const std::vector<TOlapTableIndex>& alter_inverted_indexs);
-
-    static Status _update_column_describe(const TAlterInvertedIndexReq& request, 
-                TabletSharedPtr tablet, const TabletSchemaSPtr& tablet_schema);
 
     // Initialization Settings for creating a default value
     static Status _init_column_mapping(ColumnMapping* column_mapping,

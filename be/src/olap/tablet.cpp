@@ -2150,11 +2150,14 @@ TabletSchemaSPtr Tablet::tablet_schema() const {
     return _max_version_schema;
 }
 
-void Tablet::update_max_version_schema(const TabletSchemaSPtr& tablet_schema) {
+void Tablet::update_max_version_schema(const TabletSchemaSPtr& tablet_schema,
+                                       bool update_same_version) {
     std::lock_guard wrlock(_meta_lock);
     // Double Check for concurrent update
     if (!_max_version_schema ||
-        tablet_schema->schema_version() > _max_version_schema->schema_version()) {
+        tablet_schema->schema_version() > _max_version_schema->schema_version() ||
+        (update_same_version &&
+         tablet_schema->schema_version() == _max_version_schema->schema_version())) {
         _max_version_schema = tablet_schema;
     }
 }

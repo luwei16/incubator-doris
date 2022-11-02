@@ -21,18 +21,15 @@
 namespace doris {
 
 std::string inverted_index_parser_type_to_string(InvertedIndexParserType parser_type) {
-    switch (parser_type)
-    {
-    case PARSER_NOT_SET:
-        return "not_set";
-    case PARSER_NONE:
-        return "none";
-    case PARSER_STANDARD:
-        return "standard";
-    case PARSER_ENGLISH:
-        return "english";
-    case PARSER_CHINESE:
-        return "chinese";
+    switch (parser_type) {
+    case InvertedIndexParserType::PARSER_NONE:
+        return INVERTED_INDEX_PARSER_NONE;
+    case InvertedIndexParserType::PARSER_STANDARD:
+        return INVERTED_INDEX_PARSER_STANDARD;
+    case InvertedIndexParserType::PARSER_ENGLISH:
+        return INVERTED_INDEX_PARSER_ENGLISH;
+    case InvertedIndexParserType::PARSER_CHINESE:
+        return INVERTED_INDEX_PARSER_CHINESE;
     default:
         return "unknown";
     }
@@ -42,19 +39,26 @@ std::string inverted_index_parser_type_to_string(InvertedIndexParserType parser_
 
 InvertedIndexParserType get_inverted_index_parser_type_from_string(const std::string& parser_str) {
     auto parser_str_lower = to_lower(parser_str);
-    if (parser_str_lower == "not_set") {
-        return PARSER_NOT_SET;
-    } else if (parser_str_lower == "none") {
-        return PARSER_NONE;
-    } else if (parser_str_lower == "standard") {
-        return PARSER_STANDARD;
-    } else if (parser_str_lower == "english") {
-        return PARSER_ENGLISH;
-    } else if (parser_str_lower == "chinese") {
-        return PARSER_CHINESE;
+    if (parser_str_lower == INVERTED_INDEX_PARSER_NONE) {
+        return InvertedIndexParserType::PARSER_NONE;
+    } else if (parser_str_lower == INVERTED_INDEX_PARSER_STANDARD) {
+        return InvertedIndexParserType::PARSER_STANDARD;
+    } else if (parser_str_lower == INVERTED_INDEX_PARSER_ENGLISH) {
+        return InvertedIndexParserType::PARSER_ENGLISH;
+    } else if (parser_str_lower == INVERTED_INDEX_PARSER_CHINESE) {
+        return InvertedIndexParserType::PARSER_CHINESE;
     }
 
-    return PARSER_UNKNOWN;
+    return InvertedIndexParserType::PARSER_UNKNOWN;
+}
+
+std::string get_parser_string_from_properties(
+        const std::map<std::string, std::string>& properties) {
+    if (properties.find(INVERTED_INDEX_PARSER_KEY) != properties.end()) {
+        return properties.at(INVERTED_INDEX_PARSER_KEY);
+    } else {
+        return INVERTED_INDEX_PARSER_NONE;
+    }
 }
 
 } // namespace doris

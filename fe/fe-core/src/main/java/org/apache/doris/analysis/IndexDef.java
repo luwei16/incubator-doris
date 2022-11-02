@@ -63,7 +63,7 @@ public class IndexDef {
         if (indexType == IndexDef.IndexType.BITMAP
                 || indexType == IndexDef.IndexType.INVERTED) {
             if (columns == null || columns.size() != 1) {
-                throw new AnalysisException("bitmap or inverted index can only apply to a single column.");
+                throw new AnalysisException(indexType.toString() + " index can only apply to a single column.");
             }
             if (Strings.isNullOrEmpty(indexName)) {
                 throw new AnalysisException("index name cannot be blank.");
@@ -166,18 +166,16 @@ public class IndexDef {
             PrimitiveType colType = column.getDataType();
             if (!(colType.isDateType() || colType.isDecimalV2Type() || colType.isDecimalV3Type()
                     || colType.isFixedPointType() || colType.isStringType() || colType == PrimitiveType.BOOLEAN)) {
-                throw new AnalysisException(colType + " is not supported in bitmap or inverted index. "
+                throw new AnalysisException(colType + " is not supported in " + indexType.toString() + " index. "
                         + "invalid column: " + indexColName);
             } else if ((keysType == KeysType.AGG_KEYS && !column.isKey())) {
-                throw new AnalysisException(
-                        "BITMAP or INVERTED index only used in columns of DUP_KEYS/UNIQUE_KEYS table or key columns of"
+                throw new AnalysisException(indexType.toString()
+                        + " index only used in columns of DUP_KEYS/UNIQUE_KEYS table or key columns of"
                                 + " AGG_KEYS table. invalid column: " + indexColName);
             }
 
-            if (indexType == IndexType.INVERTED && !colType.isStringType()
-                    && properties != null && properties.get("parser") != null) {
-                throw new AnalysisException("inverted index with parser is not supported for column: "
-                    + indexColName + " of type " + colType);
+            if (indexType == IndexType.INVERTED) {
+                InvertedIndexUtil.checkInvertedIndexParser(indexColName, colType, properties);
             }
         } else {
             throw new AnalysisException("Unsupported index type: " + indexType);

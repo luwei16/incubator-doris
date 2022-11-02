@@ -172,10 +172,12 @@ Status Compaction::do_compaction_impl(int64_t permits) {
     if (use_vectorized_compaction && config::enable_index_compaction &&
         ((_tablet->keys_type() == KeysType::UNIQUE_KEYS ||
           _tablet->keys_type() == KeysType::DUP_KEYS))) {
-        auto columns = cur_tablet_schema->get_inverted_index_column();
-        for (auto column_id : columns) {
-            if (field_is_slice_type(cur_tablet_schema->column(column_id).type())) {
-                context.skip_inverted_index.insert(column_id);
+        for (auto& index : cur_tablet_schema->indexes()) {
+            if (index.index_type() == IndexType::INVERTED) {
+                auto unique_id = index.col_unique_ids()[0];
+                if (field_is_slice_type(cur_tablet_schema->column_by_uid(unique_id).type())) {
+                    context.skip_inverted_index.insert(cur_tablet_schema->field_index(unique_id));
+                }
             }
         }
     }

@@ -51,9 +51,8 @@ struct ColumnWriterOptions {
     bool need_zone_map = false;
     bool need_bitmap_index = false;
     bool need_bloom_filter = false;
-    bool need_inverted_index = false;
-    InvertedIndexParserType inverted_index_analyser_type {
-            InvertedIndexParserType::PARSER_UNKNOWN};
+    std::vector<const TabletIndex*> indexes;
+    const TabletIndex* inverted_index = nullptr;
     std::string to_string() const {
         std::stringstream ss;
         ss << std::boolalpha << "meta=" << meta->DebugString()

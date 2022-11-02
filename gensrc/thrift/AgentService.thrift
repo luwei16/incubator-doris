@@ -163,9 +163,10 @@ struct TAlterInvertedIndexReq {
     2: required Types.TSchemaHash schema_hash
     3: optional Types.TVersion alter_version
     4: optional TAlterTabletType alter_tablet_type = TAlterTabletType.SCHEMA_CHANGE
-    5: optional list<Descriptors.TOlapTableIndex> alter_inverted_indexes
-    6: optional bool is_drop_op= false
-    7: optional list<Descriptors.TColumn> columns
+    5: optional bool is_drop_op= false
+    6: optional list<Descriptors.TOlapTableIndex> alter_inverted_indexes
+    7: optional list<Descriptors.TOlapTableIndex> indexes
+    8: optional list<Descriptors.TColumn> columns
 }
 
 struct TAlterMaterializedViewParam {

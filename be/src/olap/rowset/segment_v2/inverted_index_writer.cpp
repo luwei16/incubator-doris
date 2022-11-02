@@ -12,6 +12,7 @@
 #include "olap/rowset/segment_v2/inverted_index_cache.h"
 #include "olap/rowset/segment_v2/inverted_index_compound_directory.h"
 #include "olap/rowset/segment_v2/inverted_index_desc.h"
+#include "olap/tablet_schema.h"
 
 namespace doris::segment_v2 {
 const int32_t MAX_FIELD_LEN = 0x7FFFFFFFL;
@@ -28,12 +29,14 @@ public:
     explicit InvertedIndexColumnWriterImpl(const std::string& field_name, uint32_t uuid,
                                            const std::string& segment_file_name,
                                            const std::string& dir, io::FileSystem* fs,
-                                           InvertedIndexParserType parser_type)
+                                           const TabletIndex* index_meta)
             : _segment_file_name(segment_file_name),
               _directory(dir),
               _uuid(uuid),
               _fs(fs),
-              _parser_type(parser_type) {
+              _index_meta(index_meta) {
+        _parser_type = get_inverted_index_parser_type_from_string(
+            get_parser_string_from_properties(_index_meta->properties()));
         _value_key_coder = get_key_coder(field_type);
         _field_name = std::wstring(field_name.begin(), field_name.end());
     };
@@ -42,8 +45,8 @@ public:
         try {
             if constexpr (field_is_slice_type(field_type)) {
                 if (_index_writer) {
-                    auto index_file_name =
-                            InvertedIndexDescriptor::get_index_file_name(_segment_file_name, _uuid);
+                    auto index_file_name = InvertedIndexDescriptor::get_index_file_name(
+                        _segment_file_name, _index_meta->index_id());
                     LOG(WARNING) << "inverted index column writer should be null here, close it "
                                  << index_file_name;
                 }
@@ -68,8 +71,8 @@ public:
             _index_writer->close();
             // open index searcher into cache
             InvertedIndexSearcherCache::instance()->prune();
-            auto index_file_name =
-                    InvertedIndexDescriptor::get_index_file_name(_segment_file_name, _uuid);
+            auto index_file_name = InvertedIndexDescriptor::get_index_file_name(
+                _segment_file_name, _index_meta->index_id());
             InvertedIndexSearcherCache::instance()->insert(_fs, _directory, index_file_name);
             _CLLDELETE(_index_writer);
             _index_writer = nullptr;
@@ -110,7 +113,7 @@ public:
         bool create = true;
 
         auto index_path = InvertedIndexDescriptor::get_temporary_index_path(
-                _directory + "/" + _segment_file_name, _uuid);
+                _directory + "/" + _segment_file_name, _index_meta->index_id());
 
         // LOG(INFO) << "inverted index path: " << index_path;
 
@@ -349,7 +352,7 @@ public:
     Status finish() override {
         if constexpr (field_is_numeric_type(field_type)) {
             auto index_path = InvertedIndexDescriptor::get_temporary_index_path(
-                    _directory + "/" + _segment_file_name, _uuid);
+                    _directory + "/" + _segment_file_name, _index_meta->index_id());
             if (_row_ids_seen_for_bkd == 0) {
                 // if null data is flush, _row_ids_seen_for_bkd is empty.
                 return Status::OK();
@@ -404,6 +407,7 @@ private:
     std::unique_ptr<io::FileSystem> _lfs;
 #endif
     const KeyCoder* _value_key_coder;
+    const TabletIndex* _index_meta;
     InvertedIndexParserType _parser_type;
     std::wstring _field_name;
 };
@@ -412,8 +416,10 @@ Status InvertedIndexColumnWriter::create(const Field* field,
                                          std::unique_ptr<InvertedIndexColumnWriter>* res,
                                          uint32_t uuid, const std::string& segment_file_name,
                                          const std::string& dir,
-                                         InvertedIndexParserType parser_type, io::FileSystem* fs) {
+                                         const TabletIndex* index_meta,
+                                         io::FileSystem* fs) {
     //RETURN_IF_ERROR(InvertedIndexDescriptor::init_index_directory(path));
+
     auto typeinfo = field->type_info();
     FieldType type = typeinfo->type();
     std::string field_name = field->name();
@@ -426,91 +432,91 @@ Status InvertedIndexColumnWriter::create(const Field* field,
     switch (type) {
     case OLAP_FIELD_TYPE_CHAR: {
         *res = std::make_unique<InvertedIndexColumnWriterImpl<OLAP_FIELD_TYPE_CHAR>>(
-                field_name, uuid, segment_file_name, dir, fs, parser_type);
+                field_name, uuid, segment_file_name, dir, fs, index_meta);
         (*res)->init();
         break;
     }
     case OLAP_FIELD_TYPE_VARCHAR: {
         *res = std::make_unique<InvertedIndexColumnWriterImpl<OLAP_FIELD_TYPE_VARCHAR>>(
-                field_name, uuid, segment_file_name, dir, fs, parser_type);
+                field_name, uuid, segment_file_name, dir, fs, index_meta);
         (*res)->init();
         break;
     }
     case OLAP_FIELD_TYPE_STRING: {
         *res = std::make_unique<InvertedIndexColumnWriterImpl<OLAP_FIELD_TYPE_STRING>>(
-                field_name, uuid, segment_file_name, dir, fs, parser_type);
+                field_name, uuid, segment_file_name, dir, fs, index_meta);
         (*res)->init();
         break;
     }
     case OLAP_FIELD_TYPE_DATETIME: {
         *res = std::make_unique<InvertedIndexColumnWriterImpl<OLAP_FIELD_TYPE_DATETIME>>(
-                field_name, uuid, segment_file_name, dir, fs, parser_type);
+                field_name, uuid, segment_file_name, dir, fs, index_meta);
         (*res)->init();
         break;
     }
     case OLAP_FIELD_TYPE_DATE: {
         *res = std::make_unique<InvertedIndexColumnWriterImpl<OLAP_FIELD_TYPE_DATE>>(
-                field_name, uuid, segment_file_name, dir, fs, parser_type);
+                field_name, uuid, segment_file_name, dir, fs, index_meta);
         (*res)->init();
         break;
     }
     case OLAP_FIELD_TYPE_TINYINT: {
         *res = std::make_unique<InvertedIndexColumnWriterImpl<OLAP_FIELD_TYPE_TINYINT>>(
-                field_name, uuid, segment_file_name, dir, fs, parser_type);
+                field_name, uuid, segment_file_name, dir, fs, index_meta);
         (*res)->init();
         break;
     }
     case OLAP_FIELD_TYPE_SMALLINT: {
         *res = std::make_unique<InvertedIndexColumnWriterImpl<OLAP_FIELD_TYPE_SMALLINT>>(
-                field_name, uuid, segment_file_name, dir, fs, parser_type);
+                field_name, uuid, segment_file_name, dir, fs, index_meta);
         (*res)->init();
         break;
     }
     case OLAP_FIELD_TYPE_UNSIGNED_INT: {
         *res = std::make_unique<InvertedIndexColumnWriterImpl<OLAP_FIELD_TYPE_UNSIGNED_INT>>(
-                field_name, uuid, segment_file_name, dir, fs, parser_type);
+                field_name, uuid, segment_file_name, dir, fs, index_meta);
         (*res)->init();
         break;
     }
     case OLAP_FIELD_TYPE_INT: {
         *res = std::make_unique<InvertedIndexColumnWriterImpl<OLAP_FIELD_TYPE_INT>>(
-                field_name, uuid, segment_file_name, dir, fs, parser_type);
+                field_name, uuid, segment_file_name, dir, fs, index_meta);
         (*res)->init();
         break;
     }
     case OLAP_FIELD_TYPE_LARGEINT: {
         *res = std::make_unique<InvertedIndexColumnWriterImpl<OLAP_FIELD_TYPE_LARGEINT>>(
-                field_name, uuid, segment_file_name, dir, fs, parser_type);
+                field_name, uuid, segment_file_name, dir, fs, index_meta);
         (*res)->init();
         break;
     }
     case OLAP_FIELD_TYPE_DECIMAL: {
         *res = std::make_unique<InvertedIndexColumnWriterImpl<OLAP_FIELD_TYPE_DECIMAL>>(
-                field_name, uuid, segment_file_name, dir, fs, parser_type);
+                field_name, uuid, segment_file_name, dir, fs, index_meta);
         (*res)->init();
         break;
     }
     case OLAP_FIELD_TYPE_BOOL: {
         *res = std::make_unique<InvertedIndexColumnWriterImpl<OLAP_FIELD_TYPE_BOOL>>(
-                field_name, uuid, segment_file_name, dir, fs, parser_type);
+                field_name, uuid, segment_file_name, dir, fs, index_meta);
         (*res)->init();
         break;
     }
     case OLAP_FIELD_TYPE_DOUBLE: {
         *res = std::make_unique<InvertedIndexColumnWriterImpl<OLAP_FIELD_TYPE_DOUBLE>>(
-                field_name, uuid, segment_file_name, dir, fs, parser_type);
+                field_name, uuid, segment_file_name, dir, fs, index_meta);
         (*res)->init();
         break;
     }
     case OLAP_FIELD_TYPE_FLOAT: {
         *res = std::make_unique<InvertedIndexColumnWriterImpl<OLAP_FIELD_TYPE_FLOAT>>(
-                field_name, uuid, segment_file_name, dir, fs, parser_type);
+                field_name, uuid, segment_file_name, dir, fs, index_meta);
         (*res)->init();
         break;
     }
     case OLAP_FIELD_TYPE_BIGINT: {
         *res = std::make_unique<InvertedIndexColumnWriterImpl<OLAP_FIELD_TYPE_BIGINT>>(
-                field_name, uuid, segment_file_name, dir, fs, parser_type);
+                field_name, uuid, segment_file_name, dir, fs, index_meta);
         (*res)->init();
         break;
     }

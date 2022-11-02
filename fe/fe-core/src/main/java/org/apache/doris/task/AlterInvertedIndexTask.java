@@ -42,6 +42,7 @@ public class AlterInvertedIndexTask extends AgentTask {
     private int schemaHash;
     private boolean isDropOp = false;
     private List<Index> alterInvertedIndexes;
+    List<Index> indexes;
     private List<Column> schemaColumns;
 
     public AlterInvertedIndexTask(long backendId, long dbId, long tableId,
@@ -49,7 +50,7 @@ public class AlterInvertedIndexTask extends AgentTask {
             long tabletId, int schemaHash,
             long jobId, AlterJobV2.JobType jobType,
             boolean isDropOp, List<Index> alterInvertedIndexes,
-            List<Column> schemaColumns) {
+            List<Index> indexes, List<Column> schemaColumns) {
         super(null, backendId, TTaskType.ALTER_INVERTED_INDEX, dbId, tableId, partitionId, indexId, tabletId);
         this.tabletId = tabletId;
         this.version = version;
@@ -58,6 +59,7 @@ public class AlterInvertedIndexTask extends AgentTask {
         this.schemaHash = schemaHash;
         this.isDropOp = isDropOp;
         this.alterInvertedIndexes = alterInvertedIndexes;
+        this.indexes = indexes;
         this.schemaColumns = schemaColumns;
     }
 
@@ -98,6 +100,14 @@ public class AlterInvertedIndexTask extends AgentTask {
                 tIndexes.add(index.toThrift());
             }
             req.setAlterInvertedIndexes(tIndexes);
+        }
+
+        if (indexes != null && !indexes.isEmpty()) {
+            List<TOlapTableIndex> tIndexes = new ArrayList<>();
+            for (Index index : indexes) {
+                tIndexes.add(index.toThrift());
+            }
+            req.setIndexes(tIndexes);
         }
 
         if (schemaColumns != null) {
