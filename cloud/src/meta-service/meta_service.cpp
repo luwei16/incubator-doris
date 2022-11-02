@@ -1656,7 +1656,7 @@ void internal_create_tablet(MetaServiceCode& code, std::string& msg, int& ret,
 
 void MetaServiceImpl::create_tablets(::google::protobuf::RpcController* controller,
                                      const ::selectdb::CreateTabletsRequest* request,
-                                     ::selectdb::MetaServiceGenericResponse* response,
+                                     ::selectdb::CreateTabletsResponse* response,
                                      ::google::protobuf::Closure* done) {
     RPC_PREPROCESS(create_tablets, true);
 
@@ -1727,7 +1727,7 @@ void get_tablet(MetaServiceCode& code, std::string& msg, std::stringstream& ss, 
 
 void MetaServiceImpl::update_tablet(::google::protobuf::RpcController* controller,
                                     const ::selectdb::UpdateTabletRequest* request,
-                                    ::selectdb::MetaServiceGenericResponse* response,
+                                    ::selectdb::UpdateTabletResponse* response,
                                     ::google::protobuf::Closure* done) {
     RPC_PREPROCESS(update_tablet, true);
     instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
@@ -2352,7 +2352,7 @@ void remove_recycle_index_kv(MetaServiceCode& code, std::string& msg, int& ret,
 
 void MetaServiceImpl::prepare_index(::google::protobuf::RpcController* controller,
                                     const ::selectdb::IndexRequest* request,
-                                    ::selectdb::MetaServiceGenericResponse* response,
+                                    ::selectdb::IndexResponse* response,
                                     ::google::protobuf::Closure* done) {
     RPC_PREPROCESS(prepare_index, true);
     instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
@@ -2382,7 +2382,7 @@ void MetaServiceImpl::prepare_index(::google::protobuf::RpcController* controlle
 
 void MetaServiceImpl::commit_index(::google::protobuf::RpcController* controller,
                                    const ::selectdb::IndexRequest* request,
-                                   ::selectdb::MetaServiceGenericResponse* response,
+                                   ::selectdb::IndexResponse* response,
                                    ::google::protobuf::Closure* done) {
     RPC_PREPROCESS(commit_index, true);
     instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
@@ -2404,7 +2404,7 @@ void MetaServiceImpl::commit_index(::google::protobuf::RpcController* controller
 
 void MetaServiceImpl::drop_index(::google::protobuf::RpcController* controller,
                                  const ::selectdb::IndexRequest* request,
-                                 ::selectdb::MetaServiceGenericResponse* response,
+                                 ::selectdb::IndexResponse* response,
                                  ::google::protobuf::Closure* done) {
     RPC_PREPROCESS(drop_index, true);
     instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
@@ -2531,7 +2531,7 @@ void remove_recycle_partition_kv(MetaServiceCode& code, std::string& msg, int& r
 
 void MetaServiceImpl::prepare_partition(::google::protobuf::RpcController* controller,
                                         const ::selectdb::PartitionRequest* request,
-                                        ::selectdb::MetaServiceGenericResponse* response,
+                                        ::selectdb::PartitionResponse* response,
                                         ::google::protobuf::Closure* done) {
     RPC_PREPROCESS(prepare_partition, true);
     instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
@@ -2561,7 +2561,7 @@ void MetaServiceImpl::prepare_partition(::google::protobuf::RpcController* contr
 
 void MetaServiceImpl::commit_partition(::google::protobuf::RpcController* controller,
                                        const ::selectdb::PartitionRequest* request,
-                                       ::selectdb::MetaServiceGenericResponse* response,
+                                       ::selectdb::PartitionResponse* response,
                                        ::google::protobuf::Closure* done) {
     RPC_PREPROCESS(commit_partition, true);
     instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
@@ -2583,7 +2583,7 @@ void MetaServiceImpl::commit_partition(::google::protobuf::RpcController* contro
 
 void MetaServiceImpl::drop_partition(::google::protobuf::RpcController* controller,
                                      const ::selectdb::PartitionRequest* request,
-                                     ::selectdb::MetaServiceGenericResponse* response,
+                                     ::selectdb::PartitionResponse* response,
                                      ::google::protobuf::Closure* done) {
     RPC_PREPROCESS(drop_partition, true);
     instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
@@ -2808,7 +2808,7 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
             return;
         }
         r.set_op(AlterObjStoreInfoRequest::UPDATE_AK_SK);
-        MetaServiceGenericResponse res;
+        AlterObjStoreInfoResponse res;
         alter_obj_store_info(cntl, &r, &res, nullptr);
         ret = res.status().code();
         msg = res.status().msg();
@@ -2826,7 +2826,7 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
             return;
         }
         r.set_op(AlterObjStoreInfoRequest::ADD_OBJ_INFO);
-        MetaServiceGenericResponse res;
+        AlterObjStoreInfoResponse res;
         alter_obj_store_info(cntl, &r, &res, nullptr);
         ret = res.status().code();
         msg = res.status().msg();
@@ -2866,7 +2866,7 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
             LOG(WARNING) << msg;
             return;
         }
-        MetaServiceGenericResponse res;
+        CreateInstanceResponse res;
         create_instance(cntl, &r, &res, nullptr);
         ret = res.status().code();
         msg = res.status().msg();
@@ -2885,7 +2885,7 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
             return;
         }
         r.set_op(AlterInstanceRequest::DROP);
-        MetaServiceGenericResponse res;
+        AlterInstanceResponse res;
         alter_instance(cntl, &r, &res, nullptr);
         ret = res.status().code();
         msg = res.status().msg();
@@ -2904,7 +2904,7 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
             return;
         }
         r.set_op(AlterClusterRequest::ADD_CLUSTER);
-        MetaServiceGenericResponse res;
+        AlterClusterResponse res;
         alter_cluster(cntl, &r, &res, nullptr);
         ret = res.status().code();
         msg = res.status().msg();
@@ -2923,7 +2923,7 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
             return;
         }
         r.set_op(AlterClusterRequest::ADD_NODE);
-        MetaServiceGenericResponse res;
+        AlterClusterResponse res;
         alter_cluster(cntl, &r, &res, nullptr);
         ret = res.status().code();
         msg = res.status().msg();
@@ -2942,7 +2942,7 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
             return;
         }
         r.set_op(AlterClusterRequest::DROP_NODE);
-        MetaServiceGenericResponse res;
+        AlterClusterResponse res;
         alter_cluster(cntl, &r, &res, nullptr);
         ret = res.status().code();
         msg = res.status().msg();
@@ -2980,7 +2980,7 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
             return;
         }
         r.set_op(AlterClusterRequest::DROP_CLUSTER);
-        MetaServiceGenericResponse res;
+        AlterClusterResponse res;
         alter_cluster(cntl, &r, &res, nullptr);
         ret = res.status().code();
         msg = res.status().msg();
@@ -3000,7 +3000,7 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
         }
 
         r.set_op(AlterClusterRequest::RENAME_CLUSTER);
-        MetaServiceGenericResponse res;
+        AlterClusterResponse res;
         alter_cluster(cntl, &r, &res, nullptr);
         ret = res.status().code();
         msg = res.status().msg();
@@ -3020,7 +3020,7 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
         }
 
         r.set_op(AlterClusterRequest::UPDATE_CLUSTER_MYSQL_USER_NAME);
-        MetaServiceGenericResponse res;
+        AlterClusterResponse res;
         alter_cluster(cntl, &r, &res, nullptr);
         ret = res.status().code();
         msg = res.status().msg();
@@ -3134,7 +3134,7 @@ void MetaServiceImpl::get_obj_store_info(google::protobuf::RpcController* contro
 
 void MetaServiceImpl::alter_obj_store_info(google::protobuf::RpcController* controller,
                                            const ::selectdb::AlterObjStoreInfoRequest* request,
-                                           ::selectdb::MetaServiceGenericResponse* response,
+                                           ::selectdb::AlterObjStoreInfoResponse* response,
                                            ::google::protobuf::Closure* done) {
     RPC_PREPROCESS(alter_obj_store_info, true);
     // Prepare data
@@ -3321,7 +3321,7 @@ void MetaServiceImpl::alter_obj_store_info(google::protobuf::RpcController* cont
 
 void MetaServiceImpl::create_instance(google::protobuf::RpcController* controller,
                                       const ::selectdb::CreateInstanceRequest* request,
-                                      ::selectdb::MetaServiceGenericResponse* response,
+                                      ::selectdb::CreateInstanceResponse* response,
                                       ::google::protobuf::Closure* done) {
     RPC_PREPROCESS(create_instance, true);
     instance_id = request->instance_id();
@@ -3419,7 +3419,7 @@ void MetaServiceImpl::create_instance(google::protobuf::RpcController* controlle
 
 void MetaServiceImpl::alter_instance(google::protobuf::RpcController* controller,
                                      const ::selectdb::AlterInstanceRequest* request,
-                                     ::selectdb::MetaServiceGenericResponse* response,
+                                     ::selectdb::AlterInstanceResponse* response,
                                      ::google::protobuf::Closure* done) {
     StopWatch sw;
     auto ctrl = static_cast<brpc::Controller*>(controller);
@@ -3545,7 +3545,7 @@ std::pair<MetaServiceCode, std::string> MetaServiceImpl::drop_instance(
 
 void MetaServiceImpl::alter_cluster(google::protobuf::RpcController* controller,
                                     const ::selectdb::AlterClusterRequest* request,
-                                    ::selectdb::MetaServiceGenericResponse* response,
+                                    ::selectdb::AlterClusterResponse* response,
                                     ::google::protobuf::Closure* done) {
     RPC_PREPROCESS(alter_cluster, true);
     std::string cloud_unique_id = request->has_cloud_unique_id() ? request->cloud_unique_id() : "";
@@ -4139,7 +4139,8 @@ void MetaServiceImpl::drop_stage(google::protobuf::RpcController* controller,
     std::string msg = "OK";
     std::string instance_id;
     std::unique_ptr<int, std::function<void(int*)>> defer_status(
-            (int*)0x01, [&ret, &code, &msg, &response, &ctrl, &closure_guard, &sw, &instance_id](int*) {
+            (int*)0x01,
+            [&ret, &code, &msg, &response, &ctrl, &closure_guard, &sw, &instance_id](int*) {
                 response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
                 LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
@@ -4560,7 +4561,7 @@ void notify_refresh_instance(std::shared_ptr<TxnKv> txn_kv, const std::string& i
                 brpc::Controller cntl;
                 cntl.set_timeout_ms(3000);
                 AlterInstanceRequest req;
-                MetaServiceGenericResponse res;
+                AlterInstanceResponse res;
                 req.set_instance_id(instance_id);
                 req.set_op(AlterInstanceRequest::REFRESH);
                 stub->alter_instance(&cntl, &req, &res, nullptr);

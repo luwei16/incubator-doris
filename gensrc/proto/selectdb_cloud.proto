@@ -514,6 +514,11 @@ message AlterObjStoreInfoRequest {
     optional Operation op = 3;
 }
 
+message AlterObjStoreInfoResponse {
+    optional MetaServiceResponseStatus status = 1;
+}
+
+
 message GetObjStoreInfoResponse {
     optional MetaServiceResponseStatus status = 1;
     repeated ObjectStoreInfoPB obj_info = 2;
@@ -524,9 +529,17 @@ message CreateTabletsRequest {
     repeated doris.TabletMetaPB tablet_metas = 2;
 }
 
+message CreateTabletsResponse {
+    optional MetaServiceResponseStatus status = 1;
+}
+
 message UpdateTabletRequest {
     optional string cloud_unique_id = 1; // For auth
     repeated TabletMetaInfoPB tablet_meta_infos = 2;
+}
+
+message UpdateTabletResponse {
+    optional MetaServiceResponseStatus status = 1;
 }
 
 message DropTabletRequest {
@@ -581,6 +594,10 @@ message IndexRequest {
     optional int64 expiration = 4;
 }
 
+message IndexResponse {
+    optional MetaServiceResponseStatus status = 1;
+}
+
 message PartitionRequest {
     optional string cloud_unique_id = 1; // For auth
     repeated int64 partition_ids = 2;
@@ -589,13 +606,13 @@ message PartitionRequest {
     optional int64 expiration = 5;
 }
 
+message PartitionResponse {
+    optional MetaServiceResponseStatus status = 1;
+}
+
 message MetaServiceResponseStatus {
     optional MetaServiceCode code = 1;
     optional string msg = 2;
-}
-
-message MetaServiceGenericResponse {
-    optional MetaServiceResponseStatus status = 1;
 }
 
 message MetaServiceHttpRequest {
@@ -611,6 +628,10 @@ message CreateInstanceRequest {
     optional ObjectStoreInfoPB obj_info = 4;
 }
 
+message CreateInstanceResponse {
+    optional MetaServiceResponseStatus status = 1;
+}
+
 message AlterInstanceRequest {
     enum Operation {
         UNKNOWN        = 0;
@@ -619,6 +640,10 @@ message AlterInstanceRequest {
     }
     optional string instance_id = 1;
     optional Operation op = 2;
+}
+
+message AlterInstanceResponse {
+    optional MetaServiceResponseStatus status = 1;
 }
 
 message AlterClusterRequest {
@@ -635,6 +660,10 @@ message AlterClusterRequest {
     optional string cloud_unique_id = 2; // For auth
     optional ClusterPB cluster = 3;
     optional Operation op = 4;
+}
+
+message AlterClusterResponse {
+    optional MetaServiceResponseStatus status = 1;
 }
 
 message GetClusterRequest {
@@ -768,6 +797,10 @@ message RecycleInstanceRequest {
     repeated string instance_ids = 1;
 }
 
+message RecycleInstanceResponse {
+    optional MetaServiceResponseStatus status = 1;
+}
+
 enum MetaServiceCode {
     OK = 0;
 
@@ -818,19 +851,19 @@ service MetaService {
     rpc check_txn_conflict(CheckTxnConflictRequest) returns (CheckTxnConflictResponse);
 
     rpc get_version(GetVersionRequest) returns (GetVersionResponse);
+    rpc create_tablets(CreateTabletsRequest) returns (CreateTabletsResponse);
+    rpc update_tablet(UpdateTabletRequest) returns (UpdateTabletResponse);
 
-    rpc create_tablets(CreateTabletsRequest) returns (MetaServiceGenericResponse);
-    rpc update_tablet(UpdateTabletRequest) returns (MetaServiceGenericResponse);
     rpc get_tablet(GetTabletRequest) returns (GetTabletResponse);
     rpc prepare_rowset(CreateRowsetRequest) returns (CreateRowsetResponse);
     rpc commit_rowset(CreateRowsetRequest) returns (CreateRowsetResponse);
     rpc get_rowset(GetRowsetRequest) returns (GetRowsetResponse);
-    rpc prepare_index(IndexRequest) returns (MetaServiceGenericResponse);
-    rpc commit_index(IndexRequest) returns (MetaServiceGenericResponse);
-    rpc drop_index(IndexRequest) returns (MetaServiceGenericResponse);
-    rpc prepare_partition(PartitionRequest) returns (MetaServiceGenericResponse);
-    rpc commit_partition(PartitionRequest) returns (MetaServiceGenericResponse);
-    rpc drop_partition(PartitionRequest) returns (MetaServiceGenericResponse);
+    rpc prepare_index(IndexRequest) returns (IndexResponse);
+    rpc commit_index(IndexRequest) returns (IndexResponse);
+    rpc drop_index(IndexRequest) returns (IndexResponse);
+    rpc prepare_partition(PartitionRequest) returns (PartitionResponse);
+    rpc commit_partition(PartitionRequest) returns (PartitionResponse);
+    rpc drop_partition(PartitionRequest) returns (PartitionResponse);
 
     rpc start_tablet_job(StartTabletJobRequest) returns (StartTabletJobResponse);
     rpc finish_tablet_job(FinishTabletJobRequest) returns (FinishTabletJobResponse);
@@ -838,10 +871,10 @@ service MetaService {
     rpc http(MetaServiceHttpRequest) returns (MetaServiceHttpResponse);
 
     rpc get_obj_store_info(GetObjStoreInfoRequest) returns (GetObjStoreInfoResponse);
-    rpc alter_obj_store_info(AlterObjStoreInfoRequest) returns (MetaServiceGenericResponse);
-    rpc create_instance(CreateInstanceRequest) returns (MetaServiceGenericResponse);
-    rpc alter_instance(AlterInstanceRequest) returns (MetaServiceGenericResponse);
-    rpc alter_cluster(AlterClusterRequest) returns (MetaServiceGenericResponse);
+    rpc alter_obj_store_info(AlterObjStoreInfoRequest) returns (AlterObjStoreInfoResponse);
+    rpc create_instance(CreateInstanceRequest) returns (CreateInstanceResponse);
+    rpc alter_instance(AlterInstanceRequest) returns (AlterInstanceResponse);
+    rpc alter_cluster(AlterClusterRequest) returns (AlterClusterResponse);
     rpc get_cluster(GetClusterRequest) returns (GetClusterResponse);
 
     rpc get_tablet_stats(GetTabletStatsRequest) returns (GetTabletStatsResponse);
@@ -857,7 +890,7 @@ service MetaService {
 };
 
 service RecyclerService {
-    rpc recycle_instance(RecycleInstanceRequest) returns (MetaServiceGenericResponse);
+    rpc recycle_instance(RecycleInstanceRequest) returns (RecycleInstanceResponse);
     rpc http(MetaServiceHttpRequest) returns (MetaServiceHttpResponse);
 };
 

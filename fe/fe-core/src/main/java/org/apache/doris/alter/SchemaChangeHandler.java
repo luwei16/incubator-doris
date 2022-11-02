@@ -2129,7 +2129,7 @@ public class SchemaChangeHandler extends AlterHandler {
             TNetworkAddress metaAddress = new TNetworkAddress(splitMetaEndPoint[0],
                     Integer.parseInt(splitMetaEndPoint[1]));
 
-            SelectdbCloud.MetaServiceGenericResponse response;
+            SelectdbCloud.UpdateTabletResponse response;
             try {
                 response = MetaServiceProxy.getInstance().updateTablet(metaAddress, updateTabletReq);
             } catch (RpcException e) {

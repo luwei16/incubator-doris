@@ -90,7 +90,7 @@ TEST(MetaServiceTest, CreateInstanceTest) {
         obj.set_provider(ObjectStoreInfoPB::BOS);
         req.mutable_obj_info()->CopyFrom(obj);
 
-        MetaServiceGenericResponse res;
+        CreateInstanceResponse res;
         meta_service->create_instance(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
                                       &req, &res, nullptr);
         ASSERT_EQ(res.status().code(), MetaServiceCode::OK);
@@ -100,7 +100,7 @@ TEST(MetaServiceTest, CreateInstanceTest) {
     {
         brpc::Controller cntl;
         CreateInstanceRequest req;
-        MetaServiceGenericResponse res;
+        CreateInstanceResponse res;
         meta_service->create_instance(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
                                       &req, &res, nullptr);
         ASSERT_EQ(res.status().code(), MetaServiceCode::INVALID_ARGUMENT);
@@ -118,7 +118,7 @@ TEST(MetaServiceTest, AlterClusterTest) {
         req.set_instance_id(mock_instance);
         req.mutable_cluster()->set_cluster_name(mock_cluster_name);
         req.set_op(AlterClusterRequest::ADD_CLUSTER);
-        MetaServiceGenericResponse res;
+        AlterClusterResponse res;
         meta_service->alter_cluster(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
                                     &req, &res, nullptr);
         ASSERT_EQ(res.status().code(), MetaServiceCode::OK);
@@ -129,7 +129,7 @@ TEST(MetaServiceTest, AlterClusterTest) {
         brpc::Controller cntl;
         AlterClusterRequest req;
         req.set_op(AlterClusterRequest::DROP_CLUSTER);
-        MetaServiceGenericResponse res;
+        AlterClusterResponse res;
         meta_service->alter_cluster(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
                                     &req, &res, nullptr);
         ASSERT_EQ(res.status().code(), MetaServiceCode::INVALID_ARGUMENT);
@@ -1369,7 +1369,7 @@ TEST(MetaServiceTest, StageTest) {
         req.set_name("test_name");
         req.mutable_obj_info()->CopyFrom(obj);
 
-        MetaServiceGenericResponse res;
+        CreateInstanceResponse res;
         meta_service->create_instance(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
                                       &req, &res, nullptr);
         ASSERT_EQ(res.status().code(), MetaServiceCode::OK);

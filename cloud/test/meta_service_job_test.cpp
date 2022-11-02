@@ -406,7 +406,7 @@ TEST(MetaServiceTest, SchemaChangeJobTest) {
 
     auto create_new_tablet = [&] {
         CreateTabletsRequest req;
-        MetaServiceGenericResponse res;
+        CreateTabletsResponse res;
         auto tablet_meta_pb = req.add_tablet_metas();
         tablet_meta_pb->set_table_id(table_id);
         tablet_meta_pb->set_index_id(index_id);
@@ -758,7 +758,7 @@ TEST(MetaServiceTest, RetrySchemaChangeJobTest) {
 
     auto create_new_tablet = [&] {
         CreateTabletsRequest req;
-        MetaServiceGenericResponse res;
+        CreateTabletsResponse res;
         auto tablet_meta_pb = req.add_tablet_metas();
         tablet_meta_pb->set_table_id(table_id);
         tablet_meta_pb->set_index_id(index_id);
@@ -1045,7 +1045,7 @@ TEST(MetaServiceTest, ConflictCompactionTest) {
     // create tablet
     {
         CreateTabletsRequest req;
-        MetaServiceGenericResponse res;
+        CreateTabletsResponse res;
         auto tablet_meta_pb = req.add_tablet_metas();
         tablet_meta_pb->set_table_id(table_id);
         tablet_meta_pb->set_index_id(index_id);

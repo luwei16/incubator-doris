@@ -3665,7 +3665,7 @@ public class InternalCatalog implements CatalogIf<Database> {
         SelectdbCloud.CreateTabletsRequest createTabletsReq = requestBuilder.build();
 
         LOG.info("send create tablets rpc, createTabletsReq: {}", createTabletsReq);
-        SelectdbCloud.MetaServiceGenericResponse response;
+        SelectdbCloud.CreateTabletsResponse response;
         try {
             response = MetaServiceProxy.getInstance().createTablets(createTabletsReq);
         } catch (RpcException e) {
@@ -3705,7 +3705,7 @@ public class InternalCatalog implements CatalogIf<Database> {
         SelectdbCloud.IndexRequest indexRequest = indexRequestBuilder.build();
         LOG.info("prepareIndex request: {} ", indexRequest);
 
-        SelectdbCloud.MetaServiceGenericResponse response = null;
+        SelectdbCloud.IndexResponse response = null;
         try {
             response = MetaServiceProxy.getInstance().prepareIndex(indexRequest);
         } catch (RpcException e) {
@@ -3729,7 +3729,7 @@ public class InternalCatalog implements CatalogIf<Database> {
         SelectdbCloud.IndexRequest indexRequest = indexRequestBuilder.build();
         LOG.info("commitIndex request: {} ", indexRequest);
 
-        SelectdbCloud.MetaServiceGenericResponse response = null;
+        SelectdbCloud.IndexResponse response = null;
         try {
             response = MetaServiceProxy.getInstance().commitIndex(indexRequest);
         } catch (RpcException e) {
@@ -3752,7 +3752,7 @@ public class InternalCatalog implements CatalogIf<Database> {
         SelectdbCloud.IndexRequest indexRequest = indexRequestBuilder.build();
         LOG.info("dropIndex request: {} ", indexRequest);
 
-        SelectdbCloud.MetaServiceGenericResponse response = null;
+        SelectdbCloud.IndexResponse response = null;
         try {
             response = MetaServiceProxy.getInstance().dropIndex(indexRequest);
         } catch (RpcException e) {
@@ -3778,7 +3778,7 @@ public class InternalCatalog implements CatalogIf<Database> {
         SelectdbCloud.PartitionRequest partitionRequest = partitionRequestBuilder.build();
         LOG.info("preparePartition request: {} ", partitionRequest);
 
-        SelectdbCloud.MetaServiceGenericResponse response = null;
+        SelectdbCloud.PartitionResponse response = null;
         try {
             response = MetaServiceProxy.getInstance().preparePartition(partitionRequest);
         } catch (RpcException e) {
@@ -3801,7 +3801,7 @@ public class InternalCatalog implements CatalogIf<Database> {
         SelectdbCloud.PartitionRequest partitionRequest = partitionRequestBuilder.build();
         LOG.info("commitPartition request: {} ", partitionRequest);
 
-        SelectdbCloud.MetaServiceGenericResponse response = null;
+        SelectdbCloud.PartitionResponse response = null;
         try {
             response = MetaServiceProxy.getInstance().commitPartition(partitionRequest);
         } catch (RpcException e) {
@@ -3826,7 +3826,7 @@ public class InternalCatalog implements CatalogIf<Database> {
         SelectdbCloud.PartitionRequest partitionRequest = partitionRequestBuilder.build();
         LOG.info("dropPartition request: {} ", partitionRequest);
 
-        SelectdbCloud.MetaServiceGenericResponse response = null;
+        SelectdbCloud.PartitionResponse response = null;
         try {
             response = MetaServiceProxy.getInstance().dropPartition(partitionRequest);
         } catch (RpcException e) {
@@ -4037,7 +4037,7 @@ public class InternalCatalog implements CatalogIf<Database> {
         SelectdbCloud.AlterClusterRequest.Builder builder = SelectdbCloud.AlterClusterRequest.newBuilder()
                 .setCloudUniqueId(Config.cloud_unique_id).setOp(Operation.UPDATE_CLUSTER_MYSQL_USER_NAME)
                 .setCluster(builderCluster.build());
-        SelectdbCloud.MetaServiceGenericResponse response;
+        SelectdbCloud.AlterClusterResponse response;
         try {
             response = MetaServiceProxy.getInstance().alterCluster(builder.build());
             if (response.getStatus().getCode() != SelectdbCloud.MetaServiceCode.OK) {
