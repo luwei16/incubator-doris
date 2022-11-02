@@ -1,25 +1,38 @@
 ## 描述
-此文档描述，在存算分离版本用户设置、使用默认cluster
 
-注意：此文档说的用户名，都是sql的用户名，比如mysql -ujack，其中jack为用户名
+此文档说的用户名，都是MySQL用户名，比如`mysql -ujack`，其中jack为用户名
 
 ### 设置default cluster
 
 1. 语法
-```
+
 为当前用户设置默认cluster
+
+```
 SET PROPERTY 'default_cloud_cluster' = {clusterName};
+```
 
 为其他用户设置默认cluster，注意需要有admin权限
+
+```
 SET PROPERTY FOR {user} 'default_cloud_cluster' = {clusterName};
+```
 
 展示当前用户默认cluster，default_cloud_cluster的value既是默认cluster
+
+```
 SHOW PROPERTY;
+```
 
 展示其他用户默认cluster，主要当前用户要有相关权限，default_cloud_cluster的value既是默认cluster
+
+```
 SHOW PROPERTY FOR {user};
+```
 
 展示当前warehouse下所有可用的clusters
+
+```
 SHOW CLUSTERS;
 ```
 
@@ -31,10 +44,11 @@ SHOW CLUSTERS;
    - 可以给自己设置default cluster
    - 可以SHOW自己的PROPERTY
    - 不能SHOW CLUSTERS，会提示需要grant ADMIN权限
-- 若当前用户没有配置默认cluster，目前实现在读写数据的时候，会报错。可以使用use @cluster设置当前context使用的cluster，也可以使用SET PROPERTY设置默认cluster
-- 若当前用户配置了默认cluster，但是后面此cluster被drop掉了，读写数据会报错，可以使用use @cluster设置当前context使用的cluster，也可以使用SET PROPERTY设置默认cluster
+- 若当前用户没有配置默认cluster，目前实现在读写数据的时候，会报错。可以使用`use @cluster`设置当前context使用的cluster，也可以使用SET PROPERTY设置默认cluster
+- 若当前用户配置了默认cluster，但是后面此cluster被drop掉了，读写数据会报错，可以使用`use @cluster`设置当前context使用的cluster，也可以使用SET PROPERTY设置默认cluster
 
 3. 示例：
+
 ```
 // 设置当前用户默认cluster
 mysql> SET PROPERTY 'default_cloud_cluster' = 'regression_test_cluster_name0';
@@ -100,6 +114,7 @@ mysql> show PROPERTY for jack;
 ```
 
 若当前warehouse下不存在将要设置的默认cluster会报错，提示使用show clusters展示当前warehouse下所有有效的cluster，其中cluster列表示clusterName，is_current列表示当前用户是否使用此cluster，users列表示这些用户设置默认cluster为当前行的cluster
+
 ```
 mysql> SET PROPERTY 'default_cloud_cluster' = 'not_exist_cluster';
 ERROR 5091 (42000): errCode = 2, detailMessage = Cluster not_exist_cluster not exist, use SQL 'SHOW CLUSTERS' to get a valid cluster
@@ -116,6 +131,3 @@ mysql> show clusters;
 mysql> SET PROPERTY 'default_cloud_cluster' = 'regression_test_cluster_name5';
 Query OK, 0 rows affected (0.01 sec)
 ```
-
-4. TODO
-- 增加一个全局默认cluster，所有用户都可以使用此cluster（不检查用户是否有被grant过此cluster的权限）

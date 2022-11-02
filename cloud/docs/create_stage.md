@@ -86,6 +86,7 @@ CREATE STAGE [IF NOT EXISTS] <stage_name> PROPERTIES (
 ## 举例
  
 1. 创建名为`test_stage`的stage:
+
 ```
 CREATE STAGE test_stage PROPERTIES (
     'endpoint' = 'cos.ap-beijing.myqcloud.com',
