@@ -80,4 +80,17 @@ template <class T>
 PredicateType RangePredicate<T>::type() const {
     return PredicateType::RANGE;
 }
+
+template class RangePredicate<int8_t>;
+template class RangePredicate<int16_t>;
+template class RangePredicate<int32_t>;
+template class RangePredicate<uint32_t>;
+template class RangePredicate<int64_t>;
+template class RangePredicate<int128_t>;
+template class RangePredicate<float>;
+template class RangePredicate<double>;
+template class RangePredicate<decimal12_t>;
+template class RangePredicate<uint24_t>;
+template class RangePredicate<uint64_t>;
+template class RangePredicate<bool>;
 } // namespace doris
