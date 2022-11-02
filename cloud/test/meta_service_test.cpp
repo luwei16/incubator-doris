@@ -305,21 +305,18 @@ TEST(MetaServiceTest, BeginTxnTest) {
 
         sp->set_call_back("begin_txn:before:commit_txn:1", [&](void* args) {
             std::string label = *reinterpret_cast<std::string*>(args);
+            std::unique_lock<std::mutex> _lock(go_mutex);
             count_txn1++;
             LOG(INFO) << "count_txn1:" << count_txn1 << " label=" << label;
             if (count_txn1 == 1) {
                 {
-                    std::unique_lock<std::mutex> _lock(go_mutex);
-                    go = false;
                     LOG(INFO) << "count_txn1:" << count_txn1 << " label=" << label << " go=" << go;
-                    go_cv.wait(_lock, [&] { return go; });
+                    go_cv.wait(_lock);
                 }
             }
 
             if (count_txn1 == 2) {
                 {
-                    std::unique_lock<std::mutex> _lock(go_mutex);
-                    go = true;
                     LOG(INFO) << "count_txn1:" << count_txn1 << " label=" << label << " go=" << go;
                     go_cv.notify_all();
                 }
@@ -328,21 +325,18 @@ TEST(MetaServiceTest, BeginTxnTest) {
 
         sp->set_call_back("begin_txn:after:commit_txn:1", [&](void* args) {
             std::string label = *reinterpret_cast<std::string*>(args);
+            std::unique_lock<std::mutex> _lock(go_mutex);
             count_txn2++;
             LOG(INFO) << "count_txn2:" << count_txn2 << " label=" << label;
             if (count_txn2 == 1) {
                 {
-                    std::unique_lock<std::mutex> _lock(go_mutex);
-                    go = false;
                     LOG(INFO) << "count_txn2:" << count_txn2 << " label=" << label << " go=" << go;
-                    go_cv.wait(_lock, [&] { return go; });
+                    go_cv.wait(_lock);
                 }
             }
 
             if (count_txn2 == 2) {
                 {
-                    std::unique_lock<std::mutex> _lock(go_mutex);
-                    go = true;
                     LOG(INFO) << "count_txn2:" << count_txn2 << " label=" << label << " go=" << go;
                     go_cv.notify_all();
                 }
@@ -1471,7 +1465,7 @@ TEST(MetaServiceTest, StageTest) {
             drop_stage_req.set_stage_name("tmp");
             DropStageResponse res;
             meta_service->drop_stage(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
-                                    &drop_stage_req, &res, nullptr);
+                                     &drop_stage_req, &res, nullptr);
             ASSERT_EQ(res.status().code(), MetaServiceCode::STAGE_NOT_FOUND);
 
             drop_stage_req.set_stage_name("ex_name_1");

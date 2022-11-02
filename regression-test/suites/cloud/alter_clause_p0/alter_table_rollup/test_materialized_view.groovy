@@ -74,8 +74,8 @@ suite("test_materialized_view") {
     }
     sql "SHOW ALTER TABLE MATERIALIZED VIEW WHERE TableName='${tbName1}';"
     sql "SHOW ALTER TABLE MATERIALIZED VIEW WHERE TableName='${tbName2}';"
-    qt_sql "DESC ${tbName1} ALL;"
-    qt_sql "DESC ${tbName2} ALL;"
+    order_qt_sql "DESC ${tbName1} ALL;"
+    order_qt_sql "DESC ${tbName2} ALL;"
     sql "insert into ${tbName1} values(1, 1, 1, '2020-05-30',100);"
     sql "insert into ${tbName1} values(2, 1, 1, '2020-05-30',100);"
     sql "insert into ${tbName2} values(1, 1, 1, '2020-05-30',100);"
@@ -105,7 +105,7 @@ suite("test_materialized_view") {
         }
     }
     sql "SELECT store_id, count(sale_amt) FROM ${tbName1} GROUP BY store_id;"
-    qt_sql "DESC ${tbName1} ALL;"
+    order_qt_sql "DESC ${tbName1} ALL;"
 
     qt_sql "SELECT store_id, count(sale_amt) FROM ${tbName1} GROUP BY store_id;"
 
