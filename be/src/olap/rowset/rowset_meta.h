@@ -57,12 +57,14 @@ public:
     }
 
     virtual bool init_from_pb(const RowsetMetaPB& rowset_meta_pb) {
-        _rowset_meta_pb = rowset_meta_pb;
-        if (_rowset_meta_pb.has_tablet_schema()) {
+        if (rowset_meta_pb.has_tablet_schema()) {
             _schema = TabletSchemaCache::instance()->insert(
-                    _rowset_meta_pb.tablet_schema().SerializeAsString());
-            _rowset_meta_pb.clear_tablet_schema();
+                    rowset_meta_pb.tablet_schema().SerializeAsString());
         }
+        auto& mut_rowset_meta_pb = const_cast<RowsetMetaPB&>(rowset_meta_pb);
+        auto schema = mut_rowset_meta_pb.release_tablet_schema();
+        _rowset_meta_pb = mut_rowset_meta_pb;
+        mut_rowset_meta_pb.set_allocated_tablet_schema(schema);
         _init();
         return true;
     }
