@@ -302,13 +302,14 @@ public class RollupJobV2 extends AlterJobV2 implements GsonPostProcessable {
             throw new AlterCancelException(e.getMessage());
         }
 
+        long expiration = (createTimeMs + timeoutMs) / 1000;
         tbl.readLock();
         try {
             Preconditions.checkState(tbl.getState() == OlapTableState.ROLLUP);
             try {
                 List<Long> rollupIndexList = new ArrayList<Long>();
                 rollupIndexList.add(rollupIndexId);
-                Env.getCurrentInternalCatalog().prepareCloudMaterializedIndex(tbl, rollupIndexList);
+                Env.getCurrentInternalCatalog().prepareCloudMaterializedIndex(tbl, rollupIndexList, expiration);
 
                 for (Map.Entry<Long, MaterializedIndex> entry : this.partitionIdToRollupIndex.entrySet()) {
                     long partitionId = entry.getKey();
@@ -432,6 +433,7 @@ public class RollupJobV2 extends AlterJobV2 implements GsonPostProcessable {
 
         tbl.readLock();
         try {
+            long expiration = (createTimeMs + timeoutMs) / 1000;
             Preconditions.checkState(tbl.getState() == OlapTableState.ROLLUP);
             for (Map.Entry<Long, MaterializedIndex> entry : this.partitionIdToRollupIndex.entrySet()) {
                 long partitionId = entry.getKey();
@@ -482,7 +484,8 @@ public class RollupJobV2 extends AlterJobV2 implements GsonPostProcessable {
                         AlterReplicaTask rollupTask = new AlterReplicaTask(rollupReplica.getBackendId(), dbId, tableId,
                                 partitionId, rollupIndexId, baseIndexId, rollupTabletId, baseTabletId,
                                 rollupReplica.getId(), rollupSchemaHash, baseSchemaHash, visibleVersion, jobId,
-                                JobType.ROLLUP, defineExprs, descTable, tbl.getSchemaByIndexId(baseIndexId, true));
+                                JobType.ROLLUP, defineExprs, descTable, tbl.getSchemaByIndexId(baseIndexId, true),
+                                expiration);
                         rollupBatchTask.addTask(rollupTask);
                     }
                 }

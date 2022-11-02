@@ -18,30 +18,26 @@
 #include <chrono>
 // clang-format on
 
-
-#define RPC_PREPROCESS(func_name)                                                               \
-    StopWatch sw;                                                                               \
-    auto ctrl = static_cast<brpc::Controller*>(controller);                                     \
-    std::string rpc_name(__PRETTY_FUNCTION__);                                                  \
-    rpc_name = rpc_name.substr(0, rpc_name.find('(')) + "()";                                   \
-    LOG(INFO) << "begin " << rpc_name << " rpc from " << ctrl->remote_side()                    \
-              << " request=" << request->DebugString();                                         \
-    brpc::ClosureGuard closure_guard(done);                                                     \
-    [[maybe_unused]] int ret = 0;                                                               \
-    [[maybe_unused]] std::stringstream ss;                                                      \
-    [[maybe_unused]] MetaServiceCode code = MetaServiceCode::OK;                                \
-    [[maybe_unused]] std::string msg = "OK";                                                    \
-    [[maybe_unused]] std::string instance_id;                                                   \
-    std::unique_ptr<int, std::function<void(int*)>> defer_status((int*)0x01, [&](int*) {        \
-        response->mutable_status()->set_code(code);                                             \
-        response->mutable_status()->set_msg(msg);                                               \
-        LOG(INFO) << "finish " << rpc_name << " from " << ctrl->remote_side() << " ret=" << ret \
-                  << " code=" << code << " msg=\"" << msg << "\""                               \
-                  << " response=" << proto_to_json(*response);                                  \
-        closure_guard.reset(nullptr);                                                           \
-        if (config::use_detailed_metrics && !instance_id.empty()) {                             \
-            g_bvar_ms_##func_name.put(instance_id, sw.elapsed_us());                            \
-        }                                                                                       \
+#define RPC_PREPROCESS(func_name)                                                           \
+    StopWatch sw;                                                                           \
+    auto ctrl = static_cast<brpc::Controller*>(controller);                                 \
+    LOG(INFO) << "begin " #func_name " rpc from " << ctrl->remote_side()                    \
+              << " request=" << request->ShortDebugString();                                \
+    brpc::ClosureGuard closure_guard(done);                                                 \
+    [[maybe_unused]] int ret = 0;                                                           \
+    [[maybe_unused]] std::stringstream ss;                                                  \
+    [[maybe_unused]] MetaServiceCode code = MetaServiceCode::OK;                            \
+    [[maybe_unused]] std::string msg;                                                       \
+    [[maybe_unused]] std::string instance_id;                                               \
+    std::unique_ptr<int, std::function<void(int*)>> defer_status((int*)0x01, [&](int*) {    \
+        response->mutable_status()->set_code(code);                                         \
+        response->mutable_status()->set_msg(msg);                                           \
+        LOG(INFO) << "finish " #func_name " from " << ctrl->remote_side() << " ret=" << ret \
+                  << " response=" << response->ShortDebugString();                          \
+        closure_guard.reset(nullptr);                                                       \
+        if (config::use_detailed_metrics && !instance_id.empty()) {                         \
+            g_bvar_ms_##func_name.put(instance_id, sw.elapsed_us());                        \
+        }                                                                                   \
     });
 
 // Empty string not is not processed
@@ -530,8 +526,7 @@ void process_compaction_job(MetaServiceCode& code, std::string& msg, std::string
     auto& rs_end =
             *obj_pool.add(new std::string(meta_rowset_key({instance_id, tablet_id, end + 1})));
 
-    // FIXME(gavin): there may be too many rowsets to get, make it async
-    auto& it = *obj_pool.add(new std::unique_ptr<RangeGetIterator>());
+    std::unique_ptr<RangeGetIterator> it;
     int num_rowsets = 0;
     std::unique_ptr<int, std::function<void(int*)>> defer_log_range(
             (int*)0x01, [&rs_start, &rs_end, &num_rowsets](int*) {

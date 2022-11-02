@@ -196,30 +196,6 @@ public:
                         ::google::protobuf::Closure* done) override;
 
 private:
-    // returns 0 for index exists, 1 for not exist, negative for error
-    int index_exists(std::string& instance_id, const ::selectdb::IndexRequest* request,
-                     ::selectdb::MetaServiceGenericResponse* response);
-
-    void put_recycle_index_kv(std::string& instance_id, const ::selectdb::IndexRequest* request,
-                              ::selectdb::MetaServiceGenericResponse* response);
-
-    void remove_recycle_index_kv(std::string& instance_id, const ::selectdb::IndexRequest* request,
-                                 ::selectdb::MetaServiceGenericResponse* response);
-
-    // returns 0 for partition exists, 1 for not exist, negative for error
-    int partition_exists(std::string& instance_id, const ::selectdb::PartitionRequest* request,
-                         ::selectdb::MetaServiceGenericResponse* response);
-
-    void put_recycle_partition_kv(std::string& instance_id, const ::selectdb::PartitionRequest* request,
-                                  ::selectdb::MetaServiceGenericResponse* response);
-
-    void remove_recycle_partition_kv(std::string& instance_id, const ::selectdb::PartitionRequest* request,
-                                     ::selectdb::MetaServiceGenericResponse* response);
-
-    static std::vector<std::pair<int64_t, int64_t>> calc_sync_versions(
-            int64_t req_bc_cnt, int64_t bc_cnt, int64_t req_cc_cnt, int64_t cc_cnt, int64_t req_cp,
-            int64_t cp, int64_t req_start, int64_t req_end);
-
     std::pair<MetaServiceCode, std::string> create_instance(
             const ::selectdb::AlterInstanceRequest* request);
 

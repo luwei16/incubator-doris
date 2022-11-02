@@ -331,6 +331,7 @@ public class SchemaChangeJobV2 extends AlterJobV2 {
             throw new AlterCancelException(e.getMessage());
         }
 
+        long expiration = (createTimeMs + timeoutMs) / 1000;
         tbl.readLock();
         try {
             Preconditions.checkState(tbl.getState() == OlapTableState.SCHEMA_CHANGE);
@@ -340,7 +341,7 @@ public class SchemaChangeJobV2 extends AlterJobV2 {
                 shadowIdxList.add(shadowIdx);
             }
             try {
-                Env.getCurrentInternalCatalog().prepareCloudMaterializedIndex(tbl, shadowIdxList);
+                Env.getCurrentInternalCatalog().prepareCloudMaterializedIndex(tbl, shadowIdxList, expiration);
 
                 for (long partitionId : partitionIndexMap.rowKeySet()) {
                     Partition partition = tbl.getPartition(partitionId);
@@ -481,6 +482,7 @@ public class SchemaChangeJobV2 extends AlterJobV2 {
 
         tbl.readLock();
         try {
+            long expiration = (createTimeMs + timeoutMs) / 1000;
             Map<String, Column> indexColumnMap = Maps.newHashMap();
             for (Map.Entry<Long, List<Column>> entry : indexSchemaMap.entrySet()) {
                 for (Column column : entry.getValue()) {
@@ -547,7 +549,7 @@ public class SchemaChangeJobV2 extends AlterJobV2 {
                             AlterReplicaTask rollupTask = new AlterReplicaTask(shadowReplica.getBackendId(), dbId,
                                     tableId, partitionId, shadowIdxId, originIdxId, shadowTabletId, originTabletId,
                                     shadowReplica.getId(), shadowSchemaHash, originSchemaHash, visibleVersion, jobId,
-                                    JobType.SCHEMA_CHANGE, defineExprs, descTable, originSchemaColumns);
+                                    JobType.SCHEMA_CHANGE, defineExprs, descTable, originSchemaColumns, expiration);
                             schemaChangeBatchTask.addTask(rollupTask);
                         }
                     }

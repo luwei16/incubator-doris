@@ -69,9 +69,9 @@ Status CloudCumulativeCompaction::prepare_compact() {
     compaction_job->set_base_compaction_cnt(base_compaction_cnt);
     compaction_job->set_cumulative_compaction_cnt(cumulative_compaction_cnt);
     using namespace std::chrono;
-    int64_t expiration =
-            duration_cast<seconds>(system_clock::now().time_since_epoch()).count() + 21600; // 6h
-    compaction_job->set_expiration(expiration); // FIXME(cyx): estimate according to data size
+    _expiration = duration_cast<seconds>(system_clock::now().time_since_epoch()).count() +
+                  config::compaction_timeout_seconds;
+    compaction_job->set_expiration(_expiration);
     return cloud::meta_mgr()->prepare_tablet_job(job);
 }
 

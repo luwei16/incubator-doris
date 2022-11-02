@@ -81,6 +81,7 @@ struct RowsetWriterContext {
 
     // properties for pending rowset
     int64_t txn_id;
+    int64_t txn_expiration = 0;
     PUniqueId load_id;
     TabletUid tablet_uid;
     // indicate whether the data among segments is overlapping.

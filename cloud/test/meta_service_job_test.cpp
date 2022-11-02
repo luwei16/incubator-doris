@@ -113,9 +113,6 @@ TEST(MetaServiceTest, CompactionJobTest) {
         ASSERT_EQ(txn->get(job_key, &job_val), 0);
         TabletJobInfoPB job_pb;
         ASSERT_TRUE(job_pb.ParseFromString(job_val));
-
-        LOG(INFO) << proto_to_json(job_pb, true);
-
         meta_service->start_tablet_job(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
                                        &req, &res, nullptr);
         ASSERT_NE(res.status().msg().find("already started"), std::string::npos);
@@ -337,7 +334,6 @@ TEST(MetaServiceTest, CompactionJobTest) {
         tablet_meta_val.clear();
         ASSERT_EQ(txn->get(tablet_meta_key, &tablet_meta_val), 0);
         ASSERT_TRUE(tablet_meta_pb.ParseFromString(tablet_meta_val));
-        LOG(INFO) << tablet_meta_pb.DebugString();
         ASSERT_EQ(tablet_meta_pb.cumulative_layer_point(),
                   req.job().compaction(0).output_cumulative_point());
         ASSERT_EQ(tablet_meta_pb.cumulative_layer_point(), stats.cumulative_point());
@@ -409,9 +405,9 @@ TEST(MetaServiceTest, SchemaChangeJobTest) {
     int64_t new_tablet_id = 14;
 
     auto create_new_tablet = [&] {
-        CreateTabletRequest req;
+        CreateTabletsRequest req;
         MetaServiceGenericResponse res;
-        auto tablet_meta_pb = req.mutable_tablet_meta();
+        auto tablet_meta_pb = req.add_tablet_metas();
         tablet_meta_pb->set_table_id(table_id);
         tablet_meta_pb->set_index_id(index_id);
         tablet_meta_pb->set_partition_id(partition_id);
@@ -423,7 +419,7 @@ TEST(MetaServiceTest, SchemaChangeJobTest) {
         // rs_meta_pb->set_rowset_id_v2("xxx");
         rs_meta_pb->set_start_version(0);
         rs_meta_pb->set_end_version(1);
-        meta_service->create_tablet(&cntl, &req, &res, nullptr);
+        meta_service->create_tablets(&cntl, &req, &res, nullptr);
         ASSERT_EQ(res.status().code(), MetaServiceCode::OK);
     };
 
@@ -761,9 +757,9 @@ TEST(MetaServiceTest, RetrySchemaChangeJobTest) {
     int64_t new_tablet_id = 14;
 
     auto create_new_tablet = [&] {
-        CreateTabletRequest req;
+        CreateTabletsRequest req;
         MetaServiceGenericResponse res;
-        auto tablet_meta_pb = req.mutable_tablet_meta();
+        auto tablet_meta_pb = req.add_tablet_metas();
         tablet_meta_pb->set_table_id(table_id);
         tablet_meta_pb->set_index_id(index_id);
         tablet_meta_pb->set_partition_id(partition_id);
@@ -775,7 +771,7 @@ TEST(MetaServiceTest, RetrySchemaChangeJobTest) {
         // rs_meta_pb->set_rowset_id_v2("xxx");
         rs_meta_pb->set_start_version(0);
         rs_meta_pb->set_end_version(1);
-        meta_service->create_tablet(&cntl, &req, &res, nullptr);
+        meta_service->create_tablets(&cntl, &req, &res, nullptr);
         ASSERT_EQ(res.status().code(), MetaServiceCode::OK);
     };
 
@@ -1048,9 +1044,9 @@ TEST(MetaServiceTest, ConflictCompactionTest) {
 
     // create tablet
     {
-        CreateTabletRequest req;
+        CreateTabletsRequest req;
         MetaServiceGenericResponse res;
-        auto tablet_meta_pb = req.mutable_tablet_meta();
+        auto tablet_meta_pb = req.add_tablet_metas();
         tablet_meta_pb->set_table_id(table_id);
         tablet_meta_pb->set_index_id(index_id);
         tablet_meta_pb->set_partition_id(partition_id);
@@ -1062,7 +1058,7 @@ TEST(MetaServiceTest, ConflictCompactionTest) {
         // rs_meta_pb->set_rowset_id_v2("xxx");
         rs_meta_pb->set_start_version(0);
         rs_meta_pb->set_end_version(1);
-        meta_service->create_tablet(&cntl, &req, &res, nullptr);
+        meta_service->create_tablets(&cntl, &req, &res, nullptr);
         ASSERT_EQ(res.status().code(), MetaServiceCode::OK);
     };
 
@@ -1117,7 +1113,6 @@ TEST(MetaServiceTest, ConflictCompactionTest) {
     TabletJobInfoPB job_pb;
     ASSERT_EQ(txn->get(job_key, &job_val), 0);
     ASSERT_TRUE(job_pb.ParseFromString(job_val));
-    LOG(INFO) << job_pb.DebugString();
     ASSERT_EQ(job_pb.compaction(0).id(), "job2");
     ASSERT_EQ(job_pb.compaction(0).initiator(), "BE1");
 }

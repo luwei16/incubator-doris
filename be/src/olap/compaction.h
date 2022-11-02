@@ -97,6 +97,10 @@ protected:
     int64_t _newest_write_timestamp;
     RowIdConversion _rowid_conversion;
 
+    // CLOUD_MODE
+    // expiration time of this compaction
+    int64_t _expiration = 0;
+
     DISALLOW_COPY_AND_ASSIGN(Compaction);
 };
 

@@ -406,7 +406,6 @@ static int get_copy_file_num(TxnKv* txn_kv, const std::string& stage_id, int64_t
 }
 
 TEST(RecyclerTest, recycle_empty) {
-    config::fdb_cluster_file_path = "fdb.cluster";
     auto txn_kv = std::make_shared<MemTxnKv>();
     ASSERT_EQ(txn_kv->init(), 0);
 
@@ -427,8 +426,7 @@ TEST(RecyclerTest, recycle_empty) {
 }
 
 TEST(RecyclerTest, recycle_rowsets) {
-    config::rowset_retention_seconds = 0;
-    config::fdb_cluster_file_path = "fdb.cluster";
+    config::retention_seconds = 0;
     auto txn_kv = std::make_shared<MemTxnKv>();
     ASSERT_EQ(txn_kv->init(), 0);
 
@@ -459,8 +457,7 @@ TEST(RecyclerTest, recycle_rowsets) {
 }
 
 TEST(RecyclerTest, recycle_tmp_rowsets) {
-    config::rowset_retention_seconds = 0;
-    config::fdb_cluster_file_path = "fdb.cluster";
+    config::retention_seconds = 0;
     auto txn_kv = std::make_shared<MemTxnKv>();
     ASSERT_EQ(txn_kv->init(), 0);
 
@@ -499,7 +496,6 @@ TEST(RecyclerTest, recycle_tmp_rowsets) {
 }
 
 TEST(RecyclerTest, recycle_tablet) {
-    config::fdb_cluster_file_path = "fdb.cluster";
     auto txn_kv = std::make_shared<MemTxnKv>();
     ASSERT_EQ(txn_kv->init(), 0);
 
@@ -534,8 +530,7 @@ TEST(RecyclerTest, recycle_tablet) {
 }
 
 TEST(RecyclerTest, recycle_indexes) {
-    config::index_retention_seconds = 0;
-    config::fdb_cluster_file_path = "fdb.cluster";
+    config::retention_seconds = 0;
     auto txn_kv = std::make_shared<MemTxnKv>();
     ASSERT_EQ(txn_kv->init(), 0);
 
@@ -575,8 +570,7 @@ TEST(RecyclerTest, recycle_indexes) {
 }
 
 TEST(RecyclerTest, recycle_partitions) {
-    config::partition_retention_seconds = 0;
-    config::fdb_cluster_file_path = "fdb.cluster";
+    config::retention_seconds = 0;
     auto txn_kv = std::make_shared<MemTxnKv>();
     ASSERT_EQ(txn_kv->init(), 0);
 
@@ -622,7 +616,6 @@ TEST(RecyclerTest, recycle_partitions) {
 
 TEST(RecyclerTest, abort_timeout_txn) {
     config::stream_load_default_timeout_second = 0;
-    config::fdb_cluster_file_path = "fdb.cluster";
 
     auto txn_kv = std::dynamic_pointer_cast<TxnKv>(std::make_shared<MemTxnKv>());
     ASSERT_NE(txn_kv.get(), nullptr);
@@ -662,7 +655,6 @@ TEST(RecyclerTest, abort_timeout_txn) {
 TEST(RecyclerTest, recycle_expired_txn_label) {
     config::label_keep_max_second = 0;
     config::stream_load_default_timeout_second = 0;
-    config::fdb_cluster_file_path = "fdb.cluster";
 
     auto txn_kv = std::dynamic_pointer_cast<TxnKv>(std::make_shared<MemTxnKv>());
     ASSERT_NE(txn_kv.get(), nullptr);
@@ -718,7 +710,6 @@ TEST(RecyclerTest, recycle_expired_txn_label) {
 }
 
 TEST(RecyclerTest, recycle_copy_jobs) {
-    config::fdb_cluster_file_path = "fdb.cluster";
     auto txn_kv = std::dynamic_pointer_cast<TxnKv>(std::make_shared<MemTxnKv>());
     ASSERT_NE(txn_kv.get(), nullptr);
     ASSERT_EQ(txn_kv->init(), 0);

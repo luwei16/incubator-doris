@@ -92,7 +92,7 @@ Status CloudMetaMgr::sync_tablet_rowsets(Tablet* tablet) {
         req.set_cumulative_point(tablet->cumulative_layer_point());
     }
     req.set_end_version(-1);
-    VLOG_DEBUG << "send GetRowsetRequest: " << req.DebugString();
+    VLOG_DEBUG << "send GetRowsetRequest: " << req.ShortDebugString();
 
     using namespace std::chrono;
     auto start_time = steady_clock::now();
@@ -158,23 +158,6 @@ Status CloudMetaMgr::sync_tablet_rowsets(Tablet* tablet) {
         tablet->set_cumulative_layer_point(stats.cumulative_point());
         tablet->reset_approximate_stats(stats.num_rowsets(), stats.num_segments(), stats.num_rows(),
                                         stats.data_size());
-    }
-    return Status::OK();
-}
-
-Status CloudMetaMgr::write_tablet_meta(const TabletMetaSharedPtr& tablet_meta) {
-    brpc::Controller cntl;
-    cntl.set_timeout_ms(config::meta_service_brpc_timeout_ms);
-    selectdb::CreateTabletRequest req;
-    selectdb::MetaServiceGenericResponse resp;
-    req.set_cloud_unique_id(config::cloud_unique_id);
-    tablet_meta->to_meta_pb(req.mutable_tablet_meta());
-    _stub->create_tablet(&cntl, &req, &resp, nullptr);
-    if (cntl.Failed()) {
-        return Status::RpcError("failed to write tablet meta: {}", cntl.ErrorText());
-    }
-    if (resp.status().code() != selectdb::MetaServiceCode::OK) {
-        return Status::InternalError("failed to tablet rowset meta: {}", resp.status().msg());
     }
     return Status::OK();
 }
@@ -309,7 +292,7 @@ Status CloudMetaMgr::get_s3_info(std::vector<std::tuple<std::string, S3Conf>>* s
 }
 
 Status CloudMetaMgr::prepare_tablet_job(const selectdb::TabletJobInfoPB& job) {
-    VLOG_DEBUG << "prepare_tablet_job: " << job.DebugString();
+    VLOG_DEBUG << "prepare_tablet_job: " << job.ShortDebugString();
     brpc::Controller cntl;
     cntl.set_timeout_ms(config::meta_service_brpc_timeout_ms);
     selectdb::StartTabletJobRequest req;
@@ -330,7 +313,7 @@ Status CloudMetaMgr::prepare_tablet_job(const selectdb::TabletJobInfoPB& job) {
 
 Status CloudMetaMgr::commit_tablet_job(const selectdb::TabletJobInfoPB& job,
                                        selectdb::TabletStatsPB* stats) {
-    VLOG_DEBUG << "commit_tablet_job: " << job.DebugString();
+    VLOG_DEBUG << "commit_tablet_job: " << job.ShortDebugString();
     brpc::Controller cntl;
     cntl.set_timeout_ms(config::meta_service_brpc_timeout_ms);
     selectdb::FinishTabletJobRequest req;
@@ -352,7 +335,7 @@ Status CloudMetaMgr::commit_tablet_job(const selectdb::TabletJobInfoPB& job,
 }
 
 Status CloudMetaMgr::abort_tablet_job(const selectdb::TabletJobInfoPB& job) {
-    VLOG_DEBUG << "abort_tablet_job: " << job.DebugString();
+    VLOG_DEBUG << "abort_tablet_job: " << job.ShortDebugString();
     brpc::Controller cntl;
     cntl.set_timeout_ms(config::meta_service_brpc_timeout_ms);
     selectdb::FinishTabletJobRequest req;

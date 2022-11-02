@@ -200,10 +200,6 @@ Status StorageEngine::cloud_start_bg_threads() {
             .set_min_threads(config::max_cumu_compaction_threads)
             .set_max_threads(config::max_cumu_compaction_threads)
             .build(&_cumu_compaction_thread_pool);
-    ThreadPoolBuilder("SmallCompactionTaskThreadPool")
-            .set_min_threads(config::quick_compaction_max_threads)
-            .set_max_threads(config::quick_compaction_max_threads)
-            .build(&_quick_compaction_thread_pool);
     RETURN_IF_ERROR(Thread::create(
             "StorageEngine", "compaction_tasks_producer_thread",
             [this]() { this->_compaction_tasks_producer_callback(); },
@@ -639,7 +635,7 @@ std::vector<TabletSharedPtr> StorageEngine::_generate_cloud_compaction_tasks(
                 break;
             }
             if (tablets.empty()) {
-                LOG(WARNING) << "no tablets to compact";
+                LOG(WARNING) << "no tablets to compact, n=" << n;
                 break;
             }
             std::for_each(scores.begin(), scores.end(), [&](auto& i) {

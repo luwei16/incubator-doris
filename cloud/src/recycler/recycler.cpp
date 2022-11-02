@@ -87,7 +87,7 @@ void Recycler::instance_scanner_callback() {
         {
             std::unique_lock lock(instance_scanner_mtx_);
             instance_scanner_cond_.wait_for(lock,
-                                            std::chrono::seconds(config::recycl_interval_seconds),
+                                            std::chrono::seconds(config::recycle_interval_seconds),
                                             [&]() { return !is_working(); });
         }
     }
@@ -245,7 +245,9 @@ void InstanceRecycler::recycle_indexes() {
             LOG_WARNING("malformed recycle index value").tag("key", hex(k)).tag("val", hex(v));
             return false;
         }
-        if (current_time < index_pb.creation_time() + config::index_retention_seconds) {
+        int64_t expiration =
+                index_pb.expiration() > 0 ? index_pb.expiration() : index_pb.creation_time();
+        if (current_time < expiration + config::retention_seconds) {
             // not expired
             return false;
         }
@@ -307,7 +309,9 @@ void InstanceRecycler::recycle_partitions() {
             LOG_WARNING("malformed recycle partition value").tag("key", hex(k)).tag("val", hex(v));
             return false;
         }
-        if (current_time < part_pb.creation_time() + config::partition_retention_seconds) {
+        int64_t expiration =
+                part_pb.expiration() > 0 ? part_pb.expiration() : part_pb.creation_time();
+        if (current_time < expiration + config::retention_seconds) {
             // not expired
             return false;
         }
@@ -343,21 +347,36 @@ int InstanceRecycler::recycle_tablets(int64_t table_id, int64_t index_id, int64_
     int num_scanned = 0;
     int num_recycled = 0;
 
-    std::string tablet_key0;
-    std::string tablet_key1;
+    MetaTabletKeyInfo tablet_key_info0;
+    MetaTabletKeyInfo tablet_key_info1;
+    StatsTabletKeyInfo stats_key_info0;
+    StatsTabletKeyInfo stats_key_info1;
+    JobTabletKeyInfo job_key_info0;
+    JobTabletKeyInfo job_key_info1;
+
     if (partition_id > 0) {
         // recycle tablets in a partition belonging to the index
-        MetaTabletKeyInfo tablet_key_info0 {instance_id_, table_id, index_id, partition_id, 0};
-        MetaTabletKeyInfo tablet_key_info1 {instance_id_, table_id, index_id, partition_id + 1, 0};
-        meta_tablet_key(tablet_key_info0, &tablet_key0);
-        meta_tablet_key(tablet_key_info1, &tablet_key1);
+        tablet_key_info0 = {instance_id_, table_id, index_id, partition_id, 0};
+        tablet_key_info1 = {instance_id_, table_id, index_id, partition_id + 1, 0};
+        stats_key_info0 = {instance_id_, table_id, index_id, partition_id, 0};
+        stats_key_info1 = {instance_id_, table_id, index_id, partition_id + 1, 0};
+        job_key_info0 = {instance_id_, table_id, index_id, partition_id, 0};
+        job_key_info1 = {instance_id_, table_id, index_id, partition_id + 1, 0};
     } else {
         // recycle tablets in the index
-        MetaTabletKeyInfo tablet_key_info0 {instance_id_, table_id, index_id, 0, 0};
-        MetaTabletKeyInfo tablet_key_info1 {instance_id_, table_id, index_id + 1, 0, 0};
-        meta_tablet_key(tablet_key_info0, &tablet_key0);
-        meta_tablet_key(tablet_key_info1, &tablet_key1);
+        tablet_key_info0 = {instance_id_, table_id, index_id, 0, 0};
+        tablet_key_info1 = {instance_id_, table_id, index_id + 1, 0, 0};
+        stats_key_info0 = {instance_id_, table_id, index_id, 0, 0};
+        stats_key_info1 = {instance_id_, table_id, index_id + 1, 0, 0};
+        job_key_info0 = {instance_id_, table_id, index_id, 0, 0};
+        job_key_info1 = {instance_id_, table_id, index_id + 1, 0, 0};
     }
+    auto tablet_key0 = meta_tablet_key(tablet_key_info0);
+    auto tablet_key1 = meta_tablet_key(tablet_key_info1);
+    auto stats_key0 = stats_tablet_key(stats_key_info0);
+    auto stats_key1 = stats_tablet_key(stats_key_info1);
+    auto job_key0 = job_tablet_key(job_key_info0);
+    auto job_key1 = job_tablet_key(job_key_info1);
 
     LOG_INFO("begin to recycle tablets")
             .tag("table_id", table_id)
@@ -377,14 +396,16 @@ int InstanceRecycler::recycle_tablets(int64_t table_id, int64_t index_id, int64_
                 .tag("num_recycled", num_recycled);
     });
 
-    auto recycle_func = [&num_scanned, &num_recycled, this](std::string_view k,
-                                                            std::string_view v) -> bool {
+    std::vector<std::string> tablet_idx_keys;
+    auto recycle_func = [&num_scanned, &num_recycled, &tablet_idx_keys, this](
+                                std::string_view k, std::string_view v) -> bool {
         ++num_scanned;
         doris::TabletMetaPB tablet_meta_pb;
         if (!tablet_meta_pb.ParseFromArray(v.data(), v.size())) {
             LOG_WARNING("malformed tablet meta").tag("key", hex(k)).tag("val", hex(v));
             return false;
         }
+        tablet_idx_keys.push_back(meta_tablet_idx_key({instance_id_, tablet_meta_pb.tablet_id()}));
         if (recycle_tablet(tablet_meta_pb.tablet_id()) != 0) {
             LOG_WARNING("failed to recycle tablet")
                     .tag("instance_id", instance_id_)
@@ -395,7 +416,88 @@ int InstanceRecycler::recycle_tablets(int64_t table_id, int64_t index_id, int64_
         return true;
     };
 
-    return scan_and_recycle(tablet_key0, tablet_key1, std::move(recycle_func), true);
+    std::string begin = tablet_key0;
+    std::string_view end = tablet_key1;
+    int ret = 0;
+    std::unique_ptr<RangeGetIterator> it;
+    // elements in `recycled_keys` has the same lifetime as `it`
+    std::vector<std::string_view> recycled_keys;
+    do {
+        recycled_keys.clear();
+        tablet_idx_keys.clear();
+        {
+            // scan kvs
+            std::unique_ptr<Transaction> txn;
+            if (txn_kv_->create_txn(&txn) != 0) {
+                LOG(WARNING) << "failed to create txn";
+                return -1;
+            }
+            if (txn->get(begin, end, &it) != 0) {
+                LOG(WARNING) << "failed to get kv";
+                return -1;
+            }
+            VLOG_DEBUG << "fetch " << it->size() << " kv";
+        }
+        if (!it->has_next()) {
+            LOG_INFO("no keys in the given range").tag("begin", hex(begin)).tag("end", hex(end));
+            break;
+        }
+        while (it->has_next()) {
+            // recycle corresponding resources
+            auto [k, v] = it->next();
+            if (!it->has_next()) {
+                begin = k;
+                LOG_INFO("iterator has no more kvs")
+                        .tag("last_key", hex(k))
+                        .tag("last_val_size", v.size());
+            }
+            if (recycle_func(k, v)) {
+                recycled_keys.push_back(k);
+            } else {
+                ret = -1;
+            }
+        }
+        begin.push_back('\x00'); // Update to next smallest key for iteration
+        if (!recycled_keys.empty()) {
+            // remove recycled kvs
+            std::unique_ptr<Transaction> txn;
+            if (txn_kv_->create_txn(&txn) != 0) {
+                LOG(WARNING) << "failed to create txn";
+                ret = -1;
+                continue;
+            }
+            if (recycled_keys.size() == it->size()) {
+                txn->remove(recycled_keys.front(), begin);
+            } else {
+                for (auto k : recycled_keys) {
+                    txn->remove(k);
+                }
+            }
+            for (auto& tablet_idx_key : tablet_idx_keys) {
+                txn->remove(tablet_idx_key);
+            }
+            if (txn->commit() != 0) {
+                LOG(WARNING) << "failed to commit txn";
+                ret = -1;
+                continue;
+            }
+        }
+    } while (it->more() && is_working());
+
+    // remove tablet stats, job
+    std::unique_ptr<Transaction> txn;
+    if (txn_kv_->create_txn(&txn) != 0) {
+        LOG(WARNING) << "failed to create txn";
+        return -1;
+    }
+    txn->remove(stats_key0, stats_key1);
+    txn->remove(job_key0, job_key1);
+    if (txn->commit() != 0) {
+        LOG(WARNING) << "failed to commit txn";
+        return -1;
+    }
+
+    return ret;
 }
 
 int InstanceRecycler::delete_rowset_data(const doris::RowsetMetaPB& rs_meta_pb) {
@@ -596,7 +698,9 @@ void InstanceRecycler::recycle_rowsets() {
             LOG_WARNING("malformed recycle rowset value").tag("key", hex(k)).tag("val", hex(v));
             return false;
         }
-        if (current_time < recyc_rs_pb.creation_time() + config::rowset_retention_seconds) {
+        int64_t expiration = recyc_rs_pb.expiration() > 0 ? recyc_rs_pb.expiration()
+                                                          : recyc_rs_pb.creation_time();
+        if (current_time < expiration + config::retention_seconds) {
             // not expired
             return false;
         }
@@ -662,7 +766,9 @@ void InstanceRecycler::recycle_tmp_rowsets() {
             LOG_WARNING("malformed rowset meta").tag("key", hex(k)).tag("val", hex(v));
             return false;
         }
-        if (current_time < rs_meta_pb.creation_time() + config::rowset_retention_seconds) {
+        int64_t expiration = rs_meta_pb.txn_expiration() > 0 ? rs_meta_pb.txn_expiration()
+                                                             : rs_meta_pb.creation_time();
+        if (current_time < expiration + config::retention_seconds) {
             // not expired
             return false;
         }
@@ -1367,13 +1473,10 @@ void InstanceRecycler::recycle_copy_jobs() {
                     auto ret = accessor->exists(file.relative_path(), file.etag(), &exist);
                     if (ret != 0) {
                         LOG(WARNING) << "failed to check if object exists for instance_id="
-                                     << instance_id_
-                                     << ", stage_id=" << stage_id
-                                     << ", table_id=" << table_id
-                                     << ", query_id=" << copy_id
+                                     << instance_id_ << ", stage_id=" << stage_id
+                                     << ", table_id=" << table_id << ", copy_id=" << copy_id
                                      << ", relative_path=" << file.relative_path()
-                                     << ", etag=" << file.etag()
-                                     << ", ret=" << ret;
+                                     << ", etag=" << file.etag() << ", ret=" << ret;
                         return false;
                     }
                     LOG_INFO("check if external stage object exists")

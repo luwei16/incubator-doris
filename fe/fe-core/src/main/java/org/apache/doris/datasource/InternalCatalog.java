@@ -1398,7 +1398,7 @@ public class InternalCatalog implements CatalogIf<Database> {
                 List<Long> partitionIds = new ArrayList<Long>();
                 partitionIds.add(partitionId);
                 List<Long> indexIds = indexIdToMeta.keySet().stream().collect(Collectors.toList());
-                prepareCloudPartition(olapTable.getId(), partitionIds, indexIds);
+                prepareCloudPartition(olapTable.getId(), partitionIds, indexIds, 0);
                 partition = createCloudPartitionWithIndices(db.getClusterName(), db.getId(), olapTable.getId(),
                         olapTable.getBaseIndexId(), partitionId, partitionName, indexIdToMeta, distributionInfo,
                         dataProperty.getStorageMedium(), singlePartitionDesc.getReplicaAlloc(),
@@ -2070,7 +2070,7 @@ public class InternalCatalog implements CatalogIf<Database> {
                         olapTable.getDataSortInfo(), olapTable.getEnableUniqueKeyMergeOnWrite(), storagePolicy,
                         idGeneratorBuffer, olapTable.disableAutoCompaction(), isPersistent);
                 } else {
-                    prepareCloudMaterializedIndex(olapTable, olapTable.getIndexIdList());
+                    prepareCloudMaterializedIndex(olapTable, olapTable.getIndexIdList(), 0);
                     partition = createCloudPartitionWithIndices(db.getClusterName(), db.getId(),
                         olapTable.getId(), olapTable.getBaseIndexId(), partitionId, partitionName,
                         olapTable.getIndexIdToMeta(), partitionDistributionInfo,
@@ -2122,7 +2122,7 @@ public class InternalCatalog implements CatalogIf<Database> {
                 }
 
                 if (!Config.cloud_unique_id.isEmpty()) {
-                    prepareCloudMaterializedIndex(olapTable, olapTable.getIndexIdList());
+                    prepareCloudMaterializedIndex(olapTable, olapTable.getIndexIdList(), 0);
                 }
 
                 // this is a 2-level partitioned tables
@@ -2547,7 +2547,7 @@ public class InternalCatalog implements CatalogIf<Database> {
 
             if (!Config.cloud_unique_id.isEmpty()) {
                 List<Long> indexIds = copiedTbl.getIndexIdToMeta().keySet().stream().collect(Collectors.toList());
-                prepareCloudPartition(copiedTbl.getId(), newPartitionIds, indexIds);
+                prepareCloudPartition(copiedTbl.getId(), newPartitionIds, indexIds, 0);
             }
 
             for (Map.Entry<String, Long> entry : origPartitions.entrySet()) {
@@ -3693,12 +3693,15 @@ public class InternalCatalog implements CatalogIf<Database> {
         }
     }
 
-    public void prepareCloudMaterializedIndex(OlapTable olapTable, List<Long> indexIds) throws DdlException {
+    // if `expiration` = 0, recycler will delete uncommitted indexes in `retention_seconds`
+    public void prepareCloudMaterializedIndex(OlapTable olapTable, List<Long> indexIds, long expiration)
+            throws DdlException {
         //prepare for index
         SelectdbCloud.IndexRequest.Builder indexRequestBuilder = SelectdbCloud.IndexRequest.newBuilder();
         indexRequestBuilder.setCloudUniqueId(Config.cloud_unique_id);
         indexRequestBuilder.addAllIndexIds(indexIds);
         indexRequestBuilder.setTableId(olapTable.getId());
+        indexRequestBuilder.setExpiration(expiration);
         SelectdbCloud.IndexRequest indexRequest = indexRequestBuilder.build();
         LOG.info("prepareIndex request: {} ", indexRequest);
 
@@ -3763,13 +3766,15 @@ public class InternalCatalog implements CatalogIf<Database> {
         }
     }
 
-    public void prepareCloudPartition(long tableId, List<Long> partitionIds, List<Long> indexIds)
+    // if `expiration` = 0, recycler will delete uncommitted partitions in `retention_seconds`
+    public void prepareCloudPartition(long tableId, List<Long> partitionIds, List<Long> indexIds, long expiration)
             throws DdlException {
         SelectdbCloud.PartitionRequest.Builder partitionRequestBuilder = SelectdbCloud.PartitionRequest.newBuilder();
         partitionRequestBuilder.setCloudUniqueId(Config.cloud_unique_id);
         partitionRequestBuilder.setTableId(tableId);
         partitionRequestBuilder.addAllPartitionIds(partitionIds);
         partitionRequestBuilder.addAllIndexIds(indexIds);
+        partitionRequestBuilder.setExpiration(expiration);
         SelectdbCloud.PartitionRequest partitionRequest = partitionRequestBuilder.build();
         LOG.info("preparePartition request: {} ", partitionRequest);
 

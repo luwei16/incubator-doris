@@ -250,6 +250,8 @@ Status CloudTabletMgr::get_topn_tablets_to_compact(int n, CompactionType compact
                                                    const std::function<bool(Tablet*)>& filter_out,
                                                    std::vector<TabletSharedPtr>* tablets,
                                                    std::vector<int64_t>* scores) {
+    if (n <= 0) return Status::OK();
+
     scores->clear();
     scores->reserve(n + 1);
 

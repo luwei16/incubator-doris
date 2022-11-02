@@ -257,18 +257,21 @@ message RecycleTxnPB {
 message RecycleIndexPB {
     optional int64 table_id = 1;
     optional int64 creation_time = 2; 
+    optional int64 expiration = 3;
 }
 
 message RecyclePartitionPB {
     optional int64 table_id = 1;
     repeated int64 index_id = 2;
     optional int64 creation_time = 3;
+    optional int64 expiration = 4;
 }
 
 message RecycleRowsetPB {
     optional int64 tablet_id = 1;
     optional string resource_id = 2;
     optional int64 creation_time = 3;
+    optional int64 expiration = 4;
 }
 
 message TabletIndexPB {
@@ -516,11 +519,6 @@ message GetObjStoreInfoResponse {
     repeated ObjectStoreInfoPB obj_info = 2;
 };
 
-message CreateTabletRequest {
-    optional string cloud_unique_id = 1; // For auth
-    optional doris.TabletMetaPB tablet_meta = 2;
-}
-
 message CreateTabletsRequest {
     optional string cloud_unique_id = 1; // For auth
     repeated doris.TabletMetaPB tablet_metas = 2;
@@ -580,6 +578,7 @@ message IndexRequest {
     optional string cloud_unique_id = 1; // For auth
     repeated int64 index_ids = 2;
     optional int64 table_id = 3;
+    optional int64 expiration = 4;
 }
 
 message PartitionRequest {
@@ -587,6 +586,7 @@ message PartitionRequest {
     repeated int64 partition_ids = 2;
     optional int64 table_id = 3;
     repeated int64 index_ids = 4;
+    optional int64 expiration = 5;
 }
 
 message MetaServiceResponseStatus {
@@ -819,7 +819,6 @@ service MetaService {
 
     rpc get_version(GetVersionRequest) returns (GetVersionResponse);
 
-    rpc create_tablet(CreateTabletRequest) returns (MetaServiceGenericResponse);
     rpc create_tablets(CreateTabletsRequest) returns (MetaServiceGenericResponse);
     rpc update_tablet(UpdateTabletRequest) returns (MetaServiceGenericResponse);
     rpc get_tablet(GetTabletRequest) returns (GetTabletResponse);
