@@ -3,10 +3,29 @@
 #include "cloud/utils.h"
 #include "common/config.h"
 #include "gen_cpp/selectdb_cloud.pb.h"
+#include "util/defer_op.h"
 #include "util/trace.h"
 #include "util/uuid_generator.h"
 
 namespace doris {
+
+static std::mutex s_base_compaction_mtx;
+static std::vector<std::shared_ptr<CloudBaseCompaction>> s_base_compactions;
+
+std::vector<std::shared_ptr<CloudBaseCompaction>> get_base_compactions() {
+    std::lock_guard lock(s_base_compaction_mtx);
+    return s_base_compactions;
+}
+void push_base_compaction(std::shared_ptr<CloudBaseCompaction> compaction) {
+    std::lock_guard lock(s_base_compaction_mtx);
+    s_base_compactions.push_back(std::move(compaction));
+}
+void pop_base_compaction(CloudBaseCompaction* compaction) {
+    std::lock_guard lock(s_base_compaction_mtx);
+    auto it = std::find_if(s_base_compactions.begin(), s_base_compactions.end(),
+                           [compaction](auto& x) { return x.get() == compaction; });
+    s_base_compactions.erase(it);
+}
 
 CloudBaseCompaction::CloudBaseCompaction(TabletSharedPtr tablet)
         : BaseCompaction(std::move(tablet)) {
@@ -58,9 +77,10 @@ Status CloudBaseCompaction::prepare_compact() {
     compaction_job->set_base_compaction_cnt(base_compaction_cnt);
     compaction_job->set_cumulative_compaction_cnt(cumulative_compaction_cnt);
     using namespace std::chrono;
-    _expiration = duration_cast<seconds>(system_clock::now().time_since_epoch()).count() +
-                  config::compaction_timeout_seconds;
+    int64_t now = duration_cast<seconds>(system_clock::now().time_since_epoch()).count();
+    _expiration = now + config::compaction_timeout_seconds;
     compaction_job->set_expiration(_expiration);
+    compaction_job->set_lease(now + config::lease_compaction_interval_seconds * 4);
     return cloud::meta_mgr()->prepare_tablet_job(job);
 }
 
@@ -73,6 +93,9 @@ Status CloudBaseCompaction::execute_compact_impl() {
         return Status::OLAPInternalError(OLAP_ERR_BE_TRY_BE_LOCK_ERROR);
     }
     TRACE("got base compaction lock");
+
+    push_base_compaction(shared_from_this());
+    Defer defer {[&] { pop_base_compaction(this); }};
 
     SCOPED_ATTACH_TASK(_mem_tracker, ThreadContext::TaskType::COMPACTION);
 
@@ -161,7 +184,29 @@ void CloudBaseCompaction::garbage_collection() {
     compaction_job->set_type(selectdb::TabletCompactionJobPB::BASE);
     auto st = cloud::meta_mgr()->abort_tablet_job(job);
     if (!st.ok()) {
-        LOG_WARNING("failed to gc compaction job")
+        LOG_WARNING("failed to abort compaction job")
+                .tag("job_id", _uuid)
+                .tag("tablet_id", _tablet->tablet_id())
+                .error(st);
+    }
+}
+
+void CloudBaseCompaction::do_lease() {
+    selectdb::TabletJobInfoPB job;
+    auto idx = job.mutable_idx();
+    idx->set_tablet_id(_tablet->tablet_id());
+    idx->set_table_id(_tablet->table_id());
+    idx->set_index_id(_tablet->index_id());
+    idx->set_partition_id(_tablet->partition_id());
+    auto compaction_job = job.add_compaction();
+    compaction_job->set_id(_uuid);
+    using namespace std::chrono;
+    int64_t lease_time = duration_cast<seconds>(system_clock::now().time_since_epoch()).count() +
+                         config::lease_compaction_interval_seconds * 4;
+    compaction_job->set_lease(lease_time);
+    auto st = cloud::meta_mgr()->lease_tablet_job(job);
+    if (!st.ok()) {
+        LOG_WARNING("failed to lease compaction job")
                 .tag("job_id", _uuid)
                 .tag("tablet_id", _tablet->tablet_id())
                 .error(st);

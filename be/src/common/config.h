@@ -913,6 +913,7 @@ CONF_mInt32(vacuum_stale_rowsets_interval_seconds, "1800");
 CONF_mInt32(tablet_sync_interval_seconds, "1800");
 CONF_mInt32(schedule_sync_tablets_interval_seconds, "600");
 CONF_mInt32(compaction_timeout_seconds, "86400");
+CONF_mInt32(lease_compaction_interval_seconds, "20");
 
 } // namespace config
 

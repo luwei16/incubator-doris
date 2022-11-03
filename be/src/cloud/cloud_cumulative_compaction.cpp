@@ -4,10 +4,29 @@
 #include "common/config.h"
 #include "common/logging.h"
 #include "gen_cpp/selectdb_cloud.pb.h"
+#include "util/defer_op.h"
 #include "util/trace.h"
 #include "util/uuid_generator.h"
 
 namespace doris {
+
+static std::mutex s_cumu_compaction_mtx;
+static std::vector<std::shared_ptr<CloudCumulativeCompaction>> s_cumu_compactions;
+
+std::vector<std::shared_ptr<CloudCumulativeCompaction>> get_cumu_compactions() {
+    std::lock_guard lock(s_cumu_compaction_mtx);
+    return s_cumu_compactions;
+}
+void push_cumu_compaction(std::shared_ptr<CloudCumulativeCompaction> compaction) {
+    std::lock_guard lock(s_cumu_compaction_mtx);
+    s_cumu_compactions.push_back(std::move(compaction));
+}
+void pop_cumu_compaction(CloudCumulativeCompaction* compaction) {
+    std::lock_guard lock(s_cumu_compaction_mtx);
+    auto it = std::find_if(s_cumu_compactions.begin(), s_cumu_compactions.end(),
+                           [compaction](auto& x) { return x.get() == compaction; });
+    s_cumu_compactions.erase(it);
+}
 
 CloudCumulativeCompaction::CloudCumulativeCompaction(TabletSharedPtr tablet)
         : CumulativeCompaction(std::move(tablet)) {
@@ -83,6 +102,8 @@ Status CloudCumulativeCompaction::execute_compact_impl() {
     TRACE("got cumulative compaction lock");
 
     int64_t permits = get_compaction_permits();
+    push_cumu_compaction(shared_from_this());
+    Defer defer {[&] { pop_cumu_compaction(this); }};
     RETURN_NOT_OK(do_compaction(permits));
     TRACE("compaction finished");
 
@@ -171,7 +192,7 @@ void CloudCumulativeCompaction::garbage_collection() {
     compaction_job->set_type(selectdb::TabletCompactionJobPB::CUMULATIVE);
     auto st = cloud::meta_mgr()->abort_tablet_job(job);
     if (!st.ok()) {
-        LOG_WARNING("failed to gc compaction job")
+        LOG_WARNING("failed to abort compaction job")
                 .tag("job_id", _uuid)
                 .tag("tablet_id", _tablet->tablet_id())
                 .error(st);
@@ -267,6 +288,28 @@ void CloudCumulativeCompaction::update_cumulative_point(int64_t base_compaction_
         _tablet->set_cumulative_layer_point(stats.cumulative_point());
         _tablet->reset_approximate_stats(stats.num_rowsets(), stats.num_segments(),
                                          stats.num_rows(), stats.data_size());
+    }
+}
+
+void CloudCumulativeCompaction::do_lease() {
+    selectdb::TabletJobInfoPB job;
+    auto idx = job.mutable_idx();
+    idx->set_tablet_id(_tablet->tablet_id());
+    idx->set_table_id(_tablet->table_id());
+    idx->set_index_id(_tablet->index_id());
+    idx->set_partition_id(_tablet->partition_id());
+    auto compaction_job = job.add_compaction();
+    compaction_job->set_id(_uuid);
+    using namespace std::chrono;
+    int64_t lease_time = duration_cast<seconds>(system_clock::now().time_since_epoch()).count() +
+                         config::lease_compaction_interval_seconds * 4;
+    compaction_job->set_lease(lease_time);
+    auto st = cloud::meta_mgr()->lease_tablet_job(job);
+    if (!st.ok()) {
+        LOG_WARNING("failed to lease compaction job")
+                .tag("job_id", _uuid)
+                .tag("tablet_id", _tablet->tablet_id())
+                .error(st);
     }
 }
 

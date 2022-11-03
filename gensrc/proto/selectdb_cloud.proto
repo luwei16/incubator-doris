@@ -319,6 +319,8 @@ message TabletCompactionJobPB {
     optional string id = 21; // prepare
     // Expiration time, unix timestamp, -1 for no expiration
     optional int64 expiration = 22; // prepare
+    // Lease time, unix timestamp
+    optional int64 lease = 23; // prepare
 }
 
 message TabletSchemaChangeJobPB {
@@ -735,6 +737,7 @@ message FinishTabletJobRequest {
         UNKONWN = 0;
         COMMIT  = 1;
         ABORT   = 2;
+        LEASE   = 3;
     }
     optional string cloud_unique_id = 1; // For auth
     optional Action action = 2;

@@ -41,6 +41,8 @@ public:
 
     Status abort_tablet_job(const selectdb::TabletJobInfoPB& job) override;
 
+    Status lease_tablet_job(const selectdb::TabletJobInfoPB& job) override;
+
 private:
     std::unique_ptr<selectdb::MetaService_Stub> _stub;
 };

@@ -71,6 +71,10 @@ public:
     virtual Status abort_tablet_job(const selectdb::TabletJobInfoPB& job) {
         return Status::NotSupported("not supported");
     }
+
+    virtual Status lease_tablet_job(const selectdb::TabletJobInfoPB& job) {
+        return Status::NotSupported("not supported");
+    }
 };
 
 } // namespace doris::cloud
