@@ -13,8 +13,9 @@ INTERVALSEC=5
 
 CURRENTDATE=$(date +%Y-%m-%d-%H-%M)
 
-echo "start backup:" ${CURRENTDATE} >> ${LOGDIR}/backup.log
+echo "start backup:" $(date +%Y-%m-%d-%H-%M-%S) >> ${LOGDIR}/backup.log
 
+begin_time=$(date +%s)
 BACKUPCMD=`fdbbackup start -d file://${BACKUPDIR} -t ${CURRENTDATE}`
 echo $BACKUPCMD
 
@@ -30,7 +31,11 @@ do
     echo "backup check result: $check_results"
     if [[ $check_results =~ "completed" ]]
     then
-        echo "backup succ" >> ${LOGDIR}/backup.log
+        end_time=$(date +%s)
+        cost_s=`expr ${end_time} - ${begin_time}`
+        echo "backup succ, cost:" ${cost_s}"s" >> ${LOGDIR}/backup.log
+        kv_size=`fdbcli --exec "status" | grep "Sum of key-value sizes" | sed "s/^[ \t]*//g"`
+        echo "$kv_size" >> ${LOGDIR}/backup.log
         succ=true
         break
     fi
