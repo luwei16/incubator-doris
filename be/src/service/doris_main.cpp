@@ -441,6 +441,7 @@ int main(int argc, char** argv) {
     exec_env->set_storage_engine(engine);
     engine->set_heartbeat_flags(exec_env->heartbeat_flags());
 
+#ifdef CLOUD_MODE
     st = doris::io::TmpFileMgr::create_tmp_file_mgrs();
     if (!st) {
         LOG(FATAL) << "fail to create tmp file mgrs, res=" << st.get_error_msg();
@@ -448,7 +449,6 @@ int main(int argc, char** argv) {
     }
     // start all background threads of storage engine.
     // SHOULD be called after exec env is initialized.
-#ifdef CLOUD_MODE
     EXIT_IF_ERROR(engine->cloud_start_bg_threads());
 #else
     EXIT_IF_ERROR(engine->start_bg_threads());

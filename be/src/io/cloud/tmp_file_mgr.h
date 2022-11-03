@@ -37,11 +37,17 @@ public:
             _tmp_file_dirs_size++;
         });
         // TODO(liuchangliang): need to remove this after modify data_dir
-        config::compaction_task_num_per_disk *= _tmp_file_dirs_size;
-        config::compaction_task_num_per_fast_disk *= _tmp_file_dirs_size;
-        LOG(WARNING) << "compaction_task_num_per_disk = " << config::compaction_task_num_per_disk;
-        LOG(WARNING) << "compaction_task_num_per_fast_disk = "
-                     << config::compaction_task_num_per_fast_disk;
+        auto num_per_disk = config::compaction_task_num_per_disk;
+        auto num_per_fast_disk = config::compaction_task_num_per_fast_disk;
+        config::compaction_task_num_per_disk =
+                _tmp_file_dirs_size > 0 ? num_per_disk * _tmp_file_dirs_size : num_per_disk;
+        config::compaction_task_num_per_fast_disk =
+                _tmp_file_dirs_size > 0 ? num_per_fast_disk * _tmp_file_dirs_size
+                                        : num_per_fast_disk;
+        LOG(WARNING) << "modify compaction_task_num_per_disk, original=" << num_per_disk
+                     << " modified=" << config::compaction_task_num_per_disk;
+        LOG(WARNING) << "modify compaction_task_num_per_fast_disk, original=" << num_per_fast_disk
+                     << " modified=" << config::compaction_task_num_per_fast_disk;
     }
 
     const std::string& get_tmp_file_dir(const std::string& tmp_file_name) {
