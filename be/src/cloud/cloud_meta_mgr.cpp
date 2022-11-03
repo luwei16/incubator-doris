@@ -24,8 +24,10 @@ static constexpr int RETRY_TIMES = 1;
             return Status::RpcError("failed to {}: {}", __FUNCTION__, cntl.ErrorText()); \
         if (res.status().code() == selectdb::MetaServiceCode::OK)                        \
             return Status::OK();                                                         \
-        else if (res.status().code() == selectdb::KV_TXN_CONFLICT)                       \
+        else if (res.status().code() == selectdb::KV_TXN_CONFLICT) {                     \
+            cntl.Reset();                                                                \
             continue;                                                                    \
+        }                                                                                \
         break;                                                                           \
     } while (retry_times--);                                                             \
     return Status::InternalError("failed to {}: {}", __FUNCTION__, res.status().msg());
