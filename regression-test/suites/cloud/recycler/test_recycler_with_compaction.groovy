@@ -37,7 +37,7 @@ suite("test_recycler_with_compaction") {
         PARTITION p1996 VALUES [("19960101"), ("19970101")),
         PARTITION p1997 VALUES [("19970101"), ("19980101")),
         PARTITION p1998 VALUES [("19980101"), ("19990101")))
-        DISTRIBUTED BY HASH(`lo_orderkey`) BUCKETS 48;
+        DISTRIBUTED BY HASH(`lo_orderkey`) BUCKETS 4;
     """
 
     // create indexes
@@ -47,7 +47,7 @@ suite("test_recycler_with_compaction") {
                     lo_shippriority,lo_quantity,lo_extendedprice,lo_ordtotalprice,lo_discount, 
                     lo_revenue,lo_supplycost,lo_tax,lo_commitdate,lo_shipmode,lo_dummy"""
 
-    for (i = 0; i < 10; i++) {
+    for (i = 0; i < 7; i++) {
         streamLoad {
             table tableName
 
@@ -96,7 +96,7 @@ suite("test_recycler_with_compaction") {
     // recycle data
     do {
         triggerRecycle(token, instanceId)
-        Thread.sleep(60000) // 1min
+        Thread.sleep(10000) // 1min
         if (checkRecycleTable(token, instanceId, cloudUniqueId, tableName, tabletInfoList)) {
             success = true
             break
