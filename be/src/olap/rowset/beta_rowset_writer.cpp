@@ -24,6 +24,7 @@
 #include "common/logging.h"
 #include "env/env.h"
 #include "gutil/strings/substitute.h"
+#include "io/cloud/tmp_file_mgr.h"
 #include "io/fs/file_system.h"
 #include "io/fs/file_writer.h"
 #include "io/fs/s3_file_system.h"
@@ -76,7 +77,7 @@ Status BetaRowsetWriter::init(const RowsetWriterContext& rowset_writer_context) 
     } else {
         // In cloud mode, this branch implies it is an intermediate rowset for external merge sort,
         // we use `global_local_filesystem` to write data to `tmp_file_dir`(see `BetaRowset::local_segment_path`).
-        _context.tablet_path = config::tmp_file_dir;
+        _context.tablet_path = io::TmpFileMgr::instance()->get_tmp_file_dir();
     }
 #else
     _rowset_meta->set_fs(_context.fs);
