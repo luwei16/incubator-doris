@@ -88,6 +88,11 @@ public:
             _default_analyzer = nullptr;
         }
 
+        if (_default_char_analyzer) {
+            _CLLDELETE(_default_char_analyzer);
+            _default_char_analyzer = nullptr;
+        }
+
         if (_standard_analyzer) {
             _CLLDELETE(_standard_analyzer);
             _standard_analyzer = nullptr;
@@ -127,7 +132,8 @@ public:
 
         _char_string_reader = _CLNEW lucene::util::SStringReader<char>;
         _doc = _CLNEW lucene::document::Document();
-        _default_analyzer = _CLNEW lucene::analysis::SimpleAnalyzer<char>();
+        _default_analyzer = _CLNEW lucene::analysis::SimpleAnalyzer<TCHAR>();
+        _default_char_analyzer = _CLNEW lucene::analysis::SimpleAnalyzer<char>();
         _standard_analyzer = _CLNEW lucene::analysis::standard::StandardAnalyzer();
 #ifdef CLOUD_MODE
         _lfs = std::make_unique<doris::io::LocalFileSystem>(config::tmp_file_dir);
@@ -143,8 +149,10 @@ public:
         if (_parser_type == InvertedIndexParserType::PARSER_STANDARD) {
             _index_writer =
                     _CLNEW lucene::index::IndexWriter(dir, _standard_analyzer, create, true);
+        } else if (_parser_type == InvertedIndexParserType::PARSER_ENGLISH) {
+            _index_writer = _CLNEW lucene::index::IndexWriter(dir, _default_char_analyzer, create, true);
         } else {
-            // ANALYSER_NOT_SET, ANALYSER_SIMPLE use default SimpleAnalyzer
+            // ANALYSER_NOT_SET, ANALYSER_NONE use default SimpleAnalyzer
             _index_writer = _CLNEW lucene::index::IndexWriter(dir, _default_analyzer, create, true);
         }
 
@@ -221,12 +229,14 @@ public:
             }
             auto* v = (Slice*)values;
             for (int i = 0; i < count; ++i) {
-                if (_parser_type == InvertedIndexParserType::PARSER_NONE) {
-                    char* value = v->mutable_data();
-                    _field->setValue(value, strnlen(value, v->get_size()));
+                if (_parser_type == InvertedIndexParserType::PARSER_ENGLISH) {
+                    _char_string_reader->init(v->get_data(), v->get_size(), false);
+                    auto stream = _default_analyzer->reusableTokenStream(_field_name.c_str(),
+                                                                         _char_string_reader);
+                    _field->setValue(stream);
                     ++v;
                     _rid++;
-                    _index_writer->addDocument(_doc, _default_analyzer);
+                    _index_writer->addDocument(_doc);
                 } else if (_parser_type == InvertedIndexParserType::PARSER_STANDARD) {
                     auto field_value =
                             lucene::util::Misc::_charToWide(v->get_data(), v->get_size());
@@ -239,16 +249,13 @@ public:
                     _index_writer->addDocument(_doc);
                     _CLDELETE_ARRAY(field_value)
                 } else {
-                    _char_string_reader->init(v->get_data(), v->get_size(), false);
-                    auto stream = _default_analyzer->reusableTokenStream(_field_name.c_str(),
-                                                                         _char_string_reader);
-                    // NOTE: avoid another data copy for string reader init in documentWriterThreadState
-                    /*auto stringReader = _CLNEW lucene::util::StringReader(
-                            field_value, wcslen(field_value), false);*/
-                    _field->setValue(stream);
+                    auto field_value = lucene::util::Misc::_charToWide(v->get_data(), v->get_size());
+                    _field->setValue(field_value, false);
+                    // setValue did not duplicate value, so we don't have to delete
+                    //_CLDELETE_ARRAY(field_value)
                     ++v;
                     _rid++;
-                    _index_writer->addDocument(_doc, _default_analyzer);
+                    _index_writer->addDocument(_doc);
                 }
             }
         } else if constexpr (field_is_numeric_type(field_type)) {
@@ -395,7 +402,8 @@ private:
     lucene::document::Field* _field;
     lucene::index::IndexWriter* _index_writer;
     lucene::util::SStringReader<char>* _char_string_reader;
-    lucene::analysis::SimpleAnalyzer<char>* _default_analyzer;
+    lucene::analysis::SimpleAnalyzer<TCHAR>* _default_analyzer;
+    lucene::analysis::SimpleAnalyzer<char>* _default_char_analyzer;
     lucene::analysis::standard::StandardAnalyzer* _standard_analyzer;
     std::shared_ptr<lucene::util::bkd::bkd_writer> _bkd_writer;
     std::string _segment_file_name;
