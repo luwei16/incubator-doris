@@ -55,7 +55,11 @@ public class ShowLoadStmt extends ShowStmt {
     protected String stateValue;
     protected boolean isAccurateMatch;
     protected String copyIdValue;
+    protected String tableNameValue;
+    protected String fileValue;
     protected boolean isCopyIdAccurateMatch;
+    protected boolean isTableNameAccurateMatch;
+    protected boolean isFilesAccurateMatch;
 
     private ArrayList<OrderByPair> orderByPairs;
 
@@ -102,6 +106,14 @@ public class ShowLoadStmt extends ShowStmt {
         return this.copyIdValue;
     }
 
+    public String getTableNameValue() {
+        return this.tableNameValue;
+    }
+
+    public String getFileValue() {
+        return this.fileValue;
+    }
+
     public Set<JobState> getStates() {
         if (Strings.isNullOrEmpty(stateValue)) {
             return null;
@@ -123,6 +135,14 @@ public class ShowLoadStmt extends ShowStmt {
 
     public boolean isCopyIdAccurateMatch() {
         return isCopyIdAccurateMatch;
+    }
+
+    public boolean isTableNameAccurateMatch() {
+        return isTableNameAccurateMatch;
+    }
+
+    public boolean isFileAccurateMatch() {
+        return isFilesAccurateMatch;
     }
 
     @Override

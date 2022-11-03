@@ -61,6 +61,8 @@ public class ShowCopyStmt extends ShowLoadStmt {
         boolean hasLabel = false;
         boolean hasState = false;
         boolean hasCopyId = false;
+        boolean hasTableName = false;
+        boolean hasFile = false;
 
         CHECK: {
             if (subExpr instanceof BinaryPredicate) {
@@ -92,6 +94,10 @@ public class ShowCopyStmt extends ShowLoadStmt {
                 hasState = true;
             } else if (leftKey.equalsIgnoreCase("id")) {
                 hasCopyId = true;
+            } else if (leftKey.equalsIgnoreCase("TableName")) {
+                hasTableName = true;
+            } else if (leftKey.equalsIgnoreCase("files")) {
+                hasFile = true;
             } else {
                 valid = false;
                 break CHECK;
@@ -108,6 +114,14 @@ public class ShowCopyStmt extends ShowLoadStmt {
 
             if (hasCopyId && subExpr instanceof BinaryPredicate) {
                 isCopyIdAccurateMatch = true;
+            }
+
+            if (hasTableName && subExpr instanceof BinaryPredicate) {
+                isTableNameAccurateMatch = true;
+            }
+
+            if (hasFile && subExpr instanceof BinaryPredicate) {
+                isFilesAccurateMatch = true;
             }
 
             // right child
@@ -128,6 +142,12 @@ public class ShowCopyStmt extends ShowLoadStmt {
             if (hasCopyId && !isCopyIdAccurateMatch && !value.contains("%")) {
                 value = "%" + value + "%";
             }
+            if (hasTableName && !isTableNameAccurateMatch && !value.contains("%")) {
+                value = "%" + value + "%";
+            }
+            if (hasFile && !isFilesAccurateMatch && !value.contains("%")) {
+                value = "%" + value + "%";
+            }
             if (hasLabel) {
                 labelValue = value;
             } else if (hasState) {
@@ -141,13 +161,19 @@ public class ShowCopyStmt extends ShowLoadStmt {
                 }
             } else if (hasCopyId) {
                 copyIdValue = value;
+            } else if (hasTableName) {
+                tableNameValue = value;
+            } else if (hasFile) {
+                fileValue = value;
             }
         }
 
         if (!valid) {
             throw new AnalysisException("Where clause should looks like: LABEL = \"your_load_label\","
                     + " or LABEL LIKE \"matcher\", " + " or STATE = \"PENDING|ETL|LOADING|FINISHED|CANCELLED\", "
-                    + " or id = \"your_query_id\", or id LIKE \"matcher\", "
+                    + " or Id = \"your_query_id\", or ID LIKE \"matcher\", "
+                    + " or TableName = \"your_table_name\", or TableName LIKE \"matcher\", "
+                    + " or Files = \"your_file_name\", or FILES LIKE \"matcher\", "
                     + " or compound predicate with operator AND");
         }
     }

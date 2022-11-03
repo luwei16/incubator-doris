@@ -18,7 +18,9 @@
 package org.apache.doris.load.loadv2;
 
 import org.apache.doris.analysis.BrokerDesc;
+import org.apache.doris.analysis.DataDescription;
 import org.apache.doris.analysis.UserIdentity;
+import org.apache.doris.catalog.Database;
 import org.apache.doris.catalog.Env;
 import org.apache.doris.common.DdlException;
 import org.apache.doris.common.MetaNotFoundException;
@@ -34,6 +36,7 @@ import org.apache.doris.thrift.TUniqueId;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.reflect.TypeToken;
 import com.selectdb.cloud.proto.SelectdbCloud.StagePB;
 import com.selectdb.cloud.storage.RemoteBase.ObjectInfo;
 import lombok.Getter;
@@ -44,6 +47,7 @@ import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -51,6 +55,7 @@ import java.util.stream.Collectors;
 
 public class CopyJob extends BrokerLoadJob {
     private static final Logger LOG = LogManager.getLogger(CopyJob.class);
+    private static final String TABLE_NAME_KEY = "TableName";
 
     @Getter
     private String stageId;
@@ -65,6 +70,7 @@ public class CopyJob extends BrokerLoadJob {
     @Getter
     private String copyId;
     private String loadFilePaths = "";
+    private Map<String, String> properties = new HashMap<>();
 
     public CopyJob() {
         super(EtlJobType.COPY);
@@ -80,6 +86,15 @@ public class CopyJob extends BrokerLoadJob {
         this.pattern = pattern;
         this.objectInfo = objectInfo;
         this.copyId = DebugUtil.printId(queryId);
+    }
+
+    @Override
+    protected void checkAndSetDataSourceInfo(Database db, List<DataDescription> dataDescriptions) throws DdlException {
+        super.checkAndSetDataSourceInfo(db, dataDescriptions);
+        // now, copy into only support one table
+        for (DataDescription dataDescription : dataDescriptions) {
+            properties.put(TABLE_NAME_KEY, dataDescription.getTableName());
+        }
     }
 
     @Override
@@ -130,6 +145,8 @@ public class CopyJob extends BrokerLoadJob {
         List<Comparable> showInfos = new ArrayList<>();
         showInfos.add(getCopyId());
         showInfos.addAll(super.getShowInfoUnderLock());
+        // table name
+        showInfos.add(getTableName());
         showInfos.add(loadFilePaths);
         return showInfos;
     }
@@ -144,12 +161,13 @@ public class CopyJob extends BrokerLoadJob {
         super.unprotectReadEndOperation(loadJobFinalOperation);
         this.copyId = loadJobFinalOperation.getCopyId();
         this.loadFilePaths = loadJobFinalOperation.getLoadFilePaths();
+        this.properties = loadJobFinalOperation.getProperties();
     }
 
     @Override
     protected LoadJobFinalOperation getLoadJobFinalOperation() {
         return new LoadJobFinalOperation(id, loadingStatus, progress, loadStartTimestamp,
-                finishTimestamp, state, failMsg, copyId, loadFilePaths);
+                finishTimestamp, state, failMsg, copyId, loadFilePaths, properties);
     }
 
     @Override
@@ -157,6 +175,8 @@ public class CopyJob extends BrokerLoadJob {
         super.write(out);
         Text.writeString(out, copyId);
         Text.writeString(out, loadFilePaths);
+        Gson gson = new Gson();
+        Text.writeString(out, properties == null ? "" : gson.toJson(properties));
     }
 
     @Override
@@ -164,6 +184,10 @@ public class CopyJob extends BrokerLoadJob {
         super.readFields(in);
         copyId = Text.readString(in);
         loadFilePaths = Text.readString(in);
+        String property = Text.readString(in);
+        properties = property.isEmpty() ? new HashMap<>()
+                : (new Gson().fromJson(property, new TypeToken<Map<String, String>>() {
+                }.getType()));
     }
 
     protected void setSelectedFiles(Map<FileGroupAggKey, List<List<TBrokerFileStatus>>> fileStatusMap) {
@@ -182,5 +206,13 @@ public class CopyJob extends BrokerLoadJob {
         }
         Gson gson = new GsonBuilder().disableHtmlEscaping().create();
         return gson.toJson(paths);
+    }
+
+    public String getTableName() {
+        return properties.containsKey(TABLE_NAME_KEY) ? properties.get(TABLE_NAME_KEY) : "";
+    }
+
+    public String getFiles() {
+        return loadFilePaths == null ? "" : loadFilePaths;
     }
 }

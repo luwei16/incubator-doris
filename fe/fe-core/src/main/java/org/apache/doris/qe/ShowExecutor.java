@@ -1111,8 +1111,9 @@ public class ShowExecutor {
                 .map(entity -> entity.name())
                 .collect(Collectors.toSet());
         loadInfos.addAll(env.getLoadManager().getLoadJobInfosByDb(dbId, showStmt.getLabelValue(),
-                showStmt.isAccurateMatch(), statesValue, jobTypes,
-                showStmt.getCopyIdValue(), showStmt.isCopyIdAccurateMatch()));
+                showStmt.isAccurateMatch(), statesValue, jobTypes, showStmt.getCopyIdValue(),
+                showStmt.isCopyIdAccurateMatch(), showStmt.getTableNameValue(), showStmt.isTableNameAccurateMatch(),
+                showStmt.getFileValue(), showStmt.isFileAccurateMatch()));
 
         // order the result of List<LoadInfo> by orderByPairs in show stmt
         List<OrderByPair> orderByPairs = showStmt.getOrderByPairs();

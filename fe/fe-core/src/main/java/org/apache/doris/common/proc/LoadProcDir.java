@@ -38,7 +38,7 @@ public class LoadProcDir implements ProcDirInterface {
             .add("URL").add("JobDetails").add("TransactionId").add("ErrorTablets")
             .build();
     public static final ImmutableList<String> COPY_TITLE_NAMES = new ImmutableList.Builder<String>()
-            .add("Id").addAll(TITLE_NAMES).add("Files").build();
+            .add("Id").addAll(TITLE_NAMES).add("TableName").add("Files").build();
 
     // label and state column index of result
     public static final int LABEL_INDEX = 1;
@@ -68,8 +68,8 @@ public class LoadProcDir implements ProcDirInterface {
         // merge load job from load and loadManager
         LinkedList<List<Comparable>> loadJobInfos = load.getLoadJobInfosByDb(db.getId(), db.getFullName(),
                 null, false, null);
-        loadJobInfos.addAll(Env.getCurrentEnv().getLoadManager().getLoadJobInfosByDb(db.getId(), null,
-                false, null, null, null, false));
+        loadJobInfos.addAll(Env.getCurrentEnv().getLoadManager()
+                .getLoadJobInfosByDb(db.getId(), null, false, null, null, null, false, null, false, null, false));
         int counter = 0;
         Iterator<List<Comparable>> iterator = loadJobInfos.descendingIterator();
         while (iterator.hasNext()) {
