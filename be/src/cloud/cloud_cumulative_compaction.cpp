@@ -102,7 +102,7 @@ Status CloudCumulativeCompaction::execute_compact_impl() {
     TRACE("got cumulative compaction lock");
 
     int64_t permits = get_compaction_permits();
-    push_cumu_compaction(shared_from_this());
+    push_cumu_compaction(std::static_pointer_cast<CloudCumulativeCompaction>(shared_from_this()));
     Defer defer {[&] { pop_cumu_compaction(this); }};
     RETURN_NOT_OK(do_compaction(permits));
     TRACE("compaction finished");

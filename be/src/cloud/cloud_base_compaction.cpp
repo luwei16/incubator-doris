@@ -94,7 +94,7 @@ Status CloudBaseCompaction::execute_compact_impl() {
     }
     TRACE("got base compaction lock");
 
-    push_base_compaction(shared_from_this());
+    push_base_compaction(std::static_pointer_cast<CloudBaseCompaction>(shared_from_this()));
     Defer defer {[&] { pop_base_compaction(this); }};
 
     SCOPED_ATTACH_TASK(_mem_tracker, ThreadContext::TaskType::COMPACTION);

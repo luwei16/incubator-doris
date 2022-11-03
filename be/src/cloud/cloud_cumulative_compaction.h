@@ -6,8 +6,7 @@
 
 namespace doris {
 
-class CloudCumulativeCompaction : public CumulativeCompaction,
-                                  std::enable_shared_from_this<CloudCumulativeCompaction> {
+class CloudCumulativeCompaction : public CumulativeCompaction {
 public:
     CloudCumulativeCompaction(TabletSharedPtr tablet);
     ~CloudCumulativeCompaction() override;

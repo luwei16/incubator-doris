@@ -6,8 +6,7 @@
 
 namespace doris {
 
-class CloudBaseCompaction : public BaseCompaction,
-                            std::enable_shared_from_this<CloudBaseCompaction> {
+class CloudBaseCompaction : public BaseCompaction {
 public:
     CloudBaseCompaction(TabletSharedPtr tablet);
     ~CloudBaseCompaction() override;
