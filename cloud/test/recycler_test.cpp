@@ -263,35 +263,57 @@ static int get_txn_info(std::shared_ptr<TxnKv> txn_kv, std::string instance_id, 
     return 0;
 }
 
-static int create_instance(const std::string& s3_prefix, const std::string& internal_stage_id,
+static int create_instance(const std::string& internal_stage_id,
                            const std::string& external_stage_id, InstanceInfoPB& instance_info) {
-    ObjectStoreInfoPB object_info;
-    object_info.set_id("0");
-    object_info.set_ak("ak");
-    object_info.set_sk("sk");
-    object_info.set_bucket("bucket");
-    object_info.set_endpoint("endpoint");
-    object_info.set_region("region");
-    object_info.set_prefix(s3_prefix);
-    object_info.set_provider(ObjectStoreInfoPB::OSS);
+    // create internal stage
+    {
+        std::string s3_prefix = "internal_prefix";
+        std::string stage_prefix = fmt::format("{}/stage/root/{}/", s3_prefix, internal_stage_id);
+        ObjectStoreInfoPB object_info;
+        object_info.set_id(internal_stage_id); // test use accessor_map_ in recycle
+        object_info.set_ak("ak");
+        object_info.set_sk("sk");
+        object_info.set_bucket("bucket");
+        object_info.set_endpoint("endpoint");
+        object_info.set_region("region");
+        // in real case, this is {s3_prefix}
+        object_info.set_prefix(stage_prefix);
+        object_info.set_provider(ObjectStoreInfoPB::OSS);
 
-    StagePB internal_stage;
-    internal_stage.set_type(StagePB::INTERNAL);
-    internal_stage.set_stage_id(internal_stage_id);
-    ObjectStoreInfoPB internal_object_info;
-    internal_object_info.set_prefix(fmt::format("{}/stage/user/root/", s3_prefix));
-    internal_object_info.set_id("0");
-    internal_stage.mutable_obj_info()->CopyFrom(internal_object_info);
+        StagePB internal_stage;
+        internal_stage.set_type(StagePB::INTERNAL);
+        internal_stage.set_stage_id(internal_stage_id);
+        ObjectStoreInfoPB internal_object_info;
+        internal_object_info.set_prefix(stage_prefix);
+        internal_object_info.set_id("0");
+        internal_stage.mutable_obj_info()->CopyFrom(internal_object_info);
 
-    StagePB external_stage;
-    external_stage.set_type(StagePB::EXTERNAL);
-    external_stage.set_stage_id(external_stage_id);
-    external_stage.mutable_obj_info()->CopyFrom(object_info);
+        instance_info.add_obj_info()->CopyFrom(object_info);
+        instance_info.add_stages()->CopyFrom(internal_stage);
+    }
+
+    // create external stage
+    {
+        ObjectStoreInfoPB object_info;
+        object_info.set_id(external_stage_id);
+        object_info.set_ak("ak1");
+        object_info.set_sk("sk1");
+        object_info.set_bucket("bucket1");
+        object_info.set_endpoint("endpoint1");
+        object_info.set_region("region1");
+        object_info.set_prefix("external_prefix");
+        object_info.set_provider(ObjectStoreInfoPB::OSS);
+
+        StagePB external_stage;
+        external_stage.set_type(StagePB::EXTERNAL);
+        external_stage.set_stage_id(external_stage_id);
+        external_stage.mutable_obj_info()->CopyFrom(object_info);
+
+        instance_info.add_obj_info()->CopyFrom(object_info);
+        instance_info.add_stages()->CopyFrom(external_stage);
+    }
 
     instance_info.set_instance_id(instance_id);
-    instance_info.add_obj_info()->CopyFrom(object_info);
-    instance_info.add_stages()->CopyFrom(internal_stage);
-    instance_info.add_stages()->CopyFrom(external_stage);
     return 0;
 }
 
@@ -714,17 +736,17 @@ TEST(RecyclerTest, recycle_copy_jobs) {
     ASSERT_NE(txn_kv.get(), nullptr);
     ASSERT_EQ(txn_kv->init(), 0);
 
-    std::string prefix = "recycle_copy_jobs";
-
     // create internal/external stage
     std::string internal_stage_id = "internal";
     std::string external_stage_id = "external";
-    std::string non_exist_stage_id = "non_exist";
+    std::string nonexist_internal_stage_id = "non_exist_internal";
+    std::string nonexist_external_stage_id = "non_exist_external";
 
     InstanceInfoPB instance_info;
-    create_instance(prefix, internal_stage_id, external_stage_id, instance_info);
+    create_instance(internal_stage_id, external_stage_id, instance_info);
     InstanceRecycler recycler(txn_kv, instance_info);
-    auto accessor = recycler.accessor_map_.begin()->second;
+    auto internal_accessor = recycler.accessor_map_.find(internal_stage_id)->second;
+    auto external_accessor = recycler.accessor_map_.find(external_stage_id)->second;
 
     // create internal stage copy job with finish status
     {
@@ -732,14 +754,10 @@ TEST(RecyclerTest, recycle_copy_jobs) {
         for (int i = 0; i < 10; ++i) {
             ObjectFilePB object_file;
             // create object in S3, pay attention to the relative path
-            object_file.set_relative_path("stage/user/root/" + internal_stage_id + "_0/obj_" +
-                                          std::to_string(i));
+            object_file.set_relative_path("0/obj_" + std::to_string(i));
             object_files.push_back(object_file);
         }
-        ASSERT_EQ(create_object_files(accessor.get(), &object_files), 0);
-        for (int i = 0; i < 10; ++i) {
-            object_files.at(i).set_relative_path(internal_stage_id + "_0/obj_" + std::to_string(i));
-        }
+        ASSERT_EQ(create_object_files(internal_accessor.get(), &object_files), 0);
         create_copy_job(txn_kv.get(), internal_stage_id, 0, StagePB::INTERNAL, CopyJobPB::FINISH,
                         object_files, 0);
     }
@@ -763,32 +781,56 @@ TEST(RecyclerTest, recycle_copy_jobs) {
             object_file.set_relative_path(external_stage_id + "_2/obj_" + std::to_string(i));
             object_files.push_back(object_file);
         }
-        ASSERT_EQ(create_object_files(accessor.get(), &object_files), 0);
+        ASSERT_EQ(create_object_files(external_accessor.get(), &object_files), 0);
         create_copy_job(txn_kv.get(), external_stage_id, 2, StagePB::EXTERNAL, CopyJobPB::FINISH,
                         object_files, 0);
     }
-    // create stage copy job and files with loading status which is timeout
+    // create external stage copy job and files with loading status which is timeout
     {
         std::vector<ObjectFilePB> object_files;
         for (int i = 0; i < 10; ++i) {
             ObjectFilePB object_file;
-            object_file.set_relative_path(internal_stage_id + "_3/obj_" + std::to_string(i));
+            object_file.set_relative_path(external_stage_id + "_3/obj_" + std::to_string(i));
             object_files.push_back(object_file);
         }
-        ASSERT_EQ(create_object_files(accessor.get(), &object_files), 0);
-        create_copy_job(txn_kv.get(), internal_stage_id, 3, StagePB::INTERNAL, CopyJobPB::LOADING,
+        create_copy_job(txn_kv.get(), external_stage_id, 3, StagePB::EXTERNAL, CopyJobPB::LOADING,
                         object_files, 0);
     }
-    // create stage copy job and files with loading status which is not timeout
+    // create external stage copy job and files with loading status which is not timeout
     {
         std::vector<ObjectFilePB> object_files;
         for (int i = 0; i < 10; ++i) {
             ObjectFilePB object_file;
-            object_file.set_relative_path(internal_stage_id + "_4/obj_" + std::to_string(i));
+            object_file.set_relative_path(external_stage_id + "_4/obj_" + std::to_string(i));
             object_files.push_back(object_file);
         }
-        ASSERT_EQ(create_object_files(accessor.get(), &object_files), 0);
-        create_copy_job(txn_kv.get(), internal_stage_id, 4, StagePB::INTERNAL, CopyJobPB::LOADING,
+        create_copy_job(txn_kv.get(), external_stage_id, 4, StagePB::EXTERNAL, CopyJobPB::LOADING,
+                        object_files, 9963904963479L);
+    }
+    // create internal stage copy job and files with loading status which is timeout
+    {
+        std::vector<ObjectFilePB> object_files;
+        for (int i = 0; i < 10; ++i) {
+            ObjectFilePB object_file;
+            // create object in S3, pay attention to the relative path
+            object_file.set_relative_path("5/obj_" + std::to_string(i));
+            object_files.push_back(object_file);
+        }
+        ASSERT_EQ(create_object_files(internal_accessor.get(), &object_files), 0);
+        create_copy_job(txn_kv.get(), internal_stage_id, 5, StagePB::INTERNAL, CopyJobPB::LOADING,
+                        object_files, 0);
+    }
+    // create internal stage copy job and files with loading status which is not timeout
+    {
+        std::vector<ObjectFilePB> object_files;
+        for (int i = 0; i < 10; ++i) {
+            ObjectFilePB object_file;
+            // create object in S3, pay attention to the relative path
+            object_file.set_relative_path("6/obj_" + std::to_string(i));
+            object_files.push_back(object_file);
+        }
+        ASSERT_EQ(create_object_files(internal_accessor.get(), &object_files), 0);
+        create_copy_job(txn_kv.get(), internal_stage_id, 6, StagePB::INTERNAL, CopyJobPB::LOADING,
                         object_files, 9963904963479L);
     }
     // create external stage copy job with deleted stage id
@@ -796,11 +838,24 @@ TEST(RecyclerTest, recycle_copy_jobs) {
         std::vector<ObjectFilePB> object_files;
         for (int i = 0; i < 10; ++i) {
             ObjectFilePB object_file;
-            object_file.set_relative_path(non_exist_stage_id + "_5/obj_" + std::to_string(i));
+            object_file.set_relative_path(nonexist_external_stage_id + "_7/obj_" +
+                                          std::to_string(i));
             object_files.push_back(object_file);
         }
-        ASSERT_EQ(create_object_files(accessor.get(), &object_files), 0);
-        ASSERT_EQ(0, create_copy_job(txn_kv.get(), non_exist_stage_id, 5, StagePB::EXTERNAL,
+        ASSERT_EQ(0, create_copy_job(txn_kv.get(), nonexist_external_stage_id, 7, StagePB::EXTERNAL,
+                                     CopyJobPB::FINISH, object_files, 0));
+    }
+    // create internal stage copy job with deleted stage id
+    {
+        std::vector<ObjectFilePB> object_files;
+        for (int i = 0; i < 10; ++i) {
+            ObjectFilePB object_file;
+            // create object in S3, pay attention to the relative path
+            object_file.set_relative_path("8/obj_" + std::to_string(i));
+            object_files.push_back(object_file);
+        }
+        ASSERT_EQ(create_object_files(internal_accessor.get(), &object_files), 0);
+        ASSERT_EQ(0, create_copy_job(txn_kv.get(), nonexist_internal_stage_id, 8, StagePB::INTERNAL,
                                      CopyJobPB::FINISH, object_files, 0));
     }
     {
@@ -812,25 +867,31 @@ TEST(RecyclerTest, recycle_copy_jobs) {
         ASSERT_EQ(10, file_num);
         ASSERT_EQ(0, get_copy_file_num(txn_kv.get(), external_stage_id, 2, &file_num));
         ASSERT_EQ(10, file_num);
-        ASSERT_EQ(0, get_copy_file_num(txn_kv.get(), internal_stage_id, 3, &file_num));
+        ASSERT_EQ(0, get_copy_file_num(txn_kv.get(), external_stage_id, 3, &file_num));
         ASSERT_EQ(10, file_num);
-        ASSERT_EQ(0, get_copy_file_num(txn_kv.get(), internal_stage_id, 4, &file_num));
+        ASSERT_EQ(0, get_copy_file_num(txn_kv.get(), external_stage_id, 4, &file_num));
         ASSERT_EQ(10, file_num);
-        ASSERT_EQ(0, get_copy_file_num(txn_kv.get(), non_exist_stage_id, 5, &file_num));
-        ASSERT_EQ(0, file_num);
+        ASSERT_EQ(0, get_copy_file_num(txn_kv.get(), nonexist_external_stage_id, 7, &file_num));
+        ASSERT_EQ(10, file_num);
+        ASSERT_EQ(0, get_copy_file_num(txn_kv.get(), nonexist_internal_stage_id, 8, &file_num));
+        ASSERT_EQ(10, file_num);
     }
 
     recycler.recycle_copy_jobs();
 
     // check object files
-    std::vector<std::pair<std::string, int>> prefix_and_files_list;
-    prefix_and_files_list.emplace_back(internal_stage_id + "_0/", 0);
-    prefix_and_files_list.emplace_back(external_stage_id + "_1/", 0);
-    prefix_and_files_list.emplace_back(external_stage_id + "_2/", 10);
-    prefix_and_files_list.emplace_back(internal_stage_id + "_3/", 10);
-    prefix_and_files_list.emplace_back(internal_stage_id + "_4/", 10);
-    prefix_and_files_list.emplace_back(non_exist_stage_id + "_5/", 10);
-    for (const auto& [relative_path, file_num] : prefix_and_files_list) {
+    std::vector<std::tuple<std::shared_ptr<ObjStoreAccessor>, std::string, int>>
+            prefix_and_files_list;
+    prefix_and_files_list.emplace_back(internal_accessor, "0/", 0);
+    prefix_and_files_list.emplace_back(external_accessor, external_stage_id + "_1/", 0);
+    prefix_and_files_list.emplace_back(external_accessor, external_stage_id + "_2/", 10);
+    prefix_and_files_list.emplace_back(external_accessor, external_stage_id + "_3/", 0);
+    prefix_and_files_list.emplace_back(external_accessor, external_stage_id + "_4/", 0);
+    prefix_and_files_list.emplace_back(internal_accessor, "5/", 10);
+    prefix_and_files_list.emplace_back(internal_accessor, "6/", 10);
+    prefix_and_files_list.emplace_back(external_accessor, external_stage_id + "_7/", 0);
+    prefix_and_files_list.emplace_back(internal_accessor, "8/", 10);
+    for (const auto& [accessor, relative_path, file_num] : prefix_and_files_list) {
         std::vector<std::string> object_files;
         ASSERT_EQ(0, accessor->list(relative_path, &object_files));
         ASSERT_EQ(file_num, object_files.size());
@@ -846,12 +907,18 @@ TEST(RecyclerTest, recycle_copy_jobs) {
         ASSERT_EQ(false, exist);
         ASSERT_EQ(0, copy_job_exists(txn_kv.get(), external_stage_id, 2, &exist));
         ASSERT_EQ(true, exist);
-        ASSERT_EQ(0, copy_job_exists(txn_kv.get(), internal_stage_id, 3, &exist));
+        ASSERT_EQ(0, copy_job_exists(txn_kv.get(), external_stage_id, 3, &exist));
         ASSERT_EQ(false, exist);
-        ASSERT_EQ(0, copy_job_exists(txn_kv.get(), internal_stage_id, 4, &exist));
+        ASSERT_EQ(0, copy_job_exists(txn_kv.get(), external_stage_id, 4, &exist));
         ASSERT_EQ(true, exist);
-        ASSERT_EQ(0, copy_job_exists(txn_kv.get(), non_exist_stage_id, 5, &exist));
+        ASSERT_EQ(0, copy_job_exists(txn_kv.get(), internal_stage_id, 5, &exist));
         ASSERT_EQ(false, exist);
+        ASSERT_EQ(0, copy_job_exists(txn_kv.get(), internal_stage_id, 6, &exist));
+        ASSERT_EQ(true, exist);
+        ASSERT_EQ(0, copy_job_exists(txn_kv.get(), nonexist_external_stage_id, 7, &exist));
+        ASSERT_EQ(false, exist);
+        ASSERT_EQ(0, copy_job_exists(txn_kv.get(), nonexist_internal_stage_id, 8, &exist));
+        ASSERT_EQ(true, exist);
 
         // check copy files
         int file_num = 0;
@@ -861,12 +928,18 @@ TEST(RecyclerTest, recycle_copy_jobs) {
         ASSERT_EQ(0, file_num);
         ASSERT_EQ(0, get_copy_file_num(txn_kv.get(), external_stage_id, 2, &file_num));
         ASSERT_EQ(10, file_num);
-        ASSERT_EQ(0, get_copy_file_num(txn_kv.get(), internal_stage_id, 3, &file_num));
+        ASSERT_EQ(0, get_copy_file_num(txn_kv.get(), external_stage_id, 3, &file_num));
         ASSERT_EQ(0, file_num);
-        ASSERT_EQ(0, get_copy_file_num(txn_kv.get(), internal_stage_id, 4, &file_num));
+        ASSERT_EQ(0, get_copy_file_num(txn_kv.get(), external_stage_id, 4, &file_num));
         ASSERT_EQ(10, file_num);
-        ASSERT_EQ(0, get_copy_file_num(txn_kv.get(), non_exist_stage_id, 5, &file_num));
+        ASSERT_EQ(0, get_copy_file_num(txn_kv.get(), internal_stage_id, 5, &file_num));
         ASSERT_EQ(0, file_num);
+        ASSERT_EQ(0, get_copy_file_num(txn_kv.get(), internal_stage_id, 6, &file_num));
+        ASSERT_EQ(10, file_num);
+        ASSERT_EQ(0, get_copy_file_num(txn_kv.get(), nonexist_external_stage_id, 7, &file_num));
+        ASSERT_EQ(0, file_num);
+        ASSERT_EQ(0, get_copy_file_num(txn_kv.get(), nonexist_internal_stage_id, 8, &file_num));
+        ASSERT_EQ(10, file_num);
     }
 }
 } // namespace selectdb

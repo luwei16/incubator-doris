@@ -26,7 +26,7 @@ public class ObsRemote extends DefaultRemote {
         long expireSeconds = 3600L;
         TemporarySignatureRequest request = new TemporarySignatureRequest(HttpMethodEnum.PUT, expireSeconds);
         request.setBucketName(obj.getBucket());
-        request.setObjectKey(obj.getPrefix() + fileName);
+        request.setObjectKey(normalizePrefix(fileName));
         request.setHeaders(new HashMap<String, String>());
 
         TemporarySignatureResponse response = obsClient.createTemporarySignature(request);

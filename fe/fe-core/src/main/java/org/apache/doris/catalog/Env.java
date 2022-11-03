@@ -5799,6 +5799,7 @@ public class Env {
         if (Config.cloud_unique_id.isEmpty()) {
             throw new DdlException("stage is only supported in cloud mode");
         }
-        getInternalCatalog().dropStage(StagePB.StageType.EXTERNAL, null, stmt.getStageName(), stmt.isIfExists());
+        getInternalCatalog().dropStage(StagePB.StageType.EXTERNAL, null, null, stmt.getStageName(), null,
+                stmt.isIfExists());
     }
 }

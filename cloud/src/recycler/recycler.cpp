@@ -1303,10 +1303,10 @@ void InstanceRecycler::recycle_copy_jobs() {
 
     uint64_t current_time =
             duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
-    std::unordered_map<std::string, std::shared_ptr<ObjStoreAccessor>> external_stage_accessor_map;
+    std::unordered_map<std::string, std::shared_ptr<ObjStoreAccessor>> stage_accessor_map;
 
     auto recycle_func = [&num_scanned, &num_finished, &num_expired, &num_recycled,
-                         &external_stage_accessor_map, current_time,
+                         &stage_accessor_map, current_time,
                          this](std::string_view k, std::string_view v) -> bool {
         ++num_scanned;
         CopyJobPB copy_job;
@@ -1329,85 +1329,103 @@ void InstanceRecycler::recycle_copy_jobs() {
         bool recycle = false;
         if (copy_job.job_status() == CopyJobPB::FINISH) {
             ++num_finished;
+
+            auto it = stage_accessor_map.find(stage_id);
+            std::shared_ptr<ObjStoreAccessor> accessor;
+            if (it != stage_accessor_map.end()) {
+                accessor = it->second;
+            } else {
+                // init s3 accessor and add to accessor map
+                ObjectStoreInfoPB object_store_info;
+                for (auto& s : instance_info_.stages()) {
+                    if (s.stage_id() == stage_id) {
+                        object_store_info = s.obj_info();
+                        break;
+                    }
+                }
+                if (object_store_info.prefix().empty()) {
+                    if (copy_job.stage_type() == StagePB::EXTERNAL) {
+                        // if stage does not exist, should remove these jobs
+                        LOG(INFO) << "Recycle nonexisted external stage copy jobs. instance_id="
+                                  << instance_id_ << ", stage_id=" << stage_id;
+                        recycle = true;
+                    } else { // internal stage or unknown
+                        // TODO now internal stage does not support drop. Once supported, should remove copy jobs
+                        LOG(WARNING) << "failed to get stage with instance_id=" << instance_id_
+                                     << ", stage_id=" << stage_id;
+                        return false;
+                    }
+                }
+                if (!recycle) {
+#ifdef UNIT_TEST
+                    // In unit test, external use the same accessor as the internal stage
+                    auto it2 = accessor_map_.find(stage_id);
+                    if (it2 != accessor_map_.end()) {
+                        accessor = it2->second;
+                    } else {
+                        std::cout << "UT can not find accessor with stage_id: " << stage_id
+                                  << std::endl;
+                        return false;
+                    }
+#else
+                    S3Conf s3_conf;
+                    if (copy_job.stage_type() == StagePB::EXTERNAL) {
+                        s3_conf.ak = object_store_info.ak();
+                        s3_conf.sk = object_store_info.sk();
+                        s3_conf.endpoint = object_store_info.endpoint();
+                        s3_conf.region = object_store_info.region();
+                        s3_conf.bucket = object_store_info.bucket();
+                        s3_conf.prefix = object_store_info.prefix();
+                    } else if (copy_job.stage_type() == StagePB::INTERNAL) {
+                        int idx = stoi(object_store_info.id());
+                        if (idx > 10 || idx < 1) {
+                            LOG(WARNING) << "invalid idx: " << idx;
+                            return false;
+                        }
+                        auto& old_obj = instance_info_.obj_info()[idx - 1];
+                        s3_conf.ak = old_obj.ak();
+                        s3_conf.sk = old_obj.sk();
+                        s3_conf.endpoint = old_obj.endpoint();
+                        s3_conf.region = old_obj.region();
+                        s3_conf.bucket = old_obj.bucket();
+                        s3_conf.prefix = object_store_info.prefix();
+                    } else {
+                        LOG(WARNING) << "unknown stage type " << copy_job.stage_type();
+                        return false;
+                    }
+                    accessor = std::make_shared<S3Accessor>(std::move(s3_conf));
+                    auto ret = accessor->init();
+                    if (ret != 0) {
+                        LOG(WARNING) << "failed to init s3 accessor ret=" << ret;
+                        return false;
+                    }
+#endif
+                    stage_accessor_map.emplace(stage_id, accessor);
+                }
+            }
+
             if (copy_job.stage_type() == StagePB::INTERNAL) {
                 // 1. delete objects on storage
                 // 2. delete copy file kvs
                 // 3. delete copy job kv
-                StagePB stage;
-                for (auto& s : instance_info_.stages()) {
-                    if (s.stage_id() == stage_id) {
-                        stage = s;
-                        break;
-                    }
-                }
-                if (stage.stage_id().empty()) {
-                    // TODO if stage does not exist, should remove these jobs
-                    LOG(WARNING) << "failed to get stage with instance_id=" << instance_id_
-                                 << ", stage_id=" << stage_id;
-                    return false;
-                }
-
-                std::string obj_info_id = stage.obj_info().id();
-                std::string obj_prefix;
-                for (auto& obj_info : instance_info_.obj_info()) {
-                    if (obj_info.id() == obj_info_id) {
-                        obj_prefix = obj_info.prefix();
-                        break;
-                    }
-                }
-                if (obj_prefix.empty()) {
-                    LOG(WARNING) << "failed to get object info with instance_id=" << instance_id_
-                                 << ", object_info_id=" << obj_info_id;
-                    return false;
-                }
-
-                auto it = accessor_map_.find(obj_info_id);
-                if (it == accessor_map_.end()) {
-                    LOG_WARNING("instance has no such resource id")
-                            .tag("instance_id", instance_id_)
-                            .tag("resource_id", obj_info_id);
-                    return false;
-                }
-                auto accessor = it->second;
-
-                // delete object keys
                 std::vector<std::string> relative_paths;
                 for (const auto& file : copy_job.object_files()) {
-                    auto stage_prefix = stage.obj_info().prefix();
                     auto relative_path = file.relative_path();
-                    // 1. ${stage_prefix} is '${object_prefix}/stage/user/{user_name}/'
-                    // 2. object key is '${stage_prefix}/{path}' or '${object_prefix}/stage/user/{user_name}/{path}'
-                    // 3. ${relative_path} is '{path}'
-                    // 4. so the real relative path is 'stage/user/{user_name}/{path}'
-                    if (stage_prefix.rfind(obj_prefix + "/", 0) == 0) {
-                        auto real_relative_path =
-                                stage_prefix.substr(obj_prefix.length() + 1) + relative_path;
-                        relative_paths.push_back(real_relative_path);
-                        LOG_INFO("begin to delete internal stage object")
-                                .tag("instance_id", instance_id_)
-                                .tag("stage_id", stage_id)
-                                .tag("table_id", table_id)
-                                .tag("query_id", copy_id)
-                                .tag("obj_prefix", obj_prefix)
-                                .tag("stage_prefix", stage_prefix)
-                                .tag("relative_path", relative_path)
-                                .tag("real_relative_path", real_relative_path);
-                    } else {
-                        LOG_WARNING("internal stage object does not start with the expected prefix")
-                                .tag("instance_id", instance_id_)
-                                .tag("stage_id", stage_id)
-                                .tag("table_id", table_id)
-                                .tag("query_id", copy_id)
-                                .tag("obj_prefix", obj_prefix)
-                                .tag("stage_prefix", stage_prefix)
-                                .tag("relative_path", relative_path);
-                    }
+                    relative_paths.push_back(relative_path);
+                    LOG_INFO("begin to delete internal stage object")
+                            .tag("instance_id", instance_id_)
+                            .tag("stage_id", stage_id)
+                            .tag("table_id", table_id)
+                            .tag("query_id", copy_id)
+                            .tag("stage_path", accessor->path())
+                            .tag("relative_path", relative_path);
                 }
                 LOG_INFO("begin to delete internal stage objects")
                         .tag("instance_id", instance_id_)
                         .tag("stage_id", stage_id)
                         .tag("table_id", table_id)
                         .tag("query_id", copy_id)
+                        .tag("stage_path", accessor->path())
                         .tag("num_objects", relative_paths.size());
 
                 // TODO delete objects with key and etag is not supported
@@ -1418,6 +1436,7 @@ void InstanceRecycler::recycle_copy_jobs() {
                             .tag("stage_id", stage_id)
                             .tag("table_id", table_id)
                             .tag("query_id", copy_id)
+                            .tag("stage_path", accessor->path())
                             .tag("num_objects", relative_paths.size());
                     return false;
                 }
@@ -1427,77 +1446,41 @@ void InstanceRecycler::recycle_copy_jobs() {
                 // 1. check if objects on storage are deleted. If all deleted, do the step 2 and 3:
                 // 2. delete copy file kvs
                 // 3. delete copy job kv
-                auto it = external_stage_accessor_map.find(stage_id);
-                std::shared_ptr<ObjStoreAccessor> accessor;
-                if (it == external_stage_accessor_map.end()) {
-                    ObjectStoreInfoPB object_store_info;
-                    for (auto& s : instance_info_.stages()) {
-                        if (s.stage_id() == stage_id) {
-                            object_store_info = s.obj_info();
-                            break;
+
+                // If recycle is already true, we can remove kvs directly because stage is already
+                // dropped, skip check
+                if (!recycle) {
+                    // check if object files are deleted
+                    for (auto& file : copy_job.object_files()) {
+                        bool exist = false;
+                        auto ret = accessor->exists(file.relative_path(), file.etag(), &exist);
+                        if (ret != 0) {
+                            LOG(WARNING) << "failed to check if object exists for instance_id="
+                                         << instance_id_ << ", stage_id=" << stage_id
+                                         << ", table_id=" << table_id << ", query_id=" << copy_id
+                                         << "stage_path" << accessor->path()
+                                         << ", relative_path=" << file.relative_path()
+                                         << ", etag=" << file.etag() << ", ret=" << ret;
+                            return false;
+                        }
+                        LOG_INFO("check if external stage object exists")
+                                .tag("instance_id", instance_id_)
+                                .tag("stage_id", stage_id)
+                                .tag("table_id", table_id)
+                                .tag("query_id", copy_id)
+                                .tag("stage_path", accessor->path())
+                                .tag("relative_path", file.relative_path())
+                                .tag("etag", file.etag())
+                                .tag("exist", exist);
+                        if (exist) {
+                            return false;
                         }
                     }
-                    if (object_store_info.endpoint().empty()) {
-                        // if stage does not exist, should remove these jobs
-                        LOG(INFO) << "Recycle nonexisted external stage copy jobs. instance_id="
-                                  << instance_id_ << ", stage_id=" << stage_id;
-                        ++num_recycled;
-                        return true;
-                    }
-#ifdef UNIT_TEST
-                    // In unit test, external use the same accessor as the internal stage
-                    accessor = accessor_map_.begin()->second;
-#else
-                    S3Conf s3_conf;
-                    s3_conf.ak = object_store_info.ak();
-                    s3_conf.sk = object_store_info.sk();
-                    s3_conf.endpoint = object_store_info.endpoint();
-                    s3_conf.region = object_store_info.region();
-                    s3_conf.bucket = object_store_info.bucket();
-                    s3_conf.prefix = object_store_info.prefix();
-                    accessor = std::make_shared<S3Accessor>(std::move(s3_conf));
-                    auto ret = accessor->init();
-                    if (ret != 0) {
-                        LOG(WARNING) << "failed to init s3 accessor ret=" << ret;
-                        return false;
-                    }
-#endif
-                    external_stage_accessor_map.emplace(stage_id, accessor);
-                } else {
-                    accessor = it->second;
+                    recycle = true;
                 }
-
-                // check if object files are deleted
-                for (auto& file : copy_job.object_files()) {
-                    bool exist = false;
-                    auto ret = accessor->exists(file.relative_path(), file.etag(), &exist);
-                    if (ret != 0) {
-                        LOG(WARNING) << "failed to check if object exists for instance_id="
-                                     << instance_id_ << ", stage_id=" << stage_id
-                                     << ", table_id=" << table_id << ", copy_id=" << copy_id
-                                     << ", relative_path=" << file.relative_path()
-                                     << ", etag=" << file.etag() << ", ret=" << ret;
-                        return false;
-                    }
-                    LOG_INFO("check if external stage object exists")
-                            .tag("instance_id", instance_id_)
-                            .tag("stage_id", stage_id)
-                            .tag("table_id", table_id)
-                            .tag("query_id", copy_id)
-                            .tag("relative_path", file.relative_path())
-                            .tag("etag", file.etag())
-                            .tag("exist", exist);
-                    if (exist) {
-                        return false;
-                    }
-                }
-
-                recycle = true;
             }
         } else if (copy_job.job_status() == CopyJobPB::LOADING) {
-            // 1. if copy job is timeout:
-            // 2. delete all copy file kv
-            // 3. delete copy job kv
+            // if copy job is timeout: delete all copy file kvs and copy job kv
             if (current_time <= copy_job.timeout_time()) {
                 return false;
             }

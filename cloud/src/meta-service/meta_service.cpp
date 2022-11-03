@@ -3857,12 +3857,8 @@ void MetaServiceImpl::create_stage(::google::protobuf::RpcController* controller
         msg = "stage type not set";
         return;
     }
-    if (stage.type() == StagePB::INTERNAL) {
-        code = MetaServiceCode::UNDEFINED_ERR;
-        msg = "create internal stage is unsupported";
-        return;
-    }
-    if (stage.name().empty()) {
+
+    if (stage.name().empty() && stage.type() == StagePB::EXTERNAL) {
         code = MetaServiceCode::INVALID_ARGUMENT;
         msg = "stage name not set";
         return;
@@ -3871,6 +3867,22 @@ void MetaServiceImpl::create_stage(::google::protobuf::RpcController* controller
         code = MetaServiceCode::INVALID_ARGUMENT;
         msg = "stage id not set";
         return;
+    }
+
+    if (stage.type() == StagePB::INTERNAL) {
+        if (stage.mysql_user_name().empty()) {
+            code = MetaServiceCode::INVALID_ARGUMENT;
+            msg = "internal stage must have a mysql user name";
+            LOG(WARNING) << msg;
+            return;
+        }
+
+        if (stage.mysql_user_id().empty()) {
+            code = MetaServiceCode::INVALID_ARGUMENT;
+            msg = "internal stage must have a mysql user id";
+            LOG(WARNING) << msg;
+            return;
+        }
     }
 
     InstanceKeyInfo key_info {instance_id};
@@ -3906,13 +3918,27 @@ void MetaServiceImpl::create_stage(::google::protobuf::RpcController* controller
     if (instance.stages_size() >= 20) {
         code = MetaServiceCode::UNDEFINED_ERR;
         msg = "this instance has greater than 20 stages";
+        LOG(WARNING) << "can't create more than 20 stages, and instance has "
+                     << std::to_string(instance.stages_size());
         return;
     }
 
     // check if the stage exists
     for (int i = 0; i < instance.stages_size(); ++i) {
         auto& s = instance.stages(i);
-        if (s.type() == stage.type() && s.name() == stage.name()) {
+        if (stage.type() == StagePB::INTERNAL && s.mysql_user_id_size() == 0) {
+            LOG(WARNING) << "impossible come here, internal stage must have at least one id";
+            code = MetaServiceCode::UNDEFINED_ERR;
+            msg = "impossible come here, internal stage must have at least one id";
+            return;
+        }
+
+        if (stage.type() == StagePB::INTERNAL && s.mysql_user_id(0) == stage.mysql_user_id(0)) {
+            code = MetaServiceCode::ALREADY_EXISTED;
+            msg = "stage already exist";
+            return;
+        }
+        if (s.type() == StagePB::EXTERNAL && s.name() == stage.name()) {
             code = MetaServiceCode::ALREADY_EXISTED;
             msg = "stage already exist";
             return;
@@ -3924,7 +3950,27 @@ void MetaServiceImpl::create_stage(::google::protobuf::RpcController* controller
         }
     }
 
-    instance.add_stages()->CopyFrom(stage);
+    if (stage.type() == StagePB::INTERNAL) {
+        if (instance.obj_info_size() == 0) {
+            LOG(WARNING) << "impossible, instance must have at least one obj_info.";
+            code = MetaServiceCode::UNDEFINED_ERR;
+            msg = "impossible, instance must have at least one obj_info.";
+            return;
+        }
+        auto& lastest_obj = instance.obj_info()[instance.obj_info_size() - 1];
+        // ${obj_prefix}/stage/{username}/{user_id}
+        std::string mysql_user_name = stage.mysql_user_name(0);
+        std::string prefix = fmt::format("{}/stage/{}/{}", lastest_obj.prefix(), mysql_user_name,
+                                         stage.mysql_user_id(0));
+        auto as = instance.add_stages();
+        as->mutable_obj_info()->set_prefix(prefix);
+        as->mutable_obj_info()->set_id(lastest_obj.id());
+        as->add_mysql_user_name(mysql_user_name);
+        as->add_mysql_user_id(stage.mysql_user_id(0));
+        as->set_stage_id(stage.stage_id());
+    } else if (stage.type() == StagePB::EXTERNAL) {
+        instance.add_stages()->CopyFrom(stage);
+    }
     val = instance.SerializeAsString();
     if (val.empty()) {
         msg = "failed to serialize";
@@ -3933,7 +3979,8 @@ void MetaServiceImpl::create_stage(::google::protobuf::RpcController* controller
     }
 
     txn->put(key, val);
-    LOG(INFO) << "put instance_id=" << instance_id << " instance_key=" << hex(key);
+    LOG(INFO) << "put instance_id=" << instance_id << " instance_key=" << hex(key)
+              << " json=" << proto_to_json(instance);
     ret = txn->commit();
     if (ret != 0) {
         code = ret == -1 ? MetaServiceCode::KV_TXN_CONFLICT : MetaServiceCode::KV_TXN_COMMIT_ERR;
@@ -4006,6 +4053,12 @@ void MetaServiceImpl::get_stage(google::protobuf::RpcController* controller,
             msg = "mysql user name not set";
             return;
         }
+        auto mysql_user_id = request->has_mysql_user_id() ? request->mysql_user_id() : "";
+        if (mysql_user_id.empty()) {
+            code = MetaServiceCode::INVALID_ARGUMENT;
+            msg = "mysql user id not set";
+            return;
+        }
 
         // check mysql user_name has been created internal stage
         auto& stage = instance.stages();
@@ -4016,13 +4069,26 @@ void MetaServiceImpl::get_stage(google::protobuf::RpcController* controller,
             msg = "impossible, instance must have at least one obj_info.";
             return;
         }
-        auto& lastest_obj = instance.obj_info()[instance.obj_info_size() - 1];
 
         for (auto s : stage) {
-            if (s.type() != StagePB::INTERNAL || s.mysql_user_name().size() == 0) {
+            if (s.type() != StagePB::INTERNAL || s.mysql_user_name().size() == 0 || s.mysql_user_id().size() == 0) {
                 continue;
             }
-            if (s.mysql_user_name()[0] == mysql_user_name) {
+            if (s.mysql_user_name(0) == mysql_user_name) {
+                StagePB stage_pb;
+                // internal stage id is user_id, if user_id not eq internal stage's user_id, del it.
+                // let fe create a new internal stage
+                if (s.mysql_user_id(0) != mysql_user_id) {
+                    LOG(INFO) << "ABA user=" << mysql_user_name
+                              << " internal stage original user_id=" << s.mysql_user_id()[0]
+                              << " rpc user_id=" << mysql_user_id;
+                    code = MetaServiceCode::STATE_ALREADY_EXISTED_FOR_USER;
+                    msg = "aba user, drop stage and create a new one";
+                    // response return to be dropped stage id.
+                    stage_pb.add_mysql_user_id(s.mysql_user_id(0));
+                    response->add_stage()->CopyFrom(stage_pb);
+                    return;
+                }
                 // find, use it stage prefix and id
                 found = true;
                 // get from internal stage
@@ -4035,7 +4101,6 @@ void MetaServiceImpl::get_stage(google::protobuf::RpcController* controller,
                 }
                 auto& old_obj = instance.obj_info()[idx - 1];
 
-                StagePB stage_pb;
                 stage_pb.mutable_obj_info()->set_ak(old_obj.ak());
                 stage_pb.mutable_obj_info()->set_sk(old_obj.sk());
                 stage_pb.mutable_obj_info()->set_bucket(old_obj.bucket());
@@ -4051,51 +4116,11 @@ void MetaServiceImpl::get_stage(google::protobuf::RpcController* controller,
                 return;
             }
         }
-        // if not, create it
         if (!found) {
-            if (stage.size() >= 20) {
-                LOG(WARNING) << "can't create more than 20 stages, and instance has "
-                             << std::to_string(stage.size());
-                msg = "can't create more than 20 stages";
-                code = MetaServiceCode::ALREADY_EXISTED;
-                return;
-            }
-            // ${prefix}/stage/user/username
-            std::string prefix =
-                    fmt::format("{}/stage/user/{}/", lastest_obj.prefix(), mysql_user_name);
-            auto as = instance.add_stages();
-            as->mutable_obj_info()->set_prefix(prefix);
-            as->mutable_obj_info()->set_id(lastest_obj.id());
-            as->add_mysql_user_name(mysql_user_name);
-            // ATTN: external stage_id is uuid, set in fe. internal stage_id set in be.
-            // stage_id need to be unique, But I don't want to introduce the calculation method of uuid
-            std::string stage_id = fmt::format("{}_{}", lastest_obj.id(), mysql_user_name);
-            as->set_stage_id(stage_id);
-
-            txn->put(key, instance.SerializeAsString());
-            LOG(INFO) << "put instance_id=" << instance_id << " instance_key=" << hex(key)
-                      << " json=" << proto_to_json(instance);
-            ret = txn->commit();
-            if (ret != 0) {
-                code = ret == -1 ? MetaServiceCode::KV_TXN_CONFLICT
-                                 : MetaServiceCode::KV_TXN_COMMIT_ERR;
-                msg = "failed to commit kv txn";
-                LOG(WARNING) << msg << " ret=" << ret;
-                return;
-            }
-            StagePB stage_pb;
-            stage_pb.mutable_obj_info()->set_prefix(prefix);
-            stage_pb.mutable_obj_info()->set_ak(lastest_obj.ak());
-            stage_pb.mutable_obj_info()->set_sk(lastest_obj.sk());
-            stage_pb.mutable_obj_info()->set_bucket(lastest_obj.bucket());
-            stage_pb.mutable_obj_info()->set_endpoint(lastest_obj.endpoint());
-            stage_pb.mutable_obj_info()->set_external_endpoint(lastest_obj.external_endpoint());
-            stage_pb.mutable_obj_info()->set_region(lastest_obj.region());
-            stage_pb.mutable_obj_info()->set_provider(lastest_obj.provider());
-            stage_pb.set_stage_id(stage_id);
-            stage_pb.set_type(StagePB::INTERNAL);
-            msg = proto_to_json(stage_pb);
-            response->add_stage()->CopyFrom(stage_pb);
+            LOG(INFO) << "user=" << mysql_user_name
+                      << " not have a valid stage, rpc user_id=" << mysql_user_id;
+            code = MetaServiceCode::STAGE_NOT_FOUND;
+            msg = "stage not found, create a new one";
             return;
         }
     }
@@ -4173,6 +4198,18 @@ void MetaServiceImpl::drop_stage(google::protobuf::RpcController* controller,
     }
     auto type = request->type();
 
+    if (type == StagePB::EXTERNAL && !request->has_stage_name()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "external stage but not stage name";
+        return;
+    }
+
+    if (type == StagePB::INTERNAL && !request->has_mysql_user_id()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "internal stage but not set user id";
+        return;
+    }
+
     InstanceKeyInfo key_info {instance_id};
     std::string key;
     std::string val;
@@ -4204,18 +4241,16 @@ void MetaServiceImpl::drop_stage(google::protobuf::RpcController* controller,
         return;
     }
 
-    if (type != StagePB::EXTERNAL) {
-        ss << "unsupported drop stage " << proto_to_json(*request);
-        msg = ss.str();
-        code = MetaServiceCode::INVALID_ARGUMENT;
-        return;
-    }
-
+    StagePB stage;
     int idx = -1;
     for (int i = 0; i < instance.stages_size(); ++i) {
         auto& s = instance.stages(i);
-        if (s.type() == type && s.name() == request->stage_name()) {
+        if ((type == StagePB::INTERNAL && s.type() == StagePB::INTERNAL &&
+             s.mysql_user_id(0) == request->mysql_user_id()) ||
+            (type == StagePB::EXTERNAL && s.type() == StagePB::EXTERNAL &&
+             s.name() == request->stage_name())) {
             idx = i;
+            stage = s;
             break;
         }
     }
@@ -4237,6 +4272,25 @@ void MetaServiceImpl::drop_stage(google::protobuf::RpcController* controller,
     txn->put(key, val);
     LOG(INFO) << "put instance_id=" << instance_id << " instance_key=" << hex(key)
               << " json=" << proto_to_json(instance);
+
+    std::string key1;
+    std::string val1;
+    if (type == StagePB::INTERNAL) {
+        RecycleStageKeyInfo recycle_stage_key_info {instance_id, stage.stage_id()};
+        recycle_stage_key(recycle_stage_key_info, &key1);
+        RecycleStagePB recycle_stage;
+        recycle_stage.set_instance_id(instance_id);
+        recycle_stage.set_reason(request->reason());
+        recycle_stage.mutable_stage()->CopyFrom(stage);
+        val1 = recycle_stage.SerializeAsString();
+        if (val1.empty()) {
+            msg = "failed to serialize";
+            code = MetaServiceCode::PROTOBUF_SERIALIZE_ERR;
+            return;
+        }
+        txn->put(key1, val1);
+    }
+
     ret = txn->commit();
     if (ret != 0) {
         code = ret == -1 ? MetaServiceCode::KV_TXN_CONFLICT : MetaServiceCode::KV_TXN_COMMIT_ERR;

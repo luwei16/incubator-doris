@@ -137,6 +137,7 @@ public class GlobalPrivEntry extends PrivEntry {
         sb.append("global priv. host: ").append(origHost).append(", user: ").append(origUser);
         sb.append(", priv: ").append(privSet).append(", set by resolver: ").append(isSetByDomainResolver);
         sb.append(", domain user ident: ").append(domainUserIdent);
+        sb.append(" origin userId: ").append(origUserId);
         return sb.toString();
     }
 

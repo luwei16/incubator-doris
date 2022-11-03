@@ -1377,27 +1377,88 @@ TEST(MetaServiceTest, StageTest) {
 
     // test create and get internal stage
     {
+        // get a non-existent internal stage
         GetStageRequest get_stage_req;
         get_stage_req.set_cloud_unique_id(cloud_unique_id);
         get_stage_req.set_type(StagePB::INTERNAL);
         get_stage_req.set_mysql_user_name("root");
-
-        // get a non-existent internal stage, will create and return
+        get_stage_req.set_mysql_user_id("root_id");
         GetStageResponse res;
         meta_service->get_stage(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
                                 &get_stage_req, &res, nullptr);
-        ASSERT_EQ(res.status().code(), MetaServiceCode::OK);
-        ASSERT_EQ(1, res.stage().size());
-        ASSERT_FALSE(res.stage().at(0).stage_id().empty());
-        auto stage_id = res.stage().at(0).stage_id();
+        ASSERT_EQ(res.status().code(), MetaServiceCode::STAGE_NOT_FOUND);
+
+        // create an internal stage
+        CreateStageRequest create_stage_request;
+        StagePB stage;
+        stage.set_type(StagePB::INTERNAL);
+        stage.add_mysql_user_name("root");
+        stage.add_mysql_user_id("root_id");
+        stage.set_stage_id("internal_stage_id");
+        create_stage_request.set_cloud_unique_id(cloud_unique_id);
+        create_stage_request.mutable_stage()->CopyFrom(stage);
+        CreateStageResponse create_stage_response;
+        meta_service->create_stage(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
+                                &create_stage_request, &create_stage_response, nullptr);
+        ASSERT_EQ(create_stage_response.status().code(), MetaServiceCode::OK);
 
         // get existent internal stage
         GetStageResponse res2;
         meta_service->get_stage(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
                                 &get_stage_req, &res2, nullptr);
         ASSERT_EQ(res2.status().code(), MetaServiceCode::OK);
-        ASSERT_EQ(1, res.stage().size());
-        ASSERT_EQ(stage_id, res2.stage().at(0).stage_id());
+        ASSERT_EQ(1, res2.stage().size());
+
+        // drop internal stage
+        DropStageRequest drop_stage_request;
+        drop_stage_request.set_cloud_unique_id(cloud_unique_id);
+        drop_stage_request.set_type(StagePB::INTERNAL);
+        drop_stage_request.set_mysql_user_id("root_id");
+        drop_stage_request.set_reason("Drop");
+        DropStageResponse drop_stage_response;
+        meta_service->drop_stage(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
+                                 &drop_stage_request, &drop_stage_response, nullptr);
+        ASSERT_EQ(drop_stage_response.status().code(), MetaServiceCode::OK);
+        // scan fdb has recycle_stage key
+        {
+            RecycleStageKeyInfo key_info0 {instance_id, ""};
+            RecycleStageKeyInfo key_info1 {instance_id, "{"};
+            std::string key0;
+            std::string key1;
+            recycle_stage_key(key_info0, &key0);
+            recycle_stage_key(key_info1, &key1);
+            std::unique_ptr<Transaction> txn;
+            std::string get_val;
+            int ret = meta_service->txn_kv_->create_txn(&txn);
+            std::unique_ptr<RangeGetIterator> it;
+            ret = txn->get(key0, key1, &it);
+            ASSERT_EQ(ret, 0);
+            int stage_cnt = 0;
+            do {
+                ret = txn->get(key0, key1, &it);
+                ASSERT_EQ(ret, 0);
+                while (it->has_next()) {
+                    auto [k, v] = it->next();
+                    ++stage_cnt;
+                    if (!it->has_next()) {
+                        key0 = k;
+                    }
+                }
+                key0.push_back('\x00');
+            } while (it->more());
+            ASSERT_EQ(stage_cnt, 1);
+        }
+
+        // get internal stage
+        meta_service->get_stage(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
+                                &get_stage_req, &res2, nullptr);
+        ASSERT_EQ(res2.status().code(), MetaServiceCode::STAGE_NOT_FOUND);
+
+        // drop a non-exist internal stage
+        drop_stage_request.set_mysql_user_id("root_id2");
+        meta_service->drop_stage(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
+                                 &drop_stage_request, &drop_stage_response, nullptr);
+        ASSERT_EQ(drop_stage_response.status().code(), MetaServiceCode::STAGE_NOT_FOUND);
     }
 
     // test create and get external stage

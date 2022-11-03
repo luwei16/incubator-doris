@@ -2433,7 +2433,10 @@ public class ShowExecutor {
     private void handleShowStage() throws AnalysisException {
         ShowStageStmt showStmt = (ShowStageStmt) stmt;
         try {
-            List<StagePB> stages = Env.getCurrentInternalCatalog().getStage(StageType.EXTERNAL, null, null);
+            List<StagePB> stages = Env.getCurrentInternalCatalog().getStage(StageType.EXTERNAL, null, null, null);
+            if (stages == null) {
+                throw new AnalysisException("get stage err");
+            }
             List<List<String>> results = new ArrayList<>();
             for (StagePB stage : stages) {
                 if (!Env.getCurrentEnv().getAuth()

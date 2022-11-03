@@ -41,6 +41,7 @@ message StagePB {
     optional string stage_id = 7;
     // file and copy properties
     map<string, string> properties = 8;
+    repeated string mysql_user_id = 9;
 }
 
 message ClusterPB {
@@ -272,6 +273,12 @@ message RecycleRowsetPB {
     optional string resource_id = 2;
     optional int64 creation_time = 3;
     optional int64 expiration = 4;
+}
+
+message RecycleStagePB {
+    optional string instance_id = 1;
+    optional string reason = 2;
+    optional StagePB stage = 3;
 }
 
 message TabletIndexPB {
@@ -705,6 +712,7 @@ message GetStageRequest {
     optional string stage_name = 2;
     optional string mysql_user_name = 3;
     optional StagePB.StageType type = 4;
+    optional string mysql_user_id = 5;
 }
 
 message GetStageResponse {
@@ -717,6 +725,8 @@ message DropStageRequest {
     optional string stage_name = 2;
     optional string mysql_user_name = 3;
     optional StagePB.StageType type = 4;
+    optional string mysql_user_id = 5;
+    optional string reason = 6;
 }
 
 message DropStageResponse {
@@ -835,6 +845,7 @@ enum MetaServiceCode {
     // Stage
     STAGE_NOT_FOUND = 4001;
     STAGE_GET_ERR = 4002;
+    STATE_ALREADY_EXISTED_FOR_USER = 4003;
 
     // Job
     JOB_EXPIRED = 5000;

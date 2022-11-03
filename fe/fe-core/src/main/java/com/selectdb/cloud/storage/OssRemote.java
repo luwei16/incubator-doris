@@ -34,7 +34,7 @@ public class OssRemote extends DefaultRemote {
     @Override
     public String getPresignedUrl(String fileName) {
         String bucketName = obj.getBucket();
-        String objectName = obj.getPrefix() + fileName;
+        String objectName = normalizePrefix(fileName);
         initClient();
         try {
             GeneratePresignedUrlRequest request
