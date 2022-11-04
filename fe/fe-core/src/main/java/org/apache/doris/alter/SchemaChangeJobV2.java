@@ -249,12 +249,6 @@ public class SchemaChangeJobV2 extends AlterJobV2 {
             } finally {
                 tbl.writeUnlock();
             }
-            this.watershedTxnId = Env.getCurrentGlobalTransactionMgr().getNextTransactionId(dbId);
-            this.jobState = JobState.WAITING_TXN;
-            // write edit log
-            Env.getCurrentEnv().getEditLog().logAlterJob(this);
-            LOG.info("transfer schema change job {} state to {}, watershed txn id: {}",
-                    jobId, this.jobState, watershedTxnId);
             return;
         }
 
@@ -369,6 +363,19 @@ public class SchemaChangeJobV2 extends AlterJobV2 {
             tbl = (OlapTable) db.getTableOrMetaException(tableId, TableType.OLAP);
         } catch (MetaNotFoundException e) {
             throw new AlterCancelException(e.getMessage());
+        }
+
+        if (invertedIndexChange) {
+            // add inverted index for tablet meta
+            tbl.writeLockOrAlterCancelException();
+            try {
+                Preconditions.checkState(tbl.getState() == OlapTableState.SCHEMA_CHANGE);
+                // update index
+                tbl.setIndexes(indexes);
+            } finally {
+                tbl.writeUnlock();
+            }
+            return;
         }
 
         tbl.readLock();
@@ -687,6 +694,18 @@ public class SchemaChangeJobV2 extends AlterJobV2 {
             try {
                 Preconditions.checkState(tbl.getState() == OlapTableState.SCHEMA_CHANGE);
                 tbl.setState(OlapTableState.NORMAL);
+                if (!Config.cloud_unique_id.isEmpty()) {
+                    List<Long> shadowIdxList = new ArrayList<Long>();
+                    for (Long shadowIdx : indexIdMap.keySet()) {
+                        shadowIdxList.add(shadowIdx);
+                    }
+                    try {
+                        Env.getCurrentInternalCatalog().commitCloudMaterializedIndex(tbl, shadowIdxList);
+                    } catch (Exception e) {
+                        LOG.warn("commitCloudMaterializedIndex Exception:{}", e);
+                        throw new AlterCancelException(e.getMessage());
+                    }
+                }
             } finally {
                 tbl.writeUnlock();
             }
@@ -695,6 +714,20 @@ public class SchemaChangeJobV2 extends AlterJobV2 {
             this.finishedTimeMs = System.currentTimeMillis();
             Env.getCurrentEnv().getEditLog().logAlterJob(this);
             LOG.info("schema change job finished: {}", jobId);
+            List<Long> originIdxList = null;
+            try {
+                if (!Config.cloud_unique_id.isEmpty()) {
+                    originIdxList = new ArrayList<Long>();
+                    for (Long originIdx : indexIdMap.values()) {
+                        originIdxList.add(originIdx);
+                    }
+                    Env.getCurrentInternalCatalog().dropCloudMaterializedIndex(tbl, originIdxList);
+                }
+            } catch (Exception e) {
+                //Do not throw exception. we think schema change successfully here.
+                LOG.warn("dropCloudMaterializedIndex exception : {}, tableId:{}, originIdxList:{}",
+                        e, tbl.getId(), originIdxList);
+            }
             return;
         }
 

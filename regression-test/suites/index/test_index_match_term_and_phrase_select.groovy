@@ -76,7 +76,7 @@ suite("test_index", "index_select"){
                 ${char_colume1} char(100),
                 ${string_colume1} string,
                 ${text_colume1} text,
-                INDEX ${varchar_colume1}_idx(${varchar_colume1}) USING INVERTED COMMENT '${varchar_colume1} index',
+                INDEX ${varchar_colume1}_idx(${varchar_colume1}) USING INVERTED PROPERTIES("parser"="english") COMMENT '${varchar_colume1} index',
                 INDEX ${int_colume1}_idx(${int_colume1}) USING INVERTED COMMENT '${int_colume1} index',
                 INDEX ${varchar_colume2}_idx(${varchar_colume2}) USING INVERTED PROPERTIES("parser"="none") COMMENT '${varchar_colume2} index',
                 INDEX ${string_colume1}_idx(${string_colume1}) USING INVERTED PROPERTIES("parser"="english") COMMENT '${string_colume1} index',
@@ -122,7 +122,7 @@ suite("test_index", "index_select"){
 
             // readd index
             logger.info("it's " + i + " times select, readd all index before select again")
-            sql """ create index ${varchar_colume1}_idx on ${indexTbName1}(`${varchar_colume1}`) USING INVERTED COMMENT '${varchar_colume1} index' """
+            sql """ create index ${varchar_colume1}_idx on ${indexTbName1}(`${varchar_colume1}`) USING INVERTED PROPERTIES("parser"="english") COMMENT '${varchar_colume1} index' """
             wait_for_latest_op_on_table_finish(indexTbName1, timeout)
             sql """ create index ${varchar_colume2}_idx on ${indexTbName1}(`${varchar_colume2}`) USING INVERTED PROPERTIES("parser"="none") COMMENT '${varchar_colume2} index' """
             wait_for_latest_op_on_table_finish(indexTbName1, timeout)

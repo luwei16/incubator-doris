@@ -93,6 +93,7 @@ public class AlterInvertedIndexTask extends AgentTask {
         req.setAlterVersion(version);
         req.setSchemaHash(schemaHash);
         req.setIsDropOp(isDropOp);
+        req.setJobId(jobId);
 
         if (!alterInvertedIndexes.isEmpty()) {
             List<TOlapTableIndex> tIndexes = new ArrayList<>();

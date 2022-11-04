@@ -3601,6 +3601,11 @@ public class InternalCatalog implements CatalogIf<Database> {
             Column column = schemaColumns.get(i);
             schemaBuilder.addColumn(column.toPb(bfColumns, indexes));
         }
+
+        for (int i = 0; i < indexes.size(); i++) {
+            Index index = indexes.get(i);
+            schemaBuilder.addIndex(index.toPb(schemaColumns));
+        }
         OlapFile.TabletSchemaPB schema = schemaBuilder.build();
         builder.setSchema(schema);
         // rowset

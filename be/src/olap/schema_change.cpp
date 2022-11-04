@@ -1298,10 +1298,6 @@ Status SchemaChangeForInvertedIndex::process(
         return Status::OK();
     }
 
-    auto tablet_path = base_tablet->tablet_path();
-    auto rowset_meta = rowset_reader->rowset()->rowset_meta();
-    auto fs = rowset_meta->fs();
-
     std::vector<ColumnId> return_columns;
     std::unordered_set<uint32_t> tablet_columns_convert_to_null_set;
     for (auto& inverted_index : _alter_inverted_indexs) {
@@ -1316,8 +1312,20 @@ Status SchemaChangeForInvertedIndex::process(
     }
 
     // create inverted index writer
+    auto rowset_meta = rowset_reader->rowset()->rowset_meta();
+    auto fs = rowset_meta->fs();
     for (auto i = 0; i < rowset_meta->num_segments(); ++i) {
-        std::string segment_filename = rowset_meta->rowset_id().to_string() + "_" + std::to_string(i) + ".dat";
+        std::string segment_path = rowset_meta->is_local()
+                ? BetaRowset::local_segment_path(base_tablet->tablet_path(), rowset_meta->rowset_id(), i)
+                : BetaRowset::remote_segment_path(base_tablet->tablet_id(), rowset_meta->rowset_id(), i);
+        io::FileWriterPtr file_writer;
+        Status st = fs->create_file(segment_path, &file_writer);
+        if (!st.ok()) {
+            LOG(WARNING) << "failed to create writable file. path=" << segment_path
+                         << ", err: " << st.get_error_msg();
+            return st;
+        }
+
         for (auto& inverted_index : _alter_inverted_indexs) {
             DCHECK_EQ(inverted_index.columns.size(), 1);
             auto column_name = inverted_index.columns[0];
@@ -1330,8 +1338,8 @@ Status SchemaChangeForInvertedIndex::process(
             std::unique_ptr<segment_v2::InvertedIndexColumnWriter> inverted_index_builder;
             try {
                 RETURN_IF_ERROR(segment_v2::InvertedIndexColumnWriter::create(field.get(), &inverted_index_builder,
-                                                              unique_id, segment_filename,
-                                                              tablet_path,
+                                                              unique_id, file_writer->path().filename().native(),
+                                                              file_writer->path().parent_path().native(),
                                                               _index_metas.back().get(),
                                                               fs));
             } catch (const std::exception& e) {
@@ -2124,13 +2132,12 @@ Status SchemaChangeHandler::_drop_inverted_index(
     }
 
     for (auto& rs_reader : rs_readers) {
-        // get segment_path
-        auto tablet_path = tablet->tablet_path();
         auto rowset_meta = rs_reader->rowset()->rowset_meta();
         auto fs = rowset_meta->fs();
         for (auto i = 0; i < rowset_meta->num_segments(); ++i) {
-            std::string segment_filename = rowset_meta->rowset_id().to_string() + "_" + std::to_string(i) + ".dat";
-            auto segment_path = tablet_path + "/" + segment_filename;
+            std::string segment_path = rowset_meta->is_local()
+                    ? BetaRowset::local_segment_path(tablet->tablet_path(), rowset_meta->rowset_id(), i)
+                    : BetaRowset::remote_segment_path(tablet->tablet_id(), rowset_meta->rowset_id(), i);
             for (auto& inverted_index: alter_inverted_indexs) {
                 auto column_name = inverted_index.columns[0];
                 auto column = tablet_schema->column(column_name);

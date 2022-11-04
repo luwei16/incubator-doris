@@ -292,7 +292,7 @@ suite("add_drop_index_with_data", "add_drop_index_with_data"){
     sql "insert into ${indexTbName1} values (1, 'name1', 'desc 1'), (2, 'name2', 'desc 2')"
 
     // query all rows
-    def select_result = sql "select * from ${indexTbName1}"
+    def select_result = sql "select * from ${indexTbName1} order by id"
     assertEquals(select_result.size(), 2)
     assertEquals(select_result[0][0], 1)
     assertEquals(select_result[0][1], "name1")
@@ -337,7 +337,7 @@ suite("add_drop_index_with_data", "add_drop_index_with_data"){
     assertEquals(show_result[2][2], "idx_desc")
 
     // query rows where description match 'desc'
-    select_result = sql "select * from ${indexTbName1} where description match 'desc'"
+    select_result = sql "select * from ${indexTbName1} where description match 'desc' order by id"
     assertEquals(select_result.size(), 2)
     assertEquals(select_result[0][0], 1)
     assertEquals(select_result[0][1], "name1")
@@ -394,7 +394,7 @@ suite("add_drop_index_with_data", "add_drop_index_with_data"){
     wait_for_latest_op_on_table_finish(indexTbName1, timeout)
 
     // query rows where description match 'desc'
-    select_result = sql "select * from ${indexTbName1} where description match 'desc'"
+    select_result = sql "select * from ${indexTbName1} where description match 'desc' order by id"
     assertEquals(select_result.size(), 2)
     assertEquals(select_result[0][0], 1)
     assertEquals(select_result[0][1], "name1")

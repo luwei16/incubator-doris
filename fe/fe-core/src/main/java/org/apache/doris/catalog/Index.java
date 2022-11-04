@@ -18,10 +18,12 @@
 package org.apache.doris.catalog;
 
 import org.apache.doris.analysis.IndexDef;
+import org.apache.doris.analysis.IndexDef.IndexType;
 import org.apache.doris.analysis.InvertedIndexUtil;
 import org.apache.doris.common.io.Text;
 import org.apache.doris.common.io.Writable;
 import org.apache.doris.persist.gson.GsonUtils;
+import org.apache.doris.proto.OlapFile;
 import org.apache.doris.thrift.TIndexType;
 import org.apache.doris.thrift.TOlapTableIndex;
 
@@ -203,5 +205,31 @@ public class Index implements Writable {
             tIndex.setProperties(properties);
         }
         return tIndex;
+    }
+
+    public OlapFile.TabletIndexPB toPb(List<Column> schemaColumns) {
+        OlapFile.TabletIndexPB.Builder builder = OlapFile.TabletIndexPB.newBuilder();
+        builder.setIndexId(indexId);
+        builder.setIndexName(indexName);
+        for (String columnName : columns) {
+            for (Column column : schemaColumns) {
+                if (column.getName().equals(columnName)) {
+                    builder.addColUniqueId(column.getUniqueId());
+                }
+            }
+        }
+
+        if (indexType == IndexType.BITMAP) {
+            builder.setIndexType(OlapFile.IndexType.BITMAP);
+        } else if (indexType == IndexType.INVERTED) {
+            builder.setIndexType(OlapFile.IndexType.INVERTED);
+        }
+
+        if (properties != null) {
+            builder.putAllProperties(properties);
+        }
+
+        OlapFile.TabletIndexPB index = builder.build();
+        return index;
     }
 }

@@ -1,5 +1,5 @@
 suite("test_index", "index_select"){
-    def indexTbName1 = "index_range_match_term_and_phrase_select"
+    def indexTbName1 = "index_min_select"
     def varchar_colume1 = "name"
     def varchar_colume2 = "grade"
     def varchar_colume3 = "fatherName"
@@ -42,7 +42,7 @@ suite("test_index", "index_select"){
                 ${char_colume1} char(100),
                 ${string_colume1} string,
                 ${text_colume1} text,
-                INDEX ${varchar_colume1}_idx(${varchar_colume1}) USING INVERTED COMMENT '${varchar_colume1} index',
+                INDEX ${varchar_colume1}_idx(${varchar_colume1}) USING INVERTED PROPERTIES("parser"="english") COMMENT '${varchar_colume1} index',
                 INDEX ${int_colume1}_idx(${int_colume1}) USING INVERTED COMMENT '${int_colume1} index',
                 INDEX ${varchar_colume2}_idx(${varchar_colume2}) USING INVERTED PROPERTIES("parser"="none") COMMENT '${varchar_colume2} index',
                 INDEX ${string_colume1}_idx(${string_colume1}) USING INVERTED PROPERTIES("parser"="english") COMMENT '${string_colume1} index',

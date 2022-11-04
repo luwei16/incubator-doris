@@ -67,11 +67,17 @@ Status EngineAlterInvertedIndexTask::execute() {
     // SCOPED_ATTACH_TASK(_mem_tracker, ThreadContext::TaskType::STORAGE);
     DorisMetrics::instance()->create_rollup_requests_total->increment(1);
 
-    Status res = SchemaChangeHandler::process_alter_inverted_index(_alter_inverted_index_req);
-
+    Status res;
+#ifdef CLOUD_MODE
+    DCHECK(_alter_inverted_index_req.__isset.job_id);
+    cloud::CloudSchemaChange cloud_sc(std::to_string(_alter_inverted_index_req.job_id));
+    res = cloud_sc.process_alter_inverted_index(_alter_inverted_index_req);
+#else
+    res = SchemaChangeHandler::process_alter_inverted_index(_alter_inverted_index_req);
+#endif
     if (!res.ok()) {
         LOG(WARNING) << "failed to do alter inverted index task. res=" << res
-                     << " tablet_ud=" << _alter_inverted_index_req.tablet_id
+                     << " tablet_id=" << _alter_inverted_index_req.tablet_id
                      << ", schema_hash=" << _alter_inverted_index_req.schema_hash;
         DorisMetrics::instance()->create_rollup_requests_failed->increment(1);
         return res;

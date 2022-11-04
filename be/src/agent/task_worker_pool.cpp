@@ -532,11 +532,11 @@ void TaskWorkerPool::_alter_inverted_index(const TAgentTaskRequest& alter_invert
         break;
     }
 
-    TTabletId tablet_id;
-    TSchemaHash schema_hash = 0;
+    // TTabletId tablet_id;
+    // TSchemaHash schema_hash = 0;
     if (status.ok()) {
-        tablet_id = alter_inverted_index_request.alter_inverted_index_req.tablet_id;
-        schema_hash = alter_inverted_index_request.alter_inverted_index_req.schema_hash;
+        // tablet_id = alter_inverted_index_request.alter_inverted_index_req.tablet_id;
+        // schema_hash = alter_inverted_index_request.alter_inverted_index_req.schema_hash;
         EngineAlterInvertedIndexTask engine_task(alter_inverted_index_request.alter_inverted_index_req);
         Status sc_status = _env->storage_engine()->execute_task(&engine_task);
         if (!sc_status.ok()) {
@@ -560,22 +560,22 @@ void TaskWorkerPool::_alter_inverted_index(const TAgentTaskRequest& alter_invert
     finish_task_request->__set_task_type(task_type);
     finish_task_request->__set_signature(signature);
 
-    std::vector<TTabletInfo> finish_tablet_infos;
-    if (status.ok()) {
-        TTabletInfo tablet_info;
-        status = _get_tablet_info(tablet_id, schema_hash, signature, &tablet_info);
+    // std::vector<TTabletInfo> finish_tablet_infos;
+    // if (status.ok()) {
+    //     TTabletInfo tablet_info;
+    //     status = _get_tablet_info(tablet_id, schema_hash, signature, &tablet_info);
 
-        if (!status.ok()) {
-            LOG(WARNING) << process_name << " success, but get tablet info failed."
-                         << "tablet_id: " << tablet_id << ", schema_hash: " << schema_hash
-                         << ", signature: " << signature;
-        } else {
-            finish_tablet_infos.push_back(tablet_info);
-        }
-    }
+    //     if (!status.ok()) {
+    //         LOG(WARNING) << process_name << " success, but get tablet info failed."
+    //                      << "tablet_id: " << tablet_id << ", schema_hash: " << schema_hash
+    //                      << ", signature: " << signature;
+    //     } else {
+    //         finish_tablet_infos.push_back(tablet_info);
+    //     }
+    // }
 
     if (status.ok()) {
-        finish_task_request->__set_finish_tablet_infos(finish_tablet_infos);
+        // finish_task_request->__set_finish_tablet_infos(finish_tablet_infos);
         LOG(INFO) << process_name << " success. signature: " << signature;
         error_msgs.push_back(process_name + " success");
     } else {
