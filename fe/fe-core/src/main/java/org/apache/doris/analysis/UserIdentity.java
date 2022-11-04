@@ -217,8 +217,6 @@ public class UserIdentity implements Writable, GsonPostProcessable {
         }
     }
 
-    // ATTN: equals and hashCode, current not calc userId,
-    // because I worried that comparing userid leads to many inequalities.
     @Override
     public boolean equals(Object obj) {
         if (!(obj instanceof UserIdentity)) {

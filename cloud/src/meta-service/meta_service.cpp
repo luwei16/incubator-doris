@@ -3870,16 +3870,11 @@ void MetaServiceImpl::create_stage(::google::protobuf::RpcController* controller
     }
 
     if (stage.type() == StagePB::INTERNAL) {
-        if (stage.mysql_user_name().empty()) {
+        if (stage.mysql_user_name().empty() || stage.mysql_user_id().empty()) {
             code = MetaServiceCode::INVALID_ARGUMENT;
-            msg = "internal stage must have a mysql user name";
-            LOG(WARNING) << msg;
-            return;
-        }
-
-        if (stage.mysql_user_id().empty()) {
-            code = MetaServiceCode::INVALID_ARGUMENT;
-            msg = "internal stage must have a mysql user id";
+            ss << "internal stage must have a mysql user name and id must be given, name size="
+               << stage.mysql_user_name_size() << " id size=" << stage.mysql_user_id_size();
+            msg = ss.str();
             LOG(WARNING) << msg;
             return;
         }
@@ -3915,10 +3910,11 @@ void MetaServiceImpl::create_stage(::google::protobuf::RpcController* controller
         return;
     }
 
-    if (instance.stages_size() >= 20) {
+    VLOG_DEBUG << "config stages num=" << config::max_num_stages;
+    if (instance.stages_size() >= config::max_num_stages) {
         code = MetaServiceCode::UNDEFINED_ERR;
-        msg = "this instance has greater than 20 stages";
-        LOG(WARNING) << "can't create more than 20 stages, and instance has "
+        msg = "this instance has greater than config num stages";
+        LOG(WARNING) << "can't create more than config num stages, and instance has "
                      << std::to_string(instance.stages_size());
         return;
     }
@@ -4072,6 +4068,7 @@ void MetaServiceImpl::get_stage(google::protobuf::RpcController* controller,
 
         for (auto s : stage) {
             if (s.type() != StagePB::INTERNAL || s.mysql_user_name().size() == 0 || s.mysql_user_id().size() == 0) {
+                LOG(WARNING) << "impossible here, internal stage must have at least one user";
                 continue;
             }
             if (s.mysql_user_name(0) == mysql_user_name) {
@@ -4081,11 +4078,11 @@ void MetaServiceImpl::get_stage(google::protobuf::RpcController* controller,
                 if (s.mysql_user_id(0) != mysql_user_id) {
                     LOG(INFO) << "ABA user=" << mysql_user_name
                               << " internal stage original user_id=" << s.mysql_user_id()[0]
-                              << " rpc user_id=" << mysql_user_id;
+                              << " rpc user_id=" << mysql_user_id << "stage info=" << proto_to_json(s);
                     code = MetaServiceCode::STATE_ALREADY_EXISTED_FOR_USER;
                     msg = "aba user, drop stage and create a new one";
                     // response return to be dropped stage id.
-                    stage_pb.add_mysql_user_id(s.mysql_user_id(0));
+                    stage_pb.CopyFrom(s);
                     response->add_stage()->CopyFrom(stage_pb);
                     return;
                 }

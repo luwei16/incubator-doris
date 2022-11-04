@@ -626,7 +626,6 @@ struct TUserIdentity {
     1: optional string username
     2: optional string host
     3: optional bool is_domain
-    4: optional string user_id
 }
 
 const i32 TSNAPSHOT_REQ_VERSION1 = 3; // corresponding to alpha rowset

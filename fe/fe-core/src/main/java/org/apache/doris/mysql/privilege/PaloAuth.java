@@ -1026,22 +1026,24 @@ public class PaloAuth implements Writable {
             writeUnlock();
         }
 
-        String mysqlUserName = ClusterNamespace
-                .getNameFromFullName(userIdent.getUser());
+        String mysqlUserName = ClusterNamespace.getNameFromFullName(userIdent.getUser());
         String toDropMysqlUserId = Env.getCurrentEnv().getAuth().getUserId(mysqlUserName);
         String reason = String.format("drop user notify to meta service, userName [%s], userId [%s]",
                 mysqlUserName, toDropMysqlUserId);
         LOG.info(reason);
+        int retryTime = 0;
         while (true) {
             try {
                 Env.getCurrentInternalCatalog().dropStage(StagePB.StageType.INTERNAL,
                         mysqlUserName, toDropMysqlUserId, null, reason, true);
                 break;
             } catch (DdlException e) {
-                LOG.warn("drop user failed, try again");
+                LOG.warn("drop user failed, try again, user: [{}-{}], retryTimes: {}",
+                        mysqlUserName, toDropMysqlUserId, retryTime);
             }
             try {
                 Thread.sleep(1000);
+                ++retryTime;
             } catch (InterruptedException e) {
                 LOG.info("InterruptedException: ", e);
             }

@@ -71,4 +71,7 @@ CONF_Int64(max_tablet_version_num, "2000");
 // metrics config
 CONF_Bool(use_detailed_metrics, "true");
 
+// stage num config
+CONF_Int32(max_num_stages, "40");
+
 } // namespace selectdb::config
