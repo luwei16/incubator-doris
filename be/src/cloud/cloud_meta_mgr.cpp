@@ -195,6 +195,7 @@ Status CloudMetaMgr::prepare_rowset(const RowsetMetaSharedPtr& rs_meta, bool is_
             }
             return Status::AlreadyExist("failed to prepare rowset: {}", resp.status().msg());
         } else if (resp.status().code() == selectdb::MetaServiceCode::KV_TXN_CONFLICT) {
+            cntl.Reset();
             continue;
         }
         break;
@@ -229,6 +230,7 @@ Status CloudMetaMgr::commit_rowset(const RowsetMetaSharedPtr& rs_meta, bool is_t
             }
             return Status::AlreadyExist("failed to commit rowset: {}", resp.status().msg());
         } else if (resp.status().code() == selectdb::MetaServiceCode::KV_TXN_CONFLICT) {
+            cntl.Reset();
             continue;
         }
         break;
@@ -325,6 +327,7 @@ Status CloudMetaMgr::prepare_tablet_job(const selectdb::TabletJobInfoPB& job) {
         } else if (res.status().code() == selectdb::MetaServiceCode::JOB_ALREADY_SUCCESS) {
             return Status::OLAPInternalError(JOB_ALREADY_SUCCESS);
         } else if (res.status().code() == selectdb::KV_TXN_CONFLICT) {
+            cntl.Reset();
             continue;
         }
         break;
@@ -354,6 +357,7 @@ Status CloudMetaMgr::commit_tablet_job(const selectdb::TabletJobInfoPB& job,
         } else if (res.status().code() == selectdb::MetaServiceCode::JOB_ALREADY_SUCCESS) {
             return Status::OLAPInternalError(JOB_ALREADY_SUCCESS);
         } else if (res.status().code() == selectdb::KV_TXN_CONFLICT) {
+            cntl.Reset();
             continue;
         }
         break;
