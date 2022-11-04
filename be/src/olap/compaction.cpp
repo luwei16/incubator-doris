@@ -176,7 +176,7 @@ Status Compaction::do_compaction_impl(int64_t permits) {
             if (index.index_type() == IndexType::INVERTED) {
                 auto unique_id = index.col_unique_ids()[0];
                 if (field_is_slice_type(cur_tablet_schema->column_by_uid(unique_id).type())) {
-                    context.skip_inverted_index.insert(cur_tablet_schema->field_index(unique_id));
+                    context.skip_inverted_index.insert(unique_id);
                 }
             }
         }
@@ -284,8 +284,8 @@ Status Compaction::do_compaction_impl(int64_t permits) {
                   << ", destination index size=" << dest_segment_num << ".";
         std::for_each(context.skip_inverted_index.cbegin(), context.skip_inverted_index.cend(),
                       [&src_segment_num, &dest_segment_num, &index_writer_path, &src_index_files,
-                       &dest_index_files, &fs, &tablet_path, &trans_vec, &dest_segment_num_rows](int32_t column_id) {
-            compact_column(column_id, src_segment_num, dest_segment_num, src_index_files,
+                       &dest_index_files, &fs, &tablet_path, &trans_vec, &dest_segment_num_rows, &cur_tablet_schema](int32_t column_uniq_id) {
+            compact_column(cur_tablet_schema->get_inverted_index(column_uniq_id)->index_id(), src_segment_num, dest_segment_num, src_index_files,
                            dest_index_files, fs, index_writer_path, tablet_path, trans_vec,
                            dest_segment_num_rows);
         });

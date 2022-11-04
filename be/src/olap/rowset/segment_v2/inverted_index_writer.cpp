@@ -231,7 +231,7 @@ public:
             for (int i = 0; i < count; ++i) {
                 if (_parser_type == InvertedIndexParserType::PARSER_ENGLISH) {
                     _char_string_reader->init(v->get_data(), v->get_size(), false);
-                    auto stream = _default_analyzer->reusableTokenStream(_field_name.c_str(),
+                    auto stream = _default_char_analyzer->reusableTokenStream(_field_name.c_str(),
                                                                          _char_string_reader);
                     _field->setValue(stream);
                     ++v;
