@@ -40,7 +40,7 @@ public:
     virtual ~VOlapScanner() = default;
 
     Status prepare(const TPaloScanRange& scan_range, const std::vector<OlapScanRange*>& key_ranges,
-                   const std::vector<TCondition>& filters,
+                   VExprContext** vconjunct_ctx_ptr, const std::vector<TCondition>& filters,
                    const std::vector<std::pair<std::string, std::shared_ptr<BloomFilterFuncBase>>>&
                            bloom_filters,
                    const std::vector<FunctionFilter>& function_filters);

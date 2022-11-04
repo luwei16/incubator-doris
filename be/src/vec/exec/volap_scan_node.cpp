@@ -27,6 +27,7 @@
 #include "runtime/large_int_value.h"
 #include "runtime/runtime_filter_mgr.h"
 #include "util/async_io.h"
+#include "util/defer_op.h"
 #include "util/lock.h"
 #include "util/priority_thread_pool.hpp"
 #include "util/runtime_profile.h"
@@ -1084,7 +1085,7 @@ Status VOlapScanNode::start_scan_thread(RuntimeState* state) {
             // add scanner to pool before doing prepare.
             // so that scanner can be automatically deconstructed if prepare failed.
             _scanner_pool.add(scanner);
-            RETURN_IF_ERROR(scanner->prepare(*scan_range, scanner_ranges, _olap_filter,
+            RETURN_IF_ERROR(scanner->prepare(*scan_range, scanner_ranges, _vconjunct_ctx_ptr.get(), _olap_filter,
                                              _bloom_filters_push_down, _push_down_functions));
 
             _volap_scanners.push_back(scanner);
@@ -1164,6 +1165,17 @@ Status VOlapScanNode::get_next(RuntimeState* state, Block* block, bool* eos) {
     INIT_AND_SCOPE_GET_NEXT_SPAN(state->get_tracer(), _get_next_span, "VOlapScanNode::get_next");
     SCOPED_TIMER(_runtime_profile->total_time_counter());
     SCOPED_CONSUME_MEM_TRACKER(mem_tracker());
+    // in inverted index apply logic, in order to optimize query performance,
+    // we built some temporary columns into block, these columns only used in scan node level,
+    // remove them when query leave scan node to avoid other nodes use block->columns() to make a wrong decision
+    Defer drop_block_temp_column {[&]() {
+        auto all_column_names = block->get_names();
+        for (auto& name : all_column_names) {
+            if (name.rfind(BeConsts::BLOCK_TEMP_COLUMN_PREFIX, 0) == 0) {
+                block->erase(name);
+            }
+        }
+    }};
 
     // check if Canceled.
     if (state->is_cancelled()) {

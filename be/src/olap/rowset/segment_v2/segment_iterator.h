@@ -19,6 +19,7 @@
 
 #include <memory>
 #include <roaring/roaring.hh>
+#include <sstream>
 #include <vector>
 
 #include "common/status.h"
@@ -51,6 +52,34 @@ class ColumnIterator;
 
 struct ColumnPredicateInfo {
     ColumnPredicateInfo() {};
+    std::string debug_string() {
+        std::stringstream ss;
+        ss << "column_name=" << column_name
+                << ", query_op=" << query_op
+                << ", query_value=" << query_value;
+        return ss.str();
+    }
+
+    bool is_empty() {
+        return column_name.empty() && query_value.empty() && query_op.empty();
+    }
+
+    bool is_equal(const ColumnPredicateInfo& column_pred_info) {
+        if (column_pred_info.column_name != column_name) {
+            return false;
+        }
+
+        if (column_pred_info.query_value != query_value) {
+            return false;
+        }
+
+        if (column_pred_info.query_op != query_op) {
+            return false;
+        }
+
+        return true;
+    }
+
     std::string column_name;
     std::string query_value;
     std::string query_op;
@@ -109,7 +138,7 @@ private:
     Status _apply_inverted_index_in_compound(ColumnPredicate* pred, roaring::Roaring* output_result);
 
     bool _is_index_for_compound_predicate();
-    Status _execute_all_compound_predicates(vectorized::VExpr* expr);
+    Status _execute_all_compound_predicates(const vectorized::VExpr* expr);
     Status _execute_compound_fn(const std::string& function_name);
     bool _is_literal_node(const TExprNodeType::type& node_type);
 
@@ -217,6 +246,10 @@ private:
     bool _need_read_data(ColumnId cid);
     bool _prune_column(ColumnId cid, vectorized::MutableColumnPtr& column,
                     bool fill_defaults, size_t num_of_defaults);
+
+    // return true means one column's predicates all pushed down
+    bool _check_column_pred_all_push_down(ColumnPredicate* predicate, bool in_compound = false);
+    void _find_pred_in_remaining_vconjunct_root(const vectorized::VExpr* expr, std::vector<ColumnPredicateInfo>* pred_infos);
 
 private:
     class BitmapRangeIterator;

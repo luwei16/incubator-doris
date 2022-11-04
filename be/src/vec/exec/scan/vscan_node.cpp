@@ -111,6 +111,9 @@ Status VScanNode::get_next(RuntimeState* state, vectorized::Block* block, bool* 
                                      "VScanNode::get_next");
     SCOPED_TIMER(_runtime_profile->total_time_counter());
     SCOPED_CONSUME_MEM_TRACKER(mem_tracker());
+    // in inverted index apply logic, in order to optimize query performance,
+    // we built some temporary columns into block, these columns only used in scan node level,
+    // remove them when query leave scan node to avoid other nodes use block->columns() to make a wrong decision
     Defer drop_block_temp_column {[&]() {
         auto all_column_names = block->get_names();
         for (auto& name : all_column_names) {

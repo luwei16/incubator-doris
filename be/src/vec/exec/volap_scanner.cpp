@@ -45,10 +45,14 @@ VOlapScanner::VOlapScanner(RuntimeState* runtime_state, VOlapScanNode* parent, b
 
 Status VOlapScanner::prepare(
         const TPaloScanRange& scan_range, const std::vector<OlapScanRange*>& key_ranges,
-        const std::vector<TCondition>& filters,
+        VExprContext** vconjunct_ctx_ptr, const std::vector<TCondition>& filters,
         const std::vector<std::pair<string, std::shared_ptr<BloomFilterFuncBase>>>& bloom_filters,
         const std::vector<FunctionFilter>& function_filters) {
     SCOPED_CONSUME_MEM_TRACKER(_mem_tracker);
+    if (vconjunct_ctx_ptr != nullptr) {
+        // Copy vconjunct_ctx_ptr from scan node to this scanner's _vconjunct_ctx.
+        RETURN_IF_ERROR((*vconjunct_ctx_ptr)->clone(_runtime_state, &_vconjunct_ctx));
+    }
     set_tablet_reader();
     // set limit to reduce end of rowset and segment mem use
     _tablet_reader->set_batch_size(
@@ -215,6 +219,7 @@ Status VOlapScanner::_init_tablet_reader_params(
         _tablet_reader_params.push_down_agg_type_opt =
                 _parent->_olap_scan_node.push_down_agg_type_opt;
     _tablet_reader_params.version = Version(0, _version);
+    _tablet_reader_params.remaining_vconjunct_root = (_vconjunct_ctx == nullptr) ? nullptr : _vconjunct_ctx->root();
     _tablet_reader_params.output_columns = _parent->_maybe_read_column_ids;
 
     // Condition
