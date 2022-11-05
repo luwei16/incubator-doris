@@ -3922,23 +3922,31 @@ void MetaServiceImpl::create_stage(::google::protobuf::RpcController* controller
     // check if the stage exists
     for (int i = 0; i < instance.stages_size(); ++i) {
         auto& s = instance.stages(i);
-        if (stage.type() == StagePB::INTERNAL && s.mysql_user_id_size() == 0) {
-            LOG(WARNING) << "impossible come here, internal stage must have at least one id";
-            code = MetaServiceCode::UNDEFINED_ERR;
-            msg = "impossible come here, internal stage must have at least one id";
-            return;
+        if (stage.type() == StagePB::INTERNAL) {
+            // check all internal stage format is right
+            if (s.type() == StagePB::INTERNAL && s.mysql_user_id_size() == 0) {
+                LOG(WARNING) << "impossible, internal stage must have at least one id instance=" << proto_to_json(instance);
+            }
+
+            if (s.type() == StagePB::INTERNAL && (s.mysql_user_id(0) == stage.mysql_user_id(0)
+                || s.mysql_user_name(0) == stage.mysql_user_name(0))) {
+                code = MetaServiceCode::ALREADY_EXISTED;
+                msg = "stage already exist";
+                ss << "stage already exist, req user_name="
+                << stage.mysql_user_name(0) << " existed user_name=" << s.mysql_user_name(0)
+                << "req user_id=" << stage.mysql_user_id(0) << " existed user_id=" << s.mysql_user_id(0);
+                return;
+            }
         }
 
-        if (stage.type() == StagePB::INTERNAL && s.mysql_user_id(0) == stage.mysql_user_id(0)) {
-            code = MetaServiceCode::ALREADY_EXISTED;
-            msg = "stage already exist";
-            return;
+        if (stage.type() == StagePB::EXTERNAL) {
+            if (s.name() == stage.name()) {
+                code = MetaServiceCode::ALREADY_EXISTED;
+                msg = "stage already exist";
+                return;
+            }
         }
-        if (s.type() == StagePB::EXTERNAL && s.name() == stage.name()) {
-            code = MetaServiceCode::ALREADY_EXISTED;
-            msg = "stage already exist";
-            return;
-        }
+
         if (s.stage_id() == stage.stage_id()) {
             code = MetaServiceCode::INVALID_ARGUMENT;
             msg = "stage id is duplicated";
@@ -3965,6 +3973,8 @@ void MetaServiceImpl::create_stage(::google::protobuf::RpcController* controller
         as->add_mysql_user_id(stage.mysql_user_id(0));
         as->set_stage_id(stage.stage_id());
     } else if (stage.type() == StagePB::EXTERNAL) {
+        // external stage does not need mysql user_name
+        stage.clear_mysql_user_name();
         instance.add_stages()->CopyFrom(stage);
     }
     val = instance.SerializeAsString();
