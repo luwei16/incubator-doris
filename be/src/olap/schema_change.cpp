@@ -1313,19 +1313,12 @@ Status SchemaChangeForInvertedIndex::process(
 
     // create inverted index writer
     auto rowset_meta = rowset_reader->rowset()->rowset_meta();
+    std::string segment_dir = rowset_meta->is_local()
+                ? base_tablet->tablet_path()
+                : fmt::format("{}/{}", DATA_PREFIX, base_tablet->tablet_id());
     auto fs = rowset_meta->fs();
     for (auto i = 0; i < rowset_meta->num_segments(); ++i) {
-        std::string segment_path = rowset_meta->is_local()
-                ? BetaRowset::local_segment_path(base_tablet->tablet_path(), rowset_meta->rowset_id(), i)
-                : BetaRowset::remote_segment_path(base_tablet->tablet_id(), rowset_meta->rowset_id(), i);
-        io::FileWriterPtr file_writer;
-        Status st = fs->create_file(segment_path, &file_writer);
-        if (!st.ok()) {
-            LOG(WARNING) << "failed to create writable file. path=" << segment_path
-                         << ", err: " << st.get_error_msg();
-            return st;
-        }
-
+        std::string segment_filename = fmt::format("{}_{}.dat", rowset_meta->rowset_id().to_string(), i);
         for (auto& inverted_index : _alter_inverted_indexs) {
             DCHECK_EQ(inverted_index.columns.size(), 1);
             auto column_name = inverted_index.columns[0];
@@ -1338,8 +1331,8 @@ Status SchemaChangeForInvertedIndex::process(
             std::unique_ptr<segment_v2::InvertedIndexColumnWriter> inverted_index_builder;
             try {
                 RETURN_IF_ERROR(segment_v2::InvertedIndexColumnWriter::create(field.get(), &inverted_index_builder,
-                                                              unique_id, file_writer->path().filename().native(),
-                                                              file_writer->path().parent_path().native(),
+                                                              unique_id, segment_filename,
+                                                              segment_dir,
                                                               _index_metas.back().get(),
                                                               fs));
             } catch (const std::exception& e) {
