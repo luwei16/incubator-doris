@@ -157,8 +157,13 @@ Status CloudMetaMgr::sync_tablet_rowsets(Tablet* tablet) {
                                          &rowset);
             rowsets.push_back(std::move(rowset));
         }
-        bool version_overlap = tablet->local_max_version() >= rowsets.front()->start_version();
-        tablet->cloud_add_rowsets(std::move(rowsets), version_overlap);
+        if (!rowsets.empty()) {
+            // `rowsets.empty()` could happen after doing EMPTY_CUMULATIVE compaction. e.g.:
+            //   BE has [0-1][2-11][12-12], [12-12] is delete predicate, cp is 2;
+            //   after doing EMPTY_CUMULATIVE compaction, MS cp is 13, get_rowset will return [2-11][12-12].
+            bool version_overlap = tablet->local_max_version() >= rowsets.front()->start_version();
+            tablet->cloud_add_rowsets(std::move(rowsets), version_overlap);
+        }
         tablet->set_base_compaction_cnt(stats.base_compaction_cnt());
         tablet->set_cumulative_compaction_cnt(stats.cumulative_compaction_cnt());
         tablet->set_cumulative_layer_point(stats.cumulative_point());
