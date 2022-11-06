@@ -353,6 +353,9 @@ public class OriginalPlanner extends Planner {
         slotDesc.setColumn(col);
         slotDesc.setIsNullable(false);
         slotDesc.setIsMaterialized(true);
+        // Non-nullable slots will have 0 for the byte offset and -1 for the bit mask
+        slotDesc.setNullIndicatorBit(-1);
+        slotDesc.setNullIndicatorByte(0);
     }
 
     /**
