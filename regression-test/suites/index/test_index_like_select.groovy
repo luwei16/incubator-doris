@@ -1,4 +1,4 @@
-suite("test_index", "index_select"){
+suite("test_index_like_select", "index_select"){
     def indexTbName1 = "index_like_select"
     def varchar_colume1 = "name"
     def varchar_colume2 = "grade"
@@ -162,101 +162,21 @@ suite("test_index", "index_select"){
         qt_sql """ select * from ${indexTbName1} where ${char_colume1} like "%hobbies:%" order by name; """
         qt_sql """ select * from ${indexTbName1} where ${text_colume1} like "%good%" order by name; """
 
-        // case4: like none string
-        def like_none_result = "fail"
-        try {
-            sql """ select * from ${indexTbName1} where ${varchar_colume1} like "" order by name; """
-            like_none_result = "success"
-        } catch(Exception ex) {
-            logger.info("like none string failed,  result: " + ex)
-        }
-        assertEquals(like_none_result, 'fail')
+        // case4: like empty string
+        qt_sql """ select * from ${indexTbName1} where ${varchar_colume1} like "" order by name; """
+        qt_sql """ select * from ${indexTbName1} where ${varchar_colume2} like "" order by name; """
+        qt_sql """ select * from ${indexTbName1} where ${varchar_colume3} like "" order by name; """
+        qt_sql """ select * from ${indexTbName1} where ${string_colume1} like "" order by name; """
+        qt_sql """ select * from ${indexTbName1} where ${char_colume1} like "" order by name; """
+        qt_sql """ select * from ${indexTbName1} where ${text_colume1} like "" order by name; """
 
-        try {
-            sql """ select * from ${indexTbName1} where ${varchar_colume2} like "" order by name; """
-            like_none_result = "success"
-        } catch(Exception ex) {
-            logger.info("like none string failed,  result: " + ex)
-        }
-        assertEquals(like_none_result, 'fail')
-
-        try {
-            sql """ select * from ${indexTbName1} where ${varchar_colume3} like "" order by name; """
-            like_none_result = "success"
-        } catch(Exception ex) {
-            logger.info("like none string failed,  result: " + ex)
-        }
-        assertEquals(like_none_result, 'fail')
-
-        try {
-            sql """ select * from ${indexTbName1} where ${string_colume1} like "" order by name; """
-            like_none_result = "success"
-        } catch(Exception ex) {
-            logger.info("like none string failed,  result: " + ex)
-        }
-        assertEquals(like_none_result, 'fail')
-        try {
-            sql """ select * from ${indexTbName1} where ${char_colume1} like "" order by name; """
-            like_none_result = "success"
-        } catch(Exception ex) {
-            logger.info("like none string failed,  result: " + ex)
-        }
-        assertEquals(like_none_result, 'fail')
-
-        try {
-            sql """ select * from ${indexTbName1} where ${text_colume1} like "" order by name; """
-            like_none_result = "success"
-        } catch(Exception ex) {
-            logger.info("like none string failed,  result: " + ex)
-        }
-        assertEquals(like_none_result, 'fail')
-
-        try {
-            sql """ select * from ${indexTbName1} where ${varchar_colume1} like "%" order by name; """
-            like_none_result = "success"
-        } catch(Exception ex) {
-            logger.info("like none string failed,  result: " + ex)
-        }
-        assertEquals(like_none_result, 'fail')
-
-        try {
-            sql """ select * from ${indexTbName1} where ${varchar_colume2} like "%" order by name; """
-            like_none_result = "success"
-        } catch(Exception ex) {
-            logger.info("like none string failed,  result: " + ex)
-        }
-        assertEquals(like_none_result, 'fail')
-        try {
-            sql """ select * from ${indexTbName1} where ${varchar_colume3} like "%" order by name; """
-            like_none_result = "success"
-        } catch(Exception ex) {
-            logger.info("like none string failed,  result: " + ex)
-        }
-        assertEquals(like_none_result, 'fail')
-
-        try {
-            sql """ select * from ${indexTbName1} where ${string_colume1} like "%" order by name; """
-            like_none_result = "success"
-        } catch(Exception ex) {
-            logger.info("like none string failed,  result: " + ex)
-        }
-        assertEquals(like_none_result, 'fail')
-
-        try {
-            sql """ select * from ${indexTbName1} where ${char_colume1} like "%" order by name; """
-            like_none_result = "success"
-        } catch(Exception ex) {
-            logger.info("like none string failed,  result: " + ex)
-        }
-        assertEquals(like_none_result, 'fail')
-
-        try {
-            sql """ select * from ${indexTbName1} where ${text_colume1} like "%" order by name; """
-            like_none_result = "success"
-        } catch(Exception ex) {
-            logger.info("like none string failed,  result: " + ex)
-        }
-        assertEquals(like_none_result, 'fail')
+        // case4-1: like %
+        qt_sql """ select * from ${indexTbName1} where ${varchar_colume1} like "%" order by name; """
+        qt_sql """ select * from ${indexTbName1} where ${varchar_colume2} like "%" order by name; """
+        qt_sql """ select * from ${indexTbName1} where ${varchar_colume3} like "%" order by name; """
+        qt_sql """ select * from ${indexTbName1} where ${string_colume1} like "%" order by name; """
+        qt_sql """ select * from ${indexTbName1} where ${char_colume1} like "%" order by name; """
+        qt_sql """ select * from ${indexTbName1} where ${text_colume1} like "%" order by name; """
 
         // case5 test int colume cannot use like
         def int_colume_like_result = "fail"
