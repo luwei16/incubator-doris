@@ -235,7 +235,7 @@ private:
 
     DorisCallOnce<Status> _load_index_once;
 
-    mutable std::shared_mutex _load_index_lock;
+    mutable std::mutex _load_index_lock;
 
     std::unique_ptr<ZoneMapIndexReader> _zone_map_index;
     std::unique_ptr<OrdinalIndexReader> _ordinal_index;
