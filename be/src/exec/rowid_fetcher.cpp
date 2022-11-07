@@ -73,7 +73,7 @@ Status RowIDFetcher::fetch(const vectorized::ColumnPtr& row_ids, vectorized::Mut
     for (auto stub : _stubs) {
         // TODO we should make rpc parellel
         brpc::Controller cntl;
-        cntl.set_timeout_ms(5000); // hard code
+        cntl.set_timeout_ms(20000); // hard code
 
         PMultiGetRequest mget_req = init_fetch_request(
                 assert_cast<const vectorized::ColumnString&>(*vectorized::remove_nullable(row_ids).get()));

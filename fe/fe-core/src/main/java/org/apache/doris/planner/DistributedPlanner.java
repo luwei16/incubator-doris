@@ -1249,7 +1249,6 @@ public class DistributedPlanner {
         // Set nodes info for the fecond phase fetch data by rowids
         if (node.isUseTopNTwoPhaseOptimize()) {
             exchNode.createNodesInfo();
-            exchNode.setResolvedTupleExprs(node.getResolvedTupleExprs());
         }
 
         // Child nodes should not process the offset. If there is a limit,

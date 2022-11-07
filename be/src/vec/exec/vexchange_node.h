@@ -63,8 +63,6 @@ private:
     // for fetch data by rowids
     DorisNodesInfo* _nodes_info = nullptr;
     const TupleDescriptor* _scan_node_tuple_desc;
-    // exprs for final materialize block 
-    VSortExecExprs _vsort_tuple_slot_exprs;
 };
 } // namespace vectorized
 } // namespace doris

@@ -45,7 +45,6 @@ Status VExchangeNode::init(const TPlanNode& tnode, RuntimeState* state) {
     }
 
     RETURN_IF_ERROR(_vsort_exec_exprs.init(tnode.exchange_node.sort_info.ordering_exprs, nullptr, _pool));
-    RETURN_IF_ERROR(_vsort_tuple_slot_exprs.init(tnode.exchange_node.sort_info, _pool));
     _is_asc_order = tnode.exchange_node.sort_info.is_asc_order;
     _nulls_first = tnode.exchange_node.sort_info.nulls_first;
 
@@ -97,34 +96,19 @@ Status VExchangeNode::second_phase_fetch_data(RuntimeState* state, Block* final_
         watch.start();
         RowIDFetcher id_fetcher(_scan_node_tuple_desc);
         RETURN_IF_ERROR(id_fetcher.init(_nodes_info));
-        vectorized::Block b(_scan_node_tuple_desc->slots(), final_block->rows());
-        auto tmp_block = MutableBlock::build_mutable_block(&b);
+        vectorized::Block materialized_block(_scan_node_tuple_desc->slots(), final_block->rows());
+        auto tmp_block = MutableBlock::build_mutable_block(&materialized_block);
         // fetch will sort block by sequence of ROWID_COL
         RETURN_IF_ERROR(id_fetcher.fetch(row_id_col->column, &tmp_block));
-        b.swap(tmp_block.to_block());
+        materialized_block.swap(tmp_block.to_block());
 
-        // materialize
-        if (_vsort_tuple_slot_exprs.need_materialize_tuple()) {
-            // TOO trick here??
-            Defer _derfer([&](){ _vsort_tuple_slot_exprs.close(state); });
-            RETURN_IF_ERROR(_vsort_tuple_slot_exprs.prepare(
-                state, {state->desc_tbl(), {0}, {0}}, _row_descriptor));
-            RETURN_IF_ERROR(_vsort_tuple_slot_exprs.open(state));
-            Block new_block;
-            auto output_tuple_expr_ctxs = _vsort_tuple_slot_exprs.sort_tuple_slot_expr_ctxs();
-            std::vector<int> valid_column_ids(output_tuple_expr_ctxs.size());
-            for (int i = 0; i < output_tuple_expr_ctxs.size(); ++i) {
-                RETURN_IF_ERROR(output_tuple_expr_ctxs[i]->execute(&b, &valid_column_ids[i]));
+        // materialize by name
+        for (auto& column_type_name : *final_block) {
+            auto materialized_column = materialized_block.try_get_by_name(column_type_name.name); 
+            if (materialized_column != nullptr) {
+                column_type_name.column = std::move(materialized_column->column);
             }
-            for (auto column_id : valid_column_ids) {
-                new_block.insert(b.get_by_position(column_id));
-            }
-            // last rowid column
-            new_block.insert(b.get_by_position(b.columns() - 1));
-            final_block->swap(new_block);
-        } else {
-            final_block->swap(b);
-        } 
+        }
         LOG(INFO) << "fetch_id finished, cost(ms):" << watch.elapsed_time() / 1000 / 1000; 
     }
     return Status::OK();

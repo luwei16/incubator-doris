@@ -100,6 +100,8 @@ Status VSortNode::open(RuntimeState* state) {
             // to ensure everything goes well, we mock some columns for later usage 
             // those columns will be read in the second phase when everything's ready
             if (upstream_block->try_get_by_name(BeConsts::ROWID_COL)) {
+                // We must not reuse upstream_block,since it's rebuilded.
+                _reuse_mem = false; 
                 _rebuild_block(upstream_block.get());
             }
             RETURN_IF_ERROR(_sorter->append_block(upstream_block.get()));

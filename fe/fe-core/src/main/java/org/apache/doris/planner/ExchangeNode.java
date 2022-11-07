@@ -46,8 +46,6 @@ import com.google.common.collect.Lists;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-import java.util.List;
-
 /**
  * Receiver side of a 1:n data stream. Logically, an ExchangeNode consumes the data
  * produced by its children. For each of the sending child nodes the actual data
@@ -76,8 +74,6 @@ public class ExchangeNode extends PlanNode {
 
     // Used send rpc to fetch data by RowIds
     TPaloNodesInfo nodesInfo;
-    // info_.sortTupleSlotExprs_ substituted with the outputSmap_ for materialized slots in init().
-    List<Expr> resolvedTupleExprs;
 
     /**
      * Create ExchangeNode that consumes output of inputNode.
@@ -162,10 +158,6 @@ public class ExchangeNode extends PlanNode {
         }
     }
 
-    public void setResolvedTupleExprs(List<Expr> exprs) {
-        resolvedTupleExprs = exprs;
-    }
-
     @Override
     protected void toThrift(TPlanNode msg) {
         msg.node_type = TPlanNodeType.EXCHANGE_NODE;
@@ -177,9 +169,6 @@ public class ExchangeNode extends PlanNode {
             TSortInfo sortInfo = new TSortInfo(
                     Expr.treesToThrift(mergeInfo.getOrderingExprs()),
                     mergeInfo.getIsAscOrder(), mergeInfo.getNullsFirst());
-            if (resolvedTupleExprs != null) {
-                sortInfo.setSortTupleSlotExprs(Expr.treesToThrift(resolvedTupleExprs));
-            }
             msg.exchange_node.setSortInfo(sortInfo);
             msg.exchange_node.setOffset(offset);
         }
