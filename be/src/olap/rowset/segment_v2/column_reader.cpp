@@ -399,7 +399,7 @@ Status ColumnReader::_load_bitmap_index(bool use_page_cache, bool kept_in_memory
 
 Status ColumnReader::_load_inverted_index_index(
         const TabletIndex* index_meta) {
-    std::lock_guard<std::shared_mutex> wlock(_load_index_lock);
+    std::lock_guard<std::mutex> wlock(_load_index_lock);
 
     if (_inverted_index && index_meta &&
         _inverted_index->get_index_id() == index_meta->index_id()) {
