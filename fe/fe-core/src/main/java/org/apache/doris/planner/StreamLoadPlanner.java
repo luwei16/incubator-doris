@@ -202,7 +202,7 @@ public class StreamLoadPlanner {
         OlapTableSink olapTableSink = new OlapTableSink(destTable, tupleDesc, partitionIds,
                 Config.enable_single_replica_load);
         olapTableSink.init(loadId, taskInfo.getTxnId(), db.getId(), taskInfo.getTimeout(),
-                taskInfo.getSendBatchParallelism(), taskInfo.isLoadToSingleTablet());
+                taskInfo.getSendBatchParallelism(), taskInfo.isLoadToSingleTablet(), timeout);
         olapTableSink.complete();
 
         // for stream load, we only need one fragment, ScanNode -> DataSink.

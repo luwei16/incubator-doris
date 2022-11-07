@@ -1693,10 +1693,15 @@ public class StmtExecutor implements ProfileWriter {
 
     private void handleDdlStmt() {
         try {
-            QueryState qs = DdlExecutor.execute(context.getEnv(), (DdlStmt) parsedStmt);
-            context.setState(qs);
-            if (qs.getResultSet() != null) {
-                sendResultSet(qs.getResultSet());
+            DdlExecutor.execute(context.getEnv(), (DdlStmt) parsedStmt);
+            context.getState().setOk();
+            // copy into used
+            if (context.getState().getResultSet() != null) {
+                if (isProxy) {
+                    proxyResultSet = context.getState().getResultSet();
+                    return;
+                }
+                sendResultSet(context.getState().getResultSet());
             }
         } catch (QueryStateException e) {
             context.setState(e.getQueryState());

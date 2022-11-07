@@ -77,11 +77,11 @@ public class CopyIntoTest extends TestWithFeService {
 
         new Expectations(connectContext.getEnv(), connectContext.getEnv().getInternalCatalog()) {
             {
-                Env.getCurrentInternalCatalog().getStage(StageType.EXTERNAL, anyString, "ex_stage_2");
+                Env.getCurrentInternalCatalog().getStage(StageType.EXTERNAL, anyString, "ex_stage_2", null);
                 minTimes = 0;
                 result = stages1;
 
-                Env.getCurrentInternalCatalog().getStage(StageType.EXTERNAL, anyString, "ex_stage_3");
+                Env.getCurrentInternalCatalog().getStage(StageType.EXTERNAL, anyString, "ex_stage_3", null);
                 minTimes = 0;
                 result = stages2;
             }
@@ -169,7 +169,7 @@ public class CopyIntoTest extends TestWithFeService {
         List<StagePB> stages = Lists.newArrayList(internalStagePB);
         new Expectations(connectContext.getEnv().getInternalCatalog()) {
             {
-                Env.getCurrentInternalCatalog().getStage(StageType.INTERNAL, anyString, null);
+                Env.getCurrentInternalCatalog().getStage(StageType.INTERNAL, anyString, null, null);
                 minTimes = 0;
                 result = stages;
             }
@@ -188,7 +188,7 @@ public class CopyIntoTest extends TestWithFeService {
         List<StagePB> stages = Lists.newArrayList(internalStagePB);
         new Expectations(connectContext.getEnv().getInternalCatalog()) {
             {
-                Env.getCurrentInternalCatalog().getStage(StageType.INTERNAL, anyString, null);
+                Env.getCurrentInternalCatalog().getStage(StageType.INTERNAL, anyString, null, null);
                 minTimes = 0;
                 result = stages;
             }
@@ -207,7 +207,7 @@ public class CopyIntoTest extends TestWithFeService {
         List<StagePB> stages = Lists.newArrayList(externalStagePB);
         new Expectations(connectContext.getEnv(), connectContext.getEnv().getInternalCatalog()) {
             {
-                Env.getCurrentInternalCatalog().getStage(StageType.EXTERNAL, anyString, "ex_stage_1");
+                Env.getCurrentInternalCatalog().getStage(StageType.EXTERNAL, anyString, "ex_stage_1", null);
                 minTimes = 0;
                 result = stages;
             }

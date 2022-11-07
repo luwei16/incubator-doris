@@ -56,13 +56,13 @@ public:
                      ::google::protobuf::Closure* done) override;
 
     void create_tablets(::google::protobuf::RpcController* controller,
-                       const ::selectdb::CreateTabletsRequest* request,
-                       ::selectdb::MetaServiceGenericResponse* response,
-                       ::google::protobuf::Closure* done) override;
+                        const ::selectdb::CreateTabletsRequest* request,
+                        ::selectdb::CreateTabletsResponse* response,
+                        ::google::protobuf::Closure* done) override;
 
     void update_tablet(::google::protobuf::RpcController* controller,
                        const ::selectdb::UpdateTabletRequest* request,
-                       ::selectdb::MetaServiceGenericResponse* response,
+                       ::selectdb::UpdateTabletResponse* response,
                        ::google::protobuf::Closure* done) override;
 
     void get_tablet(::google::protobuf::RpcController* controller,
@@ -86,33 +86,30 @@ public:
                     ::google::protobuf::Closure* done) override;
 
     void prepare_index(::google::protobuf::RpcController* controller,
-                       const ::selectdb::IndexRequest* request,
-                       ::selectdb::MetaServiceGenericResponse* response,
+                       const ::selectdb::IndexRequest* request, ::selectdb::IndexResponse* response,
                        ::google::protobuf::Closure* done) override;
 
     void commit_index(::google::protobuf::RpcController* controller,
-                      const ::selectdb::IndexRequest* request,
-                      ::selectdb::MetaServiceGenericResponse* response,
+                      const ::selectdb::IndexRequest* request, ::selectdb::IndexResponse* response,
                       ::google::protobuf::Closure* done) override;
 
     void drop_index(::google::protobuf::RpcController* controller,
-                    const ::selectdb::IndexRequest* request,
-                    ::selectdb::MetaServiceGenericResponse* response,
+                    const ::selectdb::IndexRequest* request, ::selectdb::IndexResponse* response,
                     ::google::protobuf::Closure* done) override;
 
     void prepare_partition(::google::protobuf::RpcController* controller,
                            const ::selectdb::PartitionRequest* request,
-                           ::selectdb::MetaServiceGenericResponse* response,
+                           ::selectdb::PartitionResponse* response,
                            ::google::protobuf::Closure* done) override;
 
     void commit_partition(::google::protobuf::RpcController* controller,
                           const ::selectdb::PartitionRequest* request,
-                          ::selectdb::MetaServiceGenericResponse* response,
+                          ::selectdb::PartitionResponse* response,
                           ::google::protobuf::Closure* done) override;
 
     void drop_partition(::google::protobuf::RpcController* controller,
                         const ::selectdb::PartitionRequest* request,
-                        ::selectdb::MetaServiceGenericResponse* response,
+                        ::selectdb::PartitionResponse* response,
                         ::google::protobuf::Closure* done) override;
 
     void get_tablet_stats(::google::protobuf::RpcController* controller,
@@ -142,22 +139,22 @@ public:
 
     void alter_obj_store_info(google::protobuf::RpcController* controller,
                               const ::selectdb::AlterObjStoreInfoRequest* request,
-                              ::selectdb::MetaServiceGenericResponse* response,
+                              ::selectdb::AlterObjStoreInfoResponse* response,
                               ::google::protobuf::Closure* done) override;
 
     void create_instance(google::protobuf::RpcController* controller,
                          const ::selectdb::CreateInstanceRequest* request,
-                         ::selectdb::MetaServiceGenericResponse* response,
+                         ::selectdb::CreateInstanceResponse* response,
                          ::google::protobuf::Closure* done) override;
 
     void alter_instance(google::protobuf::RpcController* controller,
                         const ::selectdb::AlterInstanceRequest* request,
-                        ::selectdb::MetaServiceGenericResponse* response,
+                        ::selectdb::AlterInstanceResponse* response,
                         ::google::protobuf::Closure* done) override;
 
     void alter_cluster(google::protobuf::RpcController* controller,
                        const ::selectdb::AlterClusterRequest* request,
-                       ::selectdb::MetaServiceGenericResponse* response,
+                       ::selectdb::AlterClusterResponse* response,
                        ::google::protobuf::Closure* done) override;
 
     void get_cluster(google::protobuf::RpcController* controller,
@@ -175,6 +172,11 @@ public:
                    ::selectdb::GetStageResponse* response,
                    ::google::protobuf::Closure* done) override;
 
+    void drop_stage(google::protobuf::RpcController* controller,
+                    const ::selectdb::DropStageRequest* request,
+                    ::selectdb::DropStageResponse* response,
+                    ::google::protobuf::Closure* done) override;
+
     void begin_copy(google::protobuf::RpcController* controller,
                     const ::selectdb::BeginCopyRequest* request,
                     ::selectdb::BeginCopyResponse* response,
@@ -191,30 +193,6 @@ public:
                         ::google::protobuf::Closure* done) override;
 
 private:
-    // returns 0 for index exists, 1 for not exist, negative for error
-    int index_exists(std::string& instance_id, const ::selectdb::IndexRequest* request,
-                     ::selectdb::MetaServiceGenericResponse* response);
-
-    void put_recycle_index_kv(std::string& instance_id, const ::selectdb::IndexRequest* request,
-                              ::selectdb::MetaServiceGenericResponse* response);
-
-    void remove_recycle_index_kv(std::string& instance_id, const ::selectdb::IndexRequest* request,
-                                 ::selectdb::MetaServiceGenericResponse* response);
-
-    // returns 0 for partition exists, 1 for not exist, negative for error
-    int partition_exists(std::string& instance_id, const ::selectdb::PartitionRequest* request,
-                         ::selectdb::MetaServiceGenericResponse* response);
-
-    void put_recycle_partition_kv(std::string& instance_id, const ::selectdb::PartitionRequest* request,
-                                  ::selectdb::MetaServiceGenericResponse* response);
-
-    void remove_recycle_partition_kv(std::string& instance_id, const ::selectdb::PartitionRequest* request,
-                                     ::selectdb::MetaServiceGenericResponse* response);
-
-    static std::vector<std::pair<int64_t, int64_t>> calc_sync_versions(
-            int64_t req_bc_cnt, int64_t bc_cnt, int64_t req_cc_cnt, int64_t cc_cnt, int64_t req_cp,
-            int64_t cp, int64_t req_start, int64_t req_end);
-
     std::pair<MetaServiceCode, std::string> create_instance(
             const ::selectdb::AlterInstanceRequest* request);
 

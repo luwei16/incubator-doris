@@ -157,6 +157,7 @@ Status DeltaWriter::init() {
                                  *_tablet->tablet_schema());
     RowsetWriterContext context;
     context.txn_id = _req.txn_id;
+    context.txn_expiration = _req.txn_expiration;
     context.load_id = _req.load_id;
     context.rowset_state = PREPARED;
     context.segments_overlap = OVERLAPPING;

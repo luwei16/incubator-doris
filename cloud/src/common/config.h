@@ -44,11 +44,8 @@ CONF_Strings(log_verbose_modules, ""); // Comma seprated list: a.*,b.*
 CONF_Int32(log_verbose_level, "5");
 
 // recycler config
-CONF_mInt64(recycl_interval_seconds, "3600");
-CONF_mInt64(index_retention_seconds, "172800");    // 48h
-CONF_mInt64(partition_retention_seconds, "86400"); // 24h
-// MUST be larger than schema_change job timeout
-CONF_mInt64(rowset_retention_seconds, "86400"); // 24h
+CONF_mInt64(recycle_interval_seconds, "3600");
+CONF_mInt64(retention_seconds, "259200"); // 72h
 CONF_Int32(recycle_concurrency, "16");
 CONF_Bool(recycle_standalone_mode, "false");
 
@@ -73,5 +70,8 @@ CONF_Int64(max_tablet_version_num, "2000");
 
 // metrics config
 CONF_Bool(use_detailed_metrics, "true");
+
+// stage num config
+CONF_Int32(max_num_stages, "40");
 
 } // namespace selectdb::config

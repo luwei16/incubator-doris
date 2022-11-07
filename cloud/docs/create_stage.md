@@ -4,7 +4,7 @@
 
 建议：用户可以建立一个专门用于数据导入的子账号，使用bucket policy授予该子账号特定prefix的读权限，便于SelectDB读取需要导入的对象数据源。
 
-相关文档:[show stage](show_stage.md)
+相关文档:[show stage](show_stage.md), [drop stage](drop_stage.md)
 
 ## 语法
 
@@ -79,9 +79,14 @@ CREATE STAGE [IF NOT EXISTS] <stage_name> PROPERTIES (
       - `abort_statement`：当数据有错误行时，中断导入，等价于`max_filter_ratio_0`。默认行为
       - `continue`：忽略错误行，导入正确行，等价于`max_filter_ratio_1`
 
+    - `default.copy.strict_mode`
+
+      对于导入过程中的列类型转换进行严格过滤，参考[导入严格模式](https://doris.apache.org/zh-CN/docs/data-operate/import/import-scenes/load-strict-mode?_highlight=stric)。默认为`false`。非必需，导入时可覆盖该参数。
+
 ## 举例
  
 1. 创建名为`test_stage`的stage:
+
 ```
 CREATE STAGE test_stage PROPERTIES (
     'endpoint' = 'cos.ap-beijing.myqcloud.com',

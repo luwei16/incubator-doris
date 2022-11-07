@@ -57,12 +57,14 @@ public:
     }
 
     virtual bool init_from_pb(const RowsetMetaPB& rowset_meta_pb) {
-        _rowset_meta_pb = rowset_meta_pb;
-        if (_rowset_meta_pb.has_tablet_schema()) {
+        if (rowset_meta_pb.has_tablet_schema()) {
             _schema = TabletSchemaCache::instance()->insert(
-                    _rowset_meta_pb.tablet_schema().SerializeAsString());
-            _rowset_meta_pb.clear_tablet_schema();
+                    rowset_meta_pb.tablet_schema().SerializeAsString());
         }
+        auto& mut_rowset_meta_pb = const_cast<RowsetMetaPB&>(rowset_meta_pb);
+        auto schema = mut_rowset_meta_pb.release_tablet_schema();
+        _rowset_meta_pb = mut_rowset_meta_pb;
+        mut_rowset_meta_pb.set_allocated_tablet_schema(schema);
         _init();
         return true;
     }
@@ -135,6 +137,7 @@ public:
     int64_t txn_id() const { return _rowset_meta_pb.txn_id(); }
 
     void set_txn_id(int64_t txn_id) { _rowset_meta_pb.set_txn_id(txn_id); }
+    void set_txn_expiration(int64_t expiration) { _rowset_meta_pb.set_txn_expiration(expiration); }
 
     int32_t tablet_schema_hash() const { return _rowset_meta_pb.tablet_schema_hash(); }
 
@@ -352,12 +355,6 @@ public:
     void set_tablet_schema(const TabletSchemaSPtr& tablet_schema) {
         _schema = TabletSchemaCache::instance()->insert(tablet_schema->to_key());
     }
-
-    // CLOUD_MODE
-    void set_s3_bucket(const std::string& s3_bucket) { _rowset_meta_pb.set_s3_bucket(s3_bucket); }
-
-    // CLOUD_MODE
-    void set_s3_prefix(const std::string& s3_prefix) { _rowset_meta_pb.set_s3_prefix(s3_prefix); }
 
     TabletSchemaSPtr tablet_schema() { return _schema; }
 

@@ -3,6 +3,7 @@ package com.selectdb.cloud.catalog;
 import com.selectdb.cloud.proto.SelectdbCloud;
 import com.selectdb.cloud.rpc.MetaServiceProxy;
 
+import com.google.gson.annotations.SerializedName;
 import org.apache.doris.catalog.DistributionInfo;
 import org.apache.doris.catalog.MaterializedIndex;
 import org.apache.doris.catalog.Partition;
@@ -28,7 +29,9 @@ public class CloudPartition extends Partition {
     private static final Logger LOG = LogManager.getLogger(CloudPartition.class);
 
     // not Serialized
+    @SerializedName(value = "dbId")
     private long dbId;
+    @SerializedName(value = "tableId")
     private long tableId;
 
     public CloudPartition(long id, String name, MaterializedIndex baseIndex,

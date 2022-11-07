@@ -384,6 +384,10 @@ public class ShowExecutor {
         } else if (stmt instanceof ShowAnalyzeStmt) {
             handleShowAnalyze();
         } else if (stmt instanceof AdminCopyTabletStmt) {
+            if (!Config.cloud_unique_id.isEmpty()) {
+                LOG.info("stmt={}, not supported in cloud mode", stmt.toString());
+                throw new AnalysisException("Unsupported operaiton");
+            }
             handleCopyTablet();
         } else if (stmt instanceof ShowStageStmt) {
             handleShowStage();
@@ -1108,8 +1112,9 @@ public class ShowExecutor {
                 .map(entity -> entity.name())
                 .collect(Collectors.toSet());
         loadInfos.addAll(env.getLoadManager().getLoadJobInfosByDb(dbId, showStmt.getLabelValue(),
-                showStmt.isAccurateMatch(), statesValue, jobTypes,
-                showStmt.getCopyIdValue(), showStmt.isCopyIdAccurateMatch()));
+                showStmt.isAccurateMatch(), statesValue, jobTypes, showStmt.getCopyIdValue(),
+                showStmt.isCopyIdAccurateMatch(), showStmt.getTableNameValue(), showStmt.isTableNameAccurateMatch(),
+                showStmt.getFileValue(), showStmt.isFileAccurateMatch()));
 
         // order the result of List<LoadInfo> by orderByPairs in show stmt
         List<OrderByPair> orderByPairs = showStmt.getOrderByPairs();
@@ -2429,7 +2434,10 @@ public class ShowExecutor {
     private void handleShowStage() throws AnalysisException {
         ShowStageStmt showStmt = (ShowStageStmt) stmt;
         try {
-            List<StagePB> stages = Env.getCurrentInternalCatalog().getStage(StageType.EXTERNAL, null, null);
+            List<StagePB> stages = Env.getCurrentInternalCatalog().getStage(StageType.EXTERNAL, null, null, null);
+            if (stages == null) {
+                throw new AnalysisException("get stage err");
+            }
             List<List<String>> results = new ArrayList<>();
             for (StagePB stage : stages) {
                 if (!Env.getCurrentEnv().getAuth()

@@ -1412,7 +1412,7 @@ public class InternalCatalog implements CatalogIf<Database> {
                 List<Long> partitionIds = new ArrayList<Long>();
                 partitionIds.add(partitionId);
                 List<Long> indexIds = indexIdToMeta.keySet().stream().collect(Collectors.toList());
-                prepareCloudPartition(olapTable.getId(), partitionIds, indexIds);
+                prepareCloudPartition(olapTable.getId(), partitionIds, indexIds, 0);
                 partition = createCloudPartitionWithIndices(db.getClusterName(), db.getId(), olapTable.getId(),
                         olapTable.getBaseIndexId(), partitionId, partitionName, indexIdToMeta, distributionInfo,
                         dataProperty.getStorageMedium(), singlePartitionDesc.getReplicaAlloc(),
@@ -2091,7 +2091,7 @@ public class InternalCatalog implements CatalogIf<Database> {
                         olapTable.getDataSortInfo(), olapTable.getEnableUniqueKeyMergeOnWrite(), storagePolicy,
                         idGeneratorBuffer, olapTable.disableAutoCompaction(), isPersistent, isDynamicSchema);
                 } else {
-                    prepareCloudMaterializedIndex(olapTable, olapTable.getIndexIdList());
+                    prepareCloudMaterializedIndex(olapTable, olapTable.getIndexIdList(), 0);
                     partition = createCloudPartitionWithIndices(db.getClusterName(), db.getId(),
                         olapTable.getId(), olapTable.getBaseIndexId(), partitionId, partitionName,
                         olapTable.getIndexIdToMeta(), partitionDistributionInfo,
@@ -2143,7 +2143,7 @@ public class InternalCatalog implements CatalogIf<Database> {
                 }
 
                 if (!Config.cloud_unique_id.isEmpty()) {
-                    prepareCloudMaterializedIndex(olapTable, olapTable.getIndexIdList());
+                    prepareCloudMaterializedIndex(olapTable, olapTable.getIndexIdList(), 0);
                 }
 
                 // this is a 2-level partitioned tables
@@ -2568,7 +2568,7 @@ public class InternalCatalog implements CatalogIf<Database> {
 
             if (!Config.cloud_unique_id.isEmpty()) {
                 List<Long> indexIds = copiedTbl.getIndexIdToMeta().keySet().stream().collect(Collectors.toList());
-                prepareCloudPartition(copiedTbl.getId(), newPartitionIds, indexIds);
+                prepareCloudPartition(copiedTbl.getId(), newPartitionIds, indexIds, 0);
             }
 
             for (Map.Entry<String, Long> entry : origPartitions.entrySet()) {
@@ -3693,7 +3693,7 @@ public class InternalCatalog implements CatalogIf<Database> {
         SelectdbCloud.CreateTabletsRequest createTabletsReq = requestBuilder.build();
 
         LOG.info("send create tablets rpc, createTabletsReq: {}", createTabletsReq);
-        SelectdbCloud.MetaServiceGenericResponse response;
+        SelectdbCloud.CreateTabletsResponse response;
         try {
             response = MetaServiceProxy.getInstance().createTablets(createTabletsReq);
         } catch (RpcException e) {
@@ -3721,16 +3721,19 @@ public class InternalCatalog implements CatalogIf<Database> {
         }
     }
 
-    public void prepareCloudMaterializedIndex(OlapTable olapTable, List<Long> indexIds) throws DdlException {
+    // if `expiration` = 0, recycler will delete uncommitted indexes in `retention_seconds`
+    public void prepareCloudMaterializedIndex(OlapTable olapTable, List<Long> indexIds, long expiration)
+            throws DdlException {
         //prepare for index
         SelectdbCloud.IndexRequest.Builder indexRequestBuilder = SelectdbCloud.IndexRequest.newBuilder();
         indexRequestBuilder.setCloudUniqueId(Config.cloud_unique_id);
         indexRequestBuilder.addAllIndexIds(indexIds);
         indexRequestBuilder.setTableId(olapTable.getId());
+        indexRequestBuilder.setExpiration(expiration);
         SelectdbCloud.IndexRequest indexRequest = indexRequestBuilder.build();
         LOG.info("prepareIndex request: {} ", indexRequest);
 
-        SelectdbCloud.MetaServiceGenericResponse response = null;
+        SelectdbCloud.IndexResponse response = null;
         try {
             response = MetaServiceProxy.getInstance().prepareIndex(indexRequest);
         } catch (RpcException e) {
@@ -3754,7 +3757,7 @@ public class InternalCatalog implements CatalogIf<Database> {
         SelectdbCloud.IndexRequest indexRequest = indexRequestBuilder.build();
         LOG.info("commitIndex request: {} ", indexRequest);
 
-        SelectdbCloud.MetaServiceGenericResponse response = null;
+        SelectdbCloud.IndexResponse response = null;
         try {
             response = MetaServiceProxy.getInstance().commitIndex(indexRequest);
         } catch (RpcException e) {
@@ -3777,7 +3780,7 @@ public class InternalCatalog implements CatalogIf<Database> {
         SelectdbCloud.IndexRequest indexRequest = indexRequestBuilder.build();
         LOG.info("dropIndex request: {} ", indexRequest);
 
-        SelectdbCloud.MetaServiceGenericResponse response = null;
+        SelectdbCloud.IndexResponse response = null;
         try {
             response = MetaServiceProxy.getInstance().dropIndex(indexRequest);
         } catch (RpcException e) {
@@ -3791,17 +3794,19 @@ public class InternalCatalog implements CatalogIf<Database> {
         }
     }
 
-    public void prepareCloudPartition(long tableId, List<Long> partitionIds, List<Long> indexIds)
+    // if `expiration` = 0, recycler will delete uncommitted partitions in `retention_seconds`
+    public void prepareCloudPartition(long tableId, List<Long> partitionIds, List<Long> indexIds, long expiration)
             throws DdlException {
         SelectdbCloud.PartitionRequest.Builder partitionRequestBuilder = SelectdbCloud.PartitionRequest.newBuilder();
         partitionRequestBuilder.setCloudUniqueId(Config.cloud_unique_id);
         partitionRequestBuilder.setTableId(tableId);
         partitionRequestBuilder.addAllPartitionIds(partitionIds);
         partitionRequestBuilder.addAllIndexIds(indexIds);
+        partitionRequestBuilder.setExpiration(expiration);
         SelectdbCloud.PartitionRequest partitionRequest = partitionRequestBuilder.build();
         LOG.info("preparePartition request: {} ", partitionRequest);
 
-        SelectdbCloud.MetaServiceGenericResponse response = null;
+        SelectdbCloud.PartitionResponse response = null;
         try {
             response = MetaServiceProxy.getInstance().preparePartition(partitionRequest);
         } catch (RpcException e) {
@@ -3824,7 +3829,7 @@ public class InternalCatalog implements CatalogIf<Database> {
         SelectdbCloud.PartitionRequest partitionRequest = partitionRequestBuilder.build();
         LOG.info("commitPartition request: {} ", partitionRequest);
 
-        SelectdbCloud.MetaServiceGenericResponse response = null;
+        SelectdbCloud.PartitionResponse response = null;
         try {
             response = MetaServiceProxy.getInstance().commitPartition(partitionRequest);
         } catch (RpcException e) {
@@ -3849,7 +3854,7 @@ public class InternalCatalog implements CatalogIf<Database> {
         SelectdbCloud.PartitionRequest partitionRequest = partitionRequestBuilder.build();
         LOG.info("dropPartition request: {} ", partitionRequest);
 
-        SelectdbCloud.MetaServiceGenericResponse response = null;
+        SelectdbCloud.PartitionResponse response = null;
         try {
             response = MetaServiceProxy.getInstance().dropPartition(partitionRequest);
         } catch (RpcException e) {
@@ -3885,7 +3890,72 @@ public class InternalCatalog implements CatalogIf<Database> {
         }
     }
 
-    public List<StagePB> getStage(StagePB.StageType stageType, String userName, String stageName) throws DdlException {
+    public List<StagePB> getStage(StagePB.StageType stageType, String userName,
+                                  String stageName, String userId) throws DdlException {
+        SelectdbCloud.GetStageResponse response = getStageRpc(stageType, userName, stageName, userId);
+        if (response.getStatus().getCode() == MetaServiceCode.OK) {
+            return response.getStageList();
+        }
+
+        if (stageType == StagePB.StageType.EXTERNAL) {
+            if (response.getStatus().getCode() == MetaServiceCode.STAGE_NOT_FOUND) {
+                LOG.info("Stage does not exist: {}", stageName);
+                throw new DdlException("Stage does not exist: " + stageName);
+            }
+            LOG.warn("internal error, try later");
+            throw new DdlException("internal error, try later");
+        }
+
+        if (response.getStatus().getCode() == MetaServiceCode.STATE_ALREADY_EXISTED_FOR_USER
+                || response.getStatus().getCode() == MetaServiceCode.STAGE_NOT_FOUND) {
+            StagePB.Builder createStageBuilder = StagePB.newBuilder();
+            createStageBuilder.addMysqlUserName(ClusterNamespace
+                    .getNameFromFullName(ConnectContext.get().getCurrentUserIdentity().getQualifiedUser()))
+                .setStageId(UUID.randomUUID().toString()).setType(StagePB.StageType.INTERNAL).addMysqlUserId(userId);
+
+            boolean isAba = false;
+            if (response.getStatus().getCode() == MetaServiceCode.STATE_ALREADY_EXISTED_FOR_USER) {
+                List<StagePB> stages = response.getStageList();
+                if (stages.isEmpty() || stages.get(0).getMysqlUserIdCount() == 0) {
+                    LOG.warn("impossible here, internal stage this err code must have one stage.");
+                    throw new DdlException("internal error, try later");
+                }
+                String toDropMysqlUserId = stages.get(0).getMysqlUserId(0);
+                // ABA user
+                // 1. drop user
+                isAba = true;
+                String reason = String.format("get stage deal with err user [%s:%s] %s, step %s msg %s now userid [%s]",
+                        userName, userId, "aba user", "1", "drop old stage", toDropMysqlUserId);
+                LOG.info(reason);
+                dropStage(StagePB.StageType.INTERNAL, userName, toDropMysqlUserId, null, reason, true);
+            }
+            // stage not found just create and get
+            // 2. create a new internal stage
+            LOG.info("get stage deal with err user [{}:{}] {}, step {} msg {}", userName, userId,
+                    isAba ? "aba user" : "not found", isAba ? "2" : "1",  "create a new internal stage");
+            createStage(createStageBuilder.build(), true);
+            // 3. get again
+            // sleep random millis [20, 200] ms, avoid multiple call get stage.
+            int randomMillis = 20 + (int) (Math.random() * (200 - 20));
+            LOG.debug("randomMillis:{}", randomMillis);
+            try {
+                Thread.sleep(randomMillis);
+            } catch (InterruptedException e) {
+                LOG.info("InterruptedException: ", e);
+            }
+            LOG.info("get stage deal with err user [{}:{}] {}, step {} msg {}", userName, userId,
+                    isAba ? "aba user" : "not found", isAba ? "3" : "2",  "get stage");
+            response = getStageRpc(stageType, userName, stageName, userId);
+            if (response.getStatus().getCode() == MetaServiceCode.OK) {
+                return response.getStageList();
+            }
+        }
+        return null;
+    }
+
+
+    public SelectdbCloud.GetStageResponse getStageRpc(StagePB.StageType stageType, String userName,
+                                  String stageName, String userId) throws DdlException {
         SelectdbCloud.GetStageRequest.Builder builder = SelectdbCloud.GetStageRequest.newBuilder()
                 .setCloudUniqueId(Config.cloud_unique_id).setType(stageType);
         if (userName != null) {
@@ -3894,20 +3964,52 @@ public class InternalCatalog implements CatalogIf<Database> {
         if (stageName != null) {
             builder.setStageName(stageName);
         }
+        if (userId != null) {
+            builder.setMysqlUserId(userId);
+        }
         SelectdbCloud.GetStageResponse response = null;
+        try {
+            response = MetaServiceProxy.getInstance().getStage(builder.build());
+            LOG.debug("get stage, stageType={}, userName={}, userId= {}, stageName:{}, response: {}",
+                    stageType, userName, userId, stageName, response);
+        } catch (RpcException e) {
+            LOG.warn("getStage rpc exception: {} ", e.getMessage(), e);
+            throw new DdlException("internal error, try later");
+        }
+
+        return response;
+    }
+
+    public void dropStage(StagePB.StageType stageType, String userName, String userId,
+                          String stageName, String reason, boolean ifExists)
+            throws DdlException {
+        SelectdbCloud.DropStageRequest.Builder builder = SelectdbCloud.DropStageRequest.newBuilder()
+                .setCloudUniqueId(Config.cloud_unique_id).setType(stageType);
+        if (userName != null) {
+            builder.setMysqlUserName(userName);
+        }
+        if (userId != null) {
+            builder.setMysqlUserId(userId);
+        }
+        if (stageName != null) {
+            builder.setStageName(stageName);
+        }
+        if (reason != null) {
+            builder.setReason(reason);
+        }
+        SelectdbCloud.DropStageResponse response = null;
         int retryTime = 0;
         while (retryTime++ < 3) {
             try {
-                response = MetaServiceProxy.getInstance().getStage(builder.build());
-                LOG.debug("get stage, stageType={}, userName={}, stageName:{}, retry:{}, response: {}",
-                        stageType, userName, stageName, retryTime, response);
+                response = MetaServiceProxy.getInstance().dropStage(builder.build());
+                LOG.info("drop stage, stageType:{}, userName:{}, stageName:{}, retry:{}, response: {}", stageType,
+                        userName, stageName, retryTime, response);
                 // just retry kv conflict
-                if (response.getStatus().getCode() != MetaServiceCode.KV_TXN_CONFLICT
-                        && response.getStatus().getCode() != MetaServiceCode.KV_TXN_COMMIT_ERR) {
+                if (response.getStatus().getCode() != MetaServiceCode.KV_TXN_CONFLICT) {
                     break;
                 }
             } catch (RpcException e) {
-                LOG.warn("getStage response: {} ", response);
+                LOG.warn("dropStage response: {} ", response);
             }
             // sleep random millis [20, 200] ms, avoid txn conflict
             int randomMillis = 20 + (int) (Math.random() * (200 - 20));
@@ -3918,14 +4020,22 @@ public class InternalCatalog implements CatalogIf<Database> {
                 LOG.info("InterruptedException: ", e);
             }
         }
+
+        if (response == null || !response.hasStatus()) {
+            throw new DdlException("metaService exception");
+        }
+
         if (response.getStatus().getCode() != SelectdbCloud.MetaServiceCode.OK) {
-            LOG.warn("getStage response: {} ", response);
+            LOG.warn("dropStage response: {} ", response);
             if (response.getStatus().getCode() == MetaServiceCode.STAGE_NOT_FOUND) {
-                throw new DdlException("Stage does not exists: " + stageName);
+                if (ifExists) {
+                    return;
+                } else {
+                    throw new DdlException("Stage does not exists: " + stageName);
+                }
             }
             throw new DdlException("internal error, try later");
         }
-        return response.getStageList();
     }
 
     public List<ObjectFilePB> beginCopy(String stageId, SelectdbCloud.StagePB.StageType stageType, long tableId,
@@ -4014,7 +4124,7 @@ public class InternalCatalog implements CatalogIf<Database> {
         SelectdbCloud.AlterClusterRequest.Builder builder = SelectdbCloud.AlterClusterRequest.newBuilder()
                 .setCloudUniqueId(Config.cloud_unique_id).setOp(Operation.UPDATE_CLUSTER_MYSQL_USER_NAME)
                 .setCluster(builderCluster.build());
-        SelectdbCloud.MetaServiceGenericResponse response;
+        SelectdbCloud.AlterClusterResponse response;
         try {
             response = MetaServiceProxy.getInstance().alterCluster(builder.build());
             if (response.getStatus().getCode() != SelectdbCloud.MetaServiceCode.OK) {

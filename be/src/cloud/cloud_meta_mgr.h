@@ -20,8 +20,6 @@ public:
 
     Status sync_tablet_rowsets(Tablet* tablet) override;
 
-    Status write_tablet_meta(const TabletMetaSharedPtr& tablet_meta) override;
-
     Status prepare_rowset(const RowsetMetaSharedPtr& rs_meta, bool is_tmp,
                           RowsetMetaSharedPtr* existed_rs_meta = nullptr) override;
 
@@ -42,6 +40,8 @@ public:
                              selectdb::TabletStatsPB* stats) override;
 
     Status abort_tablet_job(const selectdb::TabletJobInfoPB& job) override;
+
+    Status lease_tablet_job(const selectdb::TabletJobInfoPB& job) override;
 
 private:
     std::unique_ptr<selectdb::MetaService_Stub> _stub;

@@ -2,7 +2,7 @@
 
 展示登录用户有权限访问的全部external stage信息。
 
-相关文档：[create external stage](create_stage.md)。
+相关文档：[create stage](create_stage.md), [drop stage](drop_stage.md)
  
 ## 语法
 

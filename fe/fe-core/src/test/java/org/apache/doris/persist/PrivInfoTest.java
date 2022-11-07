@@ -51,7 +51,7 @@ public class PrivInfoTest {
     @Test
     public void test() throws IOException {
         PrivInfo privInfo = new PrivInfo(UserIdentity.ROOT, PrivBitSet.of(PaloPrivilege.ADMIN_PRIV),
-                new byte[] {'a', 'b', 'c'}, "role", PasswordOptions.UNSET_OPTION);
+                new byte[] {'a', 'b', 'c'}, "role", PasswordOptions.UNSET_OPTION, "root");
 
         // 1. Write objects to file
         File file = new File("./privInfo");
@@ -67,6 +67,7 @@ public class PrivInfoTest {
         Assert.assertTrue(Arrays.equals(privInfo.getPasswd(), anotherPrivInfo.getPasswd()));
         Assert.assertEquals(privInfo.getPasswordOptions().getExpirePolicySecond(), anotherPrivInfo.getPasswordOptions()
                 .getExpirePolicySecond());
+        Assert.assertEquals(privInfo.getUserId(), anotherPrivInfo.getUserId());
         // 3. delete files
         dis.close();
         file.delete();

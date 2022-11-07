@@ -26,7 +26,7 @@ public class S3Remote extends DefaultRemote {
         try {
             PutObjectRequest objectRequest = PutObjectRequest.builder()
                     .bucket(obj.getBucket())
-                    .key(obj.getPrefix() + fileName)
+                    .key(normalizePrefix(fileName))
                     .build();
 
             PutObjectPresignRequest presignRequest = PutObjectPresignRequest.builder()

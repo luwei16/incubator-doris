@@ -107,13 +107,16 @@ public class CloudLoadAction extends RestBaseController {
             }
             String mysqlUserName = ClusterNamespace
                     .getNameFromFullName(ConnectContext.get().getCurrentUserIdentity().getQualifiedUser());
-            LOG.info("receive Presigned url request [ user [{}]] for filename [{}], isInternal [{}]",
-                    mysqlUserName, fileName, isInternal);
+
+            String userId = Env.getCurrentEnv().getAuth().getUserId(mysqlUserName);
+            LOG.info("receive Presigned url request [ user [{}]] for filename [{}], isInternal [{}], userId [{}]",
+                    mysqlUserName, fileName, isInternal, userId);
 
             // use userName, fileName to get presigned url from ms EXTERNAL
             // 1. rpc to ms, by unique_id、username
-            List<StagePB> stages = Env.getCurrentInternalCatalog().getStage(StageType.INTERNAL, mysqlUserName, null);
-            if (stages.isEmpty()) {
+            List<StagePB> stages = Env.getCurrentInternalCatalog()
+                    .getStage(StageType.INTERNAL, mysqlUserName, null, userId);
+            if (stages == null || stages.isEmpty()) {
                 throw new DdlException("Failed to get internal stage for user: " + mysqlUserName);
             }
             StagePB internalStage = stages.get(0);

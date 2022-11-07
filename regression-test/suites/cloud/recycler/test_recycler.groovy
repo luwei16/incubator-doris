@@ -37,7 +37,7 @@ suite("test_recycler") {
         PARTITION p1996 VALUES [("19960101"), ("19970101")),
         PARTITION p1997 VALUES [("19970101"), ("19980101")),
         PARTITION p1998 VALUES [("19980101"), ("19990101")))
-        DISTRIBUTED BY HASH(`lo_orderkey`) BUCKETS 48;
+        DISTRIBUTED BY HASH(`lo_orderkey`) BUCKETS 4;
     """
 
     // create indexes
@@ -93,7 +93,7 @@ suite("test_recycler") {
     // recycle data
     do {
         triggerRecycle(token, instanceId)
-        Thread.sleep(60000) // 1min
+        Thread.sleep(10000) // 1min
         if (checkRecycleTable(token, instanceId, cloudUniqueId, tableName, tabletInfoList)) {
             success = true
             break

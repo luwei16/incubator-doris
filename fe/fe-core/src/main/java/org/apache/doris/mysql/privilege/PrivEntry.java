@@ -44,6 +44,7 @@ public abstract class PrivEntry implements Comparable<PrivEntry>, Writable {
     // user name is case sensitive
     protected PatternMatcher userPattern;
     protected String origUser;
+    protected String origUserId;
     protected boolean isAnyUser = false;
     protected PrivBitSet privSet;
     // true if this entry is set by domain resolver
@@ -80,6 +81,14 @@ public abstract class PrivEntry implements Comparable<PrivEntry>, Writable {
         } else {
             userIdentity = UserIdentity.createAnalyzedUserIdentWithIp(origUser, origHost);
         }
+    }
+
+    public String getUserId() {
+        return origUserId;
+    }
+
+    public void setUserId(String userId) {
+        this.origUserId = userId;
     }
 
     public PatternMatcher getHostPattern() {
@@ -215,6 +224,7 @@ public abstract class PrivEntry implements Comparable<PrivEntry>, Writable {
         }
         Text.writeString(out, origHost);
         Text.writeString(out, origUser);
+        Text.writeString(out, origUserId);
         privSet.write(out);
 
         out.writeBoolean(isSetByDomainResolver);
@@ -233,6 +243,7 @@ public abstract class PrivEntry implements Comparable<PrivEntry>, Writable {
         isAnyHost = origHost.equals(ANY_HOST);
 
         origUser = Text.readString(in);
+        origUserId = Text.readString(in);
         try {
             userPattern = PatternMatcher.createMysqlPattern(origUser, CaseSensibility.USER.getCaseSensibility());
         } catch (AnalysisException e) {

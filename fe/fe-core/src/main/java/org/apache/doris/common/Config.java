@@ -1794,7 +1794,7 @@ public class Config extends ConfigBase {
     public static double cloud_rebalance_percent_threshold = 0.1;
 
     @ConfField
-    public static double cloud_rebalance_number_threshold = 0.1;
+    public static long cloud_rebalance_number_threshold = 3;
 
     /**
      * if set to false, auth check will be disable,  in case something goes wrong with the new privilege system.
@@ -1863,4 +1863,7 @@ public class Config extends ConfigBase {
 
     @ConfField
     public static boolean range_desc_read_by_column_def = true;
+
+    @ConfField(mutable = false)
+    public static int cloud_copy_list_objects_version = 2;
 }

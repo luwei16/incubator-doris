@@ -34,6 +34,7 @@ import java.io.DataOutput;
 import java.io.IOException;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -193,6 +194,20 @@ public class UserPrivTable extends PrivTable {
 
     public List<String> getAllQualifiedUser() {
         return entries.stream().map(PrivEntry::getUserIdent).map(UserIdentity::getUser).collect(Collectors.toList());
+    }
+
+    public String getUserIdByUser(String userName) {
+        for (PrivEntry entry : entries) {
+            LOG.debug("user id map {} {}",
+                    ClusterNamespace.getNameFromFullName(entry.getOrigUser()), entry.getUserId());
+        }
+        Optional<PrivEntry> user = entries.stream()
+                .filter(e -> ClusterNamespace.getNameFromFullName(e.getOrigUser()).equals(userName)).findAny();
+        if (user.isPresent()) {
+            return user.get().getUserId();
+        } else {
+            return "";
+        }
     }
 
 

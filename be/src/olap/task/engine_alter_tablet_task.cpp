@@ -41,7 +41,8 @@ Status EngineAlterTabletTask::execute() {
     Status res;
 #ifdef CLOUD_MODE
     DCHECK(_alter_tablet_req.__isset.job_id);
-    cloud::CloudSchemaChange cloud_sc(std::to_string(_alter_tablet_req.job_id));
+    cloud::CloudSchemaChange cloud_sc(std::to_string(_alter_tablet_req.job_id),
+                                      _alter_tablet_req.expiration);
     res = cloud_sc.process_alter_tablet(_alter_tablet_req);
 #else
     res = SchemaChangeHandler::process_alter_tablet_v2(_alter_tablet_req);

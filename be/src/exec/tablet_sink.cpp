@@ -19,6 +19,7 @@
 
 #include <fmt/format.h>
 
+#include <chrono>
 #include <sstream>
 #include <string>
 #include <unordered_map>
@@ -136,6 +137,7 @@ void NodeChannel::open() {
     request.set_is_high_priority(_parent->_is_high_priority);
     request.set_sender_ip(BackendOptions::get_localhost());
     request.set_is_vectorized(_is_vectorized);
+    request.set_txn_expiration(_parent->_txn_expiration);
 
     _open_closure = new RefCountClosure<PTabletWriterOpenResult>();
     _open_closure->ref();
@@ -758,6 +760,12 @@ Status OlapTableSink::init(const TDataSink& t_sink) {
         if (!config::enable_single_replica_load) {
             return Status::InternalError("single replica load is disabled on BE.");
         }
+    }
+
+    if (table_sink.txn_timeout_s > 0) {
+        using namespace std::chrono;
+        _txn_expiration = duration_cast<seconds>(system_clock::now().time_since_epoch()).count() +
+                          table_sink.txn_timeout_s;
     }
 
     if (table_sink.__isset.load_channel_timeout_s) {

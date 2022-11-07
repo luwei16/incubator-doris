@@ -67,19 +67,19 @@ import java.util.Set;
 
 /**
  * Insert into is performed to load data from the result of query stmt.
- *
+ * <p>
  * syntax:
- *   INSERT INTO table_name [partition_info] [col_list] [plan_hints] query_stmt
- *
- *   table_name: is the name of target table
- *   partition_info: PARTITION (p1,p2)
- *     the partition info of target table
- *   col_list: (c1,c2)
- *     the column list of target table
- *   plan_hints: [STREAMING,SHUFFLE_HINT]
- *     The streaming plan is used by both streaming and non-streaming insert stmt.
- *     The only difference is that non-streaming will record the load info in LoadManager and return label.
- *     User can check the load info by show load stmt.
+ * INSERT INTO table_name [partition_info] [col_list] [plan_hints] query_stmt
+ * <p>
+ * table_name: is the name of target table
+ * partition_info: PARTITION (p1,p2)
+ * the partition info of target table
+ * col_list: (c1,c2)
+ * the column list of target table
+ * plan_hints: [STREAMING,SHUFFLE_HINT]
+ * The streaming plan is used by both streaming and non-streaming insert stmt.
+ * The only difference is that non-streaming will record the load info in LoadManager and return label.
+ * User can check the load info by show load stmt.
  */
 public class InsertStmt extends DdlStmt {
     private static final Logger LOG = LogManager.getLogger(InsertStmt.class);
@@ -266,7 +266,7 @@ public class InsertStmt extends DdlStmt {
 
         // Check privilege
         if (!Env.getCurrentEnv().getAuth().checkTblPriv(ConnectContext.get(), tblName.getDb(),
-                                                                tblName.getTbl(), PrivPredicate.LOAD)) {
+                tblName.getTbl(), PrivPredicate.LOAD)) {
             ErrorReport.reportAnalysisException(ErrorCode.ERR_TABLEACCESS_DENIED_ERROR, "LOAD",
                     ConnectContext.get().getQualifiedUser(),
                     ConnectContext.get().getRemoteIP(), tblName.getDb() + ": " + tblName.getTbl());
@@ -314,7 +314,7 @@ public class InsertStmt extends DdlStmt {
             OlapTableSink sink = (OlapTableSink) dataSink;
             TUniqueId loadId = analyzer.getContext().queryId();
             int sendBatchParallelism = analyzer.getContext().getSessionVariable().getSendBatchParallelism();
-            sink.init(loadId, transactionId, db.getId(), timeoutSecond, sendBatchParallelism, false);
+            sink.init(loadId, transactionId, db.getId(), timeoutSecond, sendBatchParallelism, false, timeoutSecond);
         }
     }
 
@@ -368,7 +368,7 @@ public class InsertStmt extends DdlStmt {
             BrokerTable brokerTable = (BrokerTable) targetTable;
             if (!brokerTable.isWritable()) {
                 throw new AnalysisException("table " + brokerTable.getName()
-                                                    + "is not writable. path should be an dir");
+                        + "is not writable. path should be an dir");
             }
 
         } else {
@@ -545,7 +545,7 @@ public class InsertStmt extends DdlStmt {
         // expand colLabels in QueryStmt
         if (!origColIdxsForExtendCols.isEmpty()) {
             if (queryStmt.getResultExprs().size() != queryStmt.getBaseTblResultExprs().size()) {
-                for (Pair<Integer, Column> entry  : origColIdxsForExtendCols) {
+                for (Pair<Integer, Column> entry : origColIdxsForExtendCols) {
                     if (entry.second == null) {
                         queryStmt.getBaseTblResultExprs().add(queryStmt.getBaseTblResultExprs().get(entry.first));
                     } else {

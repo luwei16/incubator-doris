@@ -41,16 +41,29 @@ public class RemoteBaseTest {
 
     @Test
     public void list() throws Exception {
+        listObjects(null);
+    }
+
+    @Test
+    public void listSubPrefix() throws Exception {
+        String subPrefix = "tpc";
+        listObjects(subPrefix);
+    }
+
+    private void listObjects(String subPrefix) throws Exception {
         RemoteBase remote = RemoteBase.newInstance(objectInfo);
         String token = null;
         try {
             int id = 0;
             while (true) {
-                ListObjectsResult listObjectsResult = remote.listObjects(token);
+                ListObjectsResult listObjectsResult;
+                if (subPrefix == null) {
+                    listObjectsResult = remote.listObjects(token);
+                } else {
+                    listObjectsResult = remote.listObjects(subPrefix, token);
+                }
                 for (ObjectFile objectFile : listObjectsResult.getObjectInfoList()) {
-                    System.out.println(
-                            String.format("id: %d, key: %s, relativePath: %s, etag: %s", id++, objectFile.getKey(),
-                                    objectFile.getRelativePath(), objectFile.getEtag()));
+                    System.out.println(String.format("id: %d, %s", id++, objectFile));
                 }
                 if (!listObjectsResult.isTruncated()) {
                     break;
@@ -66,5 +79,12 @@ public class RemoteBaseTest {
         } finally {
             remote.close();
         }
+    }
+
+    @Test
+    public void headObject() throws Exception {
+        RemoteBase remote = RemoteBase.newInstance(objectInfo);
+        ListObjectsResult listObjectsResult = remote.headObject("tpcds/sf1-new/call_center.dat.gz");
+        System.out.println(listObjectsResult);
     }
 }

@@ -15,7 +15,7 @@ public:
 
     void recycle_instance(::google::protobuf::RpcController* controller,
                           const ::selectdb::RecycleInstanceRequest* request,
-                          ::selectdb::MetaServiceGenericResponse* response,
+                          ::selectdb::RecycleInstanceResponse* response,
                           ::google::protobuf::Closure* done) override;
 
     void http(::google::protobuf::RpcController* controller,

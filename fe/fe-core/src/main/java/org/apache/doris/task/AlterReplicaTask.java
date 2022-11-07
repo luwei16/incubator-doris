@@ -53,6 +53,8 @@ public class AlterReplicaTask extends AgentTask {
     private DescriptorTable descTable;
     private List<Column> baseSchemaColumns;
 
+    private long expiration;
+
     /**
      * AlterReplicaTask constructor.
      *
@@ -60,7 +62,7 @@ public class AlterReplicaTask extends AgentTask {
     public AlterReplicaTask(long backendId, long dbId, long tableId, long partitionId, long rollupIndexId,
             long baseIndexId, long rollupTabletId, long baseTabletId, long newReplicaId, int newSchemaHash,
             int baseSchemaHash, long version, long jobId, AlterJobV2.JobType jobType, Map<String, Expr> defineExprs,
-            DescriptorTable descTable, List<Column> baseSchemaColumns) {
+            DescriptorTable descTable, List<Column> baseSchemaColumns, long expiration) {
         super(null, backendId, TTaskType.ALTER, dbId, tableId, partitionId, rollupIndexId, rollupTabletId);
 
         this.baseTabletId = baseTabletId;
@@ -76,6 +78,8 @@ public class AlterReplicaTask extends AgentTask {
         this.defineExprs = defineExprs;
         this.descTable = descTable;
         this.baseSchemaColumns = baseSchemaColumns;
+
+        this.expiration = expiration;
     }
 
     public long getBaseTabletId() {
@@ -110,6 +114,7 @@ public class AlterReplicaTask extends AgentTask {
         TAlterTabletReqV2 req = new TAlterTabletReqV2(baseTabletId, signature, baseSchemaHash, newSchemaHash);
         req.setAlterVersion(version);
         req.setJobId(jobId);
+        req.setExpiration(expiration);
         if (defineExprs != null) {
             for (Map.Entry<String, Expr> entry : defineExprs.entrySet()) {
                 List<SlotRef> slots = Lists.newArrayList();

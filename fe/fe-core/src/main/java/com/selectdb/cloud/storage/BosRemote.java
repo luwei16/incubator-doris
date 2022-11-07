@@ -22,7 +22,7 @@ public class BosRemote extends DefaultRemote {
         config.setCredentials(new DefaultBceCredentials(obj.getAk(), obj.getSk()));
         config.setEndpoint(obj.getEndpoint());
         BosClient client = new BosClient(config);
-        URL url = client.generatePresignedUrl(obj.getBucket(), obj.getPrefix() + fileName, 3600, HttpMethodName.PUT);
+        URL url = client.generatePresignedUrl(obj.getBucket(), normalizePrefix(fileName), 3600, HttpMethodName.PUT);
         LOG.info("Bos getPresignedUrl: {}", url);
         return url.toString();
     }

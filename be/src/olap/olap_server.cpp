@@ -26,6 +26,8 @@
 #include <string>
 
 #include "agent/cgroups_mgr.h"
+#include "cloud/cloud_base_compaction.h"
+#include "cloud/cloud_cumulative_compaction.h"
 #include "cloud/utils.h"
 #include "common/config.h"
 #include "common/status.h"
@@ -185,6 +187,11 @@ Status StorageEngine::cloud_start_bg_threads() {
             [this]() { this->_sync_tablets_thread_callback(); }, &_sync_tablets_thread));
     LOG(INFO) << "sync tablets thread started";
 
+    RETURN_IF_ERROR(Thread::create(
+            "StorageEngine", "lease_compaction_thread",
+            [this]() { this->_lease_compaction_thread_callback(); }, &_lease_compaction_thread));
+    LOG(INFO) << "lease compaction thread started";
+
     // fd cache clean thread
     RETURN_IF_ERROR(Thread::create(
             "StorageEngine", "fd_cache_clean_thread",
@@ -200,10 +207,6 @@ Status StorageEngine::cloud_start_bg_threads() {
             .set_min_threads(config::max_cumu_compaction_threads)
             .set_max_threads(config::max_cumu_compaction_threads)
             .build(&_cumu_compaction_thread_pool);
-    ThreadPoolBuilder("SmallCompactionTaskThreadPool")
-            .set_min_threads(config::quick_compaction_max_threads)
-            .set_max_threads(config::quick_compaction_max_threads)
-            .build(&_quick_compaction_thread_pool);
     RETURN_IF_ERROR(Thread::create(
             "StorageEngine", "compaction_tasks_producer_thread",
             [this]() { this->_compaction_tasks_producer_callback(); },
@@ -264,6 +267,20 @@ void StorageEngine::_sync_tablets_thread_callback() {
     while (!_stop_background_threads_latch.wait_for(
             std::chrono::seconds(config::schedule_sync_tablets_interval_seconds))) {
         cloud::tablet_mgr()->sync_tablets();
+    }
+}
+
+void StorageEngine::_lease_compaction_thread_callback() {
+    while (!_stop_background_threads_latch.wait_for(
+            std::chrono::seconds(config::lease_compaction_interval_seconds))) {
+        auto cumu_compactions = get_cumu_compactions();
+        auto base_compactions = get_base_compactions();
+        for (auto& comp : cumu_compactions) {
+            comp->do_lease();
+        }
+        for (auto& comp : base_compactions) {
+            comp->do_lease();
+        }
     }
 }
 
@@ -639,7 +656,7 @@ std::vector<TabletSharedPtr> StorageEngine::_generate_cloud_compaction_tasks(
                 break;
             }
             if (tablets.empty()) {
-                LOG(WARNING) << "no tablets to compact";
+                LOG(WARNING) << "no tablets to compact, n=" << n;
                 break;
             }
             std::for_each(scores.begin(), scores.end(), [&](auto& i) {

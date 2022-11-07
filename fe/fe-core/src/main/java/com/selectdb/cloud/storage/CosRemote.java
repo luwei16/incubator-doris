@@ -30,7 +30,7 @@ public class CosRemote extends DefaultRemote {
         COSClient cosClient = new COSClient(cred, clientConfig);
         Date expirationDate = new Date(System.currentTimeMillis() + 60 * 60 * 1000);
         URL url = cosClient.generatePresignedUrl(obj.getBucket(),
-                obj.getPrefix() + fileName, expirationDate, HttpMethodName.PUT,
+                normalizePrefix(fileName), expirationDate, HttpMethodName.PUT,
                 new HashMap<String, String>(), new HashMap<String, String>());
         cosClient.shutdown();
         LOG.info("generate cos presigned url: {}", url);

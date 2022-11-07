@@ -156,6 +156,7 @@ struct TAlterTabletReqV2 {
     9: optional Descriptors.TDescriptorTable desc_tbl
     10: optional list<Descriptors.TColumn> columns
     11: optional i64 job_id
+    12: optional i64 expiration
 }
 
 struct TAlterInvertedIndexReq {

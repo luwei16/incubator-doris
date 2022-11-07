@@ -284,6 +284,10 @@ public class CloudGlobalTransactionMgr implements GlobalTransactionMgrInterface 
             }
         }
 
+        if (commitTxnResponse == null || !commitTxnResponse.hasStatus()) {
+            throw new UserException("internal error, txnid=" + transactionId);
+        }
+
         if (commitTxnResponse.getStatus().getCode() != MetaServiceCode.OK
                 && commitTxnResponse.getStatus().getCode() != MetaServiceCode.TXN_ALREADY_VISIBLE) {
             LOG.warn("commitTxn failed, transactionId={}, for {} times, commitTxnResponse:{}",

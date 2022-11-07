@@ -24,6 +24,7 @@
 
 #include "common/config.h"
 #include "common/status.h"
+#include "io/cloud/tmp_file_mgr.h"
 #include "io/fs/local_file_system.h"
 #include "io/fs/s3_file_system.h"
 
@@ -43,8 +44,9 @@ Status S3FileWriter::open() {
     VLOG_DEBUG << "S3FileWriter::open, path: " << _path.native();
     auto tmp_file_name = _key;
     std::replace(tmp_file_name.begin(), tmp_file_name.end(), '/', '_');
-    auto st = io::global_local_filesystem()->create_file(Path(config::tmp_file_dir) / tmp_file_name,
-                                                         &_tmp_file_writer);
+    auto st = io::global_local_filesystem()->create_file(
+            TmpFileMgr::instance()->get_tmp_file_dir(tmp_file_name) / tmp_file_name,
+            &_tmp_file_writer);
     if (!st.ok()) {
         return Status::IOError("failed to create tmp file: {}", st.to_string());
     }
@@ -83,11 +85,11 @@ Status S3FileWriter::close() {
                                    _handle->GetLastError().GetMessage());
         }
     }
-    // If enable_write_as_cache == false，tmp file will delete by dtor.
-    // If enable_write_as_cache == true, tmp file will be cached. And deleted when cache full or be restart
-    if (config::enable_write_as_cache) {
+    // If false，tmp file will delete by dtor.
+    // If true, tmp file will be cached. And deleted when cache full or be restart
+    if (TmpFileMgr::instance()->insert_tmp_file(_tmp_file_writer->path(),
+                                                _tmp_file_writer->bytes_appended())) {
         _tmp_file_writer->close();
-        S3FileSystem::insert_tmp_file(_tmp_file_writer->path(), _tmp_file_writer->bytes_appended());
     }
     // TODO(cyx): check data correctness
     return Status::OK();

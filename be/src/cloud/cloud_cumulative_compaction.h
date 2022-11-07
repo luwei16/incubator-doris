@@ -1,5 +1,7 @@
 #pragma once
 
+#include <memory>
+
 #include "olap/cumulative_compaction.h"
 
 namespace doris {
@@ -11,6 +13,8 @@ public:
 
     Status prepare_compact() override;
     Status execute_compact_impl() override;
+
+    void do_lease();
 
 protected:
     Status pick_rowsets_to_compact() override;
@@ -26,5 +30,7 @@ private:
 private:
     std::string _uuid;
 };
+
+std::vector<std::shared_ptr<CloudCumulativeCompaction>> get_cumu_compactions();
 
 } // namespace doris

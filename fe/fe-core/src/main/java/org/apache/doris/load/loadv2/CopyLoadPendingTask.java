@@ -31,6 +31,7 @@ import org.apache.doris.load.BrokerFileGroup;
 import org.apache.doris.load.BrokerFileGroupAggInfo.FileGroupAggKey;
 import org.apache.doris.thrift.TBrokerFileStatus;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.selectdb.cloud.proto.SelectdbCloud.ObjectFilePB;
@@ -38,9 +39,12 @@ import com.selectdb.cloud.storage.ListObjectsResult;
 import com.selectdb.cloud.storage.ObjectFile;
 import com.selectdb.cloud.storage.RemoteBase;
 import com.selectdb.cloud.storage.RemoteBase.ObjectInfo;
+import org.apache.hadoop.fs.GlobExpander;
+import org.apache.hadoop.fs.GlobFilter;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import java.io.IOException;
 import java.nio.file.FileSystems;
 import java.nio.file.Path;
 import java.nio.file.PathMatcher;
@@ -92,8 +96,8 @@ public class CopyLoadPendingTask extends BrokerLoadPendingTask {
                 List<Pair<TBrokerFileStatus, ObjectFilePB>> fileStatuses = Lists.newArrayList();
                 for (String path : fileGroup.getFilePaths()) {
                     LOG.debug("input path = {}", path);
-                    parseFileForCopyJob(copyJob.getStageId(), fileGroup.getTableId(), copyJob.getPattern(),
-                            copyJob.getSizeLimit(), Config.max_file_num_per_copy_into_job,
+                    parseFileForCopyJob(copyJob.getStageId(), fileGroup.getTableId(), copyJob.getCopyId(),
+                            copyJob.getPattern(), copyJob.getSizeLimit(), Config.max_file_num_per_copy_into_job,
                             Config.max_meta_size_per_copy_into_job, fileStatuses, copyJob.getObjectInfo());
                 }
                 boolean isBinaryFileFormat = fileGroup.isBinaryFileFormat();
@@ -208,7 +212,7 @@ public class CopyLoadPendingTask extends BrokerLoadPendingTask {
         copyJob.setLoadFileInfo(totalFileNum, totalFileSize);
     }
 
-    protected void parseFileForCopyJob(String stageId, long tableId, String pattern, long sizeLimit,
+    protected void parseFileForCopyJob(String stageId, long tableId, String copyId, String pattern, long sizeLimit,
             int fileNumLimit, int fileMetaSizeLimit, List<Pair<TBrokerFileStatus, ObjectFilePB>> fileStatus,
             ObjectInfo objectInfo) throws UserException {
         List<ObjectFilePB> copiedFiles = Env.getCurrentInternalCatalog().getCopyFiles(stageId, tableId);
@@ -219,15 +223,22 @@ public class CopyLoadPendingTask extends BrokerLoadPendingTask {
             }
         }
         try {
-            listAndFilterFiles(objectInfo, pattern, sizeLimit, fileNumLimit, fileMetaSizeLimit, copiedFiles,
-                    fileStatus);
+            if (Config.cloud_copy_list_objects_version == 1) {
+                listAndFilterFiles(objectInfo, pattern, copyId, sizeLimit, fileNumLimit, fileMetaSizeLimit, copiedFiles,
+                        fileStatus);
+            } else { // version 2
+                listAndFilterFilesV2(objectInfo, pattern, copyId, sizeLimit, fileNumLimit, fileMetaSizeLimit,
+                        copiedFiles, fileStatus);
+            }
         } catch (Exception e) {
+            LOG.warn("Failed to list copy files for queryId={}", copyId, e);
             throw new UserException("list copy files failed. msg=" + e.getMessage());
         }
     }
 
-    private void listAndFilterFiles(ObjectInfo objectInfo, String pattern, long sizeLimit, int fileNum, int metaSize,
-            List<ObjectFilePB> copiedFiles, List<Pair<TBrokerFileStatus, ObjectFilePB>> fileStatus) throws Exception {
+    protected void listAndFilterFiles(ObjectInfo objectInfo, String pattern, String copyId, long sizeLimit, int fileNum,
+            int metaSize, List<ObjectFilePB> copiedFiles, List<Pair<TBrokerFileStatus, ObjectFilePB>> fileStatus)
+            throws Exception {
         long startTimestamp = System.currentTimeMillis();
         long listFileNum = 0;
         matchedFileNum = 0;
@@ -299,6 +310,94 @@ public class CopyLoadPendingTask extends BrokerLoadPendingTask {
         }
     }
 
+    protected void listAndFilterFilesV2(ObjectInfo objectInfo, String pattern, String copyId, long sizeLimit,
+            int fileNum, int metaSize, List<ObjectFilePB> copiedFiles,
+            List<Pair<TBrokerFileStatus, ObjectFilePB>> fileStatus) throws Exception {
+        long startTimestamp = System.currentTimeMillis();
+        long listFileNum = 0;
+        matchedFileNum = 0;
+        loadedFileNum = 0;
+        reachLimitStr = "";
+        RemoteBase remote = RemoteBase.newInstance(objectInfo);
+        Set<String> loadedFileSet = copiedFiles.stream().map(f -> getFileInfoUniqueId(f)).collect(Collectors.toSet());
+
+        List<Pair<String, Boolean>> globs = analyzeGlob(copyId, pattern);
+        LOG.info("Input copy into glob={}, analyzed={}", pattern, globs);
+        try {
+            long totalSize = 0;
+            long totalMetaSize = 0;
+            PathMatcher matcher = getPathMatcher(pattern);
+            boolean finish = false;
+            for (int i = 0; i < globs.size() && !finish; i++) {
+                Pair<String, Boolean> glob = globs.get(i);
+                String continuationToken = null;
+                while (!finish) {
+                    ListObjectsResult listObjectsResult;
+                    if (glob.second) {
+                        // list objects with sub prefix
+                        listObjectsResult = remote.listObjects(glob.first, continuationToken);
+                    } else {
+                        // head object
+                        listObjectsResult = remote.headObject(glob.first);
+                    }
+                    listFileNum += listObjectsResult.getObjectInfoList().size();
+                    long costSeconds = (System.currentTimeMillis() - startTimestamp) / 1000;
+                    if (costSeconds >= 3600 || listFileNum >= 1000000) {
+                        throw new DdlException("Abort list object for copyId=" + copyId
+                                + ". We don't collect enough files to load, after listing " + listFileNum
+                                + " objects for " + costSeconds + " seconds, please check if your pattern " + pattern
+                                + " is correct.");
+                    }
+                    for (ObjectFile objectFile : listObjectsResult.getObjectInfoList()) {
+                        // check:
+                        // 1. match pattern if it's set
+                        // 2. file is not copying or copied by other copy jobs
+                        // 3. not reach any limit of fileNum/fileSize/fileMetaSize if select more than 1 file
+                        if (!matchPattern(objectFile.getRelativePath(), matcher)) {
+                            continue;
+                        }
+                        matchedFileNum++;
+                        if (loadedFileSet.contains(getFileInfoUniqueId(objectFile))) {
+                            loadedFileNum++;
+                            continue;
+                        }
+                        ObjectFilePB objectFilePB = ObjectFilePB.newBuilder()
+                                .setRelativePath(objectFile.getRelativePath()).setEtag(objectFile.getEtag()).build();
+                        if (fileStatus.size() > 0 && sizeLimit > 0 && totalSize + objectFile.getSize() >= sizeLimit) {
+                            finish = true;
+                            reachLimitStr = ", skip list because reach size limit: " + sizeLimit;
+                            break;
+                        }
+                        if (fileStatus.size() > 0 && metaSize > 0
+                                && totalMetaSize + objectFilePB.getSerializedSize() >= metaSize) {
+                            finish = true;
+                            reachLimitStr = ", skip list because reach meta size limit: " + metaSize;
+                            break;
+                        }
+                        // add file
+                        String objUrl = "s3://" + objectInfo.getBucket() + "/" + objectFile.getKey();
+                        fileStatus.add(Pair.of(new TBrokerFileStatus(objUrl, false, objectFile.getSize(), true),
+                                objectFilePB));
+
+                        totalSize += objectFile.getSize();
+                        totalMetaSize += objectFilePB.getSerializedSize();
+                        if (fileNum > 0 && fileStatus.size() >= fileNum) {
+                            finish = true;
+                            reachLimitStr = ", skip list because reach file num limit: " + fileNum;
+                            break;
+                        }
+                    }
+                    if (!listObjectsResult.isTruncated()) {
+                        break;
+                    }
+                    continuationToken = listObjectsResult.getContinuationToken();
+                }
+            }
+        } finally {
+            remote.close();
+        }
+    }
+
     private PathMatcher getPathMatcher(String pattern) {
         return pattern == null ? null : FileSystems.getDefault().getPathMatcher("glob:" + pattern);
     }
@@ -317,5 +416,142 @@ public class CopyLoadPendingTask extends BrokerLoadPendingTask {
 
     private String getFileInfoUniqueId(ObjectFilePB objectFile) {
         return objectFile.getRelativePath() + "_" + objectFile.getEtag();
+    }
+
+    /**
+     * @return the list of analyzed sub glob which is a pair prefix and containsWildcard
+     */
+    @VisibleForTesting
+    protected List<Pair<String, Boolean>> analyzeGlob(String queryId, String glob) throws DdlException {
+        List<Pair<String, Boolean>> globs = new ArrayList<>();
+        if (glob == null) {
+            globs.add(Pair.of("", true));
+            return globs;
+        }
+        try {
+            List<String> flattenedPatterns = GlobExpander.expand(glob);
+            for (String flattenedPattern : flattenedPatterns) {
+                try {
+                    globs.addAll(analyzeFlattenedPattern(flattenedPattern));
+                } catch (Exception e) {
+                    LOG.warn("Failed to analyze flattenedPattern: {}, glob: {}, queryId: {}", flattenedPattern, glob,
+                            queryId, e);
+                    throw e;
+                }
+            }
+            return globs;
+        } catch (Exception e) {
+            LOG.warn("Failed to analyze glob: {}, queryId: {}", glob, queryId, e);
+            throw new DdlException("Failed to analyze glob: " + glob + ", queryId: " + queryId + ", " + e.getMessage());
+        }
+    }
+
+    private List<Pair<String, Boolean>> analyzeFlattenedPattern(String flattenedPattern) throws IOException {
+        List<String> components = getPathComponents(flattenedPattern);
+        LOG.debug("flattenedPattern={}, components={}", flattenedPattern, components);
+        String prefix = "";
+        boolean sawWildcard = false;
+        for (int componentIdx = 0; componentIdx < components.size(); componentIdx++) {
+            String component = components.get(componentIdx);
+            GlobFilter globFilter = new GlobFilter(component);
+            if (globFilter.hasPattern()) {
+                if (componentIdx == components.size() - 1) {
+                    List<Pair<String, Boolean>> pairs = analyzeLastComponent(component);
+                    if (pairs != null) {
+                        List<Pair<String, Boolean>> results = new ArrayList<>();
+                        for (Pair<String, Boolean> pair : pairs) {
+                            results.add(Pair.of((prefix.isEmpty() ? "" : prefix + "/") + pair.first, pair.second));
+                        }
+                        return results;
+                    }
+                }
+                sawWildcard = true;
+                String componentPrefix = getComponentPrefix(component);
+                prefix += (prefix.isEmpty() ? "" : "/") + componentPrefix;
+                break;
+            } else {
+                String unescapedComponent = unescapePathComponent(component);
+                prefix += (prefix.isEmpty() ? "" : "/") + unescapedComponent;
+            }
+        }
+        return Lists.newArrayList(Pair.of(prefix, sawWildcard));
+    }
+
+    private List<Pair<String, Boolean>> analyzeLastComponent(String component) throws IOException {
+        if (component.startsWith("{") && component.endsWith("}")) {
+            List<Pair<String, Boolean>> results = new ArrayList<>();
+            String sub = component.substring(1, component.length() - 1);
+            List<String> splits = splitByComma(sub);
+            for (String split : splits) {
+                GlobFilter globFilter = new GlobFilter(split);
+                if (globFilter.hasPattern()) {
+                    results.add(Pair.of(getComponentPrefix(split), true));
+                } else {
+                    results.add(Pair.of(unescapePathComponent(split), false));
+                }
+            }
+            return results;
+        }
+        return null;
+    }
+
+    private List<String> splitByComma(String str) {
+        List<String> values = new ArrayList<>();
+        int start = 0;
+        for (int i = 0; i < str.length(); i++) {
+            if (str.charAt(i) == ',') {
+                if (isBackslash(str, i - 1)) {
+                    continue;
+                } else {
+                    values.add(replaceBackslashComma(str.substring(start, i)));
+                    start = i + 1;
+                }
+            }
+        }
+        if (start != str.length() - 1) {
+            values.add(replaceBackslashComma(str.substring(start)));
+        }
+        return values;
+    }
+
+    private String replaceBackslashComma(String value) {
+        return value.replaceAll("\\\\,", ",");
+    }
+
+    private boolean isBackslash(String str, int index) {
+        if (index >= 0 && index < str.length()) {
+            return str.charAt(index) == '\\';
+        }
+        return false;
+    }
+
+    private String getComponentPrefix(String component) {
+        int index = 0;
+        // special characters: * ? [] {} ,(in {}) -(in [])
+        for (int i = 0; i < component.length(); i++) {
+            char ch = component.charAt(i);
+            if (ch == '*' || ch == '?' || ch == '[' || ch == '{' || ch == '\\') {
+                index = i;
+                break;
+            }
+        }
+        return component.substring(0, index);
+    }
+
+    /*
+     * Glob process method are referenced from {@link org.apache.hadoop.fs.Globber}
+     */
+    private static String unescapePathComponent(String name) {
+        return name.replaceAll("\\\\(.)", "$1");
+    }
+
+    private static List<String> getPathComponents(String path) {
+        ArrayList<String> ret = new ArrayList<>();
+        for (String component : path.split(org.apache.hadoop.fs.Path.SEPARATOR)) {
+            if (!component.isEmpty()) {
+                ret.add(component);
+            }
+        }
+        return ret;
     }
 }

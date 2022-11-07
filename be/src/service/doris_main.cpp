@@ -49,6 +49,7 @@
 #include "env/env.h"
 #include "io/cloud/cloud_file_cache_factory.h"
 #include "io/cloud/cloud_file_cache_settings.h"
+#include "io/cloud/tmp_file_mgr.h"
 #include "io/fs/local_file_system.h"
 #include "olap/options.h"
 #include "olap/storage_engine.h"
@@ -440,17 +441,14 @@ int main(int argc, char** argv) {
     exec_env->set_storage_engine(engine);
     engine->set_heartbeat_flags(exec_env->heartbeat_flags());
 
-    doris::io::global_local_filesystem()->delete_directory(doris::config::tmp_file_dir);
-    doris::io::global_local_filesystem()->create_directory(doris::config::tmp_file_dir);
-    if (doris::config::enable_write_as_cache &&
-        doris::config::tmp_file_cache_total_size_bytes <= 0) {
-        LOG(FATAL) << "if enable_write_as_cache is true, tmp_file_cache_total_size_bytes should "
-                      "not less than or equal to zero ";
+#ifdef CLOUD_MODE
+    st = doris::io::TmpFileMgr::create_tmp_file_mgrs();
+    if (!st) {
+        LOG(FATAL) << "fail to create tmp file mgrs, res=" << st.get_error_msg();
         exit(-1);
     }
     // start all background threads of storage engine.
     // SHOULD be called after exec env is initialized.
-#ifdef CLOUD_MODE
     EXIT_IF_ERROR(engine->cloud_start_bg_threads());
 #else
     EXIT_IF_ERROR(engine->start_bg_threads());

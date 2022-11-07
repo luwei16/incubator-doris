@@ -112,7 +112,7 @@ public class MetaServiceProxy {
         }
     }
 
-    public SelectdbCloud.MetaServiceGenericResponse
+    public SelectdbCloud.CreateTabletsResponse
             createTablets(SelectdbCloud.CreateTabletsRequest request) throws RpcException {
         if (metaServiceHostPort == null) {
             throw new RpcException("", "cloud mode, please configure cloud_unique_id and meta_service_endpoint");
@@ -126,7 +126,7 @@ public class MetaServiceProxy {
         }
     }
 
-    public SelectdbCloud.MetaServiceGenericResponse
+    public SelectdbCloud.UpdateTabletResponse
             updateTablet(TNetworkAddress address, SelectdbCloud.UpdateTabletRequest request) throws RpcException {
         try {
             final MetaServiceClient client = getProxy(address);
@@ -255,7 +255,7 @@ public class MetaServiceProxy {
         }
     }
 
-    public SelectdbCloud.MetaServiceGenericResponse
+    public SelectdbCloud.IndexResponse
             prepareIndex(SelectdbCloud.IndexRequest request) throws RpcException {
         if (metaServiceHostPort == null) {
             throw new RpcException("", "cloud mode, please configure cloud_unique_id and meta_service_endpoint");
@@ -269,7 +269,7 @@ public class MetaServiceProxy {
         }
     }
 
-    public SelectdbCloud.MetaServiceGenericResponse
+    public SelectdbCloud.IndexResponse
             commitIndex(SelectdbCloud.IndexRequest request) throws RpcException {
         if (metaServiceHostPort == null) {
             throw new RpcException("", "cloud mode, please configure cloud_unique_id and meta_service_endpoint");
@@ -283,7 +283,7 @@ public class MetaServiceProxy {
         }
     }
 
-    public SelectdbCloud.MetaServiceGenericResponse
+    public SelectdbCloud.IndexResponse
             dropIndex(SelectdbCloud.IndexRequest request) throws RpcException {
         if (metaServiceHostPort == null) {
             throw new RpcException("", "cloud mode, please configure cloud_unique_id and meta_service_endpoint");
@@ -297,7 +297,7 @@ public class MetaServiceProxy {
         }
     }
 
-    public SelectdbCloud.MetaServiceGenericResponse preparePartition(SelectdbCloud.PartitionRequest request)
+    public SelectdbCloud.PartitionResponse preparePartition(SelectdbCloud.PartitionRequest request)
             throws RpcException {
         if (metaServiceHostPort == null) {
             throw new RpcException("", "cloud mode, please configure cloud_unique_id and meta_service_endpoint");
@@ -311,7 +311,7 @@ public class MetaServiceProxy {
         }
     }
 
-    public SelectdbCloud.MetaServiceGenericResponse
+    public SelectdbCloud.PartitionResponse
             commitPartition(SelectdbCloud.PartitionRequest request) throws RpcException {
         if (metaServiceHostPort == null) {
             throw new RpcException("", "cloud mode, please configure cloud_unique_id and meta_service_endpoint");
@@ -325,7 +325,7 @@ public class MetaServiceProxy {
         }
     }
 
-    public SelectdbCloud.MetaServiceGenericResponse
+    public SelectdbCloud.PartitionResponse
             dropPartition(SelectdbCloud.PartitionRequest request) throws RpcException {
         if (metaServiceHostPort == null) {
             throw new RpcException("", "cloud mode, please configure cloud_unique_id and meta_service_endpoint");
@@ -379,6 +379,19 @@ public class MetaServiceProxy {
         }
     }
 
+    public SelectdbCloud.DropStageResponse dropStage(SelectdbCloud.DropStageRequest request) throws RpcException {
+        if (metaServiceHostPort == null) {
+            throw new RpcException("", "cloud mode, please configure cloud_unique_id and meta_service_endpoint");
+        }
+        TNetworkAddress metaAddress = new TNetworkAddress(metaServiceHostPort.first, metaServiceHostPort.second);
+        try {
+            final MetaServiceClient client = getProxy(metaAddress);
+            return client.dropStage(request);
+        } catch (Exception e) {
+            throw new RpcException(metaAddress.hostname, e.getMessage(), e);
+        }
+    }
+
     public SelectdbCloud.BeginCopyResponse beginCopy(SelectdbCloud.BeginCopyRequest request) throws RpcException {
         if (metaServiceHostPort == null) {
             throw new RpcException("", "cloud mode, please configure cloud_unique_id and meta_service_endpoint");
@@ -419,7 +432,7 @@ public class MetaServiceProxy {
         }
     }
 
-    public SelectdbCloud.MetaServiceGenericResponse alterCluster(SelectdbCloud.AlterClusterRequest request)
+    public SelectdbCloud.AlterClusterResponse alterCluster(SelectdbCloud.AlterClusterRequest request)
             throws RpcException {
         if (metaServiceHostPort == null) {
             throw new RpcException("", "cloud mode, please configure cloud_unique_id and meta_service_endpoint");

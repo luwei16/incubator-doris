@@ -1,5 +1,6 @@
 package com.selectdb.cloud.storage;
 
+import com.google.common.collect.Lists;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.doris.common.DdlException;
 import org.apache.logging.log4j.LogManager;
@@ -9,8 +10,11 @@ import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.core.exception.SdkException;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
+import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
+import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.S3Object;
 
 import java.net.URI;
@@ -31,21 +35,40 @@ public class DefaultRemote extends RemoteBase {
 
     @Override
     public ListObjectsResult listObjects(String continuationToken) throws DdlException {
-        if (s3Client == null) {
-            /*
-             * https://github.com/aws/aws-sdk-java-v2/blob/master/docs/LaunchChangelog.md#131-client-http-configuration
-             * https://github.com/aws/aws-sdk-java-v2/blob/master/docs/LaunchChangelog.md#133-client-override-configuration
-             * There are several timeout configuration, please config if needed.
-             */
-            AwsBasicCredentials credentials = AwsBasicCredentials.create(obj.getAk(), obj.getSk());
-            StaticCredentialsProvider scp = StaticCredentialsProvider.create(credentials);
-            URI endpointUri = URI.create("http://" + obj.getEndpoint());
-            s3Client = S3Client.builder().endpointOverride(endpointUri).credentialsProvider(scp)
-                    .region(Region.of(obj.getRegion())).build();
+        return listObjectsInner(normalizePrefix(), continuationToken);
+    }
+
+    @Override
+    public ListObjectsResult listObjects(String subPrefix, String continuationToken) throws DdlException {
+        return listObjectsInner(normalizePrefix(subPrefix), continuationToken);
+    }
+
+    @Override
+    public ListObjectsResult headObject(String subKey) throws DdlException {
+        initClient();
+        try {
+            String key = normalizePrefix(subKey);
+            HeadObjectRequest request = HeadObjectRequest.builder().bucket(obj.getBucket()).key(key)
+                    .build();
+            HeadObjectResponse response = s3Client.headObject(request);
+            ObjectFile objectFile = new ObjectFile(key, getRelativePath(key), response.eTag(),
+                    response.contentLength());
+            return new ListObjectsResult(Lists.newArrayList(objectFile), false, null);
+        } catch (NoSuchKeyException e) {
+            LOG.warn("NoSuchKey when head object for S3, subKey={}", subKey);
+            return new ListObjectsResult(Lists.newArrayList(), false, null);
+        } catch (SdkException e) {
+            LOG.warn("Failed to head object for S3, subKey={}", subKey, e);
+            throw new DdlException(
+                    "Failed to head object for S3, subKey=" + subKey + " Error message=" + e.getMessage());
         }
+    }
+
+    private ListObjectsResult listObjectsInner(String prefix, String continuationToken) throws DdlException {
+        initClient();
         try {
             ListObjectsV2Request.Builder requestBuilder = ListObjectsV2Request.builder().bucket(obj.getBucket())
-                    .prefix(normalizePrefix());
+                    .prefix(prefix);
             if (!StringUtils.isEmpty(continuationToken)) {
                 requestBuilder.continuationToken(continuationToken);
             }
@@ -58,6 +81,21 @@ public class DefaultRemote extends RemoteBase {
         } catch (SdkException e) {
             LOG.warn("Failed to list objects for S3", e);
             throw new DdlException("Failed to list objects for S3, Error message=" + e.getMessage());
+        }
+    }
+
+    private void initClient() {
+        if (s3Client == null) {
+            /*
+             * https://github.com/aws/aws-sdk-java-v2/blob/master/docs/LaunchChangelog.md#131-client-http-configuration
+             * https://github.com/aws/aws-sdk-java-v2/blob/master/docs/LaunchChangelog.md#133-client-override-configuration
+             * There are several timeout configuration, please config if needed.
+             */
+            AwsBasicCredentials credentials = AwsBasicCredentials.create(obj.getAk(), obj.getSk());
+            StaticCredentialsProvider scp = StaticCredentialsProvider.create(credentials);
+            URI endpointUri = URI.create("http://" + obj.getEndpoint());
+            s3Client = S3Client.builder().endpointOverride(endpointUri).credentialsProvider(scp)
+                    .region(Region.of(obj.getRegion())).build();
         }
     }
 

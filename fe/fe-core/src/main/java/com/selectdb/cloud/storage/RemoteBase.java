@@ -63,6 +63,10 @@ public abstract class RemoteBase {
 
     public abstract ListObjectsResult listObjects(String continuationToken) throws DdlException;
 
+    public abstract ListObjectsResult listObjects(String subPrefix, String continuationToken) throws DdlException;
+
+    public abstract ListObjectsResult headObject(String subKey) throws DdlException;
+
     public void close() {}
 
     public static RemoteBase newInstance(ObjectInfo obj) throws Exception {
@@ -84,6 +88,12 @@ public abstract class RemoteBase {
 
     protected String normalizePrefix() {
         return obj.prefix.isEmpty() ? "" : (obj.prefix.endsWith("/") ? obj.prefix : String.format("%s/", obj.prefix));
+    }
+
+    protected String normalizePrefix(String subPrefix) {
+        String prefix = normalizePrefix();
+        // if prefix is not empty, prefix contains '/' in the end
+        return prefix.isEmpty() ? subPrefix : String.format("%s%s", prefix, subPrefix);
     }
 
     protected String getRelativePath(String key) throws DdlException {

@@ -46,6 +46,7 @@ namespace selectdb {
 
 [[maybe_unused]] static const char* COPY_JOB_KEY_INFIX        = "job";
 [[maybe_unused]] static const char* COPY_FILE_KEY_INFIX       = "loading_file";
+[[maybe_unused]] static const char* STAGE_KEY_INFIX           = "stage";
 // clang-format on
 
 // clang-format off
@@ -92,7 +93,7 @@ static void encode_prefix(const T& t, std::string* key) {
         MetaRowsetKeyInfo, MetaRowsetTmpKeyInfo, MetaTabletKeyInfo, MetaTabletIdxKeyInfo,
         VersionKeyInfo,
         RecycleIndexKeyInfo, RecyclePartKeyInfo, RecycleRowsetKeyInfo, RecycleTxnKeyInfo,
-        StatsTabletKeyInfo, JobTabletKeyInfo, CopyJobKeyInfo, CopyFileKeyInfo>);
+        StatsTabletKeyInfo, JobTabletKeyInfo, CopyJobKeyInfo, CopyFileKeyInfo, RecycleStageKeyInfo>);
 
     key->push_back(CLOUD_USER_KEY_SPACE01);
     // Prefixes for key families
@@ -113,7 +114,8 @@ static void encode_prefix(const T& t, std::string* key) {
     } else if constexpr (std::is_same_v<T, RecycleIndexKeyInfo>
                       || std::is_same_v<T, RecyclePartKeyInfo>
                       || std::is_same_v<T, RecycleRowsetKeyInfo>
-                      || std::is_same_v<T, RecycleTxnKeyInfo>) {
+                      || std::is_same_v<T, RecycleTxnKeyInfo>
+                      || std::is_same_v<T, RecycleStageKeyInfo>) {
         encode_bytes(RECYCLE_KEY_PREFIX, key);
     } else if constexpr (std::is_same_v<T, StatsTabletKeyInfo>) {
         encode_bytes(STATS_KEY_PREFIX, key);
@@ -241,6 +243,12 @@ void recycle_txn_key(const RecycleTxnKeyInfo& in, std::string* out) {
     encode_bytes(RECYCLE_KEY_TXN, out); // "txn"
     encode_int64(std::get<1>(in), out); // db_id
     encode_int64(std::get<2>(in), out); // txn_id
+}
+
+void recycle_stage_key(const RecycleStageKeyInfo& in, std::string* out) {
+    encode_prefix(in, out);             // 0x01 "recycle" ${instance_id}
+    encode_bytes(STAGE_KEY_INFIX, out); // "stage"
+    encode_bytes(std::get<1>(in), out); // stage_id
 }
 
 void stats_tablet_key(const StatsTabletKeyInfo& in, std::string* out) {

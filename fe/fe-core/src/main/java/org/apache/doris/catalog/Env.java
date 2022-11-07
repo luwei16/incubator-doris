@@ -60,6 +60,7 @@ import org.apache.doris.analysis.DropDbStmt;
 import org.apache.doris.analysis.DropFunctionStmt;
 import org.apache.doris.analysis.DropMaterializedViewStmt;
 import org.apache.doris.analysis.DropPartitionClause;
+import org.apache.doris.analysis.DropStageStmt;
 import org.apache.doris.analysis.DropTableStmt;
 import org.apache.doris.analysis.FunctionName;
 import org.apache.doris.analysis.InstallPluginStmt;
@@ -243,6 +244,7 @@ import com.selectdb.cloud.catalog.CloudReplica;
 import com.selectdb.cloud.catalog.CloudTabletRebalancer;
 import com.selectdb.cloud.proto.SelectdbCloud;
 import com.selectdb.cloud.proto.SelectdbCloud.NodeInfoPB;
+import com.selectdb.cloud.proto.SelectdbCloud.StagePB;
 import com.sleepycat.je.rep.InsufficientLogException;
 import com.sleepycat.je.rep.NetworkRestore;
 import com.sleepycat.je.rep.NetworkRestoreConfig;
@@ -612,7 +614,9 @@ public class Env {
         // The pendingLoadTaskScheduler's queue size should not less than Config.desired_max_waiting_jobs.
         // So that we can guarantee that all submitted load jobs can be scheduled without being starved.
         this.pendingLoadTaskScheduler = new MasterTaskExecutor("pending-load-task-scheduler",
-                Config.async_pending_load_task_pool_size, Config.desired_max_waiting_jobs, !isCheckpointCatalog);
+                Config.async_pending_load_task_pool_size,
+                Config.cloud_unique_id.isEmpty() ? Config.desired_max_waiting_jobs
+                        : Config.cluster_max_waiting_copy_jobs, !isCheckpointCatalog);
         // The loadingLoadTaskScheduler's queue size is unlimited, so that it can receive all loading tasks
         // created after pending tasks finish. And don't worry about the high concurrency, because the
         // concurrency is limited by Config.desired_max_waiting_jobs and Config.async_loading_load_task_pool_size.
@@ -1494,10 +1498,13 @@ public class Env {
 
         // Alter
         getAlterInstance().start();
-        // Consistency checker
-        getConsistencyChecker().start();
-        // Backup handler
-        getBackupHandler().start();
+
+        if (Config.cloud_unique_id.isEmpty()) {
+            // Consistency checker
+            getConsistencyChecker().start();
+            // Backup handler
+            getBackupHandler().start();
+        }
         // catalog recycle bin
         getRecycleBin().start();
         // time printer
@@ -5792,5 +5799,13 @@ public class Env {
             throw new DdlException("stage is only supported in cloud mode");
         }
         getInternalCatalog().createStage(stmt.toStageProto(), stmt.isIfNotExists());
+    }
+
+    public void dropStage(DropStageStmt stmt) throws DdlException {
+        if (Config.cloud_unique_id.isEmpty()) {
+            throw new DdlException("stage is only supported in cloud mode");
+        }
+        getInternalCatalog().dropStage(StagePB.StageType.EXTERNAL, null, null, stmt.getStageName(), null,
+                stmt.isIfExists());
     }
 }

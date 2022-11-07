@@ -31,10 +31,14 @@
 // 0x01 "recycle" ${instance_id} "partition" ${partition_id}                                 -> RecyclePartitionPB
 // 0x01 "recycle" ${instance_id} "rowset" ${tablet_id} ${rowset_id}                          -> RecycleRowsetPB
 // 0x01 "recycle" ${instance_id} "txn" ${db_id} ${txn_id}                                    -> RecycleTxnKeyInfo
+// 0x01 "recycle" ${instance_id} "stage" ${stage_id}                                         -> RecycleStagePB
 //
 // 0x01 "job" ${instance_id} "tablet" ${tablet_id}                                           -> TabletJobInfoPB
 //
 // 0x01 "system" "meta-service" "registry"                                                   -> MetaServiceRegistryPB
+//
+// 0x01 "copy" ${instance_id} "job" ${stage_id} ${table_id} ${copy_id} ${group_id}           -> CopyJobPB
+// 0x01 "copy" ${instance_id} "loading_files" ${stage_id} ${table_id} ${obj_name} ${etag}    -> CopyFilePB
 // clang-format on
 
 namespace selectdb {
@@ -115,6 +119,9 @@ using CopyJobKeyInfo       = BasicKeyInfo<17, std::tuple<std::string,  std::stri
 //                                                      0:instance_id  1:stage_id   2:table_id  3:obj_key     4:obj_etag
 using CopyFileKeyInfo      = BasicKeyInfo<18, std::tuple<std::string,  std::string,  int64_t,   std::string,  std::string>>;
 
+//                                                      0:instance_id  1:stage_id
+using RecycleStageKeyInfo  = BasicKeyInfo<19, std::tuple<std::string,  std::string>>;
+
 void instance_key(const InstanceKeyInfo& in, std::string* out);
 
 void txn_label_key(const TxnLabelKeyInfo& in, std::string* out);
@@ -152,6 +159,9 @@ void copy_job_key(const CopyJobKeyInfo& in, std::string* out);
 void copy_file_key(const CopyFileKeyInfo& in, std::string* out);
 [[maybe_unused]] static std::string copy_job_key(const CopyJobKeyInfo& in) { std::string s; copy_job_key(in, &s); return s; }
 [[maybe_unused]] static std::string copy_file_key(const CopyFileKeyInfo& in) { std::string s; copy_file_key(in, &s); return s; }
+
+void recycle_stage_key(const RecycleStageKeyInfo& in, std::string* out);
+[[maybe_unused]] static std::string recycle_stage_key(const RecycleStageKeyInfo& in) { std::string s; recycle_stage_key(in, &s); return s; }
 
 std::string system_meta_service_registry_key();
 // clang-format on

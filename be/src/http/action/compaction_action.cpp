@@ -207,11 +207,11 @@ Status CompactionAction::_execute_compaction_callback(TabletSharedPtr tablet,
     Status res = Status::OK();
     if (compaction_type == PARAM_COMPACTION_BASE) {
 #ifdef CLOUD_MODE
-        CloudBaseCompaction base_compaction(tablet);
+        auto base_compaction = std::make_shared<CloudBaseCompaction>(tablet);
 #else
-        BaseCompaction base_compaction(tablet);
+        auto base_compaction = std::make_shared<BaseCompaction>(tablet);
 #endif
-        res = base_compaction.compact();
+        res = base_compaction->compact();
         if (!res) {
             if (res.precise_code() == OLAP_ERR_BE_NO_SUITABLE_VERSION) {
                 // Ignore this error code.
@@ -225,11 +225,11 @@ Status CompactionAction::_execute_compaction_callback(TabletSharedPtr tablet,
         }
     } else if (compaction_type == PARAM_COMPACTION_CUMULATIVE) {
 #ifdef CLOUD_MODE
-        CloudCumulativeCompaction cumulative_compaction(tablet);
+        auto cumu_compaction = std::make_shared<CloudCumulativeCompaction>(tablet);
 #else
-        CumulativeCompaction cumulative_compaction(tablet);
+        auto cumu_compaction = std::make_shared<CumulativeCompaction>(tablet);
 #endif
-        res = cumulative_compaction.compact();
+        res = cumu_compaction->compact();
         if (!res) {
             if (res.precise_code() == OLAP_ERR_CUMULATIVE_NO_SUITABLE_VERSION) {
                 // Ignore this error code.
