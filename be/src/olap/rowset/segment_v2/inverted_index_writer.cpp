@@ -5,6 +5,7 @@
 
 #include <memory>
 
+#include "io/cloud/tmp_file_mgr.h"
 #include "io/fs/local_file_system.h"
 #include "olap/field.h"
 #include "olap/olap_common.h"
@@ -136,9 +137,9 @@ public:
         _default_char_analyzer = _CLNEW lucene::analysis::SimpleAnalyzer<char>();
         _standard_analyzer = _CLNEW lucene::analysis::standard::StandardAnalyzer();
 #ifdef CLOUD_MODE
-        _lfs = std::make_unique<doris::io::LocalFileSystem>(config::tmp_file_dir);
+        _lfs = std::make_unique<doris::io::LocalFileSystem>(io::TmpFileMgr::instance()->get_tmp_file_dir());
         auto lfs_index_path = InvertedIndexDescriptor::get_temporary_index_path(
-                config::tmp_file_dir + "/" + _segment_file_name, _uuid);
+                io::TmpFileMgr::instance()->get_tmp_file_dir() + "/" + _segment_file_name, _uuid);
         lucene::store::Directory* dir = DorisCompoundDirectory::getDirectory(
                 _lfs.get(), lfs_index_path.c_str(), true, _fs, index_path.c_str());
 #else
@@ -359,10 +360,10 @@ public:
             }
 #ifdef CLOUD_MODE
             if (_lfs == nullptr) {
-                _lfs = std::make_unique<doris::io::LocalFileSystem>(config::tmp_file_dir);
+                _lfs = std::make_unique<doris::io::LocalFileSystem>(io::TmpFileMgr::instance()->get_tmp_file_dir());
             }
             auto lfs_index_path = InvertedIndexDescriptor::get_temporary_index_path(
-                    config::tmp_file_dir + "/" + _segment_file_name, _uuid);
+                    io::TmpFileMgr::instance()->get_tmp_file_dir() + "/" + _segment_file_name, _uuid);
             lucene::store::Directory* dir = DorisCompoundDirectory::getDirectory(
                     _lfs.get(), lfs_index_path.c_str(), true, _fs, index_path.c_str());
 #else

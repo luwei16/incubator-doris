@@ -169,6 +169,7 @@ struct TAlterInvertedIndexReq {
     7: optional list<Descriptors.TOlapTableIndex> indexes
     8: optional list<Descriptors.TColumn> columns
     9: optional i64 job_id
+    10: optional i64 expiration
 }
 
 struct TAlterMaterializedViewParam {

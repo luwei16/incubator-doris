@@ -71,7 +71,8 @@ Status EngineAlterInvertedIndexTask::execute() {
     Status res;
 #ifdef CLOUD_MODE
     DCHECK(_alter_inverted_index_req.__isset.job_id);
-    cloud::CloudSchemaChange cloud_sc(std::to_string(_alter_inverted_index_req.job_id));
+    cloud::CloudSchemaChange cloud_sc(std::to_string(_alter_inverted_index_req.job_id),
+                                    _alter_inverted_index_req.expiration);
     res = cloud_sc.process_alter_inverted_index(_alter_inverted_index_req);
 #else
     res = SchemaChangeHandler::process_alter_inverted_index(_alter_inverted_index_req);

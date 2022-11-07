@@ -610,7 +610,7 @@ public class SchemaChangeJobV2 extends AlterJobV2 {
                                         partitionId, shadowIdxId, visibleVersion,
                                         originTabletId, originSchemaHash,
                                         jobId, JobType.SCHEMA_CHANGE,
-                                        isDropOp, alterInvertedIndexes, indexes, originSchemaColumns);
+                                        isDropOp, alterInvertedIndexes, indexes, originSchemaColumns, expiration);
                                 schemaChangeBatchTask.addTask(alterInvertedIndexTask);
                             } else {
                                 AlterReplicaTask rollupTask = new AlterReplicaTask(shadowReplica.getBackendId(), dbId,
