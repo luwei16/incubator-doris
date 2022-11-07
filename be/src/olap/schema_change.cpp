@@ -1265,7 +1265,7 @@ Status SchemaChangeForInvertedIndex::_write_inverted_index(
     for (auto& inverted_index: _alter_inverted_indexs) {
         auto column_name = inverted_index.columns[0];
         auto column = _tablet_schema->column(column_name);
-        auto unique_id = column.unique_id();
+        auto index_id = inverted_index.index_id;
 
         auto converted_result = olap_data_convertor.convert_column_data(idx++);
         if (converted_result.first != Status::OK()) {
@@ -1273,7 +1273,7 @@ Status SchemaChangeForInvertedIndex::_write_inverted_index(
             return converted_result.first;
         }
 
-        std::string writer_sign = std::to_string(segment_idx) + "_" + std::to_string(unique_id);
+        std::string writer_sign = std::to_string(segment_idx) + "_" + std::to_string(index_id);
         std::unique_ptr<Field> field(FieldFactory::create(column));
         const auto* ptr = (const uint8_t*)converted_result.second->get_data();
         if (converted_result.second->get_nullmap()) {
@@ -1323,7 +1323,7 @@ Status SchemaChangeForInvertedIndex::process(
             DCHECK_EQ(inverted_index.columns.size(), 1);
             auto column_name = inverted_index.columns[0];
             auto column = _tablet_schema->column(column_name);
-            auto unique_id = column.unique_id();
+            auto index_id = inverted_index.index_id;
 
             std::unique_ptr<Field> field(FieldFactory::create(column));
             _index_metas.emplace_back(new TabletIndex());
@@ -1331,7 +1331,7 @@ Status SchemaChangeForInvertedIndex::process(
             std::unique_ptr<segment_v2::InvertedIndexColumnWriter> inverted_index_builder;
             try {
                 RETURN_IF_ERROR(segment_v2::InvertedIndexColumnWriter::create(field.get(), &inverted_index_builder,
-                                                              unique_id, segment_filename,
+                                                              index_id, segment_filename,
                                                               segment_dir,
                                                               _index_metas.back().get(),
                                                               fs));
@@ -1341,7 +1341,7 @@ Status SchemaChangeForInvertedIndex::process(
             }
 
             if (inverted_index_builder) {
-                std::string writer_sign = std::to_string(i) + "_" + std::to_string(unique_id);
+                std::string writer_sign = std::to_string(i) + "_" + std::to_string(index_id);
                 _inverted_index_builders.insert(std::make_pair(writer_sign, std::move(inverted_index_builder)));
             }
         }
@@ -1402,8 +1402,8 @@ Status SchemaChangeForInvertedIndex::process(
             DCHECK_EQ(inverted_index.columns.size(), 1);
             auto column_name = inverted_index.columns[0];
             auto column = _tablet_schema->column(column_name);
-            auto unique_id = column.unique_id();
-            std::string writer_sign = std::to_string(i) + "_" + std::to_string(unique_id);
+            auto index_id = inverted_index.index_id;
+            std::string writer_sign = std::to_string(i) + "_" + std::to_string(index_id);
             try {
                 if (_inverted_index_builders[writer_sign]) {
                     _inverted_index_builders[writer_sign]->finish();
@@ -2134,16 +2134,18 @@ Status SchemaChangeHandler::_drop_inverted_index(
             for (auto& inverted_index: alter_inverted_indexs) {
                 auto column_name = inverted_index.columns[0];
                 auto column = tablet_schema->column(column_name);
-                auto col_uuid = column.unique_id();
+                auto index_id = inverted_index.index_id;
 
                 std::string inverted_index_file =
-                    InvertedIndexDescriptor::get_index_file_name(segment_path, inverted_index.index_id);
+                    InvertedIndexDescriptor::get_index_file_name(segment_path, index_id);
                 bool file_exist = false;
                 fs->exists(inverted_index_file, &file_exist);
                 if (!file_exist) {
                     return Status::OK();
                 }
-                LOG(INFO) << "will drop inverted index cid: " << col_uuid << ", column_name: " << column_name
+                LOG(INFO) << "will drop inverted index, index id: " << index_id
+                        << ", cid: " << column.unique_id()
+                        << ", column_name: " << column_name
                         << ", inverted_index_file: " << inverted_index_file;
                 res = fs->delete_file(inverted_index_file);
                 if (!res.ok()) {

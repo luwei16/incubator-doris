@@ -390,7 +390,7 @@ suite("add_drop_index_with_data", "add_drop_index_with_data"){
     assertEquals(select_result[0][2], "desc 2")
 
     // add index on column description
-    sql "create index idx_desc on ${indexTbName1}(description) USING INVERTED PROPERTIES(\"parser\"=\"standard\");;"
+    sql "create index idx_desc on ${indexTbName1}(description) USING INVERTED PROPERTIES(\"parser\"=\"standard\");"
     wait_for_latest_op_on_table_finish(indexTbName1, timeout)
 
     // query rows where description match 'desc'
