@@ -360,6 +360,7 @@ Status TabletsChannel::_open_all_writers(const PTabletWriterOpenRequest& request
         wrequest.schema_hash = schema_hash;
         wrequest.write_type = WriteType::LOAD;
         wrequest.txn_id = _txn_id;
+        wrequest.txn_expiration = request.txn_expiration();
         wrequest.partition_id = tablet.partition_id();
         wrequest.load_id = request.id();
         wrequest.tuple_desc = _tuple_desc;

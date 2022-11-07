@@ -87,7 +87,7 @@ void Recycler::instance_scanner_callback() {
         {
             std::unique_lock lock(instance_scanner_mtx_);
             instance_scanner_cond_.wait_for(lock,
-                                            std::chrono::seconds(config::recycl_interval_seconds),
+                                            std::chrono::seconds(config::recycle_interval_seconds),
                                             [&]() { return !is_working(); });
         }
     }
@@ -245,7 +245,9 @@ void InstanceRecycler::recycle_indexes() {
             LOG_WARNING("malformed recycle index value").tag("key", hex(k)).tag("val", hex(v));
             return false;
         }
-        if (current_time < index_pb.creation_time() + config::index_retention_seconds) {
+        int64_t expiration =
+                index_pb.expiration() > 0 ? index_pb.expiration() : index_pb.creation_time();
+        if (current_time < expiration + config::retention_seconds) {
             // not expired
             return false;
         }
@@ -307,7 +309,9 @@ void InstanceRecycler::recycle_partitions() {
             LOG_WARNING("malformed recycle partition value").tag("key", hex(k)).tag("val", hex(v));
             return false;
         }
-        if (current_time < part_pb.creation_time() + config::partition_retention_seconds) {
+        int64_t expiration =
+                part_pb.expiration() > 0 ? part_pb.expiration() : part_pb.creation_time();
+        if (current_time < expiration + config::retention_seconds) {
             // not expired
             return false;
         }
@@ -343,21 +347,36 @@ int InstanceRecycler::recycle_tablets(int64_t table_id, int64_t index_id, int64_
     int num_scanned = 0;
     int num_recycled = 0;
 
-    std::string tablet_key0;
-    std::string tablet_key1;
+    MetaTabletKeyInfo tablet_key_info0;
+    MetaTabletKeyInfo tablet_key_info1;
+    StatsTabletKeyInfo stats_key_info0;
+    StatsTabletKeyInfo stats_key_info1;
+    JobTabletKeyInfo job_key_info0;
+    JobTabletKeyInfo job_key_info1;
+
     if (partition_id > 0) {
         // recycle tablets in a partition belonging to the index
-        MetaTabletKeyInfo tablet_key_info0 {instance_id_, table_id, index_id, partition_id, 0};
-        MetaTabletKeyInfo tablet_key_info1 {instance_id_, table_id, index_id, partition_id + 1, 0};
-        meta_tablet_key(tablet_key_info0, &tablet_key0);
-        meta_tablet_key(tablet_key_info1, &tablet_key1);
+        tablet_key_info0 = {instance_id_, table_id, index_id, partition_id, 0};
+        tablet_key_info1 = {instance_id_, table_id, index_id, partition_id + 1, 0};
+        stats_key_info0 = {instance_id_, table_id, index_id, partition_id, 0};
+        stats_key_info1 = {instance_id_, table_id, index_id, partition_id + 1, 0};
+        job_key_info0 = {instance_id_, table_id, index_id, partition_id, 0};
+        job_key_info1 = {instance_id_, table_id, index_id, partition_id + 1, 0};
     } else {
         // recycle tablets in the index
-        MetaTabletKeyInfo tablet_key_info0 {instance_id_, table_id, index_id, 0, 0};
-        MetaTabletKeyInfo tablet_key_info1 {instance_id_, table_id, index_id + 1, 0, 0};
-        meta_tablet_key(tablet_key_info0, &tablet_key0);
-        meta_tablet_key(tablet_key_info1, &tablet_key1);
+        tablet_key_info0 = {instance_id_, table_id, index_id, 0, 0};
+        tablet_key_info1 = {instance_id_, table_id, index_id + 1, 0, 0};
+        stats_key_info0 = {instance_id_, table_id, index_id, 0, 0};
+        stats_key_info1 = {instance_id_, table_id, index_id + 1, 0, 0};
+        job_key_info0 = {instance_id_, table_id, index_id, 0, 0};
+        job_key_info1 = {instance_id_, table_id, index_id + 1, 0, 0};
     }
+    auto tablet_key0 = meta_tablet_key(tablet_key_info0);
+    auto tablet_key1 = meta_tablet_key(tablet_key_info1);
+    auto stats_key0 = stats_tablet_key(stats_key_info0);
+    auto stats_key1 = stats_tablet_key(stats_key_info1);
+    auto job_key0 = job_tablet_key(job_key_info0);
+    auto job_key1 = job_tablet_key(job_key_info1);
 
     LOG_INFO("begin to recycle tablets")
             .tag("table_id", table_id)
@@ -377,14 +396,16 @@ int InstanceRecycler::recycle_tablets(int64_t table_id, int64_t index_id, int64_
                 .tag("num_recycled", num_recycled);
     });
 
-    auto recycle_func = [&num_scanned, &num_recycled, this](std::string_view k,
-                                                            std::string_view v) -> bool {
+    std::vector<std::string> tablet_idx_keys;
+    auto recycle_func = [&num_scanned, &num_recycled, &tablet_idx_keys, this](
+                                std::string_view k, std::string_view v) -> bool {
         ++num_scanned;
         doris::TabletMetaPB tablet_meta_pb;
         if (!tablet_meta_pb.ParseFromArray(v.data(), v.size())) {
             LOG_WARNING("malformed tablet meta").tag("key", hex(k)).tag("val", hex(v));
             return false;
         }
+        tablet_idx_keys.push_back(meta_tablet_idx_key({instance_id_, tablet_meta_pb.tablet_id()}));
         if (recycle_tablet(tablet_meta_pb.tablet_id()) != 0) {
             LOG_WARNING("failed to recycle tablet")
                     .tag("instance_id", instance_id_)
@@ -395,7 +416,88 @@ int InstanceRecycler::recycle_tablets(int64_t table_id, int64_t index_id, int64_
         return true;
     };
 
-    return scan_and_recycle(tablet_key0, tablet_key1, std::move(recycle_func), true);
+    std::string begin = tablet_key0;
+    std::string_view end = tablet_key1;
+    int ret = 0;
+    std::unique_ptr<RangeGetIterator> it;
+    // elements in `recycled_keys` has the same lifetime as `it`
+    std::vector<std::string_view> recycled_keys;
+    do {
+        recycled_keys.clear();
+        tablet_idx_keys.clear();
+        {
+            // scan kvs
+            std::unique_ptr<Transaction> txn;
+            if (txn_kv_->create_txn(&txn) != 0) {
+                LOG(WARNING) << "failed to create txn";
+                return -1;
+            }
+            if (txn->get(begin, end, &it) != 0) {
+                LOG(WARNING) << "failed to get kv";
+                return -1;
+            }
+            VLOG_DEBUG << "fetch " << it->size() << " kv";
+        }
+        if (!it->has_next()) {
+            LOG_INFO("no keys in the given range").tag("begin", hex(begin)).tag("end", hex(end));
+            break;
+        }
+        while (it->has_next()) {
+            // recycle corresponding resources
+            auto [k, v] = it->next();
+            if (!it->has_next()) {
+                begin = k;
+                LOG_INFO("iterator has no more kvs")
+                        .tag("last_key", hex(k))
+                        .tag("last_val_size", v.size());
+            }
+            if (recycle_func(k, v)) {
+                recycled_keys.push_back(k);
+            } else {
+                ret = -1;
+            }
+        }
+        begin.push_back('\x00'); // Update to next smallest key for iteration
+        if (!recycled_keys.empty()) {
+            // remove recycled kvs
+            std::unique_ptr<Transaction> txn;
+            if (txn_kv_->create_txn(&txn) != 0) {
+                LOG(WARNING) << "failed to create txn";
+                ret = -1;
+                continue;
+            }
+            if (recycled_keys.size() == it->size()) {
+                txn->remove(recycled_keys.front(), begin);
+            } else {
+                for (auto k : recycled_keys) {
+                    txn->remove(k);
+                }
+            }
+            for (auto& tablet_idx_key : tablet_idx_keys) {
+                txn->remove(tablet_idx_key);
+            }
+            if (txn->commit() != 0) {
+                LOG(WARNING) << "failed to commit txn";
+                ret = -1;
+                continue;
+            }
+        }
+    } while (it->more() && is_working());
+
+    // remove tablet stats, job
+    std::unique_ptr<Transaction> txn;
+    if (txn_kv_->create_txn(&txn) != 0) {
+        LOG(WARNING) << "failed to create txn";
+        return -1;
+    }
+    txn->remove(stats_key0, stats_key1);
+    txn->remove(job_key0, job_key1);
+    if (txn->commit() != 0) {
+        LOG(WARNING) << "failed to commit txn";
+        return -1;
+    }
+
+    return ret;
 }
 
 int InstanceRecycler::delete_rowset_data(const doris::RowsetMetaPB& rs_meta_pb) {
@@ -596,7 +698,9 @@ void InstanceRecycler::recycle_rowsets() {
             LOG_WARNING("malformed recycle rowset value").tag("key", hex(k)).tag("val", hex(v));
             return false;
         }
-        if (current_time < recyc_rs_pb.creation_time() + config::rowset_retention_seconds) {
+        int64_t expiration = recyc_rs_pb.expiration() > 0 ? recyc_rs_pb.expiration()
+                                                          : recyc_rs_pb.creation_time();
+        if (current_time < expiration + config::retention_seconds) {
             // not expired
             return false;
         }
@@ -662,7 +766,9 @@ void InstanceRecycler::recycle_tmp_rowsets() {
             LOG_WARNING("malformed rowset meta").tag("key", hex(k)).tag("val", hex(v));
             return false;
         }
-        if (current_time < rs_meta_pb.creation_time() + config::rowset_retention_seconds) {
+        int64_t expiration = rs_meta_pb.txn_expiration() > 0 ? rs_meta_pb.txn_expiration()
+                                                             : rs_meta_pb.creation_time();
+        if (current_time < expiration + config::retention_seconds) {
             // not expired
             return false;
         }
@@ -1197,10 +1303,10 @@ void InstanceRecycler::recycle_copy_jobs() {
 
     uint64_t current_time =
             duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
-    std::unordered_map<std::string, std::shared_ptr<ObjStoreAccessor>> external_stage_accessor_map;
+    std::unordered_map<std::string, std::shared_ptr<ObjStoreAccessor>> stage_accessor_map;
 
     auto recycle_func = [&num_scanned, &num_finished, &num_expired, &num_recycled,
-                         &external_stage_accessor_map, current_time,
+                         &stage_accessor_map, current_time,
                          this](std::string_view k, std::string_view v) -> bool {
         ++num_scanned;
         CopyJobPB copy_job;
@@ -1220,84 +1326,106 @@ void InstanceRecycler::recycle_copy_jobs() {
         const auto& table_id = std::get<int64_t>(std::get<0>(out[4]));
         const auto& copy_id = std::get<std::string>(std::get<0>(out[5]));
 
+        bool recycle = false;
         if (copy_job.job_status() == CopyJobPB::FINISH) {
             ++num_finished;
-            if (copy_job.stage_type() == StagePB::INTERNAL) {
-                StagePB stage;
+
+            auto it = stage_accessor_map.find(stage_id);
+            std::shared_ptr<ObjStoreAccessor> accessor;
+            if (it != stage_accessor_map.end()) {
+                accessor = it->second;
+            } else {
+                // init s3 accessor and add to accessor map
+                ObjectStoreInfoPB object_store_info;
                 for (auto& s : instance_info_.stages()) {
                     if (s.stage_id() == stage_id) {
-                        stage = s;
+                        object_store_info = s.obj_info();
                         break;
                     }
                 }
-                if (stage.stage_id().empty()) {
-                    // TODO if stage does not exist, should remove these jobs
-                    LOG(WARNING) << "failed to get stage with instance_id=" << instance_id_
-                                 << ", stage_id=" << stage_id;
-                    return false;
-                }
-
-                std::string obj_info_id = stage.obj_info().id();
-                std::string obj_prefix;
-                for (auto& obj_info : instance_info_.obj_info()) {
-                    if (obj_info.id() == obj_info_id) {
-                        obj_prefix = obj_info.prefix();
-                        break;
+                if (object_store_info.prefix().empty()) {
+                    if (copy_job.stage_type() == StagePB::EXTERNAL) {
+                        // if stage does not exist, should remove these jobs
+                        LOG(INFO) << "Recycle nonexisted external stage copy jobs. instance_id="
+                                  << instance_id_ << ", stage_id=" << stage_id;
+                        recycle = true;
+                    } else { // internal stage or unknown
+                        // TODO now internal stage does not support drop. Once supported, should remove copy jobs
+                        LOG(WARNING) << "failed to get stage with instance_id=" << instance_id_
+                                     << ", stage_id=" << stage_id;
+                        return false;
                     }
                 }
-                if (obj_prefix.empty()) {
-                    LOG(WARNING) << "failed to get object info with instance_id=" << instance_id_
-                                 << ", object_info_id=" << obj_info_id;
-                    return false;
+                if (!recycle) {
+#ifdef UNIT_TEST
+                    // In unit test, external use the same accessor as the internal stage
+                    auto it2 = accessor_map_.find(stage_id);
+                    if (it2 != accessor_map_.end()) {
+                        accessor = it2->second;
+                    } else {
+                        std::cout << "UT can not find accessor with stage_id: " << stage_id
+                                  << std::endl;
+                        return false;
+                    }
+#else
+                    S3Conf s3_conf;
+                    if (copy_job.stage_type() == StagePB::EXTERNAL) {
+                        s3_conf.ak = object_store_info.ak();
+                        s3_conf.sk = object_store_info.sk();
+                        s3_conf.endpoint = object_store_info.endpoint();
+                        s3_conf.region = object_store_info.region();
+                        s3_conf.bucket = object_store_info.bucket();
+                        s3_conf.prefix = object_store_info.prefix();
+                    } else if (copy_job.stage_type() == StagePB::INTERNAL) {
+                        int idx = stoi(object_store_info.id());
+                        if (idx > 10 || idx < 1) {
+                            LOG(WARNING) << "invalid idx: " << idx;
+                            return false;
+                        }
+                        auto& old_obj = instance_info_.obj_info()[idx - 1];
+                        s3_conf.ak = old_obj.ak();
+                        s3_conf.sk = old_obj.sk();
+                        s3_conf.endpoint = old_obj.endpoint();
+                        s3_conf.region = old_obj.region();
+                        s3_conf.bucket = old_obj.bucket();
+                        s3_conf.prefix = object_store_info.prefix();
+                    } else {
+                        LOG(WARNING) << "unknown stage type " << copy_job.stage_type();
+                        return false;
+                    }
+                    accessor = std::make_shared<S3Accessor>(std::move(s3_conf));
+                    auto ret = accessor->init();
+                    if (ret != 0) {
+                        LOG(WARNING) << "failed to init s3 accessor ret=" << ret;
+                        return false;
+                    }
+#endif
+                    stage_accessor_map.emplace(stage_id, accessor);
                 }
+            }
 
-                auto it = accessor_map_.find(obj_info_id);
-                if (it == accessor_map_.end()) {
-                    LOG_WARNING("instance has no such resource id")
-                            .tag("instance_id", instance_id_)
-                            .tag("resource_id", obj_info_id);
-                    return false;
-                }
-                auto accessor = it->second;
-
-                // delete object keys
+            if (copy_job.stage_type() == StagePB::INTERNAL) {
+                // 1. delete objects on storage
+                // 2. delete copy file kvs
+                // 3. delete copy job kv
                 std::vector<std::string> relative_paths;
                 for (const auto& file : copy_job.object_files()) {
-                    auto stage_prefix = stage.obj_info().prefix();
                     auto relative_path = file.relative_path();
-                    // 1. ${stage_prefix} is '${object_prefix}/stage/user/{user_name}/'
-                    // 2. object key is '${stage_prefix}/{path}' or '${object_prefix}/stage/user/{user_name}/{path}'
-                    // 3. ${relative_path} is '{path}'
-                    // 4. so the real relative path is 'stage/user/{user_name}/{path}'
-                    if (stage_prefix.rfind(obj_prefix + "/", 0) == 0) {
-                        auto real_relative_path =
-                                stage_prefix.substr(obj_prefix.length() + 1) + relative_path;
-                        relative_paths.push_back(real_relative_path);
-                        LOG_INFO("begin to delete internal stage object")
-                                .tag("instance_id", instance_id_)
-                                .tag("stage_id", stage_id)
-                                .tag("table_id", table_id)
-                                .tag("query_id", copy_id)
-                                .tag("obj_prefix", obj_prefix)
-                                .tag("stage_prefix", stage_prefix)
-                                .tag("relative_path", relative_path)
-                                .tag("real_relative_path", real_relative_path);
-                    } else {
-                        LOG_WARNING("internal stage object does not start with the expected prefix")
-                                .tag("instance_id", instance_id_)
-                                .tag("stage_id", stage_id)
-                                .tag("table_id", table_id)
-                                .tag("query_id", copy_id)
-                                .tag("obj_prefix", obj_prefix)
-                                .tag("stage_prefix", stage_prefix)
-                                .tag("relative_path", relative_path);
-                    }
+                    relative_paths.push_back(relative_path);
+                    LOG_INFO("begin to delete internal stage object")
+                            .tag("instance_id", instance_id_)
+                            .tag("stage_id", stage_id)
+                            .tag("table_id", table_id)
+                            .tag("query_id", copy_id)
+                            .tag("stage_path", accessor->path())
+                            .tag("relative_path", relative_path);
                 }
                 LOG_INFO("begin to delete internal stage objects")
                         .tag("instance_id", instance_id_)
                         .tag("stage_id", stage_id)
                         .tag("table_id", table_id)
                         .tag("query_id", copy_id)
+                        .tag("stage_path", accessor->path())
                         .tag("num_objects", relative_paths.size());
 
                 // TODO delete objects with key and etag is not supported
@@ -1308,88 +1436,58 @@ void InstanceRecycler::recycle_copy_jobs() {
                             .tag("stage_id", stage_id)
                             .tag("table_id", table_id)
                             .tag("query_id", copy_id)
+                            .tag("stage_path", accessor->path())
                             .tag("num_objects", relative_paths.size());
                     return false;
                 }
-                ++num_recycled;
-                return true;
+
+                recycle = true;
             } else if (copy_job.stage_type() == StagePB::EXTERNAL) {
-                auto it = external_stage_accessor_map.find(stage_id);
-                std::shared_ptr<ObjStoreAccessor> accessor;
-                if (it == external_stage_accessor_map.end()) {
-                    ObjectStoreInfoPB object_store_info;
-                    for (auto& s : instance_info_.stages()) {
-                        if (s.stage_id() == stage_id) {
-                            object_store_info = s.obj_info();
-                            break;
+                // 1. check if objects on storage are deleted. If all deleted, do the step 2 and 3:
+                // 2. delete copy file kvs
+                // 3. delete copy job kv
+
+                // If recycle is already true, we can remove kvs directly because stage is already
+                // dropped, skip check
+                if (!recycle) {
+                    // check if object files are deleted
+                    for (auto& file : copy_job.object_files()) {
+                        bool exist = false;
+                        auto ret = accessor->exists(file.relative_path(), file.etag(), &exist);
+                        if (ret != 0) {
+                            LOG(WARNING) << "failed to check if object exists for instance_id="
+                                         << instance_id_ << ", stage_id=" << stage_id
+                                         << ", table_id=" << table_id << ", query_id=" << copy_id
+                                         << "stage_path" << accessor->path()
+                                         << ", relative_path=" << file.relative_path()
+                                         << ", etag=" << file.etag() << ", ret=" << ret;
+                            return false;
+                        }
+                        LOG_INFO("check if external stage object exists")
+                                .tag("instance_id", instance_id_)
+                                .tag("stage_id", stage_id)
+                                .tag("table_id", table_id)
+                                .tag("query_id", copy_id)
+                                .tag("stage_path", accessor->path())
+                                .tag("relative_path", file.relative_path())
+                                .tag("etag", file.etag())
+                                .tag("exist", exist);
+                        if (exist) {
+                            return false;
                         }
                     }
-                    if (object_store_info.endpoint().empty()) {
-                        // TODO if stage does not exist, should remove these jobs
-                        LOG(WARNING) << "failed to get stage with instance_id=" << instance_id_
-                                     << ", stage_id=" << stage_id;
-                        return false;
-                    }
-#ifdef UNIT_TEST
-                    // In unit test, external use the same accessor as the internal stage
-                    accessor = accessor_map_.begin()->second;
-#else
-                    S3Conf s3_conf;
-                    s3_conf.ak = object_store_info.ak();
-                    s3_conf.sk = object_store_info.sk();
-                    s3_conf.endpoint = object_store_info.endpoint();
-                    s3_conf.region = object_store_info.region();
-                    s3_conf.bucket = object_store_info.bucket();
-                    s3_conf.prefix = object_store_info.prefix();
-                    accessor = std::make_shared<S3Accessor>(std::move(s3_conf));
-                    auto ret = accessor->init();
-                    if (ret != 0) {
-                        LOG(WARNING) << "failed to init s3 accessor ret=" << ret;
-                        return false;
-                    }
-#endif
-                    external_stage_accessor_map.emplace(stage_id, accessor);
-                } else {
-                    accessor = it->second;
+                    recycle = true;
                 }
-
-                // check if object files are deleted
-                for (auto& file : copy_job.object_files()) {
-                    bool exist = false;
-                    auto ret = accessor->exists(file.relative_path(), file.etag(), &exist);
-                    if (ret != 0) {
-                        LOG(WARNING) << "failed to check if object exists for instance_id="
-                                     << instance_id_
-                                     << ", stage_id=" << stage_id
-                                     << ", table_id=" << table_id
-                                     << ", query_id=" << copy_id
-                                     << ", relative_path=" << file.relative_path()
-                                     << ", etag=" << file.etag()
-                                     << ", ret=" << ret;
-                        return false;
-                    }
-                    LOG_INFO("check if external stage object exists")
-                            .tag("instance_id", instance_id_)
-                            .tag("stage_id", stage_id)
-                            .tag("table_id", table_id)
-                            .tag("query_id", copy_id)
-                            .tag("relative_path", file.relative_path())
-                            .tag("etag", file.etag())
-                            .tag("exist", exist);
-                    if (exist) {
-                        return false;
-                    }
-                }
-
-                ++num_recycled;
-                return true;
             }
         } else if (copy_job.job_status() == CopyJobPB::LOADING) {
+            // if copy job is timeout: delete all copy file kvs and copy job kv
             if (current_time <= copy_job.timeout_time()) {
                 return false;
             }
             ++num_expired;
-
+            recycle = true;
+        }
+        if (recycle) {
             // delete all copy files
             std::vector<std::string> copy_file_keys;
             for (auto& file : copy_job.object_files()) {
@@ -1406,7 +1504,7 @@ void InstanceRecycler::recycle_copy_jobs() {
             }
             for (const auto& key : copy_file_keys) {
                 txn->remove(key);
-                LOG(INFO) << "remove timeout copy_file_key=" << hex(key)
+                LOG(INFO) << "remove copy_file_key=" << hex(key)
                           << ", instance_id=" << instance_id_
                           << ", stage_id=" << stage_id
                           << ", table_id=" << table_id

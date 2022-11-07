@@ -125,6 +125,12 @@ COPY INTO [<db_name>.]<table_name> FROM {copy_from_param} PROPERTIES (
 
       导入是否异步执行。支持`true`, `false`。 默认值为`true`，即异步执行，通过`show copy`查看异步执行的copy任务。
 
+    - `copy.strict_mode`
+
+      对于导入过程中的列类型转换进行严格过滤，参考[导入严格模式](https://doris.apache.org/zh-CN/docs/data-operate/import/import-scenes/load-strict-mode?_highlight=stric)。默认为`false`。
+
+      非必需。如未设置，优先使用stage配置的默认模式；如果stage上未设置，使用系统默认策略。
+
 ## 输出
 
 Copy into默认异步执行，返回一个`queryId`，如：

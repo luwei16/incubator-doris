@@ -60,6 +60,12 @@ public:
     // returns 0 for success otherwise error
     int list(const std::string& relative_path, std::vector<std::string>* keys) override {
         std::lock_guard lock(mtx_);
+        if (relative_path == "") {
+            for (const auto& obj : objects_) {
+                keys->push_back(obj);
+            }
+            return 0;
+        }
         auto begin = objects_.lower_bound(relative_path);
         if (begin == objects_.end()) {
             return 0;

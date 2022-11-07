@@ -24,6 +24,7 @@
 #include "common/logging.h"
 #include "env/env.h"
 #include "gutil/strings/substitute.h"
+#include "io/cloud/tmp_file_mgr.h"
 #include "io/fs/file_system.h"
 #include "io/fs/file_writer.h"
 #include "io/fs/s3_file_system.h"
@@ -75,11 +76,10 @@ Status BetaRowsetWriter::init(const RowsetWriterContext& rowset_writer_context) 
 #ifdef CLOUD_MODE
     if (_context.fs) {
         _rowset_meta->set_fs(_context.fs);
-        _rowset_meta->set_creation_time(time(nullptr));
     } else {
         // In cloud mode, this branch implies it is an intermediate rowset for external merge sort,
         // we use `global_local_filesystem` to write data to `tmp_file_dir`(see `BetaRowset::local_segment_path`).
-        _context.tablet_path = config::tmp_file_dir;
+        _context.tablet_path = io::TmpFileMgr::instance()->get_tmp_file_dir();
     }
 #else
     _rowset_meta->set_fs(_context.fs);
@@ -93,6 +93,7 @@ Status BetaRowsetWriter::init(const RowsetWriterContext& rowset_writer_context) 
     _rowset_meta->set_rowset_state(_context.rowset_state);
     _rowset_meta->set_segments_overlap(_context.segments_overlap);
     _rowset_meta->set_txn_id(_context.txn_id);
+    _rowset_meta->set_txn_expiration(_context.txn_expiration);
     if (_context.rowset_state == PREPARED || _context.rowset_state == COMMITTED) {
         _is_pending = true;
         _rowset_meta->set_load_id(_context.load_id);
@@ -332,8 +333,10 @@ Status BetaRowsetWriter::_create_segment_writer(
         const vectorized::Block* block) {
     int32_t segment_id = _num_segment.fetch_add(1);
     std::string path = _rowset_meta->is_local()
-        ? BetaRowset::local_segment_path(_context.tablet_path, _context.rowset_id, segment_id)
-        : BetaRowset::remote_segment_path(_context.tablet_id, _context.rowset_id, segment_id);
+                               ? BetaRowset::local_segment_path(_context.tablet_path,
+                                                                _context.rowset_id, segment_id)
+                               : BetaRowset::remote_segment_path(_context.tablet_id,
+                                                                 _context.rowset_id, segment_id);
     auto fs = _rowset_meta->fs();
     if (!fs) {
         return Status::OLAPInternalError(OLAP_ERR_INIT_FAILED);

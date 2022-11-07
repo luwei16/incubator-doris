@@ -81,6 +81,7 @@ message PTabletWriterOpenRequest {
     optional bool is_high_priority = 10 [default = false];
     optional string sender_ip = 11 [default = ""];
     optional bool is_vectorized = 12 [default = false];
+    optional int64 txn_expiration = 13;
 };
 
 message PTabletWriterOpenResult {

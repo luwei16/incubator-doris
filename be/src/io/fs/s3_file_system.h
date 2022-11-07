@@ -86,12 +86,6 @@ public:
     std::string generate_presigned_url(const Path& path, int64_t expiration_secs,
                                        bool is_public_endpoint) const;
 
-    // insert tmp file to mgr
-    static void insert_tmp_file(const Path& path, size_t file_size);
-
-    // s3_file_reader lookup tmp file
-    static FileReaderSPtr lookup_tmp_file(const Path& path);
-
 private:
     std::string get_key(const Path& path) const;
 

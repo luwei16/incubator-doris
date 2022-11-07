@@ -331,65 +331,6 @@ std::string S3FileSystem::get_key(const Path& path) const {
     return fmt::format("{}/{}", _s3_conf.prefix, path.native());
 }
 
-struct TmpFileMgr {
-    using file_key = std::pair<Path, size_t>;
-
-    TmpFileMgr(size_t max_cache_size) : max_cache_size(max_cache_size) {}
-
-    static TmpFileMgr* instance() {
-        static TmpFileMgr s_tmp_file_mgr(config::tmp_file_cache_total_size_bytes);
-        return &s_tmp_file_mgr;
-    }
-
-    std::mutex mtx;
-    std::unordered_set<Path, PathHasher> file_set;
-    std::list<file_key> file_list;
-    size_t max_cache_size = 0;
-    size_t cur_cache_size = 0;
-};
-
-void S3FileSystem::insert_tmp_file(const Path& path, size_t file_size) {
-    auto tmp_file_mgr = TmpFileMgr::instance();
-    auto local_fs = global_local_filesystem();
-    std::vector<Path> remove_paths;
-    {
-        std::lock_guard lock(tmp_file_mgr->mtx);
-        tmp_file_mgr->cur_cache_size += file_size;
-        while (tmp_file_mgr->cur_cache_size > tmp_file_mgr->max_cache_size) {
-            auto& [remove_path, size] = tmp_file_mgr->file_list.back();
-            tmp_file_mgr->file_set.erase(remove_path);
-            tmp_file_mgr->cur_cache_size -= size;
-            remove_paths.push_back(std::move(remove_path));
-            tmp_file_mgr->file_list.pop_back();
-        }
-        tmp_file_mgr->file_list.push_front(std::make_pair(path, file_size));
-        tmp_file_mgr->file_set.insert(path);
-    }
-    for (auto& remove_path : remove_paths) {
-        auto st = local_fs->delete_file(remove_path);
-        if (!st.ok()) {
-            LOG(WARNING) << "could not remove tmp file. err=" << st;
-        }
-    }
-}
-
-FileReaderSPtr S3FileSystem::lookup_tmp_file(const Path& path) {
-    auto tmp_file_mgr = TmpFileMgr::instance();
-    {
-        std::lock_guard lock(tmp_file_mgr->mtx);
-        if (tmp_file_mgr->file_set.count(path) == 0) {
-            return nullptr;
-        }
-    }
-    FileReaderSPtr file_reader;
-    auto st = global_local_filesystem()->open_file(path, &file_reader);
-    if (!st.ok()) {
-        LOG(WARNING) << "could not open tmp file. err=" << st;
-        return nullptr;
-    }
-    return file_reader;
-}
-
 // oss has public endpoint and private endpoint, is_public_endpoint determines
 // whether to return a public endpoint.
 std::string S3FileSystem::generate_presigned_url(const Path& path, int64_t expiration_secs,

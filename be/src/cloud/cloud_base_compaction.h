@@ -1,5 +1,7 @@
 #pragma once
 
+#include <memory>
+
 #include "olap/base_compaction.h"
 
 namespace doris {
@@ -12,6 +14,8 @@ public:
     Status prepare_compact() override;
     Status execute_compact_impl() override;
 
+    void do_lease();
+
 protected:
     std::string compaction_name() const override { return "CloudBaseCompaction"; }
 
@@ -21,5 +25,9 @@ protected:
 private:
     std::string _uuid;
 };
+
+std::vector<std::shared_ptr<CloudBaseCompaction>> get_base_compactions();
+void push_base_compaction(std::shared_ptr<CloudBaseCompaction> compaction);
+void pop_base_compaction(CloudBaseCompaction* compaction);
 
 } // namespace doris

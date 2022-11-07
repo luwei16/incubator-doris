@@ -33,7 +33,9 @@ class TransferHandle;
 namespace doris {
 namespace io {
 
-struct TmpFileMgr;
+class S3FileSystem;
+class TmpFileMgr;
+
 class S3FileWriter final : public FileWriter {
 public:
     S3FileWriter(Path path, std::string key, std::string bucket, S3FileSystem* fs);

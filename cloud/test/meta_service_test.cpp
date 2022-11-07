@@ -38,7 +38,7 @@ int main(int argc, char** argv) {
     return RUN_ALL_TESTS();
 }
 
-using namespace selectdb;
+namespace selectdb {
 
 std::unique_ptr<MetaServiceImpl> get_meta_service() {
     int ret = 0;
@@ -90,7 +90,7 @@ TEST(MetaServiceTest, CreateInstanceTest) {
         obj.set_provider(ObjectStoreInfoPB::BOS);
         req.mutable_obj_info()->CopyFrom(obj);
 
-        MetaServiceGenericResponse res;
+        CreateInstanceResponse res;
         meta_service->create_instance(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
                                       &req, &res, nullptr);
         ASSERT_EQ(res.status().code(), MetaServiceCode::OK);
@@ -100,7 +100,7 @@ TEST(MetaServiceTest, CreateInstanceTest) {
     {
         brpc::Controller cntl;
         CreateInstanceRequest req;
-        MetaServiceGenericResponse res;
+        CreateInstanceResponse res;
         meta_service->create_instance(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
                                       &req, &res, nullptr);
         ASSERT_EQ(res.status().code(), MetaServiceCode::INVALID_ARGUMENT);
@@ -118,7 +118,7 @@ TEST(MetaServiceTest, AlterClusterTest) {
         req.set_instance_id(mock_instance);
         req.mutable_cluster()->set_cluster_name(mock_cluster_name);
         req.set_op(AlterClusterRequest::ADD_CLUSTER);
-        MetaServiceGenericResponse res;
+        AlterClusterResponse res;
         meta_service->alter_cluster(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
                                     &req, &res, nullptr);
         ASSERT_EQ(res.status().code(), MetaServiceCode::OK);
@@ -129,7 +129,7 @@ TEST(MetaServiceTest, AlterClusterTest) {
         brpc::Controller cntl;
         AlterClusterRequest req;
         req.set_op(AlterClusterRequest::DROP_CLUSTER);
-        MetaServiceGenericResponse res;
+        AlterClusterResponse res;
         meta_service->alter_cluster(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
                                     &req, &res, nullptr);
         ASSERT_EQ(res.status().code(), MetaServiceCode::INVALID_ARGUMENT);
@@ -305,21 +305,18 @@ TEST(MetaServiceTest, BeginTxnTest) {
 
         sp->set_call_back("begin_txn:before:commit_txn:1", [&](void* args) {
             std::string label = *reinterpret_cast<std::string*>(args);
+            std::unique_lock<std::mutex> _lock(go_mutex);
             count_txn1++;
             LOG(INFO) << "count_txn1:" << count_txn1 << " label=" << label;
             if (count_txn1 == 1) {
                 {
-                    std::unique_lock<std::mutex> _lock(go_mutex);
-                    go = false;
                     LOG(INFO) << "count_txn1:" << count_txn1 << " label=" << label << " go=" << go;
-                    go_cv.wait(_lock, [&] { return go; });
+                    go_cv.wait(_lock);
                 }
             }
 
             if (count_txn1 == 2) {
                 {
-                    std::unique_lock<std::mutex> _lock(go_mutex);
-                    go = true;
                     LOG(INFO) << "count_txn1:" << count_txn1 << " label=" << label << " go=" << go;
                     go_cv.notify_all();
                 }
@@ -328,21 +325,18 @@ TEST(MetaServiceTest, BeginTxnTest) {
 
         sp->set_call_back("begin_txn:after:commit_txn:1", [&](void* args) {
             std::string label = *reinterpret_cast<std::string*>(args);
+            std::unique_lock<std::mutex> _lock(go_mutex);
             count_txn2++;
             LOG(INFO) << "count_txn2:" << count_txn2 << " label=" << label;
             if (count_txn2 == 1) {
                 {
-                    std::unique_lock<std::mutex> _lock(go_mutex);
-                    go = false;
                     LOG(INFO) << "count_txn2:" << count_txn2 << " label=" << label << " go=" << go;
-                    go_cv.wait(_lock, [&] { return go; });
+                    go_cv.wait(_lock);
                 }
             }
 
             if (count_txn2 == 2) {
                 {
-                    std::unique_lock<std::mutex> _lock(go_mutex);
-                    go = true;
                     LOG(INFO) << "count_txn2:" << count_txn2 << " label=" << label << " go=" << go;
                     go_cv.notify_all();
                 }
@@ -1138,7 +1132,7 @@ TEST(MetaServiceTest, CopyJobTest) {
         std::string get_val;
         int ret = meta_service->txn_kv_->create_txn(&txn);
         ASSERT_EQ(ret, 0);
-        // 0 copy files
+        // 20 copy files
         {
             CopyFileKeyInfo key_info0 {instance_id, stage_id, table_id, "", ""};
             CopyFileKeyInfo key_info1 {instance_id, stage_id, table_id + 1, "", ""};
@@ -1149,8 +1143,20 @@ TEST(MetaServiceTest, CopyJobTest) {
             std::unique_ptr<RangeGetIterator> it;
             ret = txn->get(key0, key1, &it);
             ASSERT_EQ(ret, 0);
-            ASSERT_EQ(it->has_next(), false);
-            ASSERT_EQ(it->more(), false);
+            int file_cnt = 0;
+            do {
+                ret = txn->get(key0, key1, &it);
+                ASSERT_EQ(ret, 0);
+                while (it->has_next()) {
+                    auto [k, v] = it->next();
+                    ++file_cnt;
+                    if (!it->has_next()) {
+                        key0 = k;
+                    }
+                }
+                key0.push_back('\x00');
+            } while (it->more());
+            ASSERT_EQ(file_cnt, 20);
         }
         // 1 copy job with finish status
         {
@@ -1172,6 +1178,9 @@ TEST(MetaServiceTest, CopyJobTest) {
                     ASSERT_EQ(copy_job.object_files_size(), 20);
                     ASSERT_EQ(copy_job.job_status(), CopyJobPB::FINISH);
                     ++job_cnt;
+                    if (!it->has_next()) {
+                        key0 = k;
+                    }
                 }
                 key0.push_back('\x00');
             } while (it->more());
@@ -1179,6 +1188,10 @@ TEST(MetaServiceTest, CopyJobTest) {
         }
     }
 }
+
+extern std::vector<std::pair<int64_t, int64_t>> calc_sync_versions(
+        int64_t req_bc_cnt, int64_t bc_cnt, int64_t req_cc_cnt, int64_t cc_cnt, int64_t req_cp,
+        int64_t cp, int64_t req_start, int64_t req_end);
 
 TEST(MetaServiceTest, CalcSyncVersionsTest) {
     using Versions = std::vector<std::pair<int64_t, int64_t>>;
@@ -1194,8 +1207,8 @@ TEST(MetaServiceTest, CalcSyncVersionsTest) {
         auto [req_cc_cnt, cc_cnt] = std::tuple {1, 1};
         auto [req_cp, cp] = std::tuple {5, 5};
         auto [req_start, req_end] = std::tuple {8, 12};
-        auto versions = MetaServiceImpl::calc_sync_versions(req_bc_cnt, bc_cnt, req_cc_cnt, cc_cnt,
-                                                            req_cp, cp, req_start, req_end);
+        auto versions = calc_sync_versions(req_bc_cnt, bc_cnt, req_cc_cnt, cc_cnt, req_cp, cp,
+                                           req_start, req_end);
         ASSERT_EQ(versions, (Versions {{8, 12}}));
     }
     // * only one CC happened and CP changed
@@ -1210,8 +1223,8 @@ TEST(MetaServiceTest, CalcSyncVersionsTest) {
         auto [req_cc_cnt, cc_cnt] = std::tuple {1, 2};
         auto [req_cp, cp] = std::tuple {5, 10};
         auto [req_start, req_end] = std::tuple {8, 12};
-        auto versions = MetaServiceImpl::calc_sync_versions(req_bc_cnt, bc_cnt, req_cc_cnt, cc_cnt,
-                                                            req_cp, cp, req_start, req_end);
+        auto versions = calc_sync_versions(req_bc_cnt, bc_cnt, req_cc_cnt, cc_cnt, req_cp, cp,
+                                           req_start, req_end);
         ASSERT_EQ(versions, (Versions {{5, 12}})); // [5, 9] v [8, 12]
     }
     {
@@ -1219,8 +1232,8 @@ TEST(MetaServiceTest, CalcSyncVersionsTest) {
         auto [req_cc_cnt, cc_cnt] = std::tuple {1, 2};
         auto [req_cp, cp] = std::tuple {5, 15};
         auto [req_start, req_end] = std::tuple {8, 12};
-        auto versions = MetaServiceImpl::calc_sync_versions(req_bc_cnt, bc_cnt, req_cc_cnt, cc_cnt,
-                                                            req_cp, cp, req_start, req_end);
+        auto versions = calc_sync_versions(req_bc_cnt, bc_cnt, req_cc_cnt, cc_cnt, req_cp, cp,
+                                           req_start, req_end);
         ASSERT_EQ(versions, (Versions {{5, 14}})); // [5, 14] v [8, 12]
     }
     // * only one CC happened and CP remain unchanged
@@ -1236,8 +1249,8 @@ TEST(MetaServiceTest, CalcSyncVersionsTest) {
         auto [req_cc_cnt, cc_cnt] = std::tuple {1, 2};
         auto [req_cp, cp] = std::tuple {5, 5};
         auto [req_start, req_end] = std::tuple {8, 12};
-        auto versions = MetaServiceImpl::calc_sync_versions(req_bc_cnt, bc_cnt, req_cc_cnt, cc_cnt,
-                                                            req_cp, cp, req_start, req_end);
+        auto versions = calc_sync_versions(req_bc_cnt, bc_cnt, req_cc_cnt, cc_cnt, req_cp, cp,
+                                           req_start, req_end);
         ASSERT_EQ(versions,
                   (Versions {{5, std::numeric_limits<int64_t>::max() - 1}})); // [5, max] v [8, 12]
     }
@@ -1253,8 +1266,8 @@ TEST(MetaServiceTest, CalcSyncVersionsTest) {
         auto [req_cc_cnt, cc_cnt] = std::tuple {1, 3};
         auto [req_cp, cp] = std::tuple {5, 5};
         auto [req_start, req_end] = std::tuple {8, 12};
-        auto versions = MetaServiceImpl::calc_sync_versions(req_bc_cnt, bc_cnt, req_cc_cnt, cc_cnt,
-                                                            req_cp, cp, req_start, req_end);
+        auto versions = calc_sync_versions(req_bc_cnt, bc_cnt, req_cc_cnt, cc_cnt, req_cp, cp,
+                                           req_start, req_end);
         ASSERT_EQ(versions,
                   (Versions {{5, std::numeric_limits<int64_t>::max() - 1}})); // [5, max] v [8, 12]
     }
@@ -1270,8 +1283,8 @@ TEST(MetaServiceTest, CalcSyncVersionsTest) {
         auto [req_cc_cnt, cc_cnt] = std::tuple {1, 3};
         auto [req_cp, cp] = std::tuple {5, 15};
         auto [req_start, req_end] = std::tuple {8, 12};
-        auto versions = MetaServiceImpl::calc_sync_versions(req_bc_cnt, bc_cnt, req_cc_cnt, cc_cnt,
-                                                            req_cp, cp, req_start, req_end);
+        auto versions = calc_sync_versions(req_bc_cnt, bc_cnt, req_cc_cnt, cc_cnt, req_cp, cp,
+                                           req_start, req_end);
         ASSERT_EQ(versions, (Versions {{5, 14}})); // [5, 14] v [8, 12]
     }
     // * for any BC happended
@@ -1286,8 +1299,8 @@ TEST(MetaServiceTest, CalcSyncVersionsTest) {
         auto [req_cc_cnt, cc_cnt] = std::tuple {1, 1};
         auto [req_cp, cp] = std::tuple {5, 5};
         auto [req_start, req_end] = std::tuple {8, 12};
-        auto versions = MetaServiceImpl::calc_sync_versions(req_bc_cnt, bc_cnt, req_cc_cnt, cc_cnt,
-                                                            req_cp, cp, req_start, req_end);
+        auto versions = calc_sync_versions(req_bc_cnt, bc_cnt, req_cc_cnt, cc_cnt, req_cp, cp,
+                                           req_start, req_end);
         ASSERT_EQ(versions, (Versions {{0, 4}, {8, 12}}));
     }
     {
@@ -1295,8 +1308,8 @@ TEST(MetaServiceTest, CalcSyncVersionsTest) {
         auto [req_cc_cnt, cc_cnt] = std::tuple {1, 1};
         auto [req_cp, cp] = std::tuple {8, 8};
         auto [req_start, req_end] = std::tuple {8, 12};
-        auto versions = MetaServiceImpl::calc_sync_versions(req_bc_cnt, bc_cnt, req_cc_cnt, cc_cnt,
-                                                            req_cp, cp, req_start, req_end);
+        auto versions = calc_sync_versions(req_bc_cnt, bc_cnt, req_cc_cnt, cc_cnt, req_cp, cp,
+                                           req_start, req_end);
         ASSERT_EQ(versions, (Versions {{0, 12}})); // [0, 7] v [8, 12]
     }
     {
@@ -1304,8 +1317,8 @@ TEST(MetaServiceTest, CalcSyncVersionsTest) {
         auto [req_cc_cnt, cc_cnt] = std::tuple {1, 2};
         auto [req_cp, cp] = std::tuple {5, 10};
         auto [req_start, req_end] = std::tuple {8, 12};
-        auto versions = MetaServiceImpl::calc_sync_versions(req_bc_cnt, bc_cnt, req_cc_cnt, cc_cnt,
-                                                            req_cp, cp, req_start, req_end);
+        auto versions = calc_sync_versions(req_bc_cnt, bc_cnt, req_cc_cnt, cc_cnt, req_cp, cp,
+                                           req_start, req_end);
         ASSERT_EQ(versions, (Versions {{0, 12}})); // [0, 4] v [5, 9] v [8, 12]
     }
     {
@@ -1313,8 +1326,8 @@ TEST(MetaServiceTest, CalcSyncVersionsTest) {
         auto [req_cc_cnt, cc_cnt] = std::tuple {1, 2};
         auto [req_cp, cp] = std::tuple {5, 15};
         auto [req_start, req_end] = std::tuple {8, 12};
-        auto versions = MetaServiceImpl::calc_sync_versions(req_bc_cnt, bc_cnt, req_cc_cnt, cc_cnt,
-                                                            req_cp, cp, req_start, req_end);
+        auto versions = calc_sync_versions(req_bc_cnt, bc_cnt, req_cc_cnt, cc_cnt, req_cp, cp,
+                                           req_start, req_end);
         ASSERT_EQ(versions, (Versions {{0, 14}})); // [0, 4] v [5, 14] v [8, 12]
     }
     {
@@ -1322,8 +1335,8 @@ TEST(MetaServiceTest, CalcSyncVersionsTest) {
         auto [req_cc_cnt, cc_cnt] = std::tuple {1, 2};
         auto [req_cp, cp] = std::tuple {5, 5};
         auto [req_start, req_end] = std::tuple {8, 12};
-        auto versions = MetaServiceImpl::calc_sync_versions(req_bc_cnt, bc_cnt, req_cc_cnt, cc_cnt,
-                                                            req_cp, cp, req_start, req_end);
+        auto versions = calc_sync_versions(req_bc_cnt, bc_cnt, req_cc_cnt, cc_cnt, req_cp, cp,
+                                           req_start, req_end);
         // [0, 4] v [5, max] v [8, 12]
         ASSERT_EQ(versions, (Versions {{0, std::numeric_limits<int64_t>::max() - 1}}));
     }
@@ -1356,7 +1369,7 @@ TEST(MetaServiceTest, StageTest) {
         req.set_name("test_name");
         req.mutable_obj_info()->CopyFrom(obj);
 
-        MetaServiceGenericResponse res;
+        CreateInstanceResponse res;
         meta_service->create_instance(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
                                       &req, &res, nullptr);
         ASSERT_EQ(res.status().code(), MetaServiceCode::OK);
@@ -1364,27 +1377,88 @@ TEST(MetaServiceTest, StageTest) {
 
     // test create and get internal stage
     {
+        // get a non-existent internal stage
         GetStageRequest get_stage_req;
         get_stage_req.set_cloud_unique_id(cloud_unique_id);
         get_stage_req.set_type(StagePB::INTERNAL);
         get_stage_req.set_mysql_user_name("root");
-
-        // get a non-existent internal stage, will create and return
+        get_stage_req.set_mysql_user_id("root_id");
         GetStageResponse res;
         meta_service->get_stage(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
                                 &get_stage_req, &res, nullptr);
-        ASSERT_EQ(res.status().code(), MetaServiceCode::OK);
-        ASSERT_EQ(1, res.stage().size());
-        ASSERT_FALSE(res.stage().at(0).stage_id().empty());
-        auto stage_id = res.stage().at(0).stage_id();
+        ASSERT_EQ(res.status().code(), MetaServiceCode::STAGE_NOT_FOUND);
+
+        // create an internal stage
+        CreateStageRequest create_stage_request;
+        StagePB stage;
+        stage.set_type(StagePB::INTERNAL);
+        stage.add_mysql_user_name("root");
+        stage.add_mysql_user_id("root_id");
+        stage.set_stage_id("internal_stage_id");
+        create_stage_request.set_cloud_unique_id(cloud_unique_id);
+        create_stage_request.mutable_stage()->CopyFrom(stage);
+        CreateStageResponse create_stage_response;
+        meta_service->create_stage(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
+                                &create_stage_request, &create_stage_response, nullptr);
+        ASSERT_EQ(create_stage_response.status().code(), MetaServiceCode::OK);
 
         // get existent internal stage
         GetStageResponse res2;
         meta_service->get_stage(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
                                 &get_stage_req, &res2, nullptr);
         ASSERT_EQ(res2.status().code(), MetaServiceCode::OK);
-        ASSERT_EQ(1, res.stage().size());
-        ASSERT_EQ(stage_id, res2.stage().at(0).stage_id());
+        ASSERT_EQ(1, res2.stage().size());
+
+        // drop internal stage
+        DropStageRequest drop_stage_request;
+        drop_stage_request.set_cloud_unique_id(cloud_unique_id);
+        drop_stage_request.set_type(StagePB::INTERNAL);
+        drop_stage_request.set_mysql_user_id("root_id");
+        drop_stage_request.set_reason("Drop");
+        DropStageResponse drop_stage_response;
+        meta_service->drop_stage(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
+                                 &drop_stage_request, &drop_stage_response, nullptr);
+        ASSERT_EQ(drop_stage_response.status().code(), MetaServiceCode::OK);
+        // scan fdb has recycle_stage key
+        {
+            RecycleStageKeyInfo key_info0 {instance_id, ""};
+            RecycleStageKeyInfo key_info1 {instance_id, "{"};
+            std::string key0;
+            std::string key1;
+            recycle_stage_key(key_info0, &key0);
+            recycle_stage_key(key_info1, &key1);
+            std::unique_ptr<Transaction> txn;
+            std::string get_val;
+            int ret = meta_service->txn_kv_->create_txn(&txn);
+            std::unique_ptr<RangeGetIterator> it;
+            ret = txn->get(key0, key1, &it);
+            ASSERT_EQ(ret, 0);
+            int stage_cnt = 0;
+            do {
+                ret = txn->get(key0, key1, &it);
+                ASSERT_EQ(ret, 0);
+                while (it->has_next()) {
+                    auto [k, v] = it->next();
+                    ++stage_cnt;
+                    if (!it->has_next()) {
+                        key0 = k;
+                    }
+                }
+                key0.push_back('\x00');
+            } while (it->more());
+            ASSERT_EQ(stage_cnt, 1);
+        }
+
+        // get internal stage
+        meta_service->get_stage(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
+                                &get_stage_req, &res2, nullptr);
+        ASSERT_EQ(res2.status().code(), MetaServiceCode::STAGE_NOT_FOUND);
+
+        // drop a non-exist internal stage
+        drop_stage_request.set_mysql_user_id("root_id2");
+        meta_service->drop_stage(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
+                                 &drop_stage_request, &drop_stage_response, nullptr);
+        ASSERT_EQ(drop_stage_response.status().code(), MetaServiceCode::STAGE_NOT_FOUND);
     }
 
     // test create and get external stage
@@ -1430,12 +1504,11 @@ TEST(MetaServiceTest, StageTest) {
             ASSERT_EQ("ex_id_1", res.stage().at(0).stage_id());
         }
 
+        GetStageRequest req;
+        req.set_cloud_unique_id(cloud_unique_id);
+        req.set_type(StagePB::EXTERNAL);
         // get all stages
         {
-            GetStageRequest req;
-            req.set_cloud_unique_id(cloud_unique_id);
-            req.set_type(StagePB::EXTERNAL);
-
             GetStageResponse res;
             meta_service->get_stage(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
                                     &req, &res, nullptr);
@@ -1444,7 +1517,33 @@ TEST(MetaServiceTest, StageTest) {
             ASSERT_EQ("ex_id_0", res.stage().at(0).stage_id());
             ASSERT_EQ("ex_id_1", res.stage().at(1).stage_id());
         }
+
+        // drop one stage
+        {
+            DropStageRequest drop_stage_req;
+            drop_stage_req.set_cloud_unique_id(cloud_unique_id);
+            drop_stage_req.set_type(StagePB::EXTERNAL);
+            drop_stage_req.set_stage_name("tmp");
+            DropStageResponse res;
+            meta_service->drop_stage(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
+                                     &drop_stage_req, &res, nullptr);
+            ASSERT_EQ(res.status().code(), MetaServiceCode::STAGE_NOT_FOUND);
+
+            drop_stage_req.set_stage_name("ex_name_1");
+            meta_service->drop_stage(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
+                                     &drop_stage_req, &res, nullptr);
+            ASSERT_EQ(res.status().code(), MetaServiceCode::OK);
+
+            // get all stage
+            GetStageResponse get_stage_res;
+            meta_service->get_stage(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
+                                    &req, &get_stage_res, nullptr);
+            ASSERT_EQ(get_stage_res.status().code(), MetaServiceCode::OK);
+            ASSERT_EQ(1, get_stage_res.stage().size());
+            ASSERT_EQ("ex_name_0", get_stage_res.stage().at(0).name());
+        }
     }
 }
 
+} // namespace selectdb
 // vim: et tw=100 ts=4 sw=4 cc=80:

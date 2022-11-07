@@ -26,6 +26,7 @@ import org.apache.doris.catalog.HashDistributionInfo;
 import org.apache.doris.catalog.JdbcResource;
 import org.apache.doris.catalog.MapType;
 import org.apache.doris.catalog.OdbcCatalogResource;
+import org.apache.doris.catalog.Partition;
 import org.apache.doris.catalog.RandomDistributionInfo;
 import org.apache.doris.catalog.Replica;
 import org.apache.doris.catalog.Resource;
@@ -73,6 +74,7 @@ import com.google.gson.annotations.SerializedName;
 import com.google.gson.reflect.TypeToken;
 import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonWriter;
+import com.selectdb.cloud.catalog.CloudPartition;
 import com.selectdb.cloud.catalog.CloudReplica;
 import org.apache.commons.lang3.reflect.TypeUtils;
 
@@ -160,6 +162,12 @@ public class GsonUtils {
             .registerSubtype(Replica.class, Replica.class.getSimpleName())
             .registerSubtype(CloudReplica.class, CloudReplica.class.getSimpleName());
 
+    private static RuntimeTypeAdapterFactory<Partition> partitionTypeAdapterFactory = RuntimeTypeAdapterFactory
+            .of(Partition.class, "clazz")
+            .registerSubtype(Partition.class, Partition.class.getSimpleName())
+            .registerSubtype(CloudPartition.class, CloudPartition.class.getSimpleName());
+
+
     private static RuntimeTypeAdapterFactory<UpdateCloudReplicaInfo> updateCloudReplicaInfoTypeAdapterFactory
             = RuntimeTypeAdapterFactory.of(UpdateCloudReplicaInfo.class, "clazz")
             .registerSubtype(UpdateCloudReplicaInfo.class, UpdateCloudReplicaInfo.class.getSimpleName());
@@ -180,6 +188,7 @@ public class GsonUtils {
             .registerTypeAdapterFactory(policyTypeAdapterFactory)
             .registerTypeAdapterFactory(dsTypeAdapterFactory)
             .registerTypeAdapterFactory(replicaTypeAdapterFactory)
+            .registerTypeAdapterFactory(partitionTypeAdapterFactory)
             .registerTypeAdapterFactory(updateCloudReplicaInfoTypeAdapterFactory)
             .registerTypeAdapter(ImmutableMap.class, new ImmutableMapDeserializer())
             .registerTypeAdapter(AtomicBoolean.class, new AtomicBooleanAdapter());

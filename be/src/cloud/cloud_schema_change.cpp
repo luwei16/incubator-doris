@@ -20,7 +20,8 @@ static std::unique_ptr<SchemaChange> get_sc_procedure(const RowBlockChanger& rb_
     return std::make_unique<VSchemaChangeDirectly>(rb_changer);
 }
 
-CloudSchemaChange::CloudSchemaChange(std::string job_id) : _job_id(std::move(job_id)) {}
+CloudSchemaChange::CloudSchemaChange(std::string job_id, int64_t expiration)
+        : _job_id(std::move(job_id)), _expiration(expiration) {}
 
 CloudSchemaChange::~CloudSchemaChange() = default;
 
@@ -197,6 +198,7 @@ Status CloudSchemaChange::_convert_historical_rowsets(const SchemaChangeParams& 
         std::unique_ptr<RowsetWriter> rowset_writer;
         RowsetWriterContext context;
         context.txn_id = rs_reader->rowset()->txn_id();
+        context.txn_expiration = _expiration;
         context.version = rs_reader->version();
         context.rowset_state = VISIBLE;
         context.segments_overlap = rs_reader->rowset()->rowset_meta()->segments_overlap();

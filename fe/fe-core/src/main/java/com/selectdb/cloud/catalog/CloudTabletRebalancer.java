@@ -46,12 +46,12 @@ public class CloudTabletRebalancer extends MasterDaemon {
     Map<Long, List<Tablet>> beToTablets;
 
     public CloudTabletRebalancer() {
-        super("cloud tablet Rebalancer", Config.tablet_rebalancer_interval_second * 1000);
+        super("cloud tablet rebalancer", Config.tablet_rebalancer_interval_second * 1000);
     }
 
     @Override
     protected void runAfterCatalogReady() {
-        LOG.info("lw test cloud tablet rebalance begin");
+        LOG.info("cloud tablet rebalance begin");
         beToTablets = new HashMap<Long, List<Tablet>>();
         Map<String, List<Long>> clusterToBes = new HashMap<String, List<Long>>();
 
@@ -111,7 +111,7 @@ public class CloudTabletRebalancer extends MasterDaemon {
         }
 
         for (Map.Entry<Long, List<Tablet>> entry : beToTablets.entrySet()) {
-            LOG.info("before balance be {} tablet num {}", entry.getKey(), entry.getValue().size());
+            LOG.info("after balance be {} tablet num {}", entry.getKey(), entry.getValue().size());
         }
 
         LOG.info("finished to rebalancer. cost: {} ms", (System.currentTimeMillis() - start));
@@ -125,8 +125,9 @@ public class CloudTabletRebalancer extends MasterDaemon {
         for (int i = 0; i < num; i++) {
             long minBe = bes.get(0);
             long maxBe = bes.get(0);
-            long minTabletsNum = beToTablets.get(bes.get(0)).size();
-            long maxTabletsNum = beToTablets.get(bes.get(0)).size();
+
+            long minTabletsNum = Long.MAX_VALUE;
+            long maxTabletsNum = 0;
             long totalTabletsNum = 0;
             long beNum = bes.size();
 

@@ -41,6 +41,7 @@ struct WriteRequest {
     int32_t schema_hash;
     WriteType write_type;
     int64_t txn_id;
+    int64_t txn_expiration = 0;
     int64_t partition_id;
     PUniqueId load_id;
     TupleDescriptor* tuple_desc;

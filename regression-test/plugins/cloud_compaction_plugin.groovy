@@ -53,6 +53,7 @@ Suite.metaClass.doCloudCompaction = { String tableName /* param */ ->
     def doCompaction = { backend_id, compact_type ->
         // trigger compactions for all tablets in ${tableName}
         for (String[] tablet in tablets) {
+            Thread.sleep(10)
             String tablet_id = tablet[0]
             StringBuilder sb = new StringBuilder();
             sb.append("curl -X POST http://")

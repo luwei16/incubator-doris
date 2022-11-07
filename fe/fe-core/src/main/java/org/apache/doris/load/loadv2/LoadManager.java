@@ -37,7 +37,6 @@ import org.apache.doris.common.UserException;
 import org.apache.doris.common.io.Writable;
 import org.apache.doris.common.util.LogBuilder;
 import org.apache.doris.common.util.LogKey;
-import org.apache.doris.ha.FrontendNodeType;
 import org.apache.doris.load.EtlJobType;
 import org.apache.doris.load.FailMsg;
 import org.apache.doris.load.FailMsg.CancelType;
@@ -73,6 +72,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
@@ -141,19 +141,10 @@ public class LoadManager implements Writable {
         BrokerLoadJob loadJob = null;
         writeLock();
         try {
-            if (unprotectedGetUnfinishedJobNum() >= Config.desired_max_waiting_jobs) {
+            long unfinishedCopyJobNum = unprotectedGetUnfinishedCopyJobNum();
+            if (unfinishedCopyJobNum >= Config.cluster_max_waiting_copy_jobs) {
                 throw new DdlException(
-                        "There are more than " + Config.desired_max_waiting_jobs
-                                + " unfinished load jobs, please retry later. "
-                                + "You can use `SHOW LOAD` to view submitted jobs");
-            }
-            int frontendNum = Env.getCurrentEnv().getFrontends(FrontendNodeType.OBSERVER).size() + 1;
-            int copyJobNumPerNode = Config.cluster_max_waiting_copy_jobs / frontendNum;
-            if (unprotectedGetUnfinishedCopyJobNum() >= copyJobNumPerNode) {
-                throw new DdlException(
-                        "There are more than " + copyJobNumPerNode + " unfinished copy jobs, " + frontendNum
-                                + " frontends, " + Config.cluster_max_waiting_copy_jobs
-                                + " copy jobs , please retry later. ");
+                        "There are more than " + unfinishedCopyJobNum + " unfinished copy jobs, please retry later.");
             }
             loadJob = new CopyJob(dbId, stmt.getLabel().getLabelName(), ConnectContext.get().queryId(),
                     stmt.getBrokerDesc(), stmt.getOrigStmt(), stmt.getUserInfo(), stmt.getStageId(),
@@ -500,7 +491,8 @@ public class LoadManager implements Writable {
      *         The result is unordered.
      */
     public List<List<Comparable>> getLoadJobInfosByDb(long dbId, String labelValue, boolean accurateMatch,
-            Set<String> statesValue, Set<EtlJobType> jobTypes, String copyIdValue, boolean copyIdAccurateMatch)
+            Set<String> statesValue, Set<EtlJobType> jobTypes, String copyIdValue, boolean copyIdAccurateMatch,
+            String tableNameValue, boolean tableNameAccurateMatch, String fileValue, boolean fileAccurateMatch)
             throws AnalysisException {
         LinkedList<List<Comparable>> loadJobInfos = new LinkedList<List<Comparable>>();
         if (!dbIdToLabelToLoadJobs.containsKey(dbId)) {
@@ -551,29 +543,10 @@ public class LoadManager implements Writable {
                 }
             }
 
-            List<LoadJob> loadJobList2 = Lists.newArrayList();
-            // check copy id
-            if (!Strings.isNullOrEmpty(copyIdValue)) {
-                for (LoadJob loadJob : loadJobList) {
-                    if (loadJob.getJobType() != EtlJobType.COPY) {
-                        continue;
-                    }
-                    CopyJob copyJob = (CopyJob) loadJob;
-                    if (copyIdAccurateMatch) {
-                        if (copyJob.getCopyId().equalsIgnoreCase(copyIdValue)) {
-                            loadJobList2.add(copyJob);
-                        }
-                    } else {
-                        // non-accurate match
-                        PatternMatcher matcher = PatternMatcher.createMysqlPattern(copyIdValue, false);
-                        if (matcher.match(copyJob.getCopyId())) {
-                            loadJobList2.add(copyJob);
-                        }
-                    }
-                }
-            } else {
-                loadJobList2 = loadJobList;
-            }
+            List<LoadJob> loadJobList2 = filterCopyJob(loadJobList, copyIdValue, copyIdAccurateMatch,
+                    c -> c.getCopyId());
+            loadJobList2 = filterCopyJob(loadJobList2, tableNameValue, tableNameAccurateMatch, c -> c.getTableName());
+            loadJobList2 = filterCopyJob(loadJobList2, fileValue, fileAccurateMatch, c -> c.getFiles());
 
             // check state
             for (LoadJob loadJob : loadJobList2) {
@@ -594,6 +567,32 @@ public class LoadManager implements Writable {
         } finally {
             readUnlock();
         }
+    }
+
+    private List<LoadJob> filterCopyJob(List<LoadJob> loadJobList, String value, boolean accurateMatch,
+            Function<CopyJob, String> func) throws AnalysisException {
+        if (Strings.isNullOrEmpty(value)) {
+            return loadJobList;
+        }
+        List<LoadJob> loadJobList2 = Lists.newArrayList();
+        for (LoadJob loadJob : loadJobList) {
+            if (loadJob.getJobType() != EtlJobType.COPY) {
+                continue;
+            }
+            CopyJob copyJob = (CopyJob) loadJob;
+            if (accurateMatch) {
+                if (func.apply(copyJob).equalsIgnoreCase(value)) {
+                    loadJobList2.add(copyJob);
+                }
+            } else {
+                // non-accurate match
+                PatternMatcher matcher = PatternMatcher.createMysqlPattern(value, false);
+                if (matcher.match(func.apply(copyJob))) {
+                    loadJobList2.add(copyJob);
+                }
+            }
+        }
+        return loadJobList2;
     }
 
     /**

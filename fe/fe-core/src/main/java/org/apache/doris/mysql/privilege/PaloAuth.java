@@ -67,6 +67,7 @@ import com.google.common.base.Preconditions;
 import com.google.common.base.Strings;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
+import com.selectdb.cloud.proto.SelectdbCloud.StagePB;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -818,16 +819,25 @@ public class PaloAuth implements Writable {
         cloudStagePrivTable.clear();
     }
 
+    public String getUserId(String userName) {
+        readLock();
+        try {
+            return userPrivTable.getUserIdByUser(userName);
+        } finally {
+            readUnlock();
+        }
+    }
+
     // create user
     public void createUser(CreateUserStmt stmt) throws DdlException {
         createUserInternal(stmt.getUserIdent(), stmt.getQualifiedRole(),
-                stmt.getPassword(), stmt.isIfNotExist(), stmt.getPasswordOptions(), false);
+                stmt.getPassword(), stmt.isIfNotExist(), stmt.getPasswordOptions(), false, stmt.getUserId());
     }
 
     public void replayCreateUser(PrivInfo privInfo) {
         try {
             createUserInternal(privInfo.getUserIdent(), privInfo.getRole(), privInfo.getPasswd(), false,
-                    privInfo.getPasswordOptions(), true);
+                    privInfo.getPasswordOptions(), true, privInfo.getUserId());
         } catch (DdlException e) {
             LOG.error("should not happen", e);
         }
@@ -840,8 +850,9 @@ public class PaloAuth implements Writable {
      * 3. set password for specified user.
      * 4. grant privs of role to user, if role is specified.
      */
-    private void createUserInternal(UserIdentity userIdent, String roleName, byte[] password,
-            boolean ignoreIfExists, PasswordOptions passwordOptions, boolean isReplay) throws DdlException {
+    private void createUserInternal(UserIdentity userIdent, String roleName, byte[] password, boolean ignoreIfExists,
+                                    PasswordOptions passwordOptions, boolean isReplay,
+                                    String userId) throws DdlException {
         writeLock();
         try {
             // 1. check if role exist
@@ -864,7 +875,7 @@ public class PaloAuth implements Writable {
 
             // 3. set password
             setPasswordInternal(userIdent, password, null, false /* err on non exist */, false /* set by resolver */,
-                    true /* is replay */);
+                    true /* is replay */, userId);
             try {
                 // 4. grant privs of role to user
                 grantPrivsByRole(userIdent, role);
@@ -900,7 +911,7 @@ public class PaloAuth implements Writable {
             passwdPolicyManager.updatePolicy(userIdent, password, passwordOptions);
 
             if (!isReplay) {
-                PrivInfo privInfo = new PrivInfo(userIdent, null, password, roleName, passwordOptions);
+                PrivInfo privInfo = new PrivInfo(userIdent, null, password, roleName, passwordOptions, userId);
                 Env.getCurrentEnv().getEditLog().logCreateUser(privInfo);
             }
             LOG.info("finished to create user: {}, is replay: {}", userIdent, isReplay);
@@ -1009,9 +1020,33 @@ public class PaloAuth implements Writable {
             if (!isReplay) {
                 Env.getCurrentEnv().getEditLog().logNewDropUser(userIdent);
             }
-            LOG.info("finished to drop user: {}, is replay: {}", userIdent.getQualifiedUser(), isReplay);
+
+            LOG.info("finished to drop user: {}, is replay: {}", userIdent.getUser(), isReplay);
         } finally {
             writeUnlock();
+        }
+
+        String mysqlUserName = ClusterNamespace.getNameFromFullName(userIdent.getUser());
+        String toDropMysqlUserId = Env.getCurrentEnv().getAuth().getUserId(mysqlUserName);
+        String reason = String.format("drop user notify to meta service, userName [%s], userId [%s]",
+                mysqlUserName, toDropMysqlUserId);
+        LOG.info(reason);
+        int retryTime = 0;
+        while (true) {
+            try {
+                Env.getCurrentInternalCatalog().dropStage(StagePB.StageType.INTERNAL,
+                        mysqlUserName, toDropMysqlUserId, null, reason, true);
+                break;
+            } catch (DdlException e) {
+                LOG.warn("drop user failed, try again, user: [{}-{}], retryTimes: {}",
+                        mysqlUserName, toDropMysqlUserId, retryTime);
+            }
+            try {
+                Thread.sleep(1000);
+                ++retryTime;
+            } catch (InterruptedException e) {
+                LOG.info("InterruptedException: ", e);
+            }
         }
     }
 
@@ -1341,20 +1376,20 @@ public class PaloAuth implements Writable {
     // set password
     public void setPassword(SetPassVar stmt) throws DdlException {
         setPasswordInternal(stmt.getUserIdent(), stmt.getPassword(), null, true /* err on non exist */,
-                            false /* set by resolver */, false);
+                            false /* set by resolver */, false, "");
     }
 
     public void replaySetPassword(PrivInfo info) {
         try {
             setPasswordInternal(info.getUserIdent(), info.getPasswd(), null, true /* err on non exist */,
-                                false /* set by resolver */, true);
+                                false /* set by resolver */, true, info.getUserId());
         } catch (DdlException e) {
             LOG.error("should not happened", e);
         }
     }
 
     public void setPasswordInternal(UserIdentity userIdent, byte[] password, UserIdentity domainUserIdent,
-            boolean errOnNonExist, boolean setByResolver, boolean isReplay) throws DdlException {
+            boolean errOnNonExist, boolean setByResolver, boolean isReplay, String userId) throws DdlException {
         Preconditions.checkArgument(!setByResolver || domainUserIdent != null, setByResolver + ", " + domainUserIdent);
         writeLock();
         try {
@@ -1381,6 +1416,7 @@ public class PaloAuth implements Writable {
                 } catch (AnalysisException e) {
                     throw new DdlException(e.getMessage());
                 }
+                passwdEntry.setUserId(userId);
                 userPrivTable.setPassword(passwdEntry, errOnNonExist);
             }
             if (password != null) {
@@ -1389,7 +1425,7 @@ public class PaloAuth implements Writable {
             }
 
             if (!isReplay) {
-                PrivInfo info = new PrivInfo(userIdent, null, password, null, null);
+                PrivInfo info = new PrivInfo(userIdent, null, password, null, null, userId);
                 Env.getCurrentEnv().getEditLog().logSetPassword(info);
             }
         } finally {
@@ -1435,7 +1471,7 @@ public class PaloAuth implements Writable {
             roleManager.addRole(emptyPrivsRole, true /* err on exist */);
 
             if (!isReplay) {
-                PrivInfo info = new PrivInfo(null, null, null, role, null);
+                PrivInfo info = new PrivInfo(null, null, null, role, null, null);
                 Env.getCurrentEnv().getEditLog().logCreateRole(info);
             }
         } finally {
@@ -1468,7 +1504,7 @@ public class PaloAuth implements Writable {
             roleManager.dropRole(role, true /* err on non exist */);
 
             if (!isReplay) {
-                PrivInfo info = new PrivInfo(null, null, null, role, null);
+                PrivInfo info = new PrivInfo(null, null, null, role, null, null);
                 Env.getCurrentEnv().getEditLog().logDropRole(info);
             }
         } finally {
@@ -1963,12 +1999,13 @@ public class PaloAuth implements Writable {
         try {
             UserIdentity rootUser = new UserIdentity(ROOT_USER, "%");
             rootUser.setIsAnalyzed();
+            // here can't use uuid, follower start initUser too.
             createUserInternal(rootUser, PaloRole.OPERATOR_ROLE, new byte[0],
-                    false /* ignore if exists */, PasswordOptions.UNSET_OPTION, true /* is replay */);
+                    false /* ignore if exists */, PasswordOptions.UNSET_OPTION, true /* is replay */, ROOT_USER);
             UserIdentity adminUser = new UserIdentity(ADMIN_USER, "%");
             adminUser.setIsAnalyzed();
             createUserInternal(adminUser, PaloRole.ADMIN_ROLE, new byte[0],
-                    false /* ignore if exists */, PasswordOptions.UNSET_OPTION, true /* is replay */);
+                    false /* ignore if exists */, PasswordOptions.UNSET_OPTION, true /* is replay */, ADMIN_USER);
         } catch (DdlException e) {
             LOG.error("should not happened", e);
         }
@@ -2135,7 +2172,7 @@ public class PaloAuth implements Writable {
             }
             switch (opType) {
                 case SET_PASSWORD:
-                    setPasswordInternal(userIdent, password, null, false, false, isReplay);
+                    setPasswordInternal(userIdent, password, null, false, false, isReplay, "");
                     break;
                 case SET_ROLE:
                     setRoleToUser(userIdent, role);

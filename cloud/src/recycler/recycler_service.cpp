@@ -21,7 +21,7 @@ RecyclerServiceImpl::~RecyclerServiceImpl() = default;
 
 void RecyclerServiceImpl::recycle_instance(::google::protobuf::RpcController* controller,
                                            const ::selectdb::RecycleInstanceRequest* request,
-                                           ::selectdb::MetaServiceGenericResponse* response,
+                                           ::selectdb::RecycleInstanceResponse* response,
                                            ::google::protobuf::Closure* done) {
     auto ctrl = static_cast<brpc::Controller*>(controller);
     LOG(INFO) << "rpc from " << ctrl->remote_side() << " request=" << request->DebugString();
@@ -135,7 +135,7 @@ void RecyclerServiceImpl::http(::google::protobuf::RpcController* controller,
             LOG(WARNING) << msg;
             return;
         }
-        MetaServiceGenericResponse res;
+        RecycleInstanceResponse res;
         recycle_instance(cntl, &req, &res, nullptr);
         ret = res.status().code();
         msg = res.status().msg();

@@ -50,13 +50,16 @@ public class PrivInfo implements Writable {
     @SerializedName(value = "passwordOptions")
     private PasswordOptions passwordOptions;
 
+    @SerializedName(value = "userId")
+    private String userId;
+
     private PrivInfo() {
 
     }
 
     // For create user/set password/create role/drop role
     public PrivInfo(UserIdentity userIdent, PrivBitSet privs, byte[] passwd, String role,
-            PasswordOptions passwordOptions) {
+            PasswordOptions passwordOptions, String userId) {
         this.userIdent = userIdent;
         this.tblPattern = null;
         this.resourcePattern = null;
@@ -64,6 +67,7 @@ public class PrivInfo implements Writable {
         this.passwd = passwd;
         this.role = role;
         this.passwordOptions = passwordOptions;
+        this.userId = userId;
     }
 
     // For grant/revoke
@@ -110,6 +114,10 @@ public class PrivInfo implements Writable {
 
     public String getRole() {
         return role;
+    }
+
+    public String getUserId() {
+        return userId;
     }
 
     public PasswordOptions getPasswordOptions() {

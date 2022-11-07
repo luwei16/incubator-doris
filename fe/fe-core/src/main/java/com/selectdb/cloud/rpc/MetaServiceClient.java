@@ -79,7 +79,7 @@ public class MetaServiceClient {
         return blockingStub.getVersion(request);
     }
 
-    public SelectdbCloud.MetaServiceGenericResponse createTablets(SelectdbCloud.CreateTabletsRequest request) {
+    public SelectdbCloud.CreateTabletsResponse createTablets(SelectdbCloud.CreateTabletsRequest request) {
         if (!request.hasCloudUniqueId()) {
             SelectdbCloud.CreateTabletsRequest.Builder builder =
                     SelectdbCloud.CreateTabletsRequest.newBuilder();
@@ -89,7 +89,7 @@ public class MetaServiceClient {
         return blockingStub.createTablets(request);
     }
 
-    public SelectdbCloud.MetaServiceGenericResponse updateTablet(SelectdbCloud.UpdateTabletRequest request) {
+    public SelectdbCloud.UpdateTabletResponse updateTablet(SelectdbCloud.UpdateTabletRequest request) {
         if (!request.hasCloudUniqueId()) {
             SelectdbCloud.UpdateTabletRequest.Builder builder =
                     SelectdbCloud.UpdateTabletRequest.newBuilder();
@@ -168,32 +168,32 @@ public class MetaServiceClient {
         return blockingStub.getCluster(request);
     }
 
-    public SelectdbCloud.MetaServiceGenericResponse
+    public SelectdbCloud.IndexResponse
             prepareIndex(SelectdbCloud.IndexRequest request) {
         return blockingStub.prepareIndex(request);
     }
 
-    public SelectdbCloud.MetaServiceGenericResponse
+    public SelectdbCloud.IndexResponse
             commitIndex(SelectdbCloud.IndexRequest request) {
         return blockingStub.commitIndex(request);
     }
 
-    public SelectdbCloud.MetaServiceGenericResponse
+    public SelectdbCloud.IndexResponse
             dropIndex(SelectdbCloud.IndexRequest request) {
         return blockingStub.dropIndex(request);
     }
 
-    public SelectdbCloud.MetaServiceGenericResponse
+    public SelectdbCloud.PartitionResponse
             preparePartition(SelectdbCloud.PartitionRequest request) {
         return blockingStub.preparePartition(request);
     }
 
-    public SelectdbCloud.MetaServiceGenericResponse
+    public SelectdbCloud.PartitionResponse
             commitPartition(SelectdbCloud.PartitionRequest request) {
         return blockingStub.commitPartition(request);
     }
 
-    public SelectdbCloud.MetaServiceGenericResponse
+    public SelectdbCloud.PartitionResponse
             dropPartition(SelectdbCloud.PartitionRequest request) {
         return blockingStub.dropPartition(request);
     }
@@ -216,6 +216,10 @@ public class MetaServiceClient {
         return blockingStub.getStage(request);
     }
 
+    public SelectdbCloud.DropStageResponse dropStage(SelectdbCloud.DropStageRequest request) {
+        return blockingStub.dropStage(request);
+    }
+
     public SelectdbCloud.BeginCopyResponse beginCopy(SelectdbCloud.BeginCopyRequest request) {
         return blockingStub.beginCopy(request);
     }
@@ -228,7 +232,7 @@ public class MetaServiceClient {
         return blockingStub.getCopyFiles(request);
     }
 
-    public SelectdbCloud.MetaServiceGenericResponse alterCluster(SelectdbCloud.AlterClusterRequest request) {
+    public SelectdbCloud.AlterClusterResponse alterCluster(SelectdbCloud.AlterClusterRequest request) {
         return blockingStub.alterCluster(request);
     }
 }

@@ -899,7 +899,7 @@ CONF_Int32(max_column_reader_prefetch_size, "0");
 
 // file cache
 CONF_Bool(enable_file_cache, "false");
-// format: [{"path":"/mnt/disk3/selectdb_cloud/file_cache","normal":21474836480,"persistent":10737418240}]
+// format: [{"path":"/mnt/disk3/selectdb_cloud/file_cache","normal":21474836480,"persistent":10737418240,"query_limit":10737418240}]
 CONF_String(file_cache_path, "");
 CONF_String(disposable_file_cache_path, "");
 CONF_Int64(file_cache_max_file_segment_size, "4194304"); // 4MB
@@ -907,9 +907,8 @@ CONF_Bool(clear_file_cache, "false");
 CONF_Bool(enable_file_cache_query_limit, "false");
 
 // write as cache
-CONF_String(tmp_file_dir, "${DORIS_HOME}/storage/tmp");
-CONF_Int64(tmp_file_cache_total_size_bytes, "10737418240");
-CONF_Bool(enable_write_as_cache, "false");
+// format: [{"path":"/mnt/disk3/selectdb_cloud/tmp","max_cache_bytes":21474836480,"max_upload_bytes":10737418240}]
+CONF_String(tmp_file_dirs, "");
 
 // cloud
 CONF_String(cloud_unique_id, "");
@@ -922,6 +921,8 @@ CONF_mInt32(refresh_s3_info_interval_seconds, "60");
 CONF_mInt32(vacuum_stale_rowsets_interval_seconds, "1800");
 CONF_mInt32(tablet_sync_interval_seconds, "1800");
 CONF_mInt32(schedule_sync_tablets_interval_seconds, "600");
+CONF_mInt32(compaction_timeout_seconds, "86400");
+CONF_mInt32(lease_compaction_interval_seconds, "20");
 
 // semi-structure configs
 CONF_Bool(enable_parse_multi_dimession_array, "true");

@@ -86,6 +86,7 @@ import org.apache.doris.analysis.DropRepositoryStmt;
 import org.apache.doris.analysis.DropResourceStmt;
 import org.apache.doris.analysis.DropRoleStmt;
 import org.apache.doris.analysis.DropSqlBlockRuleStmt;
+import org.apache.doris.analysis.DropStageStmt;
 import org.apache.doris.analysis.DropTableStmt;
 import org.apache.doris.analysis.DropUserStmt;
 import org.apache.doris.analysis.GrantStmt;
@@ -125,8 +126,9 @@ import org.apache.doris.load.loadv2.JobState;
 import org.apache.doris.load.loadv2.LoadJob;
 import org.apache.doris.load.sync.SyncJobManager;
 
-import com.google.common.base.Strings;
 import com.google.common.collect.Lists;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import java.util.List;
 import java.util.Map;
@@ -138,7 +140,9 @@ public class DdlExecutor {
     /**
      * Execute ddl.
      **/
-    public static QueryState execute(Env env, DdlStmt ddlStmt) throws Exception {
+    private static final Logger LOG = LogManager.getLogger(DdlExecutor.class);
+
+    public static void execute(Env env, DdlStmt ddlStmt) throws Exception {
         if (ddlStmt instanceof CreateClusterStmt) {
             CreateClusterStmt stmt = (CreateClusterStmt) ddlStmt;
             env.createCluster(stmt);
@@ -195,12 +199,16 @@ public class DdlExecutor {
                         + " Try using broker load. See 'help broker load;'");
             }
             if (jobType == EtlJobType.HADOOP) {
+                if (!Config.cloud_unique_id.isEmpty()) {
+                    LOG.info("stmt={}, not supported in cloud mode", ddlStmt.toString());
+                    throw new DdlException("Unsupported operaiton");
+                }
                 env.getLoadManager().createLoadJobV1FromStmt(loadStmt, jobType, System.currentTimeMillis());
             } else {
                 env.getLoadManager().createLoadJobFromStmt(loadStmt);
             }
         } else if (ddlStmt instanceof CopyStmt) {
-            return executeCopyStmt(env, (CopyStmt) ddlStmt);
+            executeCopyStmt(env, (CopyStmt) ddlStmt);
         } else if (ddlStmt instanceof CancelLoadStmt) {
             env.getLoadManager().cancelLoadJob((CancelLoadStmt) ddlStmt);
         } else if (ddlStmt instanceof CreateRoutineLoadStmt) {
@@ -254,17 +262,37 @@ public class DdlExecutor {
         } else if (ddlStmt instanceof CreateViewStmt) {
             env.createView((CreateViewStmt) ddlStmt);
         } else if (ddlStmt instanceof BackupStmt) {
+            if (!Config.cloud_unique_id.isEmpty()) {
+                LOG.info("stmt={}, not supported in cloud mode", ddlStmt.toString());
+                throw new DdlException("Unsupported operaiton");
+            }
             env.backup((BackupStmt) ddlStmt);
         } else if (ddlStmt instanceof RestoreStmt) {
+            if (!Config.cloud_unique_id.isEmpty()) {
+                LOG.info("stmt={}, not supported in cloud mode", ddlStmt.toString());
+                throw new DdlException("Unsupported operaiton");
+            }
             env.restore((RestoreStmt) ddlStmt);
         } else if (ddlStmt instanceof CancelBackupStmt) {
+            if (!Config.cloud_unique_id.isEmpty()) {
+                LOG.info("stmt={}, not supported in cloud mode", ddlStmt.toString());
+                throw new DdlException("Unsupported operaiton");
+            }
             env.cancelBackup((CancelBackupStmt) ddlStmt);
         } else if (ddlStmt instanceof CreateRepositoryStmt) {
+            if (!Config.cloud_unique_id.isEmpty()) {
+                LOG.info("stmt={}, not supported in cloud mode", ddlStmt.toString());
+                throw new DdlException("Unsupported operaiton");
+            }
             env.getBackupHandler().createRepository((CreateRepositoryStmt) ddlStmt);
         } else if (ddlStmt instanceof DropRepositoryStmt) {
+            if (!Config.cloud_unique_id.isEmpty()) {
+                LOG.info("stmt={}, not supported in cloud mode", ddlStmt.toString());
+                throw new DdlException("Unsupported operaiton");
+            }
             env.getBackupHandler().dropRepository((DropRepositoryStmt) ddlStmt);
         } else if (ddlStmt instanceof SyncStmt) {
-            // return;
+            return;
         } else if (ddlStmt instanceof TruncateTableStmt) {
             env.truncateTable((TruncateTableStmt) ddlStmt);
         } else if (ddlStmt instanceof AdminRepairTableStmt) {
@@ -284,6 +312,10 @@ public class DdlExecutor {
         } else if (ddlStmt instanceof UninstallPluginStmt) {
             env.uninstallPlugin((UninstallPluginStmt) ddlStmt);
         } else if (ddlStmt instanceof AdminCheckTabletsStmt) {
+            if (!Config.cloud_unique_id.isEmpty()) {
+                LOG.info("stmt={}, not supported in cloud mode", ddlStmt.toString());
+                throw new DdlException("Unsupported operaiton");
+            }
             env.checkTablets((AdminCheckTabletsStmt) ddlStmt);
         } else if (ddlStmt instanceof AdminSetReplicaStatusStmt) {
             env.setReplicaStatus((AdminSetReplicaStatusStmt) ddlStmt);
@@ -327,12 +359,20 @@ public class DdlExecutor {
         } else if (ddlStmt instanceof AnalyzeStmt) {
             env.getStatisticsJobManager().createStatisticsJob((AnalyzeStmt) ddlStmt);
         } else if (ddlStmt instanceof AlterResourceStmt) {
+            if (!Config.cloud_unique_id.isEmpty()) {
+                LOG.info("stmt={}, not supported in cloud mode", ddlStmt.toString());
+                throw new DdlException("Unsupported operaiton");
+            }
             env.getResourceMgr().alterResource((AlterResourceStmt) ddlStmt);
         } else if (ddlStmt instanceof CreatePolicyStmt) {
             env.getPolicyMgr().createPolicy((CreatePolicyStmt) ddlStmt);
         } else if (ddlStmt instanceof DropPolicyStmt) {
             env.getPolicyMgr().dropPolicy((DropPolicyStmt) ddlStmt);
         } else if (ddlStmt instanceof AlterPolicyStmt) {
+            if (!Config.cloud_unique_id.isEmpty()) {
+                LOG.info("stmt={}, not supported in cloud mode", ddlStmt.toString());
+                throw new DdlException("Unsupported operaiton");
+            }
             env.getPolicyMgr().alterPolicy((AlterPolicyStmt) ddlStmt);
         } else if (ddlStmt instanceof CreateCatalogStmt) {
             env.getCatalogMgr().createCatalog((CreateCatalogStmt) ddlStmt);
@@ -354,17 +394,16 @@ public class DdlExecutor {
             env.getCatalogMgr().refreshCatalog((RefreshCatalogStmt) ddlStmt);
         } else if (ddlStmt instanceof CreateStageStmt) {
             env.createStage((CreateStageStmt) ddlStmt);
+        } else if (ddlStmt instanceof DropStageStmt) {
+            env.dropStage((DropStageStmt) ddlStmt);
         } else if (ddlStmt instanceof AlterUserStmt) {
             env.getAuth().alterUser((AlterUserStmt) ddlStmt);
         } else {
             throw new DdlException("Unknown statement.");
         }
-        QueryState state = new QueryState();
-        state.setOk();
-        return state;
     }
 
-    private static QueryState executeCopyStmt(Env env, CopyStmt copyStmt) throws Exception {
+    private static void executeCopyStmt(Env env, CopyStmt copyStmt) throws Exception {
         CopyJob job = (CopyJob) env.getLoadManager().createLoadJobFromStmt(copyStmt);
         if (!copyStmt.isAsync()) {
             // wait for execute finished
@@ -373,18 +412,8 @@ public class DdlExecutor {
             }
             if (job.getState() == JobState.UNKNOWN || job.getState() == JobState.CANCELLED) {
                 QueryState queryState = new QueryState();
-                StringBuilder sb = new StringBuilder();
-                sb.append("job state=").append(job.getState());
                 FailMsg failMsg = job.getFailMsg();
-                if (failMsg != null) {
-                    sb.append("; type=").append(failMsg.getCancelType());
-                    sb.append(", msg=[").append(failMsg.getMsg()).append("]");
-                }
                 EtlStatus loadingStatus = job.getLoadingStatus();
-                if (loadingStatus != null && !Strings.isNullOrEmpty(loadingStatus.getTrackingUrl())
-                        && !loadingStatus.getTrackingUrl().equals(EtlStatus.DEFAULT_TRACKING_URL)) {
-                    sb.append("; URL=").append(loadingStatus.getTrackingUrl());
-                }
                 List<List<String>> result = Lists.newArrayList();
                 List<String> entry = Lists.newArrayList();
                 entry.add(job.getCopyId());
@@ -397,19 +426,11 @@ public class DdlExecutor {
                 entry.add(loadingStatus.getTrackingUrl());
                 result.add(entry);
                 queryState.setResultSet(new ShowResultSet(copyStmt.getMetaData(), result));
-                queryState.setError(sb.toString());
-                return queryState;
+                copyStmt.getAnalyzer().getContext().setState(queryState);
+                return;
             } else if (job.getState() == JobState.FINISHED) {
                 EtlStatus loadingStatus = job.getLoadingStatus();
                 Map<String, String> counters = loadingStatus.getCounters();
-                long loadedRows = Long.parseLong(counters.getOrDefault(LoadJob.DPP_NORMAL_ALL, "0"));
-                long filterRows = Long.parseLong(counters.getOrDefault(LoadJob.DPP_ABNORMAL_ALL, "0"));
-                long unselectRows = Long.parseLong(counters.getOrDefault(LoadJob.UNSELECTED_ROWS, "0"));
-                String url = null;
-                if (loadingStatus != null && !Strings.isNullOrEmpty(loadingStatus.getTrackingUrl())
-                        && !loadingStatus.getTrackingUrl().equals(EtlStatus.DEFAULT_TRACKING_URL)) {
-                    url = "URL=" + loadingStatus.getTrackingUrl();
-                }
                 QueryState queryState = new QueryState();
                 List<List<String>> result = Lists.newArrayList();
                 List<String> entry = Lists.newArrayList();
@@ -423,8 +444,8 @@ public class DdlExecutor {
                 entry.add(loadingStatus.getTrackingUrl());
                 result.add(entry);
                 queryState.setResultSet(new ShowResultSet(copyStmt.getMetaData(), result));
-                queryState.setOk(loadedRows, (int) (filterRows + unselectRows), url);
-                return queryState;
+                copyStmt.getAnalyzer().getContext().setState(queryState);
+                return;
             }
         }
         QueryState queryState = new QueryState();
@@ -440,7 +461,6 @@ public class DdlExecutor {
         entry.add("");
         result.add(entry);
         queryState.setResultSet(new ShowResultSet(copyStmt.getMetaData(), result));
-        queryState.setOk();
-        return queryState;
+        copyStmt.getAnalyzer().getContext().setState(queryState);
     }
 }

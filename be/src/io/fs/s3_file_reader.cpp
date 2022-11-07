@@ -21,6 +21,7 @@
 #include <aws/s3/model/GetObjectRequest.h>
 
 #include "common/config.h"
+#include "io/cloud/tmp_file_mgr.h"
 #include "io/fs/s3_common.h"
 #include "io/fs/s3_file_writer.h"
 #include "util/async_io.h"
@@ -38,7 +39,7 @@ S3FileReader::S3FileReader(Path path, size_t file_size, std::string key, std::st
           _key(std::move(key)) {
     auto tmp_file_name = _key;
     std::replace(tmp_file_name.begin(), tmp_file_name.end(), '/', '_');
-    _local_path = Path(config::tmp_file_dir) / tmp_file_name;
+    _local_path = Path(TmpFileMgr::instance()->get_tmp_file_dir(tmp_file_name)) / tmp_file_name;
     DorisMetrics::instance()->s3_file_open_reading->increment(1);
     DorisMetrics::instance()->s3_file_reader_total->increment(1);
 }
@@ -67,14 +68,12 @@ Status S3FileReader::read_at(size_t offset, Slice result, size_t* bytes_read, IO
 
 Status S3FileReader::read_at_impl(size_t offset, Slice result, size_t* bytes_read, IOState* state) {
     DCHECK(!closed());
-    if (config::enable_write_as_cache) {
-        FileReaderSPtr _cache_file_reader = S3FileSystem::lookup_tmp_file(_local_path);
-        if (_cache_file_reader) {
-            if (state) {
-                state->stats->file_cache_stats.num_io_bytes_read_from_write_cache += result.size;
-            }
-            return _cache_file_reader->read_at(offset, result, bytes_read, state);
+    FileReaderSPtr _cache_file_reader = TmpFileMgr::instance()->lookup_tmp_file(_local_path);
+    if (_cache_file_reader) {
+        if (state) {
+            state->stats->file_cache_stats.num_io_bytes_read_from_write_cache += result.size;
         }
+        return _cache_file_reader->read_at(offset, result, bytes_read, state);
     }
     if (offset > _file_size) {
         return Status::IOError("offset exceeds file size(offset: {}, file size: {}, path: {})",

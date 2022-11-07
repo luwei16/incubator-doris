@@ -28,6 +28,7 @@ import org.apache.doris.catalog.Database;
 import org.apache.doris.catalog.Env;
 import org.apache.doris.catalog.Table;
 import org.apache.doris.catalog.TableIf;
+import org.apache.doris.common.Config;
 import org.apache.doris.common.DdlException;
 import org.apache.doris.common.MetaNotFoundException;
 import org.apache.doris.common.io.Text;
@@ -122,6 +123,10 @@ public abstract class BulkLoadJob extends LoadJob {
                             stmt.getOrigStmt(), stmt.getUserInfo());
                     break;
                 case SPARK:
+                    if (!Config.cloud_unique_id.isEmpty()) {
+                        LOG.info("stmt={}, not supported in cloud mode", stmt.toString());
+                        throw new DdlException("Unsupported operaiton");
+                    }
                     bulkLoadJob = new SparkLoadJob(db.getId(), stmt.getLabel().getLabelName(), stmt.getResourceDesc(),
                             stmt.getOrigStmt(), stmt.getUserInfo());
                     break;

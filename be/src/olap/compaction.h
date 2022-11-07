@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include <memory>
 #include <vector>
 
 #include "olap/merger.h"
@@ -41,7 +42,7 @@ class Merger;
 //  2. do compaction
 //  3. modify rowsets
 //  4. gc output rowset if failed
-class Compaction {
+class Compaction : public std::enable_shared_from_this<Compaction> {
 public:
     Compaction(TabletSharedPtr tablet, const std::string& label);
     virtual ~Compaction();
@@ -96,6 +97,10 @@ protected:
     int64_t _oldest_write_timestamp;
     int64_t _newest_write_timestamp;
     RowIdConversion _rowid_conversion;
+
+    // CLOUD_MODE
+    // expiration time of this compaction
+    int64_t _expiration = 0;
 
     DISALLOW_COPY_AND_ASSIGN(Compaction);
 };
