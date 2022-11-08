@@ -616,7 +616,8 @@ public class SchemaChangeJobV2 extends AlterJobV2 {
                     } else {
                         for (Tablet shadowTablet : shadowIdx.getTablets()) {
                             long shadowTabletId = shadowTablet.getId();
-                            long originTabletId = partitionIndexTabletMap.get(partitionId, shadowIdxId).get(shadowTabletId);
+                            long originTabletId = partitionIndexTabletMap.get(
+                                    partitionId, shadowIdxId).get(shadowTabletId);
                             List<Replica> shadowReplicas = shadowTablet.getReplicas();
                             for (Replica shadowReplica : shadowReplicas) {
                                 if (shadowReplica.getBackendId() < 0) {
@@ -624,7 +625,7 @@ public class SchemaChangeJobV2 extends AlterJobV2 {
                                     throw new AlterCancelException("shadowReplica:" + shadowReplica.getId()
                                             + " backendId < 0");
                                 }
-    
+
                                 AlterReplicaTask rollupTask = new AlterReplicaTask(shadowReplica.getBackendId(), dbId,
                                         tableId, partitionId, shadowIdxId, originIdxId,
                                         shadowTabletId, originTabletId, shadowReplica.getId(),
