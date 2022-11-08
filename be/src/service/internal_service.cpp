@@ -1023,7 +1023,7 @@ Status PInternalServiceImpl::_multi_get(const PMultiGetRequest *request, PMultiG
                     << ", version:" << tablet_schema->schema_version()
                     << ", cost(us):" << watch.elapsed_time() / 1000;
             SegmentCacheHandle segment_cache; 
-            RETURN_IF_ERROR(SegmentLoader::instance()->load_segments(rowset, &segment_cache));
+            RETURN_IF_ERROR(SegmentLoader::instance()->load_segments(rowset, &segment_cache, true));
             // find segment
             auto it = std::find_if(segment_cache.get_segments().begin(), segment_cache.get_segments().end(),
                 [&row_id](const segment_v2::SegmentSharedPtr& seg) { return seg->id() == row_id.segment_id(); });
