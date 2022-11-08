@@ -586,15 +586,17 @@ Status CloudSchemaChange::_drop_inverted_index(
             for (auto& inverted_index: alter_inverted_indexs) {
                 auto column_name = inverted_index.columns[0];
                 auto column = tablet_schema->column(column_name);
-                auto col_uuid = column.unique_id();
+                auto index_id = inverted_index.index_id;
 
-                std::string inverted_index_file = InvertedIndexDescriptor::get_index_file_name(segment_path, col_uuid);
+                std::string inverted_index_file = InvertedIndexDescriptor::get_index_file_name(segment_path, index_id);
                 bool file_exist = false;
                 fs->exists(inverted_index_file, &file_exist);
                 if (!file_exist) {
                     return Status::OK();
                 }
-                LOG(INFO) << "will drop inverted index cid: " << col_uuid << ", column_name: " << column_name
+                LOG(INFO) << "will drop inverted index, index id: " << index_id
+                        << ", cid: " << column.unique_id()
+                        << ", column_name: " << column_name
                         << ", inverted_index_file: " << inverted_index_file;
                 res = fs->delete_file(inverted_index_file);
                 if (!res.ok()) {

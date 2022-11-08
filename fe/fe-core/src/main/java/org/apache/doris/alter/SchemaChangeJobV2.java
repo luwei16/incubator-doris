@@ -593,26 +593,38 @@ public class SchemaChangeJobV2 extends AlterJobV2 {
                         col.setIndexFlag(tColumn, tbl);
                     }
 
-                    for (Tablet shadowTablet : shadowIdx.getTablets()) {
-                        long shadowTabletId = shadowTablet.getId();
-                        long originTabletId = partitionIndexTabletMap.get(partitionId, shadowIdxId).get(shadowTabletId);
-                        List<Replica> shadowReplicas = shadowTablet.getReplicas();
-                        for (Replica shadowReplica : shadowReplicas) {
-                            if (shadowReplica.getBackendId() < 0) {
-                                LOG.warn("replica:{}, backendId: {}", shadowReplica, shadowReplica.getBackendId());
-                                throw new AlterCancelException("shadowReplica:" + shadowReplica.getId()
-                                        + " backendId < 0");
-                            }
-
-                            if (invertedIndexChange) {
+                    if (invertedIndexChange) {
+                        MaterializedIndex origIdx = partition.getIndex(originIdxId);
+                        for (Tablet originTablet : origIdx.getTablets()) {
+                            long originTabletId = originTablet.getId();
+                            List<Replica> originReplicas = originTablet.getReplicas();
+                            for (Replica originReplica : originReplicas) {
+                                if (originReplica.getBackendId() < 0) {
+                                    LOG.warn("replica:{}, backendId: {}", originReplica, originReplica.getBackendId());
+                                    throw new AlterCancelException("originReplica:" + originReplica.getId()
+                                            + " backendId < 0");
+                                }
                                 AlterInvertedIndexTask alterInvertedIndexTask = new AlterInvertedIndexTask(
-                                        shadowReplica.getBackendId(), dbId, tableId,
-                                        partitionId, shadowIdxId, visibleVersion,
+                                        originReplica.getBackendId(), dbId, tableId,
+                                        partitionId, originIdxId, visibleVersion,
                                         originTabletId, originSchemaHash,
                                         jobId, JobType.SCHEMA_CHANGE,
                                         isDropOp, alterInvertedIndexes, indexes, originSchemaColumns, expiration);
                                 schemaChangeBatchTask.addTask(alterInvertedIndexTask);
-                            } else {
+                            }
+                        }
+                    } else {
+                        for (Tablet shadowTablet : shadowIdx.getTablets()) {
+                            long shadowTabletId = shadowTablet.getId();
+                            long originTabletId = partitionIndexTabletMap.get(partitionId, shadowIdxId).get(shadowTabletId);
+                            List<Replica> shadowReplicas = shadowTablet.getReplicas();
+                            for (Replica shadowReplica : shadowReplicas) {
+                                if (shadowReplica.getBackendId() < 0) {
+                                    LOG.warn("replica:{}, backendId: {}", shadowReplica, shadowReplica.getBackendId());
+                                    throw new AlterCancelException("shadowReplica:" + shadowReplica.getId()
+                                            + " backendId < 0");
+                                }
+    
                                 AlterReplicaTask rollupTask = new AlterReplicaTask(shadowReplica.getBackendId(), dbId,
                                         tableId, partitionId, shadowIdxId, originIdxId,
                                         shadowTabletId, originTabletId, shadowReplica.getId(),
