@@ -75,6 +75,7 @@ public class BrokerLoadJob extends BulkLoadJob {
     private RuntimeProfile jobProfile;
     // If set to true, the profile of load job with be pushed to ProfileManager
     private boolean enableProfile = false;
+    private TUniqueId queryId;
 
     // for log replay and unit test
     public BrokerLoadJob() {
@@ -97,6 +98,9 @@ public class BrokerLoadJob extends BulkLoadJob {
         this.brokerDesc = brokerDesc;
         if (ConnectContext.get() != null && ConnectContext.get().getSessionVariable().enableProfile()) {
             enableProfile = true;
+        }
+        if (ConnectContext.get() != null) {
+            queryId = ConnectContext.get().queryId();
         }
     }
 
@@ -218,6 +222,7 @@ public class BrokerLoadJob extends BulkLoadJob {
 
                 UUID uuid = UUID.randomUUID();
                 TUniqueId loadId = new TUniqueId(uuid.getMostSignificantBits(), uuid.getLeastSignificantBits());
+                LOG.info("sqlQueryId={}, loadId={}", DebugUtil.printId(queryId), DebugUtil.printId(loadId));
                 task.init(loadId, attachment.getFileStatusByTable(aggKey),
                         attachment.getFileNumByTable(aggKey), getUserInfo());
                 idToTasks.put(task.getSignature(), task);
