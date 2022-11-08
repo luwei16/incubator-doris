@@ -1016,6 +1016,12 @@ Status PInternalServiceImpl::_multi_get(const PMultiGetRequest *request, PMultiG
                 LOG(INFO) << "no such rowset " << rowset_id;
                 continue;
             }
+
+            const TabletSchemaSPtr tablet_schema = rowset->tablet_schema();
+            // const TabletSchemaSPtr tablet_schema = tablet->tablet_schema();
+            VLOG_DEBUG << "get tablet schema column_num:" << tablet_schema->num_columns()
+                    << ", version:" << tablet_schema->schema_version()
+                    << ", cost(us):" << watch.elapsed_time() / 1000;
             SegmentCacheHandle segment_cache; 
             RETURN_IF_ERROR(SegmentLoader::instance()->load_segments(rowset, &segment_cache));
             // find segment
@@ -1025,7 +1031,6 @@ Status PInternalServiceImpl::_multi_get(const PMultiGetRequest *request, PMultiG
                 continue;
             }
             // read from segment column by column, row by row
-            const TabletSchemaSPtr tablet_schema = tablet->tablet_schema();
             segment_v2::SegmentSharedPtr segment = *it;
             for (int x = 0; x < desc.slots().size() - 1; ++x) {
                 int index = tablet_schema->field_index(desc.slots()[x]->col_unique_id());
