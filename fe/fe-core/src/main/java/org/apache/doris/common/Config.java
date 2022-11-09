@@ -1863,4 +1863,7 @@ public class Config extends ConfigBase {
 
     @ConfField(mutable = false)
     public static int cloud_copy_list_objects_version = 2;
+
+    @ConfField(mutable = true)
+    public static int meta_service_rpc_retry_times = 200;
 }

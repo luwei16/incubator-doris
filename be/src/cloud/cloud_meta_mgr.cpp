@@ -4,6 +4,7 @@
 #include <brpc/controller.h>
 
 #include <chrono>
+#include <random>
 
 #include "common/config.h"
 #include "common/logging.h"
@@ -14,22 +15,34 @@
 
 namespace doris::cloud {
 
-static constexpr int RETRY_TIMES = 1;
+static constexpr int BRPC_RETRY_TIMES = 3;
 
-#define RETRY_RPC(rpc_name)                                                              \
-    int retry_times = RETRY_TIMES;                                                       \
-    do {                                                                                 \
-        _stub->rpc_name(&cntl, &req, &res, nullptr);                                     \
-        if (cntl.Failed())                                                               \
-            return Status::RpcError("failed to {}: {}", __FUNCTION__, cntl.ErrorText()); \
-        if (res.status().code() == selectdb::MetaServiceCode::OK)                        \
-            return Status::OK();                                                         \
-        else if (res.status().code() == selectdb::KV_TXN_CONFLICT) {                     \
-            cntl.Reset();                                                                \
-            continue;                                                                    \
-        }                                                                                \
-        break;                                                                           \
-    } while (retry_times--);                                                             \
+#define RETRY_RPC(rpc_name)                                                                      \
+    int retry_times = config::meta_service_rpc_retry_times;                                      \
+    uint32_t duration_ms = 0;                                                                    \
+    auto rng = std::default_random_engine {                                                      \
+            static_cast<uint32_t>(std::chrono::steady_clock::now().time_since_epoch().count())}; \
+    std::uniform_int_distribution<uint32_t> u(20, 200);                                          \
+    std::uniform_int_distribution<uint32_t> u2(500, 1000);                                       \
+    do {                                                                                         \
+        brpc::Controller cntl;                                                                   \
+        cntl.set_timeout_ms(config::meta_service_brpc_timeout_ms);                               \
+        cntl.set_max_retry(BRPC_RETRY_TIMES);                                                    \
+        res.Clear();                                                                             \
+        _stub->rpc_name(&cntl, &req, &res, nullptr);                                             \
+        if (cntl.Failed())                                                                       \
+            return Status::RpcError("failed to {}: {}", __FUNCTION__, cntl.ErrorText());         \
+        if (res.status().code() == selectdb::MetaServiceCode::OK)                                \
+            return Status::OK();                                                                 \
+        else if (res.status().code() == selectdb::KV_TXN_CONFLICT) {                             \
+            duration_ms = retry_times >= 100 ? u(rng) : u2(rng);                                 \
+            LOG(WARNING) << "failed to " << __FUNCTION__ << " retry times left:" << retry_times  \
+                         << " sleep:" << duration_ms << "ms response:" << res.DebugString();     \
+            std::this_thread::sleep_for(std::chrono::milliseconds(duration_ms));                 \
+            continue;                                                                            \
+        }                                                                                        \
+        break;                                                                                   \
+    } while (retry_times--);                                                                     \
     return Status::InternalError("failed to {}: {}", __FUNCTION__, res.status().msg());
 
 CloudMetaMgr::CloudMetaMgr() = default;
@@ -184,7 +197,7 @@ Status CloudMetaMgr::prepare_rowset(const RowsetMetaSharedPtr& rs_meta, bool is_
     req.set_cloud_unique_id(config::cloud_unique_id);
     rs_meta->to_rowset_pb(req.mutable_rowset_meta());
     req.set_temporary(is_tmp);
-    int retry_times = RETRY_TIMES;
+    int retry_times = config::meta_service_rpc_retry_times;
     do {
         _stub->prepare_rowset(&cntl, &req, &resp, nullptr);
         if (cntl.Failed()) {
@@ -219,7 +232,7 @@ Status CloudMetaMgr::commit_rowset(const RowsetMetaSharedPtr& rs_meta, bool is_t
     req.set_cloud_unique_id(config::cloud_unique_id);
     rs_meta->to_rowset_pb(req.mutable_rowset_meta());
     req.set_temporary(is_tmp);
-    int retry_times = RETRY_TIMES;
+    int retry_times = config::meta_service_rpc_retry_times;
     do {
         _stub->commit_rowset(&cntl, &req, &resp, nullptr);
         if (cntl.Failed()) {
@@ -246,8 +259,6 @@ Status CloudMetaMgr::commit_rowset(const RowsetMetaSharedPtr& rs_meta, bool is_t
 Status CloudMetaMgr::commit_txn(StreamLoadContext* ctx, bool is_2pc) {
     VLOG_DEBUG << "commit txn, db_id: " << ctx->db_id << ", txn_id: " << ctx->txn_id
                << ", label: " << ctx->label << ", is_2pc: " << is_2pc;
-    brpc::Controller cntl;
-    cntl.set_timeout_ms(config::meta_service_brpc_timeout_ms);
     selectdb::CommitTxnRequest req;
     selectdb::CommitTxnResponse res;
     req.set_cloud_unique_id(config::cloud_unique_id);
@@ -260,8 +271,6 @@ Status CloudMetaMgr::commit_txn(StreamLoadContext* ctx, bool is_2pc) {
 Status CloudMetaMgr::abort_txn(StreamLoadContext* ctx) {
     VLOG_DEBUG << "abort txn, db_id: " << ctx->db_id << ", txn_id: " << ctx->txn_id
                << ", label: " << ctx->label;
-    brpc::Controller cntl;
-    cntl.set_timeout_ms(config::meta_service_brpc_timeout_ms);
     selectdb::AbortTxnRequest req;
     selectdb::AbortTxnResponse res;
     req.set_cloud_unique_id(config::cloud_unique_id);
@@ -277,8 +286,6 @@ Status CloudMetaMgr::abort_txn(StreamLoadContext* ctx) {
 Status CloudMetaMgr::precommit_txn(StreamLoadContext* ctx) {
     VLOG_DEBUG << "precommit txn, db_id: " << ctx->db_id << ", txn_id: " << ctx->txn_id
                << ", label: " << ctx->label;
-    brpc::Controller cntl;
-    cntl.set_timeout_ms(config::meta_service_brpc_timeout_ms);
     selectdb::PrecommitTxnRequest req;
     selectdb::PrecommitTxnResponse res;
     req.set_cloud_unique_id(config::cloud_unique_id);
@@ -321,7 +328,7 @@ Status CloudMetaMgr::prepare_tablet_job(const selectdb::TabletJobInfoPB& job) {
     selectdb::StartTabletJobResponse res;
     req.mutable_job()->CopyFrom(job);
     req.set_cloud_unique_id(config::cloud_unique_id);
-    int retry_times = RETRY_TIMES;
+    int retry_times = config::meta_service_rpc_retry_times;
     do {
         _stub->start_tablet_job(&cntl, &req, &res, nullptr);
         if (cntl.Failed()) {
@@ -350,7 +357,7 @@ Status CloudMetaMgr::commit_tablet_job(const selectdb::TabletJobInfoPB& job,
     req.mutable_job()->CopyFrom(job);
     req.set_action(selectdb::FinishTabletJobRequest::COMMIT);
     req.set_cloud_unique_id(config::cloud_unique_id);
-    int retry_times = RETRY_TIMES;
+    int retry_times = config::meta_service_rpc_retry_times;
     do {
         _stub->finish_tablet_job(&cntl, &req, &res, nullptr);
         if (cntl.Failed()) {
@@ -372,8 +379,6 @@ Status CloudMetaMgr::commit_tablet_job(const selectdb::TabletJobInfoPB& job,
 
 Status CloudMetaMgr::abort_tablet_job(const selectdb::TabletJobInfoPB& job) {
     VLOG_DEBUG << "abort_tablet_job: " << job.ShortDebugString();
-    brpc::Controller cntl;
-    cntl.set_timeout_ms(config::meta_service_brpc_timeout_ms);
     selectdb::FinishTabletJobRequest req;
     selectdb::FinishTabletJobResponse res;
     req.mutable_job()->CopyFrom(job);
@@ -384,8 +389,6 @@ Status CloudMetaMgr::abort_tablet_job(const selectdb::TabletJobInfoPB& job) {
 
 Status CloudMetaMgr::lease_tablet_job(const selectdb::TabletJobInfoPB& job) {
     VLOG_DEBUG << "lease_tablet_job: " << job.ShortDebugString();
-    brpc::Controller cntl;
-    cntl.set_timeout_ms(config::meta_service_brpc_timeout_ms);
     selectdb::FinishTabletJobRequest req;
     selectdb::FinishTabletJobResponse res;
     req.mutable_job()->CopyFrom(job);
