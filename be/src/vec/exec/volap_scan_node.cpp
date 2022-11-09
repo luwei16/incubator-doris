@@ -298,6 +298,9 @@ void VOlapScanNode::transfer_thread(RuntimeState* state) {
 
     if (_vconjunct_ctx_ptr) {
         for (auto scanner : _volap_scanners) {
+            if ((*scanner->vconjunct_ctx_ptr()) != nullptr) {
+                continue;
+            }
             status = (*_vconjunct_ctx_ptr)->clone(state, scanner->vconjunct_ctx_ptr());
             if (!status.ok()) {
                 std::lock_guard<SpinLock> guard(_status_mutex);
