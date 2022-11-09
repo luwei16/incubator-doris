@@ -494,18 +494,37 @@ if (${MAKE_TEST} STREQUAL "ON")
 endif ()
 
 # Add libs if needed, download to current dir -- ${BUILD_DIR}
-if (NOT EXISTS "ldb_lib.xz")
-    set(FDB_LIB_URL "https://justtmp-1308700295.cos.ap-hongkong.myqcloud.com/ldb_lib.xz")
+set(LDB_LID "fdb_lib_7_1_23.tar.xz")
+file(GLOB RELEASE_FILE_LIST LIST_DIRECTORIES false "/etc/*release*")
+execute_process(COMMAND "cat" ${RELEASE_FILE_LIST}
+                RESULT_VARIABLE CAT_RET_CODE
+                OUTPUT_VARIABLE CAT_RET_CONTENT)
+string(TOUPPER "${CAT_RET_CONTENT}" CAT_RET_CONTENT)
+if ("${CAT_RET_CONTENT}" MATCHES "UBUNTU")
+    message("Ubuntu OS")
+    SET(OS_RELEASE "Ubuntu")
+    set(FDB_LIB_URL "https://doris-build.oss-cn-beijing.aliyuncs.com/thirdparty/fdb/ubuntu/")
+    string(APPEND FDB_LIB_URL "${LDB_LID}")
+else()
+    # If it is not ubuntu, it is regarded as centos by default
+    message("Centos OS")
+    SET(OS_RELEASE "Centos")
+    set(FDB_LIB_URL "https://doris-build.oss-cn-beijing.aliyuncs.com/thirdparty/fdb/centos/")
+    string(APPEND FDB_LIB_URL "${LDB_LID}")
+endif()
+
+if (NOT EXISTS "${LDB_LID}")
     execute_process(COMMAND "curl" "${FDB_LIB_URL}"
-                            "-o" "ldb_lib.xz" "-k"
+                            "-o" "${LDB_LID}" "-k"
                     RESULTS_VARIABLE DOWNLOAD_RET)
     if (NOT ${DOWNLOAD_RET} STREQUAL "0")
         message(FATAL_ERROR "Failed to download dependency of fdb ${FDB_LIB_URL}")
     endif ()
 endif ()
+
 # Add fdb dependencies
 if (NOT EXISTS ${THIRDPARTY_DIR}/include/foundationdb)
-    execute_process(COMMAND "tar" "xf" "ldb_lib.xz" "-C" "${THIRDPARTY_DIR}/")
+    execute_process(COMMAND "tar" "xf" "${LDB_LID}" "-C" "${THIRDPARTY_DIR}/")
 endif ()
 
 add_subdirectory(${SRC_DIR}/common)
@@ -563,14 +582,7 @@ install(FILES
     DESTINATION ${OUTPUT_DIR}/conf)
 
 install(FILES
-    ${THIRDPARTY_DIR}/lib/ld-linux-x86-64.so.2
-    ${THIRDPARTY_DIR}/lib/libc.so.6
-    ${THIRDPARTY_DIR}/lib/libdl.so.2
     ${THIRDPARTY_DIR}/lib/libfdb_c.so
-    ${THIRDPARTY_DIR}/lib/libgcc_s.so.1
-    ${THIRDPARTY_DIR}/lib/libm.so.6
-    ${THIRDPARTY_DIR}/lib/libpthread.so.0
-    ${THIRDPARTY_DIR}/lib/librt.so.1
     PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE
     GROUP_READ GROUP_WRITE GROUP_EXECUTE
     WORLD_READ WORLD_EXECUTE

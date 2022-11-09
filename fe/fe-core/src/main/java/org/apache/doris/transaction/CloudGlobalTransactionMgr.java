@@ -263,7 +263,7 @@ public class CloudGlobalTransactionMgr implements GlobalTransactionMgrInterface 
         final CommitTxnRequest commitTxnRequest = builder.build();
         CommitTxnResponse commitTxnResponse = null;
         int retryTime = 0;
-        while (retryTime++ < 3) {
+        while (retryTime++ < Config.meta_service_rpc_retry_times) {
             try {
                 LOG.info("commitTxn, transactionId={}, commitTxnRequest:{}", transactionId, commitTxnRequest);
                 commitTxnResponse = MetaServiceProxy.getInstance().commitTxn(commitTxnRequest);
