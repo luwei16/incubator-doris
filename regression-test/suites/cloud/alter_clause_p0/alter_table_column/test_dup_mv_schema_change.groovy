@@ -168,7 +168,7 @@ suite ("test_dup_mv_schema_change") {
 
         max_try_time = 600
         while(max_try_time--){
-            String result = getJobState(mvName)
+            String result = getJobState(tableName)
             if (result == "FINISHED") {
                 break
             } else {
