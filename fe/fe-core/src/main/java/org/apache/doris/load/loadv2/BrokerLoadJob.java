@@ -24,6 +24,7 @@ import org.apache.doris.catalog.Env;
 import org.apache.doris.catalog.OlapTable;
 import org.apache.doris.catalog.Table;
 import org.apache.doris.common.AnalysisException;
+import org.apache.doris.common.Config;
 import org.apache.doris.common.DataQualityException;
 import org.apache.doris.common.DdlException;
 import org.apache.doris.common.DuplicatedRequestException;
@@ -77,6 +78,9 @@ public class BrokerLoadJob extends BulkLoadJob {
     private boolean enableProfile = false;
     private TUniqueId queryId;
 
+    private String cluster = null;
+    private String qualifiedUser = null;
+
     // for log replay and unit test
     public BrokerLoadJob() {
         this(EtlJobType.BROKER);
@@ -99,6 +103,15 @@ public class BrokerLoadJob extends BulkLoadJob {
         if (ConnectContext.get() != null && ConnectContext.get().getSessionVariable().enableProfile()) {
             enableProfile = true;
         }
+
+        if (!Config.cloud_unique_id.isEmpty()) {
+            ConnectContext context = ConnectContext.get();
+            if (context != null) {
+                cluster = context.getCloudCluster();
+                qualifiedUser = context.getQualifiedUser();
+            }
+        }
+
         if (ConnectContext.get() != null) {
             queryId = ConnectContext.get().queryId();
         }
@@ -222,9 +235,15 @@ public class BrokerLoadJob extends BulkLoadJob {
 
                 UUID uuid = UUID.randomUUID();
                 TUniqueId loadId = new TUniqueId(uuid.getMostSignificantBits(), uuid.getLeastSignificantBits());
+
                 LOG.info("sqlQueryId={}, loadId={}", DebugUtil.printId(queryId), DebugUtil.printId(loadId));
-                task.init(loadId, attachment.getFileStatusByTable(aggKey),
-                        attachment.getFileNumByTable(aggKey), getUserInfo());
+                if (Config.cloud_unique_id.isEmpty()) {
+                    task.init(loadId, attachment.getFileStatusByTable(aggKey),
+                            attachment.getFileNumByTable(aggKey), getUserInfo());
+                } else {
+                    task.init(loadId, attachment.getFileStatusByTable(aggKey),
+                            attachment.getFileNumByTable(aggKey), getUserInfo(), cluster, qualifiedUser);
+                }
                 idToTasks.put(task.getSignature(), task);
                 // idToTasks contains previous LoadPendingTasks, so idToTasks is just used to save all tasks.
                 // use newLoadingTasks to save new created loading tasks and submit them later.

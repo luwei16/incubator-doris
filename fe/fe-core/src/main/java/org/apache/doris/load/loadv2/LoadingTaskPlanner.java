@@ -70,6 +70,8 @@ public class LoadingTaskPlanner {
     private final int loadParallelism;
     private final int sendBatchParallelism;
     private UserIdentity userInfo;
+    private String cluster;
+    private String qualifiedUser;
     // Something useful
     // ConnectContext here is just a dummy object to avoid some NPE problem, like ctx.getDatabase()
     private Analyzer analyzer = new Analyzer(Env.getCurrentEnv(), new ConnectContext());
@@ -104,6 +106,16 @@ public class LoadingTaskPlanner {
         } else {
             this.analyzer.setUDFAllowed(false);
         }
+    }
+
+    public LoadingTaskPlanner(Long loadJobId, long txnId, long dbId, OlapTable table,
+                              BrokerDesc brokerDesc, List<BrokerFileGroup> brokerFileGroups,
+                              boolean strictMode, String timezone, long timeoutS, int loadParallelism,
+                              int sendBatchParallelism, UserIdentity userInfo, String cluster, String qualifiedUser) {
+        this(loadJobId, txnId, dbId, table, brokerDesc, brokerFileGroups, strictMode,
+                timezone, timeoutS, loadParallelism, sendBatchParallelism, userInfo);
+        this.cluster = cluster;
+        this.qualifiedUser = qualifiedUser;
     }
 
     public void plan(TUniqueId loadId, List<List<TBrokerFileStatus>> fileStatusesList, int filesAdded)
@@ -150,8 +162,13 @@ public class LoadingTaskPlanner {
             ((ExternalFileScanNode) scanNode).setLoadInfo(loadJobId, txnId, table, brokerDesc, fileGroups,
                     fileStatusesList, filesAdded, strictMode, loadParallelism, userInfo);
         } else {
-            scanNode = new BrokerScanNode(new PlanNodeId(nextNodeId++), scanTupleDesc, "BrokerScanNode",
-                    fileStatusesList, filesAdded);
+            if (Config.cloud_unique_id.isEmpty()) {
+                scanNode = new BrokerScanNode(new PlanNodeId(nextNodeId++), scanTupleDesc, "BrokerScanNode",
+                        fileStatusesList, filesAdded);
+            } else {
+                scanNode = new BrokerScanNode(new PlanNodeId(nextNodeId++), scanTupleDesc, "BrokerScanNode",
+                        fileStatusesList, filesAdded, cluster, qualifiedUser);
+            }
             ((BrokerScanNode) scanNode).setLoadInfo(loadJobId, txnId, table, brokerDesc, fileGroups, strictMode,
                     loadParallelism, userInfo);
         }

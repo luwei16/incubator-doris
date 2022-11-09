@@ -110,6 +110,15 @@ public class LoadLoadingTask extends LoadTask {
         planner.plan(loadId, fileStatusList, fileNum);
     }
 
+    public void init(TUniqueId loadId, List<List<TBrokerFileStatus>> fileStatusList,
+            int fileNum, UserIdentity userInfo, String cluster, String qualifiedUser) throws UserException {
+        this.loadId = loadId;
+        planner = new LoadingTaskPlanner(callback.getCallbackId(), txnId, db.getId(), table, brokerDesc, fileGroups,
+                strictMode, timezone, this.timeoutS, this.loadParallelism, this.sendBatchParallelism, userInfo,
+                cluster, qualifiedUser);
+        planner.plan(loadId, fileStatusList, fileNum);
+    }
+
     public TUniqueId getLoadId() {
         return loadId;
     }

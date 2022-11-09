@@ -64,6 +64,7 @@ import org.apache.doris.thrift.TScanRangeLocations;
 
 import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
+import com.google.common.base.Strings;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
@@ -135,6 +136,10 @@ public class BrokerScanNode extends LoadScanNode {
 
     private Analyzer analyzer;
 
+    private String cluster;
+
+    private String qualifiedUser;
+
     protected static class ParamCreateContext {
         public BrokerFileGroup fileGroup;
         public TBrokerScanRangeParams params;
@@ -157,6 +162,14 @@ public class BrokerScanNode extends LoadScanNode {
         }
     }
 
+    public BrokerScanNode(PlanNodeId id, TupleDescriptor destTupleDesc, String planNodeName,
+                          List<List<TBrokerFileStatus>> fileStatusesList, int filesAdded,
+                          String cluster, String qualifiedUser) {
+        this(id, destTupleDesc, planNodeName, fileStatusesList, filesAdded);
+        this.cluster = cluster;
+        this.qualifiedUser = qualifiedUser;
+    }
+
     // For hive and iceberg scan node
     public BrokerScanNode(PlanNodeId id, TupleDescriptor destTupleDesc, String planNodeName,
             List<List<TBrokerFileStatus>> fileStatusesList, int filesAdded, StatisticalType statisticalType) {
@@ -166,6 +179,42 @@ public class BrokerScanNode extends LoadScanNode {
         if (ConnectContext.get() != null) {
             this.userIdentity = ConnectContext.get().getCurrentUserIdentity();
         }
+    }
+
+    public void setCloudCluster() {
+        if (Strings.isNullOrEmpty(cluster)) {
+            // try set default cluster
+            String defaultCloudCluster = Env.getCurrentEnv().getAuth()
+                    .getDefaultCloudCluster(qualifiedUser);
+            if (!Strings.isNullOrEmpty(defaultCloudCluster)) {
+                cluster = defaultCloudCluster;
+            }
+        }
+
+        // check default cluster valid.
+        if (!Strings.isNullOrEmpty(cluster)) {
+            boolean exist = Env.getCurrentSystemInfo().getCloudClusterNames().contains(cluster);
+            if (!exist) {
+                cluster = null;
+            }
+        }
+
+        if (cluster == null || cluster.isEmpty()) {
+            try {
+                cluster = Env.getCurrentSystemInfo().getCloudClusterNames().stream()
+                                                    .filter(i -> !i.isEmpty()).findFirst().get();
+                if (ConnectContext.get() != null) {
+                    ConnectContext.get().setCloudCluster(cluster);
+                }
+            } catch (Exception e) {
+                LOG.warn("failed to get cluster, clusterNames={}",
+                         Env.getCurrentSystemInfo().getCloudClusterNames(), e);
+            }
+        }
+    }
+
+    public String getCloudCluster() {
+        return cluster;
     }
 
     @Override
@@ -178,7 +227,12 @@ public class BrokerScanNode extends LoadScanNode {
         }
 
         // Get all broker file status
-        assignBackends();
+        if (Config.cloud_unique_id.isEmpty()) {
+            assignBackends();
+        } else {
+            setCloudCluster();
+            assignCloudBackends();
+        }
         getFileStatusAndCalcInstance();
 
         paramCreateContexts = Lists.newArrayList();
@@ -434,6 +488,36 @@ public class BrokerScanNode extends LoadScanNode {
                 backends.add(be);
             }
         }
+        if (backends.isEmpty()) {
+            throw new UserException("No available backends");
+        }
+        Collections.shuffle(backends, random);
+    }
+
+    private void assignCloudBackends() throws UserException {
+        Set<Tag> tags = Sets.newHashSet();
+        if (userIdentity != null) {
+            tags = Env.getCurrentEnv().getAuth().getResourceTags(userIdentity.getQualifiedUser());
+            if (tags == UserProperty.INVALID_RESOURCE_TAGS) {
+                throw new UserException("No valid resource tag for user: " + userIdentity.getQualifiedUser());
+            }
+        } else {
+            LOG.debug("user info in BrokerScanNode should not be null, add log to observer");
+        }
+
+        backends = Lists.newArrayList();
+        if (cluster == null || cluster.isEmpty()) {
+            LOG.warn("failed to get available be, clusterName: {}", cluster);
+            throw new UserException("failed to get available be, clusterName: " + cluster);
+        }
+
+        List<Backend> clusterBes = Env.getCurrentSystemInfo().getBackendsByClusterName(cluster);
+        for (Backend be : clusterBes) {
+            if (be.isAlive()) {
+                backends.add(be);
+            }
+        }
+
         if (backends.isEmpty()) {
             throw new UserException("No available backends");
         }
