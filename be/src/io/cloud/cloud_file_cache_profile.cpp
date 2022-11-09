@@ -74,27 +74,26 @@ void FileCacheProfile::update(int64_t table_id, int64_t partition_id, OlapReader
         return;
     }
     std::shared_ptr<AtomicStatistics> count;
-    bool need_register_p = false;
-    bool need_register_t = false;
+    std::shared_ptr<FileCacheMetric> partition_metric;
+    std::shared_ptr<FileCacheMetric> table_metric;
     {
         std::lock_guard lock(_mtx);
         if (_profile.count(table_id) < 1 || _profile[table_id].count(partition_id) < 1) {
             _profile[table_id][partition_id] = std::make_shared<AtomicStatistics>();
-            _partition_metrics[table_id][partition_id] =
-                    std::make_shared<FileCacheMetric>(table_id, partition_id, this);
-            need_register_p = true;
+            partition_metric = std::make_shared<FileCacheMetric>(table_id, partition_id, this);
+            _partition_metrics[table_id][partition_id] = partition_metric;
             if (_table_metrics.count(table_id) < 1) {
-                _table_metrics[table_id] = std::make_shared<FileCacheMetric>(table_id, this);
-                need_register_t = true;
+                table_metric = std::make_shared<FileCacheMetric>(table_id, this);
+                _table_metrics[table_id] = table_metric;
             }
         }
         count = _profile[table_id][partition_id];
     }
-    if (need_register_p) [[unlikely]] {
-        _partition_metrics[table_id][partition_id]->register_entity();
+    if (partition_metric) [[unlikely]] {
+        partition_metric->register_entity();
     }
-    if (need_register_t) [[unlikely]] {
-        _table_metrics[table_id]->register_entity();
+    if (table_metric) [[unlikely]] {
+        table_metric->register_entity();
     }
     count->num_io_total.fetch_add(stats->file_cache_stats.num_io_total, std::memory_order_relaxed);
     count->num_io_hit_cache.fetch_add(stats->file_cache_stats.num_io_hit_cache,
@@ -115,19 +114,25 @@ void FileCacheProfile::deregister_metric(int64_t table_id, int64_t partition_id)
     if (!s_enable_profile.load(std::memory_order_acquire)) {
         return;
     }
-    _partition_metrics[table_id][partition_id]->deregister_entity();
-    if (_partition_metrics[table_id].size() == 1) {
-        _table_metrics[table_id]->deregister_entity();
+    std::shared_ptr<FileCacheMetric> partition_metric;
+    std::shared_ptr<FileCacheMetric> table_metric;
+    {
+        std::lock_guard lock(_mtx);
+        partition_metric = _partition_metrics[table_id][partition_id];
+        _partition_metrics[table_id].erase(partition_id);
+        if (_partition_metrics[table_id].empty()) {
+            _partition_metrics.erase(table_id);
+            table_metric = _table_metrics[table_id];
+            _table_metrics.erase(table_id);
+        }
+        _profile[table_id].erase(partition_id);
+        if (_profile[table_id].empty()) {
+            _profile.erase(table_id);
+        }
     }
-    std::lock_guard lock(_mtx);
-    _partition_metrics[table_id].erase(partition_id);
-    if (_partition_metrics[table_id].empty()) {
-        _partition_metrics.erase(table_id);
-        _table_metrics.erase(table_id);
-    }
-    _profile[table_id].erase(partition_id);
-    if (_profile[table_id].empty()) {
-        _profile.erase(table_id);
+    partition_metric->deregister_entity();
+    if (table_metric) {
+        table_metric->deregister_entity();
     }
 }
 

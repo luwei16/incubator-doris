@@ -71,6 +71,7 @@ public class CopyJob extends BrokerLoadJob {
     private String copyId;
     private String loadFilePaths = "";
     private Map<String, String> properties = new HashMap<>();
+    private volatile boolean abortedCopy = false;
 
     public CopyJob() {
         super(EtlJobType.COPY);
@@ -116,23 +117,44 @@ public class CopyJob extends BrokerLoadJob {
     @Override
     public void cancelJob(FailMsg failMsg) throws DdlException {
         super.cancelJob(failMsg);
+        if (abortedCopy) {
+            return;
+        }
         for (Entry<FileGroupAggKey, List<BrokerFileGroup>> entry : fileGroupAggInfo.getAggKeyToFileGroups()
                 .entrySet()) {
             long tableId = entry.getKey().getTableId();
             LOG.info("Start cancel copy for stage={}, table={}, queryId={}", stageId, tableId, getCopyId());
             Env.getCurrentInternalCatalog().finishCopy(stageId, stageType, tableId, getCopyId(), 0, false);
         }
+        abortedCopy = true;
     }
 
     @Override
     public void cancelJobWithoutCheck(FailMsg failMsg, boolean abortTxn, boolean needLog) {
         super.cancelJobWithoutCheck(failMsg, abortTxn, needLog);
+        if (abortedCopy) {
+            return;
+        }
+        abortCopy();
+    }
+
+    @Override
+    protected void unprotectedExecuteCancel(FailMsg failMsg, boolean abortTxn) {
+        super.unprotectedExecuteCancel(failMsg, abortTxn);
+        if (abortedCopy) {
+            return;
+        }
+        abortCopy();
+    }
+
+    private void abortCopy() {
         for (Entry<FileGroupAggKey, List<BrokerFileGroup>> entry : fileGroupAggInfo.getAggKeyToFileGroups()
                 .entrySet()) {
             long tableId = entry.getKey().getTableId();
             try {
                 LOG.info("Start cancel copy for stage={}, table={}, queryId={}", stageId, tableId, getCopyId());
                 Env.getCurrentInternalCatalog().finishCopy(stageId, stageType, tableId, getCopyId(), 0, false);
+                abortedCopy = true;
             } catch (DdlException e) {
                 // if cancel copy failed, kvs in fdb will be cleaned when expired
                 LOG.warn("Failed to cancel copy for stage={}, table={}, queryId={}", stageId, tableId, getCopyId(), e);
@@ -161,7 +183,7 @@ public class CopyJob extends BrokerLoadJob {
         super.unprotectReadEndOperation(loadJobFinalOperation);
         this.copyId = loadJobFinalOperation.getCopyId();
         this.loadFilePaths = loadJobFinalOperation.getLoadFilePaths();
-        this.properties = loadJobFinalOperation.getProperties();
+        this.properties.putAll(loadJobFinalOperation.getProperties());
     }
 
     @Override

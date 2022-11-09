@@ -1,0 +1,12 @@
+CREATE TABLE IF NOT EXISTS reverse (
+  `p_comment` varchar(23) NOT NULL,
+  `p_retailprice` double NOT NULL,
+  `p_container` char(10) NOT NULL,
+  `p_size` integer NOT NULL,
+  `p_type` varchar(25) NOT NULL,
+  `p_brand` char(10) NOT NULL,
+  `p_mfgr` char(25) NOT NULL,
+  `p_name` varchar(55) NOT NULL,
+  `p_partkey` integer NOT NULL
+)ENGINE=OLAP
+DISTRIBUTED BY HASH(p_partkey) BUCKETS 24;

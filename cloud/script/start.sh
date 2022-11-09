@@ -31,7 +31,6 @@ bin=$(pwd)/lib/selectdb_cloud
 ldd ${bin} | grep -Ei 'libfdb_c.*not found' &> /dev/null
 if [ $? -eq 0 ]; then
 	patchelf --set-rpath ${lib_path} ${bin}
-	patchelf --set-interpreter ${lib_path}/ld-linux-x86-64.so.2 ${bin}
 	ldd ${bin}
 fi
 
