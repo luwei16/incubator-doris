@@ -2196,6 +2196,7 @@ VExpr* VOlapScanNode::_normalize_predicate(RuntimeState* state, VExpr* conjunct_
             SlotDescriptor* slot = nullptr;
             ColumnValueRangeType* range = nullptr;
             bool is_compound_predicate = TExprNodeType::COMPOUND_PRED == cur_expr->node_type();
+            bool is_runtimer_filter_predicate = _rf_vexpr_set.find(conjunct_expr_root) != _rf_vexpr_set.end();
             bool push_down = false;
             eval_const_conjuncts(cur_expr, *(_vconjunct_ctx_ptr.get()), &push_down);
             if (push_down) {
@@ -2205,6 +2206,9 @@ VExpr* VOlapScanNode::_normalize_predicate(RuntimeState* state, VExpr* conjunct_
                 _is_predicate_acting_on_slot(cur_expr, eq_predicate_checker, &slot, &range)) {
                 std::visit(
                         [&](auto& value_range) {
+                            Defer mark_runtime_filter_flag {[&]() {
+                                value_range.mark_runtime_filter_predicate(is_runtimer_filter_predicate);
+                            }};
                             RETURN_IF_PUSH_DOWN(_normalize_in_and_eq_predicate(
                                     cur_expr, *(_vconjunct_ctx_ptr.get()), slot, value_range,
                                     &push_down));
