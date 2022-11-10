@@ -24,6 +24,9 @@ protected:
 
 private:
     std::string _uuid;
+    int64_t _input_rows = 0;
+    int64_t _input_segments = 0;
+    int64_t _input_data_size = 0;
 };
 
 std::vector<std::shared_ptr<CloudBaseCompaction>> get_base_compactions();

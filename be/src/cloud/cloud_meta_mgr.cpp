@@ -2,6 +2,7 @@
 
 #include <brpc/channel.h>
 #include <brpc/controller.h>
+#include <glog/logging.h>
 
 #include <chrono>
 #include <random>
@@ -128,8 +129,13 @@ Status CloudMetaMgr::sync_tablet_rowsets(Tablet* tablet) {
     }
 
     int64_t cost = duration_cast<milliseconds>(steady_clock::now() - start_time).count();
-    LOG(INFO) << "finish get_rowset rpc. rowset_meta.size()=" << resp.rowset_meta().size()
-              << ", cost=" << cost << "ms";
+    if (cost > 10) {
+        LOG(INFO) << "finish get_rowset rpc. rowset_meta.size()=" << resp.rowset_meta().size()
+                  << ", cost=" << cost << "ms";
+    } else {
+        LOG_EVERY_N(INFO, 10) << "finish get_rowset rpc. rowset_meta.size()="
+                              << resp.rowset_meta().size() << ", cost=" << cost << "ms";
+    }
 
     int64_t now = duration_cast<seconds>(system_clock::now().time_since_epoch()).count();
     tablet->set_last_sync_time(now);

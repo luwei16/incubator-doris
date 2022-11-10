@@ -635,13 +635,17 @@ std::vector<TabletSharedPtr> StorageEngine::_generate_cloud_compaction_tasks(
             if (!check_score) continue;
         }
 
-        // FIXME(gaivn): We may have to allow concurrent BC and CC
         // Return true for skipping compaction
-        auto filter_out = [data_dir, &copied_base_map, &copied_cumu_map](Tablet* t) {
-            return !!copied_base_map[data_dir].count(t->tablet_id()) ||
-                   !!copied_cumu_map[data_dir].count(t->tablet_id()) ||
-                   t->tablet_state() != TABLET_RUNNING;
-        };
+        std::function<bool(Tablet*)> filter_out;
+        if (compaction_type == CompactionType::BASE_COMPACTION) {
+            filter_out = [&base_map = copied_base_map[data_dir]](Tablet* t) {
+                return !!base_map.count(t->tablet_id()) || t->tablet_state() != TABLET_RUNNING;
+            };
+        } else {
+            filter_out = [&cumu_map = copied_cumu_map[data_dir]](Tablet* t) {
+                return !!cumu_map.count(t->tablet_id()) || t->tablet_state() != TABLET_RUNNING;
+            };
+        }
 
         // Even if need_pick_tablet is false, we still need to call find_best_tablet_to_compaction(),
         // So that we can update the max_compaction_score metric.
@@ -655,13 +659,9 @@ std::vector<TabletSharedPtr> StorageEngine::_generate_cloud_compaction_tasks(
                 LOG(WARNING) << "failed to get tablets to compact, err=" << st.get_error_msg();
                 break;
             }
-            if (tablets.empty()) {
-                LOG(WARNING) << "no tablets to compact, n=" << n;
-                break;
+            if (!scores.empty()) {
+                max_compaction_score = scores.front(); // scores are sorted in descending order
             }
-            std::for_each(scores.begin(), scores.end(), [&](auto& i) {
-                max_compaction_score = std::max(max_compaction_score, i);
-            });
             if (!need_pick_tablet) break;
             for (auto& i : tablets) tablets_compaction.emplace_back(std::move(i));
         } while (false);

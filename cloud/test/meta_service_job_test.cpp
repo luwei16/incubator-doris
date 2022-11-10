@@ -1024,7 +1024,7 @@ TEST(MetaServiceTest, RetrySchemaChangeJobTest) {
     }
 }
 
-TEST(MetaServiceTest, ConflictCompactionTest) {
+TEST(MetaServiceTest, ConcurrentCompactionTest) {
     auto meta_service = get_meta_service();
     meta_service->resource_mgr_.reset(); // Do not use resource manager
 
@@ -1068,6 +1068,7 @@ TEST(MetaServiceTest, ConflictCompactionTest) {
         auto compaction = req.mutable_job()->add_compaction();
         compaction->set_id("job1");
         compaction->set_initiator("BE1");
+        compaction->set_type(TabletCompactionJobPB::CUMULATIVE);
         req.mutable_job()->mutable_idx()->set_tablet_id(tablet_id);
         compaction->set_base_compaction_cnt(0);
         compaction->set_cumulative_compaction_cnt(0);
@@ -1082,6 +1083,7 @@ TEST(MetaServiceTest, ConflictCompactionTest) {
         auto compaction = req.mutable_job()->add_compaction();
         compaction->set_id("job2");
         compaction->set_initiator("BE1");
+        compaction->set_type(TabletCompactionJobPB::CUMULATIVE);
         req.mutable_job()->mutable_idx()->set_tablet_id(tablet_id);
         compaction->set_base_compaction_cnt(0);
         compaction->set_cumulative_compaction_cnt(0);
@@ -1096,12 +1098,28 @@ TEST(MetaServiceTest, ConflictCompactionTest) {
         auto compaction = req.mutable_job()->add_compaction();
         compaction->set_id("job3");
         compaction->set_initiator("BE2");
+        compaction->set_type(TabletCompactionJobPB::CUMULATIVE);
         req.mutable_job()->mutable_idx()->set_tablet_id(tablet_id);
         compaction->set_base_compaction_cnt(0);
         compaction->set_cumulative_compaction_cnt(0);
         meta_service->start_tablet_job(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
                                        &req, &res, nullptr);
         ASSERT_EQ(res.status().code(), MetaServiceCode::JOB_TABLET_BUSY);
+    }
+
+    {
+        StartTabletJobRequest req;
+        StartTabletJobResponse res;
+        auto compaction = req.mutable_job()->add_compaction();
+        compaction->set_id("job4");
+        compaction->set_initiator("BE1");
+        compaction->set_type(TabletCompactionJobPB::BASE);
+        req.mutable_job()->mutable_idx()->set_tablet_id(tablet_id);
+        compaction->set_base_compaction_cnt(0);
+        compaction->set_cumulative_compaction_cnt(0);
+        meta_service->start_tablet_job(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
+                                       &req, &res, nullptr);
+        ASSERT_EQ(res.status().code(), MetaServiceCode::OK);
     }
 
     // check job kv
@@ -1115,4 +1133,44 @@ TEST(MetaServiceTest, ConflictCompactionTest) {
     ASSERT_TRUE(job_pb.ParseFromString(job_val));
     ASSERT_EQ(job_pb.compaction(0).id(), "job2");
     ASSERT_EQ(job_pb.compaction(0).initiator(), "BE1");
+    ASSERT_EQ(job_pb.compaction(1).id(), "job4");
+    ASSERT_EQ(job_pb.compaction(1).initiator(), "BE1");
+
+    {
+        FinishTabletJobRequest req;
+        FinishTabletJobResponse res;
+        req.set_action(FinishTabletJobRequest::ABORT);
+        auto compaction = req.mutable_job()->add_compaction();
+        compaction->set_id("job2");
+        compaction->set_initiator("BE1");
+        compaction->set_type(TabletCompactionJobPB::CUMULATIVE);
+        req.mutable_job()->mutable_idx()->set_tablet_id(tablet_id);
+        meta_service->finish_tablet_job(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
+                                        &req, &res, nullptr);
+        ASSERT_EQ(res.status().code(), MetaServiceCode::OK);
+        meta_service->finish_tablet_job(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
+                                        &req, &res, nullptr);
+        ASSERT_EQ(res.status().code(), MetaServiceCode::INVALID_ARGUMENT);
+        ASSERT_NE(res.status().msg().find("unmatched job id"), std::string::npos);
+    }
+
+    {
+        FinishTabletJobRequest req;
+        FinishTabletJobResponse res;
+        req.set_action(FinishTabletJobRequest::LEASE);
+        auto compaction = req.mutable_job()->add_compaction();
+        compaction->set_id("job4");
+        compaction->set_initiator("BE1");
+        compaction->set_lease(12345);
+        req.mutable_job()->mutable_idx()->set_tablet_id(tablet_id);
+        meta_service->finish_tablet_job(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
+                                        &req, &res, nullptr);
+        ASSERT_EQ(res.status().code(), MetaServiceCode::OK);
+    }
+
+    ASSERT_EQ(meta_service->txn_kv_->create_txn(&txn), 0);
+    ASSERT_EQ(txn->get(job_key, &job_val), 0);
+    ASSERT_TRUE(job_pb.ParseFromString(job_val));
+    ASSERT_EQ(job_pb.compaction(0).id(), "job4");
+    ASSERT_EQ(job_pb.compaction(0).lease(), 12345);
 }

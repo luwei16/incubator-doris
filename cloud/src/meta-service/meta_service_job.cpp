@@ -16,6 +16,7 @@
 #include "brpc/controller.h"
 
 #include <chrono>
+#include <cstddef>
 // clang-format on
 
 #define RPC_PREPROCESS(func_name)                                                           \
@@ -146,35 +147,48 @@ void start_compaction_job(MetaServiceCode& code, std::string& msg, std::stringst
         code = MetaServiceCode::KV_TXN_GET_ERR;
         return;
     }
+    TabletCompactionJobPB* recorded_compaction = nullptr;
     while (ret == 0) {
         job_pb.ParseFromString(job_val);
         if (job_pb.compaction().empty()) {
             break;
         }
-        auto& recorded_compaction = job_pb.compaction(0);
+        for (auto& c : *job_pb.mutable_compaction()) {
+            if (c.type() == compaction.type() ||
+                (c.type() == TabletCompactionJobPB::CUMULATIVE &&
+                 compaction.type() == TabletCompactionJobPB::EMPTY_CUMULATIVE) ||
+                (c.type() == TabletCompactionJobPB::EMPTY_CUMULATIVE &&
+                 compaction.type() == TabletCompactionJobPB::CUMULATIVE)) {
+                recorded_compaction = &c;
+                break;
+            }
+        }
+        if (recorded_compaction == nullptr) {
+            break; // no recorded compaction with required compaction type
+        }
 
         using namespace std::chrono;
         int64_t now = duration_cast<seconds>(system_clock::now().time_since_epoch()).count();
-        if (recorded_compaction.expiration() > 0 && recorded_compaction.expiration() < now) {
+        if (recorded_compaction->expiration() > 0 && recorded_compaction->expiration() < now) {
             INSTANCE_LOG(INFO) << "got an expired job, continue to process. job="
-                               << proto_to_json(recorded_compaction) << " now=" << now;
+                               << proto_to_json(*recorded_compaction) << " now=" << now;
             break;
         }
-        if (recorded_compaction.lease() > 0 && recorded_compaction.lease() < now) {
+        if (recorded_compaction->lease() > 0 && recorded_compaction->lease() < now) {
             INSTANCE_LOG(INFO) << "got a job exceeding lease, continue to process. job="
-                               << proto_to_json(recorded_compaction) << " now=" << now;
+                               << proto_to_json(*recorded_compaction) << " now=" << now;
             break;
         }
 
         SS << "a tablet job has already started instance_id=" << instance_id
-           << " tablet_id=" << tablet_id << " job=" << proto_to_json(recorded_compaction);
+           << " tablet_id=" << tablet_id << " job=" << proto_to_json(*recorded_compaction);
         msg = ss.str();
         // TODO(gavin): more condition to check
-        if (compaction.id() == recorded_compaction.id()) {
+        if (compaction.id() == recorded_compaction->id()) {
             code = MetaServiceCode::OK; // Idempotency
-        } else if (compaction.initiator() == recorded_compaction.initiator()) {
+        } else if (compaction.initiator() == recorded_compaction->initiator()) {
             INSTANCE_LOG(WARNING) << "preempt compaction job of same initiator. job="
-                                  << proto_to_json(recorded_compaction);
+                                  << proto_to_json(*recorded_compaction);
             break;
         } else {
             code = MetaServiceCode::JOB_TABLET_BUSY;
@@ -182,8 +196,11 @@ void start_compaction_job(MetaServiceCode& code, std::string& msg, std::stringst
         return;
     }
     job_pb.mutable_idx()->CopyFrom(request->job().idx());
-    job_pb.clear_compaction();
-    job_pb.add_compaction()->CopyFrom(compaction);
+    if (recorded_compaction != nullptr) {
+        recorded_compaction->CopyFrom(compaction);
+    } else {
+        job_pb.add_compaction()->CopyFrom(compaction);
+    }
     job_pb.SerializeToString(&job_val);
     if (job_val.empty()) {
         code = MetaServiceCode::PROTOBUF_SERIALIZE_ERR;
@@ -377,29 +394,29 @@ void process_compaction_job(MetaServiceCode& code, std::string& msg, std::string
         return;
     }
 
-    auto& recorded_compaction = recorded_job.compaction(0);
-    using namespace std::chrono;
-    int64_t now = duration_cast<seconds>(system_clock::now().time_since_epoch()).count();
-    if (recorded_compaction.expiration() > 0 && recorded_compaction.expiration() < now) {
-        code = MetaServiceCode::JOB_EXPIRED;
-        SS << "expired compaction job, tablet_id=" << tablet_id
-           << " job=" << proto_to_json(recorded_compaction);
-        msg = ss.str();
-        // FIXME: Just remove or notify to abort?
-        // LOG(INFO) << "remove expired job, tablet_id=" << tablet_id << " key=" << hex(job_key);
-        return;
-    }
-
-    // TODO(gavin): more check
     auto& compaction = request->job().compaction(0);
 
-    if (compaction.id() != recorded_compaction.id()) {
-        SS << "unmatched job id, recorded_id=" << recorded_compaction.id()
-           << " given_id=" << compaction.id()
-           << " recorded_job=" << proto_to_json(recorded_compaction)
+    auto recorded_compaction = recorded_job.mutable_compaction()->begin();
+    for (; recorded_compaction != recorded_job.mutable_compaction()->end(); ++recorded_compaction) {
+        if (recorded_compaction->id() == compaction.id()) break;
+    }
+    if (recorded_compaction == recorded_job.mutable_compaction()->end()) {
+        SS << "unmatched job id, recorded_job=" << proto_to_json(recorded_job)
            << " given_job=" << proto_to_json(compaction);
         code = MetaServiceCode::INVALID_ARGUMENT;
         msg = ss.str();
+        return;
+    }
+
+    using namespace std::chrono;
+    int64_t now = duration_cast<seconds>(system_clock::now().time_since_epoch()).count();
+    if (recorded_compaction->expiration() > 0 && recorded_compaction->expiration() < now) {
+        code = MetaServiceCode::JOB_EXPIRED;
+        SS << "expired compaction job, tablet_id=" << tablet_id
+           << " job=" << proto_to_json(*recorded_compaction);
+        msg = ss.str();
+        // FIXME: Just remove or notify to abort?
+        // LOG(INFO) << "remove expired job, tablet_id=" << tablet_id << " key=" << hex(job_key);
         return;
     }
 
@@ -416,14 +433,14 @@ void process_compaction_job(MetaServiceCode& code, std::string& msg, std::string
     //                               Lease
     //==========================================================================
     if (request->action() == FinishTabletJobRequest::LEASE) {
-        if (compaction.lease() <= 0 || recorded_compaction.lease() > compaction.lease()) {
-            ss << "invalid lease. recoreded_lease=" << recorded_compaction.lease()
+        if (compaction.lease() <= 0 || recorded_compaction->lease() > compaction.lease()) {
+            ss << "invalid lease. recoreded_lease=" << recorded_compaction->lease()
                << " req_lease=" << compaction.lease();
             msg = ss.str();
             code = MetaServiceCode::INVALID_ARGUMENT;
             return;
         }
-        recorded_job.mutable_compaction(0)->set_lease(compaction.lease());
+        recorded_compaction->set_lease(compaction.lease());
         auto& job_val = *obj_pool.add(new std::string());
         recorded_job.SerializeToString(&job_val);
         txn->put(job_key, job_val);
@@ -438,7 +455,7 @@ void process_compaction_job(MetaServiceCode& code, std::string& msg, std::string
     //==========================================================================
     if (request->action() == FinishTabletJobRequest::ABORT) {
         // TODO(gavin): mv tmp rowsets to recycle or remove them directly
-        recorded_job.clear_compaction();
+        recorded_job.mutable_compaction()->erase(recorded_compaction);
         auto& job_val = *obj_pool.add(new std::string());
         recorded_job.SerializeToString(&job_val);
         txn->put(job_key, job_val);
@@ -525,7 +542,7 @@ void process_compaction_job(MetaServiceCode& code, std::string& msg, std::string
     VLOG_DEBUG << "update tablet stats tablet_id=" << tablet_id << " key=" << hex(stats_key)
                << " stats=" << proto_to_json(stats);
     if (compaction.type() == TabletCompactionJobPB::EMPTY_CUMULATIVE) {
-        recorded_job.clear_compaction();
+        recorded_job.mutable_compaction()->erase(recorded_compaction);
         auto& job_val = *obj_pool.add(new std::string());
         recorded_job.SerializeToString(&job_val);
         txn->put(job_key, job_val);
@@ -613,7 +630,7 @@ void process_compaction_job(MetaServiceCode& code, std::string& msg, std::string
         SS << "too few input rowsets, tablet_id=" << tablet_id << " num_rowsets=" << num_rowsets;
         code = MetaServiceCode::UNDEFINED_ERR;
         msg = ss.str();
-        recorded_job.clear_compaction();
+        recorded_job.mutable_compaction()->erase(recorded_compaction);
         auto& job_val = *obj_pool.add(new std::string());
         recorded_job.SerializeToString(&job_val);
         txn->put(job_key, job_val);
@@ -680,7 +697,7 @@ void process_compaction_job(MetaServiceCode& code, std::string& msg, std::string
     //                      Remove compaction job
     //==========================================================================
     // TODO(gavin): move deleted job info into recycle or history
-    recorded_job.clear_compaction();
+    recorded_job.mutable_compaction()->erase(recorded_compaction);
     auto& job_val = *obj_pool.add(new std::string());
     recorded_job.SerializeToString(&job_val);
     txn->put(job_key, job_val);

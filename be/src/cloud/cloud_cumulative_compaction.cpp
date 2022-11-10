@@ -68,10 +68,20 @@ Status CloudCumulativeCompaction::prepare_compact() {
     }
     TRACE("rowsets picked");
     TRACE_COUNTER_INCREMENT("input_rowsets_count", _input_rowsets.size());
+
+    for (auto& rs : _input_rowsets) {
+        _input_rows += rs->num_rows();
+        _input_segments += rs->num_segments();
+        _input_data_size += rs->data_disk_size();
+    }
     LOG_INFO("start cumulative compaction, range=[{}-{}]", _input_rowsets.front()->start_version(),
              _input_rowsets.back()->end_version())
             .tag("job_id", _uuid)
-            .tag("tablet_id", _tablet->tablet_id());
+            .tag("tablet_id", _tablet->tablet_id())
+            .tag("input_rowsets", _input_rowsets.size())
+            .tag("input_rows", _input_rows)
+            .tag("input_segments", _input_segments)
+            .tag("input_data_size", _input_data_size);
 
     // prepare compaction job
     selectdb::TabletJobInfoPB job;
@@ -122,14 +132,6 @@ Status CloudCumulativeCompaction::update_tablet_meta() {
     int64_t new_cumulative_point = _tablet->cumulative_compaction_policy()->new_cumulative_point(
             _output_rowset, _last_delete_version, input_cumulative_point);
     // commit compaction job
-    int64_t input_rows = 0;
-    int64_t input_segments = 0;
-    int64_t input_data_size = 0;
-    for (auto& rs : _input_rowsets) {
-        input_rows += rs->num_rows();
-        input_segments += rs->num_segments();
-        input_data_size += rs->data_disk_size();
-    }
     selectdb::TabletJobInfoPB job;
     auto idx = job.mutable_idx();
     idx->set_tablet_id(_tablet->tablet_id());
@@ -143,11 +145,11 @@ Status CloudCumulativeCompaction::update_tablet_meta() {
     compaction_job->set_type(selectdb::TabletCompactionJobPB::CUMULATIVE);
     compaction_job->set_input_cumulative_point(input_cumulative_point);
     compaction_job->set_output_cumulative_point(new_cumulative_point);
-    compaction_job->set_num_input_rows(input_rows);
+    compaction_job->set_num_input_rows(_input_rows);
     compaction_job->set_num_output_rows(_output_rowset->num_rows());
-    compaction_job->set_size_input_rowsets(input_data_size);
+    compaction_job->set_size_input_rowsets(_input_data_size);
     compaction_job->set_size_output_rowsets(_output_rowset->data_disk_size());
-    compaction_job->set_num_input_segments(input_segments);
+    compaction_job->set_num_input_segments(_input_segments);
     compaction_job->set_num_output_segments(_output_rowset->num_segments());
     compaction_job->set_num_input_rowsets(_input_rowsets.size());
     compaction_job->set_num_output_rowsets(1);

@@ -270,12 +270,15 @@ Status CloudTabletMgr::get_topn_tablets_to_compact(int n, CompactionType compact
                : type == CompactionType::CUMULATIVE_COMPACTION ? t->last_cumu_compaction_success_time()
                : 0;
     };
-    // We don't schedule tablets that are recently successfully scheduled
-    auto skip = [&now, type = compaction_type, &last_compaction_time_ms](Tablet* t) {
+    auto skip = [&now, type = compaction_type, &last_compaction_time_ms](Tablet* t, int64_t score) {
+        // We don't schedule tablets that are recently successfully scheduled
         int64_t interval = type == CompactionType::BASE_COMPACTION ? config::base_compaction_interval_seconds_since_last_operation * 1000
                            : type == CompactionType::CUMULATIVE_COMPACTION ? 1 * 1000
                            : 0;
-        return now - last_compaction_time_ms(t) < interval;
+        int64_t threshold = type == CompactionType::BASE_COMPACTION ? config::base_compaction_num_cumulative_deltas
+                           : type == CompactionType::CUMULATIVE_COMPACTION ? config::min_cumulative_compaction_num_singleton_deltas
+                           : 0;
+        return  now - last_compaction_time_ms(t) < interval || score < threshold;
     };
     // We don't schedule tablets that are disabled for compaction
     auto disable = [](Tablet* t) { return t->tablet_meta()->tablet_schema()->disable_auto_compaction(); };
@@ -289,15 +292,15 @@ Status CloudTabletMgr::get_topn_tablets_to_compact(int n, CompactionType compact
         auto t = weak_tablet.lock();
         if (t == nullptr) continue;
 
-        scores->push_back(score(t.get()));
+        int64_t s = score(t.get());
+        scores->push_back(s);
         std::sort(scores->begin(), scores->end(), [](auto& a, auto& b) { return a > b; });
         if (scores->size() > n) scores->pop_back();
 
         if (filter_out(t.get())) { ++num_filtered; continue; }
         if (disable(t.get())) { ++num_disabled; continue; }
-        if (skip(t.get())) { ++num_skipped; continue; }
+        if (skip(t.get(), s)) { ++num_skipped; continue; }
 
-        auto s = score(t.get());
         buf.push_back({std::move(t), s});
         std::sort(buf.begin(), buf.end(), [](auto& a, auto& b) { return a.second > b.second; });
         if (buf.size() > n) buf.pop_back();
