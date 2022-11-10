@@ -4,6 +4,8 @@
 #include <fmt/format.h>
 #include <glog/logging.h>
 
+#include <type_traits>
+
 namespace selectdb {
 
 bool init_glog(const char* basename);
@@ -28,7 +30,12 @@ public:
 
     template <typename V>
     TaggableLogger& tag(std::string_view key, const V& value) {
-        stream_ << '|' << key << '=' << value;
+        stream_ << ' ' << key << '=';
+        if constexpr (std::is_convertible_v<V, std::string_view>) {
+            stream_ << '"' << value << '"';
+        } else {
+            stream_ << value;
+        }
         return *this;
     }
 

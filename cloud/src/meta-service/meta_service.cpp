@@ -88,31 +88,70 @@ std::string get_instance_id(const std::shared_ptr<ResourceManager>& rc_mgr,
     return instance_id;
 }
 
-#define RPC_PREPROCESS(func_name, print_response)                                               \
-    StopWatch sw;                                                                               \
-    auto ctrl = static_cast<brpc::Controller*>(controller);                                     \
-    LOG(INFO) << "begin " #func_name " rpc from " << ctrl->remote_side()                        \
-              << " request=" << request->ShortDebugString();                                    \
-    brpc::ClosureGuard closure_guard(done);                                                     \
-    [[maybe_unused]] int ret = 0;                                                               \
-    [[maybe_unused]] std::stringstream ss;                                                      \
-    [[maybe_unused]] MetaServiceCode code = MetaServiceCode::OK;                                \
-    [[maybe_unused]] std::string msg;                                                           \
-    [[maybe_unused]] std::string instance_id;                                                   \
-    std::unique_ptr<int, std::function<void(int*)>> defer_status((int*)0x01, [&](int*) {        \
-        response->mutable_status()->set_code(code);                                             \
-        response->mutable_status()->set_msg(msg);                                               \
-        if (print_response) {                                                                   \
-            LOG(INFO) << "finish " #func_name " from " << ctrl->remote_side() << " ret=" << ret \
-                      << " response=" << response->ShortDebugString();                          \
-        } else {                                                                                \
-            LOG(INFO) << "finish " #func_name " from " << ctrl->remote_side() << " ret=" << ret \
-                      << " code=" << code << " msg=" << msg;                                    \
-        }                                                                                       \
-        closure_guard.reset(nullptr);                                                           \
-        if (config::use_detailed_metrics && !instance_id.empty()) {                             \
-            g_bvar_ms_##func_name.put(instance_id, sw.elapsed_us());                            \
-        }                                                                                       \
+template <class Request>
+void begin_rpc(std::string_view func_name, brpc::Controller* ctrl, Request* req) {
+    if constexpr (std::is_same_v<Request, CreateRowsetRequest>) {
+        LOG(INFO) << "begin " << func_name << " from " << ctrl->remote_side();
+    } else if constexpr (std::is_same_v<Request, CreateTabletsRequest>) {
+        LOG(INFO) << "begin " << func_name << " from " << ctrl->remote_side();
+    } else {
+        LOG(INFO) << "begin " << func_name << " from " << ctrl->remote_side()
+                  << " request=" << req->ShortDebugString();
+    }
+}
+
+template <class Response>
+void finish_rpc(std::string_view func_name, brpc::Controller* ctrl, Response* res) {
+    if constexpr (std::is_same_v<Response, GetTabletResponse>) {
+        LOG(INFO) << "finish " << func_name << " from " << ctrl->remote_side()
+                  << " status=" << res->status().ShortDebugString();
+    } else if constexpr (std::is_same_v<Response, GetRowsetResponse>) {
+        if (res->status().code() != MetaServiceCode::OK) {
+            res->clear_rowset_meta();
+        }
+        LOG(INFO) << "finish " << func_name << " from " << ctrl->remote_side()
+                  << " status=" << res->status().ShortDebugString();
+    } else if constexpr (std::is_same_v<Response, GetCopyFilesResponse>) {
+        LOG(INFO) << "finish " << func_name << " from " << ctrl->remote_side()
+                  << " status=" << res->status().ShortDebugString();
+    } else if constexpr (std::is_same_v<Response, GetClusterResponse>) {
+        LOG(INFO) << "finish " << func_name << " from " << ctrl->remote_side()
+                  << " status=" << res->status().ShortDebugString();
+    } else if constexpr (std::is_same_v<Response, GetObjStoreInfoResponse>) {
+        LOG(INFO) << "finish " << func_name << " from " << ctrl->remote_side()
+                  << " status=" << res->status().ShortDebugString();
+    } else if constexpr (std::is_same_v<Response, CommitTxnResponse>) {
+        if (res->status().code() != MetaServiceCode::OK) {
+            res->clear_table_ids();
+            res->clear_partition_ids();
+            res->clear_versions();
+        }
+        LOG(INFO) << "finish " << func_name << " from " << ctrl->remote_side()
+                  << " response=" << res->ShortDebugString();
+    } else {
+        LOG(INFO) << "finish " << func_name << " from " << ctrl->remote_side()
+                  << " response=" << res->ShortDebugString();
+    }
+}
+
+#define RPC_PREPROCESS(func_name)                                                        \
+    StopWatch sw;                                                                        \
+    auto ctrl = static_cast<brpc::Controller*>(controller);                              \
+    begin_rpc(#func_name, ctrl, request);                                                \
+    brpc::ClosureGuard closure_guard(done);                                              \
+    [[maybe_unused]] int ret = 0;                                                        \
+    [[maybe_unused]] std::stringstream ss;                                               \
+    [[maybe_unused]] MetaServiceCode code = MetaServiceCode::OK;                         \
+    [[maybe_unused]] std::string msg;                                                    \
+    [[maybe_unused]] std::string instance_id;                                            \
+    std::unique_ptr<int, std::function<void(int*)>> defer_status((int*)0x01, [&](int*) { \
+        response->mutable_status()->set_code(code);                                      \
+        response->mutable_status()->set_msg(msg);                                        \
+        finish_rpc(#func_name, ctrl, response);                                          \
+        closure_guard.reset(nullptr);                                                    \
+        if (config::use_detailed_metrics && !instance_id.empty()) {                      \
+            g_bvar_ms_##func_name.put(instance_id, sw.elapsed_us());                     \
+        }                                                                                \
     });
 
 //TODO: we need move begin/commit etc txn to TxnManager
@@ -120,7 +159,7 @@ void MetaServiceImpl::begin_txn(::google::protobuf::RpcController* controller,
                                 const ::selectdb::BeginTxnRequest* request,
                                 ::selectdb::BeginTxnResponse* response,
                                 ::google::protobuf::Closure* done) {
-    RPC_PREPROCESS(begin_txn, true);
+    RPC_PREPROCESS(begin_txn);
     if (!request->has_txn_info()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
         msg = "invalid argument, missing txn info";
@@ -409,7 +448,7 @@ void MetaServiceImpl::precommit_txn(::google::protobuf::RpcController* controlle
                                     const ::selectdb::PrecommitTxnRequest* request,
                                     ::selectdb::PrecommitTxnResponse* response,
                                     ::google::protobuf::Closure* done) {
-    RPC_PREPROCESS(precommit_txn, true);
+    RPC_PREPROCESS(precommit_txn);
     int64_t txn_id = request->has_txn_id() ? request->txn_id() : -1;
     int64_t db_id = request->has_db_id() ? request->db_id() : -1;
     if (txn_id < 0 && db_id < 0) {
@@ -580,33 +619,7 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
                                  const ::selectdb::CommitTxnRequest* request,
                                  ::selectdb::CommitTxnResponse* response,
                                  ::google::protobuf::Closure* done) {
-    StopWatch sw;
-    auto ctrl = static_cast<brpc::Controller*>(controller);
-    LOG(INFO) << __PRETTY_FUNCTION__ << " rpc from " << ctrl->remote_side()
-              << " request=" << request->ShortDebugString();
-    brpc::ClosureGuard closure_guard(done);
-    int ret = 0;
-    MetaServiceCode code = MetaServiceCode::OK;
-    std::string msg = "OK";
-    [[maybe_unused]] std::stringstream ss;
-    std::string instance_id;
-    std::unique_ptr<int, std::function<void(int*)>> defer_status(
-            (int*)0x01, [&code, &msg, &response, &ctrl, &closure_guard, &sw, &instance_id](int*) {
-                response->mutable_status()->set_code(code);
-                response->mutable_status()->set_msg(msg);
-                if (code != MetaServiceCode::OK) {
-                    response->clear_table_ids();
-                    response->clear_partition_ids();
-                    response->clear_versions();
-                }
-                LOG(INFO) << __PRETTY_FUNCTION__ << " finish " << ctrl->remote_side()
-                          << " response=" << response->ShortDebugString();
-                closure_guard.reset(nullptr);
-                if (config::use_detailed_metrics && !instance_id.empty()) {
-                    g_bvar_ms_commit_txn.put(instance_id, sw.elapsed_us());
-                }
-            });
-
+    RPC_PREPROCESS(commit_txn);
     if (!request->has_txn_id()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
         msg = "invalid argument, missing txn id";
@@ -1036,7 +1049,7 @@ void MetaServiceImpl::abort_txn(::google::protobuf::RpcController* controller,
                                 const ::selectdb::AbortTxnRequest* request,
                                 ::selectdb::AbortTxnResponse* response,
                                 ::google::protobuf::Closure* done) {
-    RPC_PREPROCESS(abort_txn, true);
+    RPC_PREPROCESS(abort_txn);
     // Get txn id
     int64_t txn_id = request->has_txn_id() ? request->txn_id() : -1;
     std::string label = request->has_label() ? request->label() : "";
@@ -1286,7 +1299,7 @@ void MetaServiceImpl::get_txn(::google::protobuf::RpcController* controller,
                               const ::selectdb::GetTxnRequest* request,
                               ::selectdb::GetTxnResponse* response,
                               ::google::protobuf::Closure* done) {
-    RPC_PREPROCESS(get_txn, true);
+    RPC_PREPROCESS(get_txn);
     int64_t txn_id = request->has_txn_id() ? request->txn_id() : -1;
     int64_t db_id = request->has_db_id() ? request->db_id() : -1;
     if (txn_id < 0) {
@@ -1380,7 +1393,7 @@ void MetaServiceImpl::get_current_max_txn_id(::google::protobuf::RpcController* 
                                              const ::selectdb::GetCurrentMaxTxnRequest* request,
                                              ::selectdb::GetCurrentMaxTxnResponse* response,
                                              ::google::protobuf::Closure* done) {
-    RPC_PREPROCESS(get_current_max_txn_id, true);
+    RPC_PREPROCESS(get_current_max_txn_id);
     // TODO: For auth
     instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
     if (instance_id.empty()) {
@@ -1418,7 +1431,7 @@ void MetaServiceImpl::check_txn_conflict(::google::protobuf::RpcController* cont
                                          const ::selectdb::CheckTxnConflictRequest* request,
                                          ::selectdb::CheckTxnConflictResponse* response,
                                          ::google::protobuf::Closure* done) {
-    RPC_PREPROCESS(check_txn_conflict, true);
+    RPC_PREPROCESS(check_txn_conflict);
     if (!request->has_db_id() || !request->has_end_txn_id() || (request->table_ids_size() <= 0)) {
         code = MetaServiceCode::INVALID_ARGUMENT;
         msg = "invalid db id, end txn id or table_ids.";
@@ -1513,7 +1526,7 @@ void MetaServiceImpl::get_version(::google::protobuf::RpcController* controller,
                                   const ::selectdb::GetVersionRequest* request,
                                   ::selectdb::GetVersionResponse* response,
                                   ::google::protobuf::Closure* done) {
-    RPC_PREPROCESS(get_version, true);
+    RPC_PREPROCESS(get_version);
     // TODO(dx): For auth
     std::string cloud_unique_id;
     if (request->has_cloud_unique_id()) {
@@ -1669,7 +1682,7 @@ void MetaServiceImpl::create_tablets(::google::protobuf::RpcController* controll
                                      const ::selectdb::CreateTabletsRequest* request,
                                      ::selectdb::CreateTabletsResponse* response,
                                      ::google::protobuf::Closure* done) {
-    RPC_PREPROCESS(create_tablets, true);
+    RPC_PREPROCESS(create_tablets);
 
     if (request->tablet_metas_size() == 0) {
         msg = "no tablet meta";
@@ -1740,7 +1753,7 @@ void MetaServiceImpl::update_tablet(::google::protobuf::RpcController* controlle
                                     const ::selectdb::UpdateTabletRequest* request,
                                     ::selectdb::UpdateTabletResponse* response,
                                     ::google::protobuf::Closure* done) {
-    RPC_PREPROCESS(update_tablet, true);
+    RPC_PREPROCESS(update_tablet);
     instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
     if (instance_id.empty()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
@@ -1794,7 +1807,7 @@ void MetaServiceImpl::get_tablet(::google::protobuf::RpcController* controller,
                                  const ::selectdb::GetTabletRequest* request,
                                  ::selectdb::GetTabletResponse* response,
                                  ::google::protobuf::Closure* done) {
-    RPC_PREPROCESS(get_tablet, false);
+    RPC_PREPROCESS(get_tablet);
     instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
     if (instance_id.empty()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
@@ -1825,7 +1838,7 @@ void MetaServiceImpl::prepare_rowset(::google::protobuf::RpcController* controll
                                      const ::selectdb::CreateRowsetRequest* request,
                                      ::selectdb::CreateRowsetResponse* response,
                                      ::google::protobuf::Closure* done) {
-    RPC_PREPROCESS(prepare_rowset, true);
+    RPC_PREPROCESS(prepare_rowset);
     if (!request->has_rowset_meta()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
         msg = "no rowset meta";
@@ -1923,7 +1936,7 @@ void MetaServiceImpl::commit_rowset(::google::protobuf::RpcController* controlle
                                     const ::selectdb::CreateRowsetRequest* request,
                                     ::selectdb::CreateRowsetResponse* response,
                                     ::google::protobuf::Closure* done) {
-    RPC_PREPROCESS(commit_rowset, true);
+    RPC_PREPROCESS(commit_rowset);
     if (!request->has_rowset_meta()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
         msg = "no rowset meta";
@@ -2138,7 +2151,7 @@ void MetaServiceImpl::get_rowset(::google::protobuf::RpcController* controller,
                                  const ::selectdb::GetRowsetRequest* request,
                                  ::selectdb::GetRowsetResponse* response,
                                  ::google::protobuf::Closure* done) {
-    RPC_PREPROCESS(get_rowset, false);
+    RPC_PREPROCESS(get_rowset);
     instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
     if (instance_id.empty()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
@@ -2365,7 +2378,7 @@ void MetaServiceImpl::prepare_index(::google::protobuf::RpcController* controlle
                                     const ::selectdb::IndexRequest* request,
                                     ::selectdb::IndexResponse* response,
                                     ::google::protobuf::Closure* done) {
-    RPC_PREPROCESS(prepare_index, true);
+    RPC_PREPROCESS(prepare_index);
     instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
     if (instance_id.empty()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
@@ -2395,7 +2408,7 @@ void MetaServiceImpl::commit_index(::google::protobuf::RpcController* controller
                                    const ::selectdb::IndexRequest* request,
                                    ::selectdb::IndexResponse* response,
                                    ::google::protobuf::Closure* done) {
-    RPC_PREPROCESS(commit_index, true);
+    RPC_PREPROCESS(commit_index);
     instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
     if (instance_id.empty()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
@@ -2417,7 +2430,7 @@ void MetaServiceImpl::drop_index(::google::protobuf::RpcController* controller,
                                  const ::selectdb::IndexRequest* request,
                                  ::selectdb::IndexResponse* response,
                                  ::google::protobuf::Closure* done) {
-    RPC_PREPROCESS(drop_index, true);
+    RPC_PREPROCESS(drop_index);
     instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
     if (instance_id.empty()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
@@ -2544,7 +2557,7 @@ void MetaServiceImpl::prepare_partition(::google::protobuf::RpcController* contr
                                         const ::selectdb::PartitionRequest* request,
                                         ::selectdb::PartitionResponse* response,
                                         ::google::protobuf::Closure* done) {
-    RPC_PREPROCESS(prepare_partition, true);
+    RPC_PREPROCESS(prepare_partition);
     instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
     if (instance_id.empty()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
@@ -2574,7 +2587,7 @@ void MetaServiceImpl::commit_partition(::google::protobuf::RpcController* contro
                                        const ::selectdb::PartitionRequest* request,
                                        ::selectdb::PartitionResponse* response,
                                        ::google::protobuf::Closure* done) {
-    RPC_PREPROCESS(commit_partition, true);
+    RPC_PREPROCESS(commit_partition);
     instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
     if (instance_id.empty()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
@@ -2596,7 +2609,7 @@ void MetaServiceImpl::drop_partition(::google::protobuf::RpcController* controll
                                      const ::selectdb::PartitionRequest* request,
                                      ::selectdb::PartitionResponse* response,
                                      ::google::protobuf::Closure* done) {
-    RPC_PREPROCESS(drop_partition, true);
+    RPC_PREPROCESS(drop_partition);
     instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
     if (instance_id.empty()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
@@ -2618,7 +2631,7 @@ void MetaServiceImpl::get_tablet_stats(::google::protobuf::RpcController* contro
                                        const ::selectdb::GetTabletStatsRequest* request,
                                        ::selectdb::GetTabletStatsResponse* response,
                                        ::google::protobuf::Closure* done) {
-    RPC_PREPROCESS(get_tablet_stats, true);
+    RPC_PREPROCESS(get_tablet_stats);
     instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
     if (instance_id.empty()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
@@ -3091,7 +3104,7 @@ void MetaServiceImpl::get_obj_store_info(google::protobuf::RpcController* contro
                                          const ::selectdb::GetObjStoreInfoRequest* request,
                                          ::selectdb::GetObjStoreInfoResponse* response,
                                          ::google::protobuf::Closure* done) {
-    RPC_PREPROCESS(get_obj_store_info, false);
+    RPC_PREPROCESS(get_obj_store_info);
     // Prepare data
     std::string cloud_unique_id = request->has_cloud_unique_id() ? request->cloud_unique_id() : "";
     if (cloud_unique_id.empty()) {
@@ -3147,7 +3160,7 @@ void MetaServiceImpl::alter_obj_store_info(google::protobuf::RpcController* cont
                                            const ::selectdb::AlterObjStoreInfoRequest* request,
                                            ::selectdb::AlterObjStoreInfoResponse* response,
                                            ::google::protobuf::Closure* done) {
-    RPC_PREPROCESS(alter_obj_store_info, true);
+    RPC_PREPROCESS(alter_obj_store_info);
     // Prepare data
     if (!request->has_obj() || !request->obj().has_ak() || !request->obj().has_sk()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
@@ -3334,7 +3347,7 @@ void MetaServiceImpl::create_instance(google::protobuf::RpcController* controlle
                                       const ::selectdb::CreateInstanceRequest* request,
                                       ::selectdb::CreateInstanceResponse* response,
                                       ::google::protobuf::Closure* done) {
-    RPC_PREPROCESS(create_instance, true);
+    RPC_PREPROCESS(create_instance);
     instance_id = request->instance_id();
     // Prepare data
     auto& obj = request->obj_info();
@@ -3558,7 +3571,7 @@ void MetaServiceImpl::alter_cluster(google::protobuf::RpcController* controller,
                                     const ::selectdb::AlterClusterRequest* request,
                                     ::selectdb::AlterClusterResponse* response,
                                     ::google::protobuf::Closure* done) {
-    RPC_PREPROCESS(alter_cluster, true);
+    RPC_PREPROCESS(alter_cluster);
     std::string cloud_unique_id = request->has_cloud_unique_id() ? request->cloud_unique_id() : "";
     instance_id = request->has_instance_id() ? request->instance_id() : "";
     if (!cloud_unique_id.empty() && instance_id.empty()) {
@@ -3717,7 +3730,7 @@ void MetaServiceImpl::get_cluster(google::protobuf::RpcController* controller,
                                   const ::selectdb::GetClusterRequest* request,
                                   ::selectdb::GetClusterResponse* response,
                                   ::google::protobuf::Closure* done) {
-    RPC_PREPROCESS(get_cluster, false);
+    RPC_PREPROCESS(get_cluster);
     std::string cloud_unique_id = request->has_cloud_unique_id() ? request->cloud_unique_id() : "";
     std::string cluster_id = request->has_cluster_id() ? request->cluster_id() : "";
     std::string cluster_name = request->has_cluster_name() ? request->cluster_name() : "";
@@ -3840,7 +3853,7 @@ void MetaServiceImpl::create_stage(::google::protobuf::RpcController* controller
                                    const ::selectdb::CreateStageRequest* request,
                                    ::selectdb::CreateStageResponse* response,
                                    ::google::protobuf::Closure* done) {
-    RPC_PREPROCESS(create_stage, true);
+    RPC_PREPROCESS(create_stage);
     std::string cloud_unique_id = request->has_cloud_unique_id() ? request->cloud_unique_id() : "";
     if (cloud_unique_id.empty()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
@@ -4013,7 +4026,7 @@ void MetaServiceImpl::get_stage(google::protobuf::RpcController* controller,
                                 const ::selectdb::GetStageRequest* request,
                                 ::selectdb::GetStageResponse* response,
                                 ::google::protobuf::Closure* done) {
-    RPC_PREPROCESS(get_stage, true);
+    RPC_PREPROCESS(get_stage);
     std::string cloud_unique_id = request->has_cloud_unique_id() ? request->cloud_unique_id() : "";
     if (cloud_unique_id.empty()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
@@ -4326,7 +4339,7 @@ void MetaServiceImpl::begin_copy(google::protobuf::RpcController* controller,
                                  const ::selectdb::BeginCopyRequest* request,
                                  ::selectdb::BeginCopyResponse* response,
                                  ::google::protobuf::Closure* done) {
-    RPC_PREPROCESS(begin_copy, true);
+    RPC_PREPROCESS(begin_copy);
     std::string cloud_unique_id = request->has_cloud_unique_id() ? request->cloud_unique_id() : "";
     if (cloud_unique_id.empty()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
@@ -4426,7 +4439,7 @@ void MetaServiceImpl::finish_copy(google::protobuf::RpcController* controller,
                                   const ::selectdb::FinishCopyRequest* request,
                                   ::selectdb::FinishCopyResponse* response,
                                   ::google::protobuf::Closure* done) {
-    RPC_PREPROCESS(finish_copy, true);
+    RPC_PREPROCESS(finish_copy);
     std::string cloud_unique_id = request->has_cloud_unique_id() ? request->cloud_unique_id() : "";
     if (cloud_unique_id.empty()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
@@ -4520,7 +4533,7 @@ void MetaServiceImpl::get_copy_files(google::protobuf::RpcController* controller
                                      const ::selectdb::GetCopyFilesRequest* request,
                                      ::selectdb::GetCopyFilesResponse* response,
                                      ::google::protobuf::Closure* done) {
-    RPC_PREPROCESS(get_copy_files, false);
+    RPC_PREPROCESS(get_copy_files);
     std::string cloud_unique_id = request->has_cloud_unique_id() ? request->cloud_unique_id() : "";
     if (cloud_unique_id.empty()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
