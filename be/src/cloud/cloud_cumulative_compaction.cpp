@@ -74,14 +74,15 @@ Status CloudCumulativeCompaction::prepare_compact() {
         _input_segments += rs->num_segments();
         _input_data_size += rs->data_disk_size();
     }
-    LOG_INFO("start cumulative compaction, range=[{}-{}]", _input_rowsets.front()->start_version(),
-             _input_rowsets.back()->end_version())
+    LOG_INFO("start CloudCumulativeCompaction, tablet_id={}, range=[{}-{}]", _tablet->tablet_id(),
+             _input_rowsets.front()->start_version(), _input_rowsets.back()->end_version())
             .tag("job_id", _uuid)
-            .tag("tablet_id", _tablet->tablet_id())
             .tag("input_rowsets", _input_rowsets.size())
             .tag("input_rows", _input_rows)
             .tag("input_segments", _input_segments)
-            .tag("input_data_size", _input_data_size);
+            .tag("input_data_size", _input_data_size)
+            .tag("tablet_max_version", _tablet->local_max_version())
+            .tag("cumulative_point", _tablet->cumulative_layer_point());
 
     // prepare compaction job
     selectdb::TabletJobInfoPB job;
@@ -114,7 +115,21 @@ Status CloudCumulativeCompaction::execute_compact_impl() {
     int64_t permits = get_compaction_permits();
     push_cumu_compaction(std::static_pointer_cast<CloudCumulativeCompaction>(shared_from_this()));
     Defer defer {[&] { pop_cumu_compaction(this); }};
+    using namespace std::chrono;
+    auto start = steady_clock::now();
     RETURN_NOT_OK(do_compaction(permits));
+    LOG_INFO("finish CloudCumulativeCompaction, tablet_id={}, cost={}ms", _tablet->tablet_id(),
+             duration_cast<milliseconds>(steady_clock::now() - start).count())
+            .tag("job_id", _uuid)
+            .tag("input_rowsets", _input_rowsets.size())
+            .tag("input_rows", _input_rows)
+            .tag("input_segments", _input_segments)
+            .tag("input_data_size", _input_data_size)
+            .tag("output_rows", _output_rowset->num_rows())
+            .tag("output_segments", _output_rowset->num_segments())
+            .tag("output_data_size", _output_rowset->data_disk_size())
+            .tag("tablet_max_version", _tablet->local_max_version())
+            .tag("cumulative_point", _tablet->cumulative_layer_point());
     TRACE("compaction finished");
 
     _state = CompactionState::SUCCESS;

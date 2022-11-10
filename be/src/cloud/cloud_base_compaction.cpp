@@ -63,10 +63,9 @@ Status CloudBaseCompaction::prepare_compact() {
         _input_segments += rs->num_segments();
         _input_data_size += rs->data_disk_size();
     }
-    LOG_INFO("start base compaction, range=[{}-{}]", _input_rowsets.front()->start_version(),
-             _input_rowsets.back()->end_version())
+    LOG_INFO("start CloudBaseCompaction, tablet_id={}, range=[{}-{}]", _tablet->tablet_id(),
+             _input_rowsets.front()->start_version(), _input_rowsets.back()->end_version())
             .tag("job_id", _uuid)
-            .tag("tablet_id", _tablet->tablet_id())
             .tag("input_rowsets", _input_rowsets.size())
             .tag("input_rows", _input_rows)
             .tag("input_segments", _input_segments)
@@ -110,7 +109,19 @@ Status CloudBaseCompaction::execute_compact_impl() {
     SCOPED_ATTACH_TASK(_mem_tracker, ThreadContext::TaskType::COMPACTION);
 
     int64_t permits = get_compaction_permits();
+    using namespace std::chrono;
+    auto start = steady_clock::now();
     RETURN_NOT_OK(do_compaction(permits));
+    LOG_INFO("finish CloudBaseCompaction, tablet_id={}, cost={}ms", _tablet->tablet_id(),
+             duration_cast<milliseconds>(steady_clock::now() - start).count())
+            .tag("job_id", _uuid)
+            .tag("input_rowsets", _input_rowsets.size())
+            .tag("input_rows", _input_rows)
+            .tag("input_segments", _input_segments)
+            .tag("input_data_size", _input_data_size)
+            .tag("output_rows", _output_rowset->num_rows())
+            .tag("output_segments", _output_rowset->num_segments())
+            .tag("output_data_size", _output_rowset->data_disk_size());
     TRACE("compaction finished");
 
     _state = CompactionState::SUCCESS;

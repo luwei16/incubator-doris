@@ -310,6 +310,7 @@ Status Compaction::do_compaction_impl(int64_t permits) {
         _tablet->set_last_base_compaction_success_time(now);
     }
 
+#ifndef CLOUD_MODE
     int64_t current_max_version;
     {
         std::shared_lock rdlock(_tablet->get_header_lock());
@@ -332,6 +333,7 @@ Status Compaction::do_compaction_impl(int64_t permits) {
               << "s. cumulative_compaction_policy="
               << (cumu_policy == nullptr ? "quick" : cumu_policy->name())
               << ", compact_row_per_second=" << int(_input_row_num / watch.get_elapse_second());
+#endif              
 
     return Status::OK();
 }

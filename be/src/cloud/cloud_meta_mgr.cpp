@@ -133,8 +133,8 @@ Status CloudMetaMgr::sync_tablet_rowsets(Tablet* tablet) {
         LOG(INFO) << "finish get_rowset rpc. rowset_meta.size()=" << resp.rowset_meta().size()
                   << ", cost=" << cost << "ms";
     } else {
-        LOG_EVERY_N(INFO, 10) << "finish get_rowset rpc. rowset_meta.size()="
-                              << resp.rowset_meta().size() << ", cost=" << cost << "ms";
+        LOG_EVERY_N(INFO, 100) << "finish get_rowset rpc. rowset_meta.size()="
+                               << resp.rowset_meta().size() << ", cost=" << cost << "ms";
     }
 
     int64_t now = duration_cast<seconds>(system_clock::now().time_since_epoch()).count();
@@ -196,8 +196,6 @@ Status CloudMetaMgr::prepare_rowset(const RowsetMetaSharedPtr& rs_meta, bool is_
                                     RowsetMetaSharedPtr* existed_rs_meta) {
     VLOG_DEBUG << "prepare rowset, tablet_id: " << rs_meta->tablet_id()
                << ", rowset_id: " << rs_meta->rowset_id() << ", is_tmp: " << is_tmp;
-    brpc::Controller cntl;
-    cntl.set_timeout_ms(config::meta_service_brpc_timeout_ms);
     selectdb::CreateRowsetRequest req;
     selectdb::CreateRowsetResponse resp;
     req.set_cloud_unique_id(config::cloud_unique_id);
@@ -205,6 +203,9 @@ Status CloudMetaMgr::prepare_rowset(const RowsetMetaSharedPtr& rs_meta, bool is_
     req.set_temporary(is_tmp);
     int retry_times = config::meta_service_rpc_retry_times;
     do {
+        brpc::Controller cntl;
+        cntl.set_timeout_ms(config::meta_service_brpc_timeout_ms);
+        cntl.set_max_retry(BRPC_RETRY_TIMES);
         _stub->prepare_rowset(&cntl, &req, &resp, nullptr);
         if (cntl.Failed()) {
             return Status::RpcError("failed to prepare rowset: {}", cntl.ErrorText());
@@ -219,7 +220,6 @@ Status CloudMetaMgr::prepare_rowset(const RowsetMetaSharedPtr& rs_meta, bool is_
             }
             return Status::AlreadyExist("failed to prepare rowset: {}", resp.status().msg());
         } else if (resp.status().code() == selectdb::MetaServiceCode::KV_TXN_CONFLICT) {
-            cntl.Reset();
             continue;
         }
         break;
@@ -231,8 +231,6 @@ Status CloudMetaMgr::commit_rowset(const RowsetMetaSharedPtr& rs_meta, bool is_t
                                    RowsetMetaSharedPtr* existed_rs_meta) {
     VLOG_DEBUG << "commit rowset, tablet_id: " << rs_meta->tablet_id()
                << ", rowset_id: " << rs_meta->rowset_id() << ", is_tmp: " << is_tmp;
-    brpc::Controller cntl;
-    cntl.set_timeout_ms(config::meta_service_brpc_timeout_ms);
     selectdb::CreateRowsetRequest req;
     selectdb::CreateRowsetResponse resp;
     req.set_cloud_unique_id(config::cloud_unique_id);
@@ -240,6 +238,9 @@ Status CloudMetaMgr::commit_rowset(const RowsetMetaSharedPtr& rs_meta, bool is_t
     req.set_temporary(is_tmp);
     int retry_times = config::meta_service_rpc_retry_times;
     do {
+        brpc::Controller cntl;
+        cntl.set_timeout_ms(config::meta_service_brpc_timeout_ms);
+        cntl.set_max_retry(BRPC_RETRY_TIMES);
         _stub->commit_rowset(&cntl, &req, &resp, nullptr);
         if (cntl.Failed()) {
             return Status::RpcError("failed to commit rowset: {}", cntl.ErrorText());
@@ -254,7 +255,6 @@ Status CloudMetaMgr::commit_rowset(const RowsetMetaSharedPtr& rs_meta, bool is_t
             }
             return Status::AlreadyExist("failed to commit rowset: {}", resp.status().msg());
         } else if (resp.status().code() == selectdb::MetaServiceCode::KV_TXN_CONFLICT) {
-            cntl.Reset();
             continue;
         }
         break;
@@ -328,14 +328,15 @@ Status CloudMetaMgr::get_s3_info(std::vector<std::tuple<std::string, S3Conf>>* s
 
 Status CloudMetaMgr::prepare_tablet_job(const selectdb::TabletJobInfoPB& job) {
     VLOG_DEBUG << "prepare_tablet_job: " << job.ShortDebugString();
-    brpc::Controller cntl;
-    cntl.set_timeout_ms(config::meta_service_brpc_timeout_ms);
     selectdb::StartTabletJobRequest req;
     selectdb::StartTabletJobResponse res;
     req.mutable_job()->CopyFrom(job);
     req.set_cloud_unique_id(config::cloud_unique_id);
     int retry_times = config::meta_service_rpc_retry_times;
     do {
+        brpc::Controller cntl;
+        cntl.set_timeout_ms(config::meta_service_brpc_timeout_ms);
+        cntl.set_max_retry(BRPC_RETRY_TIMES);
         _stub->start_tablet_job(&cntl, &req, &res, nullptr);
         if (cntl.Failed()) {
             return Status::RpcError("failed to prepare_tablet_job: {}", cntl.ErrorText());
@@ -345,7 +346,6 @@ Status CloudMetaMgr::prepare_tablet_job(const selectdb::TabletJobInfoPB& job) {
         } else if (res.status().code() == selectdb::MetaServiceCode::JOB_ALREADY_SUCCESS) {
             return Status::OLAPInternalError(JOB_ALREADY_SUCCESS);
         } else if (res.status().code() == selectdb::KV_TXN_CONFLICT) {
-            cntl.Reset();
             continue;
         }
         break;
@@ -356,8 +356,6 @@ Status CloudMetaMgr::prepare_tablet_job(const selectdb::TabletJobInfoPB& job) {
 Status CloudMetaMgr::commit_tablet_job(const selectdb::TabletJobInfoPB& job,
                                        selectdb::TabletStatsPB* stats) {
     VLOG_DEBUG << "commit_tablet_job: " << job.ShortDebugString();
-    brpc::Controller cntl;
-    cntl.set_timeout_ms(config::meta_service_brpc_timeout_ms);
     selectdb::FinishTabletJobRequest req;
     selectdb::FinishTabletJobResponse res;
     req.mutable_job()->CopyFrom(job);
@@ -365,6 +363,9 @@ Status CloudMetaMgr::commit_tablet_job(const selectdb::TabletJobInfoPB& job,
     req.set_cloud_unique_id(config::cloud_unique_id);
     int retry_times = config::meta_service_rpc_retry_times;
     do {
+        brpc::Controller cntl;
+        cntl.set_timeout_ms(config::meta_service_brpc_timeout_ms);
+        cntl.set_max_retry(BRPC_RETRY_TIMES);
         _stub->finish_tablet_job(&cntl, &req, &res, nullptr);
         if (cntl.Failed()) {
             return Status::RpcError("failed to commit_tablet_job: {}", cntl.ErrorText());
@@ -375,7 +376,6 @@ Status CloudMetaMgr::commit_tablet_job(const selectdb::TabletJobInfoPB& job,
         } else if (res.status().code() == selectdb::MetaServiceCode::JOB_ALREADY_SUCCESS) {
             return Status::OLAPInternalError(JOB_ALREADY_SUCCESS);
         } else if (res.status().code() == selectdb::KV_TXN_CONFLICT) {
-            cntl.Reset();
             continue;
         }
         break;
