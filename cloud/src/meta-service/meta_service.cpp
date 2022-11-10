@@ -624,6 +624,7 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
         return;
     }
 
+    // Create a readonly txn for scan tmp rowset
     std::unique_ptr<Transaction> txn;
     ret = txn_kv_->create_txn(&txn);
     if (ret != 0) {
@@ -657,53 +658,6 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
     DCHECK(txn_index_pb.has_tablet_index() == true);
     DCHECK(txn_index_pb.tablet_index().has_db_id() == true);
     int64_t db_id = txn_index_pb.tablet_index().db_id();
-
-    // Get txn info with db_id and txn_id
-    std::string txn_inf_key; // Will be used when saving updated txn
-    std::string txn_inf_val; // Will be reused when saving updated txn
-    TxnInfoKeyInfo txn_inf_key_info {instance_id, db_id, txn_id};
-    txn_info_key(txn_inf_key_info, &txn_inf_key);
-    ret = txn->get(txn_inf_key, &txn_inf_val);
-    if (ret != 0) {
-        code = ret > 0 ? MetaServiceCode::TXN_ID_NOT_FOUND : MetaServiceCode::KV_TXN_GET_ERR;
-        ss << "failed to get txn_info, db_id=" << db_id << " txn_id=" << txn_id << " ret=" << ret;
-        msg = ss.str();
-        return;
-    }
-
-    TxnInfoPB txn_info;
-    if (!txn_info.ParseFromString(txn_inf_val)) {
-        code = MetaServiceCode::PROTOBUF_PARSE_ERR;
-        ss << "failed to parse txn_info, db_id=" << db_id << " txn_id=" << txn_id;
-        msg = ss.str();
-        return;
-    }
-
-    // TODO: do more check like txn state, 2PC etc.
-    DCHECK(txn_info.txn_id() == txn_id);
-    if (txn_info.status() == TxnStatusPB::TXN_STATUS_ABORTED) {
-        code = MetaServiceCode::TXN_ALREADY_ABORTED;
-        ss << "transaction is already aborted: db_id=" << db_id << " txn_id=" << txn_id;
-        msg = ss.str();
-        return;
-    }
-
-    if (txn_info.status() == TxnStatusPB::TXN_STATUS_VISIBLE) {
-        code = MetaServiceCode::TXN_ALREADY_VISIBLE;
-        ss << "transaction is already visible: db_id=" << db_id << " txn_id=" << txn_id;
-        msg = ss.str();
-        response->mutable_txn_info()->CopyFrom(txn_info);
-        return;
-    }
-
-    if (request->has_is_2pc() && request->is_2pc() && TxnStatusPB::TXN_STATUS_PREPARED) {
-        code = MetaServiceCode::TXN_INVALID_STATUS;
-        ss << "transaction is prepare, not pre-committed: db_id=" << db_id << " txn_id" << txn_id;
-        msg = ss.str();
-        return;
-    }
-
-    LOG(INFO) << "txn_id=" << txn_id << " txn_info=" << txn_info.ShortDebugString();
 
     // Get temporary rowsets involved in the txn
     // This is a range scan
@@ -757,6 +711,63 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
     } while (it->more());
 
     VLOG_DEBUG << "txn_id=" << txn_id << " tmp_rowsets_meta.size()=" << tmp_rowsets_meta.size();
+
+    // Create a read/write txn for guarantee consistency
+    txn.reset();
+    ret = txn_kv_->create_txn(&txn);
+    if (ret != 0) {
+        code = MetaServiceCode::KV_TXN_CREATE_ERR;
+        ss << "filed to create txn, txn_id=" << txn_id;
+        msg = ss.str();
+        return;
+    }
+
+    // Get txn info with db_id and txn_id
+    std::string txn_inf_key; // Will be used when saving updated txn
+    std::string txn_inf_val; // Will be reused when saving updated txn
+    TxnInfoKeyInfo txn_inf_key_info {instance_id, db_id, txn_id};
+    txn_info_key(txn_inf_key_info, &txn_inf_key);
+    ret = txn->get(txn_inf_key, &txn_inf_val);
+    if (ret != 0) {
+        code = ret > 0 ? MetaServiceCode::TXN_ID_NOT_FOUND : MetaServiceCode::KV_TXN_GET_ERR;
+        ss << "failed to get txn_info, db_id=" << db_id << " txn_id=" << txn_id << " ret=" << ret;
+        msg = ss.str();
+        return;
+    }
+
+    TxnInfoPB txn_info;
+    if (!txn_info.ParseFromString(txn_inf_val)) {
+        code = MetaServiceCode::PROTOBUF_PARSE_ERR;
+        ss << "failed to parse txn_info, db_id=" << db_id << " txn_id=" << txn_id;
+        msg = ss.str();
+        return;
+    }
+
+    // TODO: do more check like txn state, 2PC etc.
+    DCHECK(txn_info.txn_id() == txn_id);
+    if (txn_info.status() == TxnStatusPB::TXN_STATUS_ABORTED) {
+        code = MetaServiceCode::TXN_ALREADY_ABORTED;
+        ss << "transaction is already aborted: db_id=" << db_id << " txn_id=" << txn_id;
+        msg = ss.str();
+        return;
+    }
+
+    if (txn_info.status() == TxnStatusPB::TXN_STATUS_VISIBLE) {
+        code = MetaServiceCode::TXN_ALREADY_VISIBLE;
+        ss << "transaction is already visible: db_id=" << db_id << " txn_id=" << txn_id;
+        msg = ss.str();
+        response->mutable_txn_info()->CopyFrom(txn_info);
+        return;
+    }
+
+    if (request->has_is_2pc() && request->is_2pc() && TxnStatusPB::TXN_STATUS_PREPARED) {
+        code = MetaServiceCode::TXN_INVALID_STATUS;
+        ss << "transaction is prepare, not pre-committed: db_id=" << db_id << " txn_id" << txn_id;
+        msg = ss.str();
+        return;
+    }
+
+    LOG(INFO) << "txn_id=" << txn_id << " txn_info=" << txn_info.ShortDebugString();
 
     // Prepare rowset meta and new_versions
     std::vector<std::pair<std::string, std::string>> rowsets;
@@ -3925,16 +3936,19 @@ void MetaServiceImpl::create_stage(::google::protobuf::RpcController* controller
         if (stage.type() == StagePB::INTERNAL) {
             // check all internal stage format is right
             if (s.type() == StagePB::INTERNAL && s.mysql_user_id_size() == 0) {
-                LOG(WARNING) << "impossible, internal stage must have at least one id instance=" << proto_to_json(instance);
+                LOG(WARNING) << "impossible, internal stage must have at least one id instance="
+                             << proto_to_json(instance);
             }
 
-            if (s.type() == StagePB::INTERNAL && (s.mysql_user_id(0) == stage.mysql_user_id(0)
-                || s.mysql_user_name(0) == stage.mysql_user_name(0))) {
+            if (s.type() == StagePB::INTERNAL &&
+                (s.mysql_user_id(0) == stage.mysql_user_id(0) ||
+                 s.mysql_user_name(0) == stage.mysql_user_name(0))) {
                 code = MetaServiceCode::ALREADY_EXISTED;
                 msg = "stage already exist";
-                ss << "stage already exist, req user_name="
-                << stage.mysql_user_name(0) << " existed user_name=" << s.mysql_user_name(0)
-                << "req user_id=" << stage.mysql_user_id(0) << " existed user_id=" << s.mysql_user_id(0);
+                ss << "stage already exist, req user_name=" << stage.mysql_user_name(0)
+                   << " existed user_name=" << s.mysql_user_name(0)
+                   << "req user_id=" << stage.mysql_user_id(0)
+                   << " existed user_id=" << s.mysql_user_id(0);
                 return;
             }
         }
@@ -4077,7 +4091,8 @@ void MetaServiceImpl::get_stage(google::protobuf::RpcController* controller,
         }
 
         for (auto s : stage) {
-            if (s.type() != StagePB::INTERNAL || s.mysql_user_name().size() == 0 || s.mysql_user_id().size() == 0) {
+            if (s.type() != StagePB::INTERNAL || s.mysql_user_name().size() == 0 ||
+                s.mysql_user_id().size() == 0) {
                 LOG(WARNING) << "impossible here, internal stage must have at least one user";
                 continue;
             }
@@ -4088,7 +4103,8 @@ void MetaServiceImpl::get_stage(google::protobuf::RpcController* controller,
                 if (s.mysql_user_id(0) != mysql_user_id) {
                     LOG(INFO) << "ABA user=" << mysql_user_name
                               << " internal stage original user_id=" << s.mysql_user_id()[0]
-                              << " rpc user_id=" << mysql_user_id << "stage info=" << proto_to_json(s);
+                              << " rpc user_id=" << mysql_user_id
+                              << " stage info=" << proto_to_json(s);
                     code = MetaServiceCode::STATE_ALREADY_EXISTED_FOR_USER;
                     msg = "aba user, drop stage and create a new one";
                     // response return to be dropped stage id.
