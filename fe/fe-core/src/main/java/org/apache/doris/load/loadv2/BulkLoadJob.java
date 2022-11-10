@@ -212,7 +212,11 @@ public abstract class BulkLoadJob extends LoadJob {
                 return;
             }
             if (loadTask.getRetryTime() <= 0) {
-                unprotectedExecuteCancel(failMsg, true);
+                // Jira: http://jira.selectdb.com:8090/browse/CORE-915?filter=-1
+                // When CopyLoadPendingTask.getAllFileStatus() throw UseException, but
+                // we have not begin txn. it is unnecessary to abort txn
+                boolean abortTxn = this.transactionId > 0 ? true : false;
+                unprotectedExecuteCancel(failMsg, abortTxn);
                 logFinalOperation();
                 return;
             } else {
