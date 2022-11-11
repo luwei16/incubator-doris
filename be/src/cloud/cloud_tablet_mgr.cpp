@@ -249,12 +249,8 @@ void CloudTabletMgr::sync_tablets() {
 Status CloudTabletMgr::get_topn_tablets_to_compact(int n, CompactionType compaction_type,
                                                    const std::function<bool(Tablet*)>& filter_out,
                                                    std::vector<TabletSharedPtr>* tablets,
-                                                   std::vector<int64_t>* scores) {
-    if (n <= 0) return Status::OK();
-
-    scores->clear();
-    scores->reserve(n + 1);
-
+                                                   int64_t* max_score) {
+    *max_score = 0;
     // clang-format off
     auto score = [compaction_type](Tablet* t) {
         return compaction_type == CompactionType::BASE_COMPACTION ? t->get_cloud_base_compaction_score()
@@ -293,9 +289,7 @@ Status CloudTabletMgr::get_topn_tablets_to_compact(int n, CompactionType compact
         if (t == nullptr) continue;
 
         int64_t s = score(t.get());
-        scores->push_back(s);
-        std::sort(scores->begin(), scores->end(), [](auto& a, auto& b) { return a > b; });
-        if (scores->size() > n) scores->pop_back();
+        *max_score = std::max(*max_score, s);
 
         if (filter_out(t.get())) { ++num_filtered; continue; }
         if (disable(t.get())) { ++num_disabled; continue; }
@@ -309,7 +303,7 @@ Status CloudTabletMgr::get_topn_tablets_to_compact(int n, CompactionType compact
     VLOG_DEBUG << "get_topn_compaction_score, n=" << n << " type=" << compaction_type
                << " num_tablets=" << weak_tablets.size() << " num_skipped=" << num_skipped
                << " num_disabled=" << num_disabled << " num_filtered=" << num_filtered
-               << " scores=[" << [&scores] { std::stringstream ss; for (auto& i : *scores) ss << i << ","; return ss.str(); }() << "]"
+               << " max_score=" << *max_score
                << " tablets=[" << [&buf] { std::stringstream ss; for (auto& i : buf) ss << i.first->tablet_id() << ":" << i.second << ","; return ss.str(); }() << "]"
                ;
     // clang-format on

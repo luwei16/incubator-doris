@@ -527,7 +527,7 @@ void StorageEngine::_compaction_tasks_producer_callback() {
     // In order to avoid this situation, we need to update the score regularly.
     int64_t last_cumulative_score_update_time = 0;
     int64_t last_base_score_update_time = 0;
-    static const int64_t check_score_interval_ms = 5000; // 5 secs
+    constexpr int64_t check_score_interval_ms = 5000; // 5 secs
 
     int64_t interval = config::generate_compaction_tasks_min_interval_ms;
     do {
@@ -621,16 +621,16 @@ std::vector<TabletSharedPtr> StorageEngine::_generate_cloud_compaction_tasks(
 
     for (auto data_dir : data_dirs) { // There is only one disk in cloud mode
         bool need_pick_tablet = true;
+        // clang-format off
+        int thread_per_disk = config::compaction_task_num_per_fast_disk; // all disks are fast in cloud mode
         // We need to reserve at least one thread for cumulative compaction,
         // because base compactions may take too long to complete, which may
         // leads to "too many rowsets" error.
-        int count = copied_cumu_map[data_dir].size() + copied_base_map[data_dir].size();
-        int thread_per_disk = data_dir->is_ssd_disk() ? config::compaction_task_num_per_fast_disk
-                                                      : config::compaction_task_num_per_disk;
-        if ((count >= thread_per_disk)       // No threads available
-            || (count == thread_per_disk - 1 // Only one thread left
-                && compaction_type == CompactionType::BASE_COMPACTION &&
-                copied_cumu_map[data_dir].empty())) {
+        int n = compaction_type == CompactionType::CUMULATIVE_COMPACTION
+                        ? thread_per_disk - (copied_cumu_map[data_dir].size() + copied_base_map[data_dir].size())
+                        : std::min(config::max_base_compaction_task_num_per_disk, thread_per_disk - 1) - copied_base_map[data_dir].size();
+        // clang-format on                                  
+        if (n <= 0) { // No threads available
             need_pick_tablet = false;
             if (!check_score) continue;
         }
@@ -651,16 +651,11 @@ std::vector<TabletSharedPtr> StorageEngine::_generate_cloud_compaction_tasks(
         // So that we can update the max_compaction_score metric.
         do {
             std::vector<TabletSharedPtr> tablets;
-            std::vector<int64_t> scores;
-            int n = thread_per_disk - count;
             auto st = cloud::tablet_mgr()->get_topn_tablets_to_compact(
-                    n, compaction_type, filter_out, &tablets, &scores);
+                    n, compaction_type, filter_out, &tablets, &max_compaction_score);
             if (!st.ok()) {
                 LOG(WARNING) << "failed to get tablets to compact, err=" << st.get_error_msg();
                 break;
-            }
-            if (!scores.empty()) {
-                max_compaction_score = scores.front(); // scores are sorted in descending order
             }
             if (!need_pick_tablet) break;
             for (auto& i : tablets) tablets_compaction.emplace_back(std::move(i));

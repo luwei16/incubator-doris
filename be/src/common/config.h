@@ -322,6 +322,7 @@ CONF_mInt32(compaction_task_num_per_fast_disk, "4");
 CONF_Validator(compaction_task_num_per_disk, [](const int config) -> bool { return config >= 2; });
 CONF_Validator(compaction_task_num_per_fast_disk,
                [](const int config) -> bool { return config >= 2; });
+CONF_mInt32(max_base_compaction_task_num_per_disk, "2");
 
 // How many rounds of cumulative compaction for each round of base compaction when compaction tasks generation.
 CONF_mInt32(cumulative_compaction_rounds_for_each_base_compaction_round, "9");

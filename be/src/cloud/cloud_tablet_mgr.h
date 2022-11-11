@@ -35,13 +35,13 @@ public:
      * @param filter_out a filter takes a tablet and return bool to check
      *                   whether skipping the tablet, true for skip
      * @param tablets output param
-     * @param scores output param, ranking score of each picked tablet
+     * @param max_score output param, max score of existed tablets
      * @return status of this call
      */
     Status get_topn_tablets_to_compact(int n, CompactionType compaction_type,
                                        const std::function<bool(Tablet*)>& filter_out,
                                        std::vector<TabletSharedPtr>* tablets,
-                                       std::vector<int64_t>* scores);
+                                       int64_t* max_score);
 
 private:
     std::unique_ptr<Cache> _cache;
