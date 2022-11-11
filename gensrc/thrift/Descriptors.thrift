@@ -48,6 +48,7 @@ struct TSlotDescriptor {
   9: required i32 slotIdx
   10: required bool isMaterialized
   11: optional i32 col_unique_id = -1
+  12: optional bool is_key = false
 }
 
 struct TTupleDescriptor {
@@ -117,7 +118,9 @@ enum THdfsCompression {
 }
 
 enum TIndexType {
-  BITMAP
+  BITMAP,
+  INVERTED,
+  BLOOMFILTER
 }
 
 // Mapping from names defined by Avro to the enum.
@@ -194,6 +197,8 @@ struct TOlapTableIndex {
   2: optional list<string> columns
   3: optional TIndexType index_type
   4: optional string comment
+  5: optional i64 index_id
+  6: optional map<string, string> properties
 }
 
 struct TTabletLocation {

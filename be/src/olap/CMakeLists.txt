@@ -41,6 +41,7 @@ add_library(Olap STATIC
     file_helper.cpp
     generic_iterators.cpp
     hll.cpp
+    inverted_index_parser.cpp
     bloom_filter_predicate.cpp
     like_column_predicate.cpp
     key_coder.cpp
@@ -80,6 +81,10 @@ add_library(Olap STATIC
     primary_key_index.cpp
     rowset/segment_v2/bitmap_index_reader.cpp
     rowset/segment_v2/bitmap_index_writer.cpp
+    rowset/segment_v2/inverted_index_compound_directory.cpp
+    rowset/segment_v2/inverted_index_compound_reader.cpp
+    rowset/segment_v2/inverted_index_reader.cpp
+    rowset/segment_v2/inverted_index_desc.cpp
     rowset/segment_v2/bitshuffle_page.cpp
     rowset/segment_v2/bitshuffle_wrapper.cpp
     rowset/segment_v2/column_reader.cpp
@@ -101,6 +106,12 @@ add_library(Olap STATIC
     rowset/segment_v2/bloom_filter_index_writer.cpp
     rowset/segment_v2/bloom_filter.cpp
     rowset/segment_v2/zone_map_index.cpp
+    rowset/segment_v2/inverted_index_writer.cpp
+    rowset/segment_v2/inverted_index_cache.cpp
+    rowset/segment_v2/inverted_index_desc.cpp
+    rowset/segment_v2/inverted_index_compound_directory.cpp
+    rowset/segment_v2/inverted_index_compound_reader.cpp
+    rowset/segment_v2/inverted_index_compaction.cpp
     task/engine_batch_load_task.cpp
     task/engine_checksum_task.cpp
     task/engine_clone_task.cpp

@@ -89,6 +89,7 @@ Status OlapScanner::prepare(
                 _tablet_schema->append_column(TabletColumn(column_desc));
             }
         }
+        
         {
             std::shared_lock rdlock(_tablet->get_header_lock());
             const RowsetSharedPtr rowset = _tablet->rowset_with_max_version();

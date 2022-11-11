@@ -27,6 +27,7 @@ import org.apache.doris.analysis.CreateIndexClause;
 import org.apache.doris.analysis.DropColumnClause;
 import org.apache.doris.analysis.DropIndexClause;
 import org.apache.doris.analysis.IndexDef;
+import org.apache.doris.analysis.IndexDef.IndexType;
 import org.apache.doris.analysis.ModifyColumnClause;
 import org.apache.doris.analysis.ModifyTablePropertiesClause;
 import org.apache.doris.analysis.ReorderColumnsClause;
@@ -1139,7 +1140,9 @@ public class SchemaChangeHandler extends AlterHandler {
     }
 
     private void createJob(long dbId, OlapTable olapTable, Map<Long, LinkedList<Column>> indexSchemaMap,
-            Map<String, String> propertyMap, List<Index> indexes) throws UserException {
+                           Map<String, String> propertyMap, List<Index> indexes,
+                           List<Index> alterInvertedIndexes, boolean isDropInvertedIndex,
+                           List<Index> oriIndexes) throws UserException {
         if (olapTable.getState() == OlapTableState.ROLLUP) {
             throw new DdlException("Table[" + olapTable.getName() + "]'s is doing ROLLUP job");
         }
@@ -1182,6 +1185,11 @@ public class SchemaChangeHandler extends AlterHandler {
         Set<Index> oriSet = new HashSet<>(olapTable.getIndexes());
         if (!newSet.equals(oriSet)) {
             hasIndexChange = true;
+        }
+
+        boolean hasInvertedIndexChange = false;
+        if (!alterInvertedIndexes.isEmpty()) {
+            hasInvertedIndexChange = true;
         }
 
         // property 2. bloom filter
@@ -1437,7 +1445,8 @@ public class SchemaChangeHandler extends AlterHandler {
                 olapTable.getId(), olapTable.getName(), timeoutSecond * 1000);
         schemaChangeJob.setBloomFilterInfo(hasBfChange, bfColumns, bfFpp);
         schemaChangeJob.setAlterIndexInfo(hasIndexChange, indexes);
-
+        schemaChangeJob.setAlterInvertedIndexInfo(hasInvertedIndexChange, isDropInvertedIndex, alterInvertedIndexes);
+        schemaChangeJob.setOriIndexInfo(oriIndexes);
         // If StorageFormat is set to TStorageFormat.V2
         // which will create tablet with preferred_rowset_type set to BETA
         // for both base table and rollup index
@@ -1659,7 +1668,10 @@ public class SchemaChangeHandler extends AlterHandler {
             }
             LOG.debug("in process indexSchemaMap:{}", indexSchemaMap);
 
+            List<Index> oriIndexes = olapTable.getCopiedIndexes();
             List<Index> newIndexes = olapTable.getCopiedIndexes();
+            List<Index> alterInvertedIndexes = new ArrayList<>();
+            boolean isDropInvertedIndex = false;
             Map<String, String> propertyMap = new HashMap<>();
             for (AlterClause alterClause : alterClauses) {
                 Map<String, String> properties = alterClause.getProperties();
@@ -1765,11 +1777,32 @@ public class SchemaChangeHandler extends AlterHandler {
                         return;
                     }
                     lightSchemaChange = false;
+
+                    CreateIndexClause createIndexClause = (CreateIndexClause) alterClause;
+                    if (createIndexClause.getIndexDef().isInvertedIndex()) {
+                        alterInvertedIndexes.add(createIndexClause.getIndex());
+                        isDropInvertedIndex = false;
+                    }
                 } else if (alterClause instanceof DropIndexClause) {
                     if (processDropIndex((DropIndexClause) alterClause, olapTable, newIndexes)) {
                         return;
                     }
                     lightSchemaChange = false;
+
+                    DropIndexClause dropIndexClause = (DropIndexClause) alterClause;
+                    List<Index> existedIndexes = olapTable.getIndexes();
+                    Index found = null;
+                    for (Index existedIdx : existedIndexes) {
+                        if (existedIdx.getIndexName().equalsIgnoreCase(dropIndexClause.getIndexName())) {
+                            found = existedIdx;
+                            break;
+                        }
+                    }
+                    IndexDef.IndexType indexType = found.getIndexType();
+                    if (indexType == IndexType.INVERTED) {
+                        alterInvertedIndexes.add(found);
+                        isDropInvertedIndex = true;
+                    }
                 } else {
                     Preconditions.checkState(false);
                 }
@@ -1784,7 +1817,8 @@ public class SchemaChangeHandler extends AlterHandler {
                 modifyTableAddOrDropColumns(db, olapTable, indexSchemaMap, newIndexes, jobId, false);
                 return;
             } else {
-                createJob(db.getId(), olapTable, indexSchemaMap, propertyMap, newIndexes);
+                createJob(db.getId(), olapTable, indexSchemaMap, propertyMap, newIndexes,
+                        alterInvertedIndexes, isDropInvertedIndex, oriIndexes);
             }
         } finally {
             olapTable.writeUnlock();

@@ -153,7 +153,24 @@ enum FieldType {
     OLAP_FIELD_TYPE_DECIMAL64 = 32,
     OLAP_FIELD_TYPE_DECIMAL128 = 33,
     OLAP_FIELD_TYPE_JSONB = 34,
+    OLAP_FIELD_TYPE_VARIANT = 35
 };
+
+constexpr bool field_is_slice_type(const FieldType& field_type) {
+    return field_type == OLAP_FIELD_TYPE_VARCHAR || field_type == OLAP_FIELD_TYPE_CHAR ||
+           field_type == OLAP_FIELD_TYPE_STRING;
+}
+
+constexpr bool field_is_numeric_type(const FieldType& field_type) {
+    return field_type == OLAP_FIELD_TYPE_INT || field_type == OLAP_FIELD_TYPE_UNSIGNED_INT ||
+           field_type == OLAP_FIELD_TYPE_BIGINT || field_type == OLAP_FIELD_TYPE_SMALLINT ||
+           field_type == OLAP_FIELD_TYPE_UNSIGNED_TINYINT ||
+           field_type == OLAP_FIELD_TYPE_UNSIGNED_SMALLINT ||
+           field_type == OLAP_FIELD_TYPE_TINYINT || field_type == OLAP_FIELD_TYPE_DOUBLE ||
+           field_type == OLAP_FIELD_TYPE_FLOAT || field_type == OLAP_FIELD_TYPE_DATE ||
+           field_type == OLAP_FIELD_TYPE_DATETIME || field_type == OLAP_FIELD_TYPE_LARGEINT ||
+           field_type == OLAP_FIELD_TYPE_DECIMAL || field_type == OLAP_FIELD_TYPE_BOOL;
+}
 
 // Define all aggregation methods supported by Field
 // Note that in practice, not all types can use all the following aggregation methods

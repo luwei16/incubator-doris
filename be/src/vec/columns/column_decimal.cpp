@@ -22,6 +22,8 @@
 
 #include "common/config.h"
 #include "util/simd/bits.h"
+#include "vec/columns/column_impl.h"
+#include "vec/columns/columns_common.h"
 #include "vec/common/arena.h"
 #include "vec/common/assert_cast.h"
 #include "vec/common/exception.h"
@@ -206,6 +208,9 @@ ColumnPtr ColumnDecimal<T>::permute(const IColumn::Permutation& perm, size_t lim
 template <typename T>
 MutableColumnPtr ColumnDecimal<T>::clone_resized(size_t size) const {
     auto res = this->create(0, scale);
+    if (this->is_decimalv2_type()) {
+        res->set_decimalv2_type();
+    }
 
     if (size > 0) {
         auto& new_col = assert_cast<Self&>(*res);
@@ -421,6 +426,11 @@ Decimal64 ColumnDecimal<Decimal64>::get_scale_multiplier() const {
 template <>
 Decimal128 ColumnDecimal<Decimal128>::get_scale_multiplier() const {
     return common::exp10_i128(scale);
+}
+
+template <typename T>
+ColumnPtr ColumnDecimal<T>::index(const IColumn& indexes, size_t limit) const {
+    return select_index_impl(*this, indexes, limit);
 }
 
 template class ColumnDecimal<Decimal32>;

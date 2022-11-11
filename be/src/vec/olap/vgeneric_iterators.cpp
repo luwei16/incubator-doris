@@ -278,7 +278,12 @@ public:
         size_t start = _index_in_block - _cur_batch_num + 1 - advanced;
         DCHECK(start >= 0);
 
-        for (size_t i = 0; i < _num_columns; ++i) {
+        // append extra columns (eg. MATCH pred result column) from src_block to block
+        for (size_t i = 0; i < src.columns(); ++i) {
+            if (i >= dst.columns()) {
+                dst.insert(i, src.get_by_position(i).clone_empty());
+            }
+
             auto& s_col = src.get_by_position(i);
             auto& d_col = dst.get_by_position(i);
 

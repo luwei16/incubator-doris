@@ -170,7 +170,8 @@ Status VBrokerScanNode::get_next(RuntimeState* state, vectorized::Block* block, 
 
         if (_mutable_block->rows() + scanner_block->rows() < batch_size) {
             // merge scanner_block into _mutable_block
-            _mutable_block->add_rows(scanner_block.get(), 0, scanner_block->rows());
+            _mutable_block->add_rows(scanner_block.get(), 0, scanner_block->rows(),
+                                     _need_align_block);
             continue;
         } else {
             if (_mutable_block->empty()) {
@@ -180,7 +181,8 @@ Status VBrokerScanNode::get_next(RuntimeState* state, vectorized::Block* block, 
                 // copy _mutable_block firstly, then merge scanner_block into _mutable_block for next.
                 *block = _mutable_block->to_block();
                 _mutable_block->set_muatable_columns(scanner_block->clone_empty_columns());
-                _mutable_block->add_rows(scanner_block.get(), 0, scanner_block->rows());
+                _mutable_block->add_rows(scanner_block.get(), 0, scanner_block->rows(),
+                                         _need_align_block);
             }
             break;
         }
@@ -220,6 +222,10 @@ Status VBrokerScanNode::scanner_scan(const TBrokerScanRange& scan_range, Scanner
     //create scanner object and open
     std::unique_ptr<BaseScanner> scanner = create_scanner(scan_range, counter);
     RETURN_IF_ERROR(scanner->open());
+    if (scanner->is_dynamic_schema()) {
+        // align blocks
+        _need_align_block = true;
+    }
     bool scanner_eof = false;
     while (!scanner_eof) {
         RETURN_IF_CANCELLED(_runtime_state);

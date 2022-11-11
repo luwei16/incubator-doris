@@ -233,7 +233,12 @@ class PStatus;
     M(OLAP_ERR_STRING_OVERFLOW_IN_VEC_ENGINE, -3113, "", true)           \
     M(OLAP_ERR_ROWSET_ADD_MIGRATION_V2, -3114, "", true)                 \
     M(OLAP_ERR_PUBLISH_VERSION_NOT_CONTINUOUS, -3115, "", false)         \
-    M(JOB_ALREADY_SUCCESS, -4000, "", false)
+    M(JOB_ALREADY_SUCCESS, -4000, "", false)                             \
+    M(OLAP_ERR_INVERTED_INDEX_INVALID_PARAMETERS, -6000, "", false)      \
+    M(OLAP_ERR_INVERTED_INDEX_NOT_SUPPORTED, -6001, "", false)           \
+    M(OLAP_ERR_INVERTED_INDEX_CLUCENE_ERROR, -6002, "", false)           \
+    M(OLAP_ERR_INVERTED_INDEX_FILE_NOT_FOUND, -6003, "", false)          \
+    M(OLAP_ERR_INVERTED_INDEX_HIT_LIMIT, -6004, "", false)
 
 enum ErrorCode {
 #define M(NAME, ERRORCODE, DESC, STACKTRACEENABLED) NAME = ERRORCODE,
@@ -386,10 +391,19 @@ public:
         return ErrorFmt(TStatusCode::DATA_QUALITY_ERROR, fmt, std::forward<Args>(args)...);
     }
 
+    template <typename... Args>
+    static Status OLAPInternalError(int16_t precise_code, const std::string& fmt, Args&&... args) {
+        return ConstructErrorStatus(precise_code, fmt::format(fmt, std::forward<Args>(args)...));
+    }
+
     // A wrapper for ErrorCode
     //      Precise code is for ErrorCode's enum value
     //      All Status Error is treated as Internal Error
     static Status OLAPInternalError(int16_t precise_code) {
+        return ConstructErrorStatus(precise_code);
+    }
+
+    static Status ConstructErrorStatus(int16_t precise_code, const std::string& /*msg*/) {
         return ConstructErrorStatus(precise_code);
     }
 

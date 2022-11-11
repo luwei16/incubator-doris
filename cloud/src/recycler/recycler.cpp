@@ -530,6 +530,44 @@ int InstanceRecycler::delete_rowset_data(const doris::RowsetMetaPB& rs_meta_pb) 
                 .tag("rowset_id", rowset_id)
                 .tag("num_segments", num_segments);
     }
+
+    // delete index data
+    doris::TabletSchemaPB tablet_schema_pb = rs_meta_pb.tablet_schema();
+    std::vector<int> index_ids;
+    for (auto& index_pb : tablet_schema_pb.index()) {
+        auto index_id = index_pb.index_id();
+        index_ids.push_back(index_id);
+    }
+
+    std::vector<std::string> index_paths;
+    for (auto& segment_path : segment_paths) {
+        auto pos_idx = segment_path.rfind(".");
+        if (pos_idx == std::string::npos) {
+            LOG(WARNING) << "Unformatted segment_path: " << segment_path;
+            continue;
+        }
+        std::string name = segment_path.substr(0, pos_idx);
+        for (auto index_id : index_ids) {
+            index_paths.push_back(fmt::format("{}_{}.idx", name, index_id));
+        }
+    }
+
+    LOG_INFO("begin to delete index data")
+            .tag("s3_path", accessor->path())
+            .tag("tablet_id", tablet_id)
+            .tag("rowset_id", rowset_id)
+            .tag("num_segments", num_segments)
+            .tag("index_size", index_ids.size());
+    ret = accessor->delete_objects(index_paths);
+    if (ret != 0) {
+        LOG_INFO("failed to delete index data")
+                .tag("s3_path", accessor->path())
+                .tag("tablet_id", tablet_id)
+                .tag("rowset_id", rowset_id)
+                .tag("num_segments", num_segments)
+                .tag("index_size", index_ids.size());
+    }
+
     return ret;
 }
 

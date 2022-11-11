@@ -51,6 +51,7 @@ public class SortInfo {
     private static final float SORT_MATERIALIZATION_COST_THRESHOLD = Expr.FUNCTION_CALL_COST;
 
     private List<Expr> orderingExprs;
+    private List<Expr> origOrderingExprs;
     private final List<Boolean> isAscOrder;
     // True if "NULLS FIRST", false if "NULLS LAST", null if not specified.
     private final List<Boolean> nullsFirstParams;
@@ -119,6 +120,10 @@ public class SortInfo {
 
     public List<Expr> getOrderingExprs() {
         return orderingExprs;
+    }
+
+    public List<Expr> getOrigOrderingExprs() {
+        return origOrderingExprs;
     }
 
     public List<Boolean> getIsAscOrder() {
@@ -216,7 +221,6 @@ public class SortInfo {
         TupleDescriptor sortTupleDesc = analyzer.getDescTbl().createTupleDescriptor("sort");
         sortTupleDesc.setIsMaterialized(true);
         List<Expr> sortTupleExprs = Lists.newArrayList();
-
         // substOrderBy is a mapping from exprs evaluated on the sort input that get
         // materialized into the sort tuple to their corresponding SlotRefs in the sort tuple.
         // The following exprs are materialized:
@@ -251,6 +255,8 @@ public class SortInfo {
                 sortTupleExprs.add(origSlotRef);
             }
         }
+        // backup before substitute orderingExprs
+        origOrderingExprs = orderingExprs;
 
         // The ordering exprs are evaluated against the sort tuple, so they must reflect the
         // materialization decision above.
@@ -282,9 +288,13 @@ public class SortInfo {
         List<SlotDescriptor> slots = analyzer.changeSlotToNullableOfOuterJoinedTuples();
         ExprSubstitutionMap substOrderBy = new ExprSubstitutionMap();
         for (Expr origOrderingExpr : orderingExprs) {
+            SlotRef origSlotRef = origOrderingExpr.getSrcSlotRef();
             SlotDescriptor materializedDesc = analyzer.addSlotDescriptor(sortTupleDesc);
             materializedDesc.initFromExpr(origOrderingExpr);
             materializedDesc.setIsMaterialized(true);
+            if (origSlotRef != null) {
+                materializedDesc.setColumn(origSlotRef.getColumn());
+            }
             SlotRef materializedRef = new SlotRef(materializedDesc);
             substOrderBy.put(origOrderingExpr, materializedRef);
             materializedOrderingExprs.add(origOrderingExpr);

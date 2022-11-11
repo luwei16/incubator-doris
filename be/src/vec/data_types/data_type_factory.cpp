@@ -22,6 +22,7 @@
 
 #include "vec/data_types/data_type_hll.h"
 #include "vec/data_types/data_type_jsonb.h"
+#include "vec/data_types/data_type_object.h"
 
 namespace doris::vectorized {
 
@@ -129,6 +130,9 @@ DataTypePtr DataTypeFactory::create_data_type(const TypeDescriptor& col_desc, bo
         nested = std::make_shared<vectorized::DataTypeArray>(
                 create_data_type(col_desc.children[0], col_desc.contains_null));
         break;
+    case TYPE_VARIANT:
+        // ColumnObject always none nullable
+        return std::make_shared<vectorized::DataTypeObject>("json", true);
     case INVALID_TYPE:
     default:
         DCHECK(false) << "invalid PrimitiveType:" << (int)col_desc.type;

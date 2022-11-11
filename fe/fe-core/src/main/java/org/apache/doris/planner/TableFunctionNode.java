@@ -48,7 +48,7 @@ public class TableFunctionNode extends PlanNode {
 
     // The output slot ids of TableFunctionNode
     // Only the slot whose id is in this list will be output by TableFunctionNode
-    private List<SlotId> outputSlotIds = Lists.newArrayList();
+    // private List<SlotId> outputSlotIds = Lists.newArrayList();
 
     protected TableFunctionNode(PlanNodeId id, PlanNode inputNode, List<LateralViewRef> lateralViewRefs) {
         super(id, "TABLE FUNCTION NODE", StatisticalType.TABLE_FUNCTION_NODE);
@@ -126,6 +126,7 @@ public class TableFunctionNode extends PlanNode {
 
     @Override
     public void init(Analyzer analyzer) throws UserException {
+        outputSlotIds = Lists.newArrayList();
         super.init(analyzer);
         fnCallExprList = new ArrayList<>(lateralViewRefs.stream().map(e -> e.getFnExpr()).collect(Collectors.toList()));
         /*

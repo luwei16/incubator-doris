@@ -225,6 +225,11 @@ public class InlineViewRef extends TableRef {
             Expr colExpr = queryStmt.getResultExprs().get(i);
             slotDesc.setSourceExpr(colExpr);
             slotDesc.setIsNullable(slotDesc.getIsNullable() || colExpr.isNullable());
+            if (colExpr instanceof SlotRef) {
+                if (((SlotRef) colExpr).getColumn() != null) {
+                    slotDesc.setColumn(((SlotRef) colExpr).getColumn());
+                }
+            }
             SlotRef slotRef = new SlotRef(slotDesc);
             sMap.put(slotRef, colExpr);
             baseTblSmap.put(slotRef, queryStmt.getBaseTblResultExprs().get(i));

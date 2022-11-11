@@ -73,6 +73,8 @@ struct StringRef {
     static StringRef from_string_val(StringVal sv) {
         return StringRef(reinterpret_cast<char*>(sv.ptr), sv.len);
     }
+
+    bool empty() const { return size == 0; }
 };
 
 using StringRefs = std::vector<StringRef>;

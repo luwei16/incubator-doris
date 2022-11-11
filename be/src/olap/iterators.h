@@ -25,7 +25,9 @@
 #include "olap/column_predicate.h"
 #include "olap/olap_common.h"
 #include "olap/tablet_schema.h"
+#include "runtime/runtime_state.h"
 #include "vec/core/block.h"
+#include "vec/exprs/vexpr.h"
 
 namespace doris {
 
@@ -76,6 +78,7 @@ public:
     // reader's column predicate, nullptr if not existed
     // used to fiter rows in row block
     std::vector<ColumnPredicate*> column_predicates;
+    std::vector<ColumnPredicate*> all_compound_column_predicates;
     std::unordered_map<int32_t, std::shared_ptr<AndBlockColumnPredicate>> col_id_to_predicates;
     std::unordered_map<int32_t, std::vector<const ColumnPredicate*>> col_id_to_del_predicates;
     TPushAggOp::type push_down_agg_type_opt = TPushAggOp::NONE;
@@ -88,6 +91,8 @@ public:
 
     TabletSchemaSPtr tablet_schema = nullptr;
     bool record_rowids = false;
+    // flag for enable topn opt
+    bool use_topn_opt = false;
     // used for special optimization for query : ORDER BY key DESC LIMIT n
     bool read_orderby_key_reverse = false;
     // columns for orderby keys
@@ -96,6 +101,14 @@ public:
     bool kept_in_memory = false;
     bool is_persistent = false;
     bool use_disposable_cache = false;
+    // runtime state
+    RuntimeState* runtime_state = nullptr;
+
+    RowsetId rowset_id;
+    int32_t tablet_id = 0;
+    
+    vectorized::VExpr* remaining_vconjunct_root = nullptr;
+    const std::set<int32_t>* output_columns = nullptr;
 };
 
 // Used to read data in RowBlockV2 one by one
@@ -142,6 +155,9 @@ public:
     // Return the data id such as segment id, used for keep the insert order when do
     // merge sort in priority queue
     virtual uint64_t data_id() const { return 0; }
+
+    // return if it's an empty iterator
+    virtual bool empty() const { return false; }
 };
 
 } // namespace doris

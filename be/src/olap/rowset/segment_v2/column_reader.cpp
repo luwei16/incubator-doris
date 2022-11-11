@@ -146,6 +146,15 @@ Status ColumnReader::new_bitmap_index_iterator(BitmapIndexIterator** iterator) {
     return Status::OK();
 }
 
+Status ColumnReader::new_inverted_index_iterator(
+        const TabletIndex* index_meta, InvertedIndexIterator** iterator) {
+    RETURN_IF_ERROR(_ensure_inverted_index_loaded(index_meta));
+    if (_inverted_index) {
+        RETURN_IF_ERROR(_inverted_index->new_iterator(index_meta, iterator));
+    }
+    return Status::OK();
+}
+
 Status ColumnReader::read_page(const ColumnIteratorOptions& iter_opts, const PagePointer& pp,
                                PageHandle* handle, Slice* page_body, PageFooterPB* footer,
                                BlockCompressionCodec* codec) const {
@@ -385,6 +394,44 @@ Status ColumnReader::_load_bitmap_index(bool use_page_cache, bool kept_in_memory
         _bitmap_index.reset(new BitmapIndexReader(_file_reader, _bitmap_index_meta));
         return _bitmap_index->load(use_page_cache, kept_in_memory);
     }
+    return Status::OK();
+}
+
+Status ColumnReader::_load_inverted_index_index(
+        const TabletIndex* index_meta) {
+    std::lock_guard<std::mutex> wlock(_load_index_lock);
+
+    if (_inverted_index && index_meta &&
+        _inverted_index->get_index_id() == index_meta->index_id()) {
+        return Status::OK();
+    }
+
+    InvertedIndexParserType parser_type =
+        get_inverted_index_parser_type_from_string(
+            get_parser_string_from_properties(index_meta->properties()));
+    FieldType type;
+    if ((FieldType)_meta.type() == FieldType::OLAP_FIELD_TYPE_ARRAY) {
+        type = (FieldType)_meta.children_columns(0).type();
+    } else {
+        type = _type_info->type();
+    }
+    // FieldType type = _type_info->type();
+    if (is_string_type(type)) {
+        if (parser_type != InvertedIndexParserType::PARSER_NONE) {
+            _inverted_index.reset(new FullTextIndexReader(
+                    _file_reader->fs(), _file_reader->path().native(), index_meta->index_id()));
+            return Status::OK();
+        } else {
+            _inverted_index.reset(new StringTypeInvertedIndexReader(
+                    _file_reader->fs(), _file_reader->path().native(), index_meta->index_id()));
+        }
+    } else if (is_numeric_type(type)) {
+        _inverted_index.reset(new BkdIndexReader(_file_reader->fs(), _file_reader->path().native(),
+                                                 index_meta->index_id()));
+    } else {
+        _inverted_index.reset();
+    }
+
     return Status::OK();
 }
 

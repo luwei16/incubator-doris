@@ -67,7 +67,8 @@ public:
         UPDATE_TABLET_META_INFO,
         SUBMIT_TABLE_COMPACTION,
         REFRESH_STORAGE_POLICY,
-        UPDATE_STORAGE_POLICY
+        UPDATE_STORAGE_POLICY,
+        ALTER_INVERTED_INDEX
     };
 
     enum ReportType { TASK, DISK, TABLET };
@@ -127,6 +128,8 @@ public:
             return "REFRESH_STORAGE_POLICY";
         case UPDATE_STORAGE_POLICY:
             return "UPDATE_STORAGE_POLICY";
+        case ALTER_INVERTED_INDEX:
+            return "ALTER_INVERTED_INDEX";
         default:
             return "Unknown";
         }
@@ -178,6 +181,7 @@ private:
     void _publish_version_worker_thread_callback();
     void _clear_transaction_task_worker_thread_callback();
     void _alter_tablet_worker_thread_callback();
+    void _alter_inverted_index_worker_thread_callback();
     void _clone_worker_thread_callback();
     void _storage_medium_migrate_worker_thread_callback();
     void _check_consistency_worker_thread_callback();
@@ -193,6 +197,9 @@ private:
     void _submit_table_compaction_worker_thread_callback();
     void _storage_refresh_storage_policy_worker_thread_callback();
     void _storage_update_storage_policy_worker_thread_callback();
+
+    void _alter_inverted_index(const TAgentTaskRequest& alter_inverted_index_request, int64_t signature,
+                            const TTaskType::type task_type, TFinishTaskRequest* finish_task_request);
 
     void _alter_tablet(const TAgentTaskRequest& alter_tablet_request, int64_t signature,
                        const TTaskType::type task_type, TFinishTaskRequest* finish_task_request);

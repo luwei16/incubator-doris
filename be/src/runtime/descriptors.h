@@ -51,6 +51,7 @@ class SchemaScanner;
 class OlapTableSchemaParam;
 class PTupleDescriptor;
 class PSlotDescriptor;
+class PInternalServiceImpl;
 
 // Location information for null indicator bit for particular slot.
 // For non-nullable slots, the byte_offset will be 0 and the bit_mask will be 0.
@@ -116,11 +117,14 @@ public:
 
     int32_t col_unique_id() const { return _col_unique_id; }
 
+    bool is_key() const { return _is_key; }
+
 private:
     friend class DescriptorTbl;
     friend class TupleDescriptor;
     friend class SchemaScanner;
     friend class OlapTableSchemaParam;
+    friend class PInternalServiceImpl;
 
     const SlotId _id;
     const TypeDescriptor _type;
@@ -147,6 +151,8 @@ private:
 
     const bool _is_materialized;
 
+    const bool _is_key;
+
     SlotDescriptor(const TSlotDescriptor& tdesc);
     SlotDescriptor(const PSlotDescriptor& pdesc);
 };
@@ -168,10 +174,12 @@ public:
 
     const std::string& name() const { return _name; }
     const std::string& database() const { return _database; }
+    int32_t table_id() const { return _table_id; }
 
 private:
     std::string _name;
     std::string _database;
+    int32_t _table_id;
     int _num_cols;
     int _num_clustering_cols;
 };
@@ -342,6 +350,7 @@ private:
     friend class DescriptorTbl;
     friend class SchemaScanner;
     friend class OlapTableSchemaParam;
+    friend class PInternalServiceImpl;
 
     const TupleId _id;
     TableDescriptor* _table_desc;
