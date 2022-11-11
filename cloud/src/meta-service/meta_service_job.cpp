@@ -353,12 +353,14 @@ void MetaServiceImpl::start_tablet_job(::google::protobuf::RpcController* contro
     ObjectPool obj_pool; // To save KVs that txn may use asynchronously
     bool need_commit = false;
     std::unique_ptr<int, std::function<void(int*)>> defer_commit(
-            (int*)0x01, [&ret, &txn, &code, &msg, &need_commit](int*) {
+            (int*)0x01, [&ss, &ret, &txn, &code, &msg, &need_commit](int*) {
                 if (!need_commit) return;
                 ret = txn->commit();
                 if (ret != 0) {
-                    code = MetaServiceCode::KV_TXN_COMMIT_ERR;
-                    msg = "failed to commit job info";
+                    code = ret == -1 ? MetaServiceCode::KV_TXN_CONFLICT
+                                     : MetaServiceCode::KV_TXN_COMMIT_ERR;
+                    ss << "failed to commit job kv, ret=" << ret;
+                    msg = ss.str();
                     return;
                 }
             });
@@ -1037,12 +1039,14 @@ void MetaServiceImpl::finish_tablet_job(::google::protobuf::RpcController* contr
                << " job=" << proto_to_json(recorded_job);
 
     std::unique_ptr<int, std::function<void(int*)>> defer_commit(
-            (int*)0x01, [&ret, &txn, &code, &msg, &need_commit](int*) {
+            (int*)0x01, [&ss, &ret, &txn, &code, &msg, &need_commit](int*) {
                 if (!need_commit) return;
                 ret = txn->commit();
                 if (ret != 0) {
-                    code = MetaServiceCode::KV_TXN_COMMIT_ERR;
-                    msg = "failed to commit job info";
+                    code = ret == -1 ? MetaServiceCode::KV_TXN_CONFLICT
+                                     : MetaServiceCode::KV_TXN_COMMIT_ERR;
+                    ss << "failed to commit job kv, ret=" << ret;
+                    msg = ss.str();
                     return;
                 }
             });
