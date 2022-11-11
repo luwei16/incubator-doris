@@ -1,5 +1,6 @@
 #pragma once
 #include <atomic>
+#include <condition_variable>
 #include <string>
 
 #include "common/config.h"
@@ -63,6 +64,13 @@ public:
         return _tmp_file_dirs[cur_index % _tmp_file_dirs_size].path;
     }
 
+    // If true, flush thread can submit the upload task and return immediately
+    // If false, flush thread will wait until the upload task completed
+    bool check_if_has_enough_space_to_async_upload(const Path& path, uint64_t upload_file_size);
+
+    // When upload completed, release the space to let other files upload async.
+    void upload_complete(const Path& path, uint64_t upload_file_size, bool is_async_upload);
+
 private:
     struct TmpFileDir {
         using file_key = std::pair<Path, uint64_t>;
@@ -74,6 +82,8 @@ private:
         std::unordered_set<Path, PathHasher> file_set;
         std::list<file_key> file_list;
         uint64_t cur_cache_bytes {0};
+
+        std::atomic_uint64_t cur_upload_bytes {0};
     };
     static constexpr size_t MAX_TMP_FILE_DIR_SIZE {32};
     std::array<TmpFileDir, MAX_TMP_FILE_DIR_SIZE> _tmp_file_dirs;

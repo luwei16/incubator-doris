@@ -372,6 +372,7 @@ if [[ ! -f "${PATCHED_MARK}" ]]; then
         else
             bash ./prefetch_crt_dependency.sh
         fi
+        patch -p1 <"${TP_PATCH_DIR}/aws-sdk-cpp-1.9.211.patch"
     else
         bash ./prefetch_crt_dependency.sh
     fi

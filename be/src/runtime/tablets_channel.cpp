@@ -91,7 +91,7 @@ Status TabletsChannel::close(
         google::protobuf::RepeatedPtrField<PTabletError>* tablet_errors,
         const google::protobuf::Map<int64_t, PSlaveTabletNodes>& slave_tablet_nodes,
         google::protobuf::Map<int64_t, PSuccessSlaveTabletNodeIds>* success_slave_tablet_node_ids,
-        const bool write_single_replica) {
+        const bool write_single_replica, int64_t* max_upload_speed, int64_t* min_upload_speed) {
     std::lock_guard<std::mutex> l(_lock);
     if (_state == kFinished) {
         return _close_status;
@@ -162,6 +162,12 @@ Status TabletsChannel::close(
             // close may return failed, but no need to handle it here.
             // tablet_vec will only contains success tablet, and then let FE judge it.
             _close_wait(writer, tablet_vec, tablet_errors, slave_nodes, write_single_replica);
+            *min_upload_speed = *min_upload_speed > writer->min_upload_speed()
+                                       ? writer->min_upload_speed()
+                                       : *min_upload_speed;
+            *max_upload_speed = *max_upload_speed > writer->max_upload_speed()
+                                       ? *max_upload_speed
+                                       : writer->max_upload_speed();
         }
 
         if (write_single_replica) {

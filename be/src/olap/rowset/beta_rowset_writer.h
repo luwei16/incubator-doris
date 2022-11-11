@@ -84,6 +84,8 @@ public:
     vectorized::object_util::LocalSchemaChangeRecorder* mutable_schema_change_recorder() {
         return _context.schema_change_recorder.get();
     }
+    int64_t max_upload_speed() const override { return _max_upload_speed; }
+    int64_t min_upload_speed() const override { return _min_upload_speed; }
 
 private:
     template <typename RowType>
@@ -122,6 +124,9 @@ private:
 
     bool _is_pending = false;
     bool _already_built = false;
+
+    int64_t _max_upload_speed = 0;
+    int64_t _min_upload_speed = INT64_MAX;
 };
 
 } // namespace doris

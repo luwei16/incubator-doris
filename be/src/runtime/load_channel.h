@@ -82,11 +82,15 @@ protected:
                        Response* response) {
         bool finished = false;
         auto index_id = request.index_id();
+        int64_t min_upload_speed = INT64_MAX;
+        int64_t max_upload_speed = 0;
         RETURN_IF_ERROR(channel->close(
                 this, request.sender_id(), request.backend_id(), &finished, request.partition_ids(),
                 response->mutable_tablet_vec(), response->mutable_tablet_errors(),
                 request.slave_tablet_nodes(), response->mutable_success_slave_tablet_node_ids(),
-                request.write_single_replica()));
+                request.write_single_replica(), &max_upload_speed, &min_upload_speed));
+        response->set_max_upload_speed(max_upload_speed);
+        response->set_min_upload_speed(min_upload_speed);
         if (finished) {
             std::lock_guard<std::mutex> l(_lock);
             _tablets_channels.erase(index_id);

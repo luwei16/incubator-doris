@@ -63,7 +63,6 @@ Status S3FileWriter::abort() {
     if (_handle) {
         _handle->Cancel();
     }
-    _tmp_file_writer->abort();
     return Status::OK();
 }
 
@@ -72,9 +71,7 @@ Status S3FileWriter::close() {
         return Status::OK();
     }
     VLOG_DEBUG << "S3FileWriter::close, path: " << _path.native();
-    if (!_handle) {
-        RETURN_IF_ERROR(finalize());
-    }
+    DCHECK(_handle);
     _closed = true;
 
     {
@@ -84,12 +81,6 @@ Status S3FileWriter::close() {
             return Status::IOError("failed to upload {}: {}", _path.native(),
                                    _handle->GetLastError().GetMessage());
         }
-    }
-    // If false，tmp file will delete by dtor.
-    // If true, tmp file will be cached. And deleted when cache full or be restart
-    if (TmpFileMgr::instance()->insert_tmp_file(_tmp_file_writer->path(),
-                                                _tmp_file_writer->bytes_appended())) {
-        _tmp_file_writer->close();
     }
     // TODO(cyx): check data correctness
     return Status::OK();
@@ -120,13 +111,42 @@ Status S3FileWriter::finalize() {
     if (!client) {
         return Status::InternalError("init s3 client error");
     }
+    RETURN_IF_ERROR(_tmp_file_writer->close());
     {
         SCOPED_ATTACH_TASK(ExecEnv::GetInstance()->orphan_mem_tracker());
+        auto tmp_file_mgr = TmpFileMgr::instance();
+        bool is_async_upload = tmp_file_mgr->check_if_has_enough_space_to_async_upload(
+                _tmp_file_writer->path(), _tmp_file_writer->bytes_appended());
+
+        auto upload_start = std::chrono::steady_clock::now();
+
+        auto upload_callback =
+                [tmp_file_mgr, path = _tmp_file_writer->path(),
+                 size = _tmp_file_writer->bytes_appended(), is_async_upload = is_async_upload,
+                 upload_start = upload_start, upload_speed = _upload_speed_bytes_s](
+                        const Aws::Transfer::TransferManager*,
+                        const std::shared_ptr<const Aws::Transfer::TransferHandle>& handle) {
+                    if (handle->GetStatus() != Aws::Transfer::TransferStatus::COMPLETED ||
+                        !tmp_file_mgr->insert_tmp_file(path, size)) {
+                        global_local_filesystem()->delete_file(path);
+                    }
+                    tmp_file_mgr->upload_complete(path, size, is_async_upload);
+                    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
+                                            std::chrono::steady_clock::now() - upload_start)
+                                            .count();
+                    *upload_speed = static_cast<double>(size) /
+                                    (static_cast<double>(duration) / 1000 / 1000);
+                };
         Aws::Transfer::TransferManagerConfiguration transfer_config(_fs->_executor.get());
         transfer_config.s3Client = client;
         auto transfer_manager = Aws::Transfer::TransferManager::Create(transfer_config);
         _handle = transfer_manager->UploadFile(_tmp_file_writer->path().native(), _bucket, _key,
-                                               "text/plain", Aws::Map<Aws::String, Aws::String>());
+                                               "text/plain", Aws::Map<Aws::String, Aws::String>(),
+                                               nullptr, std::move(upload_callback));
+        if (!is_async_upload) {
+            LOG(INFO) << "The current upload files size is too larger, change to sync upload";
+            return close();
+        }
     }
     return Status::OK();
 }

@@ -216,7 +216,8 @@ public:
                      int64_t* serialize_batch_ns, int64_t* mem_exceeded_block_ns,
                      int64_t* queue_push_lock_ns, int64_t* actual_consume_ns,
                      int64_t* total_add_batch_exec_time_ns, int64_t* add_batch_exec_time_ns,
-                     int64_t* total_add_batch_num) {
+                     int64_t* total_add_batch_num, int64_t* max_upload_speed,
+                     int64_t* min_upload_speed) {
         (*add_batch_counter_map)[_node_id] += _add_batch_counter;
         (*add_batch_counter_map)[_node_id].close_wait_time_ms = _close_time_ms;
         *serialize_batch_ns += _serialize_batch_ns;
@@ -226,6 +227,10 @@ public:
         *add_batch_exec_time_ns = (_add_batch_counter.add_batch_execution_time_us * 1000);
         *total_add_batch_exec_time_ns += *add_batch_exec_time_ns;
         *total_add_batch_num += _add_batch_counter.add_batch_num;
+        *max_upload_speed =
+                *max_upload_speed > _max_upload_speed ? *max_upload_speed : _max_upload_speed;
+        *min_upload_speed =
+                *min_upload_speed > _min_upload_speed ? _min_upload_speed : *min_upload_speed;
     }
 
     int64_t node_id() const { return _node_id; }
@@ -332,6 +337,9 @@ protected:
     bool _is_closed = false;
 
     RuntimeState* _state;
+
+    int64_t _max_upload_speed = 0;
+    int64_t _min_upload_speed = 0;
 
 private:
     std::unique_ptr<RowBatch> _cur_batch;
@@ -550,6 +558,8 @@ protected:
     RuntimeProfile::Counter* _max_add_batch_exec_timer = nullptr;
     RuntimeProfile::Counter* _add_batch_number = nullptr;
     RuntimeProfile::Counter* _num_node_channels = nullptr;
+    RuntimeProfile::Counter* _min_upload_speed_bytes_s = nullptr;
+    RuntimeProfile::Counter* _max_upload_speed_bytes_s = nullptr;
 
     // load mem limit is for remote load channel
     int64_t _load_mem_limit = -1;

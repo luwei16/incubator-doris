@@ -28,6 +28,7 @@
 #include "io/fs/file_system.h"
 #include "io/fs/file_writer.h"
 #include "io/fs/s3_file_system.h"
+#include "io/fs/s3_file_writer.h"
 #include "olap/memtable.h"
 #include "olap/olap_define.h"
 #include "olap/row.h"        // ContiguousRow
@@ -251,6 +252,14 @@ RowsetSharedPtr BetaRowsetWriter::build() {
             LOG(WARNING) << "failed to close file writer, path=" << file_writer->path()
                          << " res=" << status;
             return nullptr;
+        }
+        auto s3_file_writer = dynamic_cast<io::S3FileWriter*>(file_writer.get());
+        if (s3_file_writer != nullptr) {
+            int64_t cur_upload_speed = s3_file_writer->upload_speed_bytes_s();
+            _max_upload_speed =
+                    cur_upload_speed > _max_upload_speed ? cur_upload_speed : _max_upload_speed;
+            _min_upload_speed =
+                    cur_upload_speed > _min_upload_speed ? _min_upload_speed : cur_upload_speed;
         }
     }
     // When building a rowset, we must ensure that the current _segment_writer has been

@@ -84,7 +84,7 @@ public:
           google::protobuf::RepeatedPtrField<PTabletError>* tablet_error,
           const google::protobuf::Map<int64_t, PSlaveTabletNodes>& slave_tablet_nodes,
           google::protobuf::Map<int64_t, PSuccessSlaveTabletNodeIds>* success_slave_tablet_node_ids,
-          const bool write_single_replica);
+          const bool write_single_replica, int64_t* max_upload_speed, int64_t* min_upload_speed);
 
     // no-op when this channel has been closed or cancelled
     Status cancel();

@@ -1,0 +1,179 @@
+diff --git a/aws-cpp-sdk-transfer/include/aws/transfer/TransferManager.h b/aws-cpp-sdk-transfer/include/aws/transfer/TransferManager.h
+index bd8bfe19d7..b9377a3b5b 100644
+--- a/aws-cpp-sdk-transfer/include/aws/transfer/TransferManager.h
++++ b/aws-cpp-sdk-transfer/include/aws/transfer/TransferManager.h
+@@ -29,6 +29,7 @@ namespace Aws
+         typedef std::function<void(const TransferManager*, const std::shared_ptr<const TransferHandle>&)> TransferStatusUpdatedCallback;
+         typedef std::function<void(const TransferManager*, const std::shared_ptr<const TransferHandle>&, const Aws::Client::AWSError<Aws::S3::S3Errors>&)> ErrorCallback;
+         typedef std::function<void(const TransferManager*, const std::shared_ptr<const TransferHandle>&)> TransferInitiatedCallback;
++        using UploadDoneCallback = std::function<void(const TransferManager*, const std::shared_ptr<const TransferHandle>&)>;
+ 
+         const uint64_t MB5 = 5 * 1024 * 1024;
+ 
+@@ -143,7 +144,8 @@ namespace Aws
+                                                        const Aws::String& keyName,
+                                                        const Aws::String& contentType, 
+                                                        const Aws::Map<Aws::String, Aws::String>& metadata,
+-                                                       const std::shared_ptr<const Aws::Client::AsyncCallerContext>& context = nullptr);
++                                                       const std::shared_ptr<const Aws::Client::AsyncCallerContext>& context = nullptr,
++                                                       UploadDoneCallback uploadDoneCallback = nullptr);
+ 
+             /**
+              * Uploads the contents of stream, to bucketName/keyName in S3. contentType and metadata will be added to the object. If the object is larger than the configured bufferSize,
+@@ -154,7 +156,8 @@ namespace Aws
+                                                        const Aws::String& keyName,
+                                                        const Aws::String& contentType, 
+                                                        const Aws::Map<Aws::String, Aws::String>& metadata,
+-                                                       const std::shared_ptr<const Aws::Client::AsyncCallerContext>& context = nullptr);
++                                                       const std::shared_ptr<const Aws::Client::AsyncCallerContext>& context = nullptr,
++                                                       UploadDoneCallback uploadDoneCallback = nullptr);
+ 
+             /**
+              * Downloads the contents of bucketName/keyName in S3 to the file specified by writeToFile. This will perform a GetObject operation.
+@@ -251,7 +254,9 @@ namespace Aws
+             /**
+              * Submits the actual task to task schecduler
+              */
+-            std::shared_ptr<TransferHandle> SubmitUpload(const std::shared_ptr<TransferHandle>& handle, const std::shared_ptr<Aws::IOStream>& fileStream = nullptr);
++            std::shared_ptr<TransferHandle> SubmitUpload(const std::shared_ptr<TransferHandle>& handle,
++                                                        UploadDoneCallback uploadDoneCallback,
++                                                        const std::shared_ptr<Aws::IOStream>& fileStream = nullptr);
+ 
+             /**
+              * Uploads the contents of stream, to bucketName/keyName in S3. contentType and metadata will be added to the object. If the object is larger than the configured bufferSize,
+@@ -262,7 +267,8 @@ namespace Aws
+                                                          const Aws::String& keyName,
+                                                          const Aws::String& contentType,
+                                                          const Aws::Map<Aws::String, Aws::String>& metadata,
+-                                                         const std::shared_ptr<const Aws::Client::AsyncCallerContext>& context);
++                                                         const std::shared_ptr<const Aws::Client::AsyncCallerContext>& context,
++                                                         UploadDoneCallback uploadDoneCallback);
+ 
+             /**
+              * Uploads the contents of file, to bucketName/keyName in S3. contentType and metadata will be added to the object. If the object is larger than the configured bufferSize,
+@@ -274,7 +280,8 @@ namespace Aws
+                                                          const Aws::String& keyName,
+                                                          const Aws::String& contentType,
+                                                          const Aws::Map<Aws::String, Aws::String>& metadata,
+-                                                         const std::shared_ptr<const Aws::Client::AsyncCallerContext>& context);
++                                                         const std::shared_ptr<const Aws::Client::AsyncCallerContext>& context,
++                                                         UploadDoneCallback uploadDoneCallback);
+ 
+             bool MultipartUploadSupported(uint64_t length) const;
+             bool InitializePartsForDownload(const std::shared_ptr<TransferHandle>& handle);
+diff --git a/aws-cpp-sdk-transfer/source/transfer/TransferManager.cpp b/aws-cpp-sdk-transfer/source/transfer/TransferManager.cpp
+index f6568b799a..aa4badbb26 100644
+--- a/aws-cpp-sdk-transfer/source/transfer/TransferManager.cpp
++++ b/aws-cpp-sdk-transfer/source/transfer/TransferManager.cpp
+@@ -78,18 +78,20 @@ namespace Aws
+                                                                     const Aws::String& keyName,
+                                                                     const Aws::String& contentType,
+                                                                     const Aws::Map<Aws::String, Aws::String>& metadata,
+-                                                                    const std::shared_ptr<const Aws::Client::AsyncCallerContext>& context)
++                                                                    const std::shared_ptr<const Aws::Client::AsyncCallerContext>& context,
++                                                                    UploadDoneCallback uploadDoneCallback)
+         {
+-            return this->DoUploadFile(fileName, bucketName, keyName, contentType, metadata, context);
++            return this->DoUploadFile(fileName, bucketName, keyName, contentType, metadata, context, std::move(uploadDoneCallback));
+         }
+ 
+         std::shared_ptr<TransferHandle> TransferManager::UploadFile(const std::shared_ptr<Aws::IOStream>& fileStream,
+                                                                     const Aws::String& bucketName,
+                                                                     const Aws::String& keyName, const Aws::String& contentType,
+                                                                     const Aws::Map<Aws::String, Aws::String>& metadata,
+-                                                                    const std::shared_ptr<const Aws::Client::AsyncCallerContext>& context)
++                                                                    const std::shared_ptr<const Aws::Client::AsyncCallerContext>& context,
++                                                                    UploadDoneCallback uploadDoneCallback)
+         {
+-            return this->DoUploadFile(fileStream, bucketName, keyName, contentType, metadata, context);
++            return this->DoUploadFile(fileStream, bucketName, keyName, contentType, metadata, context, std::move(uploadDoneCallback));
+         }
+ 
+         std::shared_ptr<TransferHandle> TransferManager::DownloadFile(const Aws::String& bucketName,
+@@ -192,7 +194,7 @@ namespace Aws
+             retryHandle->Restart();
+             TriggerTransferStatusUpdatedCallback(retryHandle);
+ 
+-            SubmitUpload(retryHandle, hasFileName ? nullptr : stream);
++            SubmitUpload(retryHandle, nullptr, hasFileName ? nullptr : stream);
+             return retryHandle;
+         }
+ 
+@@ -1176,7 +1178,7 @@ namespace Aws
+         }
+ 
+         std::shared_ptr<TransferHandle> TransferManager::SubmitUpload(const std::shared_ptr<TransferHandle>& handle,
+-                const std::shared_ptr<Aws::IOStream>& fileStream)
++                UploadDoneCallback uploadDoneCallback, const std::shared_ptr<Aws::IOStream>& fileStream)
+         {
+             if (handle->GetStatus() != Aws::Transfer::TransferStatus::NOT_STARTED)
+             {
+@@ -1187,18 +1189,21 @@ namespace Aws
+             if (MultipartUploadSupported(handle->GetBytesTotalSize()))
+             {
+                 AWS_LOGSTREAM_DEBUG(CLASS_TAG, "Transfer handle [" << handle->GetId() << "] Scheduling a multi-part upload.");
+-                m_transferConfig.transferExecutor->Submit([self, handle, fileStream]
++                m_transferConfig.transferExecutor->Submit([self, handle, fileStream, uploadDoneCallback]
+                     {
+                         if (fileStream != nullptr)
+                             self->DoMultiPartUpload(fileStream, handle);
+                         else
+                             self->DoMultiPartUpload(handle);
++                        if (uploadDoneCallback != nullptr) {
++                            uploadDoneCallback(self.get(), handle);
++                        }
+                     });
+             }
+             else
+             {
+                 AWS_LOGSTREAM_DEBUG(CLASS_TAG, "Transfer handle [" << handle->GetId() << "] Scheduling a single-part upload.");
+-                m_transferConfig.transferExecutor->Submit([self, handle, fileStream]
++                m_transferConfig.transferExecutor->Submit([self, handle, fileStream, uploadDoneCallback]
+                     {
+                         if (fileStream != nullptr)
+                         {
+@@ -1208,6 +1213,9 @@ namespace Aws
+                         {
+                             self->DoSinglePartUpload(handle);
+                         }
++                        if (uploadDoneCallback != nullptr) {
++                            uploadDoneCallback(self.get(), handle);
++                        }
+                     });
+             }
+             return handle;
+@@ -1218,10 +1226,11 @@ namespace Aws
+                                                                       const Aws::String& keyName,
+                                                                       const Aws::String& contentType,
+                                                                       const Aws::Map<Aws::String, Aws::String>& metadata,
+-                                                                      const std::shared_ptr<const Aws::Client::AsyncCallerContext>& context)
++                                                                      const std::shared_ptr<const Aws::Client::AsyncCallerContext>& context,
++                                                                      UploadDoneCallback uploadDoneCallback)
+         {
+             auto handle = CreateUploadFileHandle(fileStream.get(), bucketName, keyName, contentType, metadata, context);
+-            return SubmitUpload(handle, fileStream);
++            return SubmitUpload(handle, std::move(uploadDoneCallback), fileStream);
+         }
+ 
+         std::shared_ptr<TransferHandle> TransferManager::DoUploadFile(const Aws::String& fileName,
+@@ -1229,7 +1238,8 @@ namespace Aws
+                                                                       const Aws::String& keyName,
+                                                                       const Aws::String& contentType,
+                                                                       const Aws::Map<Aws::String, Aws::String>& metadata,
+-                                                                      const std::shared_ptr<const Aws::Client::AsyncCallerContext>& context)
++                                                                      const std::shared_ptr<const Aws::Client::AsyncCallerContext>& context,
++                                                                      UploadDoneCallback uploadDoneCallback)
+         {
+             // destructor of FStream will close stream automatically (when out of scope), no need to call close explicitly
+ #ifdef _MSC_VER
+@@ -1239,7 +1249,7 @@ namespace Aws
+             auto fileStream = Aws::MakeShared<Aws::FStream>(CLASS_TAG, fileName.c_str(), std::ios_base::in | std::ios_base::binary);
+ #endif
+             auto handle = CreateUploadFileHandle(fileStream.get(), bucketName, keyName, contentType, metadata, context, fileName);
+-            return SubmitUpload(handle);
++            return SubmitUpload(handle, std::move(uploadDoneCallback));
+         }
+     }
+ }
+
+

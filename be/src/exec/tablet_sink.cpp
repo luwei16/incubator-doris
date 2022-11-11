@@ -269,6 +269,8 @@ Status NodeChannel::open_wait() {
                         }
                     }
                     _add_batches_finished = true;
+                    _min_upload_speed = result.min_upload_speed();
+                    _max_upload_speed = result.max_upload_speed();
                 }
             } else {
                 _cancel_with_msg(
@@ -890,6 +892,8 @@ Status OlapTableSink::prepare(RuntimeState* state) {
     _max_add_batch_exec_timer = ADD_TIMER(_profile, "MaxAddBatchExecTime");
     _add_batch_number = ADD_COUNTER(_profile, "NumberBatchAdded", TUnit::UNIT);
     _num_node_channels = ADD_COUNTER(_profile, "NumberNodeChannels", TUnit::UNIT);
+    _min_upload_speed_bytes_s = ADD_COUNTER(_profile, "MinUploadSpeedBytesPerSecond", TUnit::UNIT);
+    _max_upload_speed_bytes_s = ADD_COUNTER(_profile, "MaxUploadSpeedBytesPerSecond", TUnit::UNIT);
     _load_mem_limit = state->get_load_mem_limit();
 
     // open all channels
@@ -1068,14 +1072,16 @@ Status OlapTableSink::close(RuntimeState* state, Status close_status) {
                         [](const std::shared_ptr<NodeChannel>& ch) { ch->mark_close(); });
                 num_node_channels += index_channel->num_node_channels();
             }
-
+            int64_t max_upload_speed = 0;
+            int64_t min_upload_speed = INT64_MAX;
             for (auto index_channel : _channels) {
                 int64_t add_batch_exec_time = 0;
                 index_channel->for_each_node_channel(
                         [&index_channel, &state, &node_add_batch_counter_map, &serialize_batch_ns,
                          &mem_exceeded_block_ns, &queue_push_lock_ns, &actual_consume_ns,
-                         &total_add_batch_exec_time_ns, &add_batch_exec_time,
-                         &total_add_batch_num](const std::shared_ptr<NodeChannel>& ch) {
+                         &total_add_batch_exec_time_ns, &add_batch_exec_time, &total_add_batch_num,
+                         &max_upload_speed,
+                         &min_upload_speed](const std::shared_ptr<NodeChannel>& ch) {
                             auto s = ch->close_wait(state);
                             if (!s.ok()) {
                                 index_channel->mark_as_failed(ch->node_id(), ch->host(),
@@ -1087,7 +1093,8 @@ Status OlapTableSink::close(RuntimeState* state, Status close_status) {
                             ch->time_report(&node_add_batch_counter_map, &serialize_batch_ns,
                                             &mem_exceeded_block_ns, &queue_push_lock_ns,
                                             &actual_consume_ns, &total_add_batch_exec_time_ns,
-                                            &add_batch_exec_time, &total_add_batch_num);
+                                            &add_batch_exec_time, &total_add_batch_num,
+                                            &max_upload_speed, &min_upload_speed);
                         });
 
                 if (add_batch_exec_time > max_add_batch_exec_time_ns) {
@@ -1100,6 +1107,9 @@ Status OlapTableSink::close(RuntimeState* state, Status close_status) {
                     status = index_st;
                 }
             } // end for index channels
+            COUNTER_SET(_min_upload_speed_bytes_s,
+                        min_upload_speed == INT64_MAX ? 0 : min_upload_speed);
+            COUNTER_SET(_max_upload_speed_bytes_s, max_upload_speed);
         }
         // TODO need to be improved
         LOG(INFO) << "total mem_exceeded_block_ns=" << mem_exceeded_block_ns

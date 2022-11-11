@@ -2,10 +2,14 @@
 
 #include <gtest/gtest.h>
 
+#include <atomic>
+#include <chrono>
 #include <filesystem>
 #include <thread>
 
+#include "common/sync_point.h"
 #include "io/cloud/cloud_file_cache.h"
+#include "io/cloud/cloud_file_cache_profile.h"
 #include "io/cloud/cloud_file_cache_settings.h"
 #include "io/cloud/cloud_file_segment.h"
 #include "io/cloud/cloud_lru_file_cache.h"
@@ -500,6 +504,49 @@ TEST(LRUFileCache, normal) {
     fs::create_directories(cache_base_path);
     test_file_cache(false);
     test_file_cache(true);
+}
+
+TEST(LRUFileCache, profile) {
+    using namespace std::chrono_literals;
+    auto sp = SyncPoint::get_instance();
+    sp->clear_all_call_backs();
+    sp->enable_processing();
+    std::atomic_bool guard = true;
+    int64_t table_id = 0;
+
+    sp->set_call_back("FileCacheProfile::update", [&](void* table_metrics) {
+        auto t_metrics = reinterpret_cast<
+                std::unordered_map<int64_t, std::shared_ptr<io::FileCacheMetric>>*>(table_metrics);
+        auto iter = t_metrics->find(table_id);
+        uint64_t max_size = t_metrics->max_size();
+        std::cout << "cur_max_size " << max_size;
+        guard = false;
+        while (max_size == t_metrics->max_size()) {
+            std::this_thread::sleep_for(1s);
+        }
+        std::cout << "cur_max_size " << t_metrics->max_size();
+        iter->second->register_entity();
+    });
+
+    std::thread t1([&] {
+        auto& profile = io::FileCacheProfile::instance();
+        OlapReaderStatistics stat;
+        profile.update(0, 0, &stat);
+    });
+
+    std::thread t2([&] {
+        while (guard) {
+            std::this_thread::sleep_for(1s);
+        }
+        auto& profile = io::FileCacheProfile::instance();
+        OlapReaderStatistics stat;
+        for (size_t i = 1; i < 10; i++) {
+            profile.update(i, 0, &stat);
+        }
+    });
+
+    t1.join();
+    t2.join();
 }
 
 } // namespace doris::cloud

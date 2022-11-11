@@ -113,6 +113,9 @@ public:
 
     void finish_slave_tablet_pull_rowset(int64_t node_id, bool is_succeed);
 
+    int64_t max_upload_speed() const { return _rowset_writer->max_upload_speed(); }
+    int64_t min_upload_speed() const { return _rowset_writer->min_upload_speed(); }
+
 private:
     DeltaWriter(WriteRequest* req, StorageEngine* storage_engine,
                 const std::shared_ptr<MemTrackerLimiter>& parent_tracker, bool is_vec);

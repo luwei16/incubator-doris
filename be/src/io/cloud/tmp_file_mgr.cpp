@@ -2,11 +2,13 @@
 
 #include <rapidjson/document.h>
 
+#include <mutex>
+
 namespace doris::io {
 
-static std::string TMP_FILE_DIR_PATH = "path";
-static std::string MAX_CACHE_BYTES = "max_cache_bytes";
-static std::string MAX_UPLOAD_BYTES = "max_upload_bytes";
+static const char* TMP_FILE_DIR_PATH = "path";
+static const char* MAX_CACHE_BYTES = "max_cache_bytes";
+static const char* MAX_UPLOAD_BYTES = "max_upload_bytes";
 
 Status TmpFileMgr::create_tmp_file_mgrs() {
     if (config::tmp_file_dirs.empty()) {
@@ -24,22 +26,23 @@ Status TmpFileMgr::create_tmp_file_mgrs() {
     for (auto& config : document.GetArray()) {
         TmpFileDirConfig tmp_file_mgr_config;
         auto map = config.GetObject();
-        if (!map.HasMember(TMP_FILE_DIR_PATH.c_str())) {
+        if (!map.HasMember(TMP_FILE_DIR_PATH)) {
             LOG(ERROR) << "The config doesn't have member 'path' ";
             return Status::OLAPInternalError(OLAP_ERR_INPUT_PARAMETER_ERROR);
         }
-        tmp_file_mgr_config.path = map.FindMember(TMP_FILE_DIR_PATH.c_str())->value.GetString();
+        tmp_file_mgr_config.path = map.FindMember(TMP_FILE_DIR_PATH)->value.GetString();
         tmp_file_mgr_config.max_cache_bytes =
-                map.HasMember(MAX_CACHE_BYTES.c_str())
-                        ? map.FindMember(MAX_CACHE_BYTES.c_str())->value.GetInt64()
-                        : 0;
+                map.HasMember(MAX_CACHE_BYTES) ? map.FindMember(MAX_CACHE_BYTES)->value.GetInt64()
+                                               : 0;
         tmp_file_mgr_config.max_upload_bytes =
-                map.HasMember(MAX_UPLOAD_BYTES.c_str())
-                        ? map.FindMember(MAX_UPLOAD_BYTES.c_str())->value.GetInt64()
-                        : 0;
-        if (tmp_file_mgr_config.max_cache_bytes < 0 || tmp_file_mgr_config.max_upload_bytes < 0) {
-            LOG(WARNING) << "max_cache_bytes or max_upload_bytes size should not less than or "
-                            "equal to zero";
+                map.HasMember(MAX_UPLOAD_BYTES) ? map.FindMember(MAX_UPLOAD_BYTES)->value.GetInt64()
+                                                : 0;
+        if (tmp_file_mgr_config.max_upload_bytes <= 0) {
+            LOG(WARNING) << "max_upload_bytes should not less than or equal to zero";
+            return Status::OLAPInternalError(OLAP_ERR_INPUT_PARAMETER_ERROR);
+        }
+        if (tmp_file_mgr_config.max_cache_bytes < 0) {
+            LOG(WARNING) << "max_cache_bytes should not less than zero";
             return Status::OLAPInternalError(OLAP_ERR_INPUT_PARAMETER_ERROR);
         }
         configs.push_back(tmp_file_mgr_config);
@@ -98,6 +101,32 @@ bool TmpFileMgr::insert_tmp_file(const Path& path, size_t file_size) {
         }
     }
     return true;
+}
+
+bool TmpFileMgr::check_if_has_enough_space_to_async_upload(const Path& path,
+                                                           uint64_t upload_file_size) {
+    auto& tmp_file_dir = _tmp_file_dirs[std::hash<std::string>()(path.filename().native()) %
+                                        _tmp_file_dirs_size];
+    uint64_t cur_upload_bytes, new_cur_upload_bytes;
+    do {
+        cur_upload_bytes = tmp_file_dir.cur_upload_bytes;
+        new_cur_upload_bytes = cur_upload_bytes + upload_file_size;
+        if (!(new_cur_upload_bytes < tmp_file_dir.max_upload_bytes)) {
+            return false;
+        }
+    } while (!tmp_file_dir.cur_upload_bytes.compare_exchange_strong(cur_upload_bytes,
+                                                                    new_cur_upload_bytes));
+    return true;
+}
+
+void TmpFileMgr::upload_complete(const Path& path, uint64_t upload_file_size,
+                                 bool is_async_upload) {
+    if (!is_async_upload) {
+        return;
+    }
+    auto& tmp_file_dir = _tmp_file_dirs[std::hash<std::string>()(path.filename().native()) %
+                                        _tmp_file_dirs_size];
+    tmp_file_dir.cur_upload_bytes -= upload_file_size;
 }
 
 } // namespace doris::io
