@@ -1,4 +1,4 @@
-// Licensed to the Apache Software Foundation (ASF) under one
+// Licensed to the Apache Software Foundation (ASF) under onerray
 // or more contributor license agreements.  See the NOTICE file
 // distributed with this work for additional information
 // regarding copyright ownership.  The ASF licenses this file
@@ -55,6 +55,14 @@ using FieldVector = std::vector<Field>;
 
 DEFINE_FIELD_VECTOR(Array);
 DEFINE_FIELD_VECTOR(Tuple);
+
+using FieldMap = std::map<String, Field, std::less<String>>;
+#define DEFINE_FIELD_MAP(X)       \
+    struct X : public FieldMap {  \
+        using FieldMap::FieldMap; \
+    }
+DEFINE_FIELD_MAP(Object);
+#undef DEFINE_FIELD_MAP
 
 #undef DEFINE_FIELD_VECTOR
 
@@ -277,6 +285,7 @@ public:
             Decimal128 = 21,
             AggregateFunctionState = 22,
             JSONB = 23,
+            Object = 24,
         };
 
         static const int MIN_NON_POD = 16;
@@ -313,6 +322,8 @@ public:
                 return "AggregateFunctionState";
             case FixedLengthObject:
                 return "FixedLengthObject";
+            case Object:
+                return "Object";
             }
 
             LOG(FATAL) << "Bad type of Field";
@@ -431,20 +442,12 @@ public:
     }
 
     template <typename T>
-    T& safe_get() {
-        const Types::Which requested = TypeToEnum<std::decay_t<T>>::value;
-        CHECK_EQ(which, requested) << fmt::format("Bad get: has {}, requested {}", get_type_name(),
-                                                  Types::to_string(requested));
-        return get<T>();
+    auto& safe_get() const {
+        return const_cast<Field*>(this)->safe_get<T>();
     }
 
     template <typename T>
-    const T& safe_get() const {
-        const Types::Which requested = TypeToEnum<std::decay_t<T>>::value;
-        CHECK_EQ(which, requested) << fmt::format("Bad get: has {}, requested {}", get_type_name(),
-                                                  Types::to_string(requested));
-        return get<T>();
-    }
+    auto& safe_get();
 
     bool operator<(const Field& rhs) const {
         if (which < rhs.which) return true;
@@ -481,9 +484,10 @@ public:
             return get<AggregateFunctionStateData>() < rhs.get<AggregateFunctionStateData>();
         case Types::FixedLengthObject:
             break;
+        case Types::Object:
+            return get<Object>() < rhs.get<Object>();
         }
 
-        LOG(FATAL) << "Bad type of Field";
         return {};
     }
 
@@ -524,6 +528,8 @@ public:
             return get<AggregateFunctionStateData>() <= rhs.get<AggregateFunctionStateData>();
         case Types::FixedLengthObject:
             break;
+        case Types::Object:
+            return get<Object>() <= rhs.get<Object>();
         }
         LOG(FATAL) << "Bad type of Field";
         return {};
@@ -563,6 +569,8 @@ public:
             return get<AggregateFunctionStateData>() == rhs.get<AggregateFunctionStateData>();
         case Types::FixedLengthObject:
             break;
+        case Types::Object:
+            return get<Object>() == rhs.get<Object>();
         }
 
         CHECK(false) << "Bad type of Field";
@@ -660,6 +668,9 @@ private:
         case Types::FixedLengthObject:
             LOG(FATAL) << "FixedLengthObject not supported";
             break;
+        case Types::Object:
+            f(field.template get<Object>());
+            return;
         }
     }
 
@@ -716,6 +727,8 @@ private:
             break;
         case Types::AggregateFunctionState:
             destroy<AggregateFunctionStateData>();
+        case Types::Object:
+            destroy<Object>();
             break;
         default:
             break;
@@ -735,32 +748,53 @@ private:
 #undef DBMS_MIN_FIELD_SIZE
 
 template <>
+struct TypeId<AggregateFunctionStateData> {
+    static constexpr const TypeIndex value = TypeIndex::AggregateFunction;
+};
+template <>
+struct TypeId<Tuple> {
+    static constexpr const TypeIndex value = TypeIndex::Tuple;
+};
+template <>
+struct TypeId<DecimalField<Decimal32>> {
+    static constexpr const TypeIndex value = TypeIndex::Decimal32;
+};
+template <>
+struct TypeId<DecimalField<Decimal64>> {
+    static constexpr const TypeIndex value = TypeIndex::Decimal64;
+};
+template <>
+struct TypeId<DecimalField<Decimal128>> {
+    static constexpr const TypeIndex value = TypeIndex::Decimal128;
+};
+
+template <>
 struct Field::TypeToEnum<Null> {
-    static const Types::Which value = Types::Null;
+    static constexpr Types::Which value = Types::Null;
 };
 template <>
 struct Field::TypeToEnum<UInt64> {
-    static const Types::Which value = Types::UInt64;
+    static constexpr Types::Which value = Types::UInt64;
 };
 template <>
 struct Field::TypeToEnum<UInt128> {
-    static const Types::Which value = Types::UInt128;
+    static constexpr Types::Which value = Types::UInt128;
 };
 template <>
 struct Field::TypeToEnum<Int64> {
-    static const Types::Which value = Types::Int64;
+    static constexpr Types::Which value = Types::Int64;
 };
 template <>
 struct Field::TypeToEnum<Int128> {
-    static const Types::Which value = Types::Int128;
+    static constexpr Types::Which value = Types::Int128;
 };
 template <>
 struct Field::TypeToEnum<Float64> {
-    static const Types::Which value = Types::Float64;
+    static constexpr Types::Which value = Types::Float64;
 };
 template <>
 struct Field::TypeToEnum<String> {
-    static const Types::Which value = Types::String;
+    static constexpr Types::Which value = Types::String;
 };
 template <>
 struct Field::TypeToEnum<JsonbField> {
@@ -768,27 +802,31 @@ struct Field::TypeToEnum<JsonbField> {
 };
 template <>
 struct Field::TypeToEnum<Array> {
-    static const Types::Which value = Types::Array;
+    static constexpr Types::Which value = Types::Array;
 };
 template <>
 struct Field::TypeToEnum<Tuple> {
-    static const Types::Which value = Types::Tuple;
+    static constexpr Types::Which value = Types::Tuple;
+};
+template <>
+struct Field::TypeToEnum<Object> {
+    static constexpr Types::Which value = Types::Object;
 };
 template <>
 struct Field::TypeToEnum<DecimalField<Decimal32>> {
-    static const Types::Which value = Types::Decimal32;
+    static constexpr Types::Which value = Types::Decimal32;
 };
 template <>
 struct Field::TypeToEnum<DecimalField<Decimal64>> {
-    static const Types::Which value = Types::Decimal64;
+    static constexpr Types::Which value = Types::Decimal64;
 };
 template <>
 struct Field::TypeToEnum<DecimalField<Decimal128>> {
-    static const Types::Which value = Types::Decimal128;
+    static constexpr Types::Which value = Types::Decimal128;
 };
 template <>
 struct Field::TypeToEnum<AggregateFunctionStateData> {
-    static const Types::Which value = Types::AggregateFunctionState;
+    static constexpr Types::Which value = Types::AggregateFunctionState;
 };
 
 template <>
@@ -830,6 +868,10 @@ struct Field::EnumToType<Field::Types::Array> {
 template <>
 struct Field::EnumToType<Field::Types::Tuple> {
     using Type = Tuple;
+};
+template <>
+struct Field::EnumToType<Field::Types::Object> {
+    using Type = Object;
 };
 template <>
 struct Field::EnumToType<Field::Types::Decimal32> {
@@ -875,6 +917,10 @@ struct TypeName<Array> {
 template <>
 struct TypeName<Tuple> {
     static std::string get() { return "Tuple"; }
+};
+template <>
+struct TypeName<Object> {
+    static std::string get() { return "Object"; }
 };
 template <>
 struct TypeName<AggregateFunctionStateData> {
@@ -992,6 +1038,10 @@ struct NearestFieldTypeImpl<Array> {
     using Type = Array;
 };
 template <>
+struct NearestFieldTypeImpl<Object> {
+    using Type = Object;
+};
+template <>
 struct NearestFieldTypeImpl<Tuple> {
     using Type = Tuple;
 };
@@ -1004,6 +1054,10 @@ struct NearestFieldTypeImpl<Null> {
     using Type = Null;
 };
 
+template <>
+struct NearestFieldTypeImpl<std::string_view> {
+    using Type = String;
+};
 template <>
 struct NearestFieldTypeImpl<AggregateFunctionStateData> {
     using Type = AggregateFunctionStateData;
@@ -1029,6 +1083,14 @@ template <typename T>
 Field::Field(T&& rhs, std::enable_if_t<!std::is_same_v<std::decay_t<T>, Field>, void*>) {
     auto&& val = cast_to_nearest_field_type(std::forward<T>(rhs));
     create_concrete(std::forward<decltype(val)>(val));
+}
+
+template <typename T>
+auto& Field::safe_get() {
+    const Types::Which requested = TypeToEnum<NearestFieldType<std::decay_t<T>>>::value;
+    if (which != requested)
+        LOG(FATAL) << fmt::format("Bad get: has {}, requested {}", get_type_name(), requested);
+    return get<T>();
 }
 
 template <typename T>

@@ -344,7 +344,8 @@ message TabletSchemaChangeJobPB {
     optional int64 size_output_rowsets = 9;
     optional int64 num_output_rows = 10; 
     repeated int64 output_versions = 11;
-    optional int64 output_cumulative_point = 12; 
+    optional int64 output_cumulative_point = 12;
+    optional bool is_inverted_index_change = 13 [default = false];
 }
 
 message TabletJobInfoPB {

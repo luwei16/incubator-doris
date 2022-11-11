@@ -53,6 +53,7 @@ public:
     FieldType type() const { return _type; }
     bool is_key() const { return _is_key; }
     bool is_nullable() const { return _is_nullable; }
+    bool is_variant_type() const { return _type == OLAP_FIELD_TYPE_VARIANT; }
     bool is_bf_column() const { return _is_bf_column; }
     bool has_bitmap_index() const { return _has_bitmap_index; }
     bool is_length_variable_type() const {
@@ -65,6 +66,11 @@ public:
     size_t length() const { return _length; }
     size_t index_length() const { return _index_length; }
     void set_index_length(size_t index_length) { _index_length = index_length; }
+    void set_type(FieldType type) { _type = type; }
+    void set_is_key(bool is_key) { _is_key = is_key; }
+    void set_is_nullable(bool is_nullable) { _is_nullable = is_nullable; }
+    void set_unique_id(int32_t unique_id) { _unique_id = unique_id; }
+    void set_has_default_value(bool has) { _has_default_value = has; }
     FieldAggregationMethod aggregation() const { return _aggregation; }
     vectorized::AggregateFunctionPtr get_aggregate_function(vectorized::DataTypes argument_types,
                                                             std::string suffix) const;
@@ -117,6 +123,28 @@ private:
 bool operator==(const TabletColumn& a, const TabletColumn& b);
 bool operator!=(const TabletColumn& a, const TabletColumn& b);
 
+class TabletSchema;
+
+class TabletIndex {
+public:
+    void init_from_thrift(const TOlapTableIndex& index, const TabletSchema& tablet_schema);
+    void init_from_pb(const TabletIndexPB& index);
+    void to_schema_pb(TabletIndexPB* index) const;
+
+    const int64_t index_id() const { return _index_id; }
+    const std::string& index_name() const { return _index_name; }
+    const IndexType index_type() const { return _index_type; }
+    const vector<int32_t>& col_unique_ids() const { return _col_unique_ids; }
+    const std::map<string, string>& properties() const { return _properties; }
+
+private:
+    int64_t _index_id;
+    std::string _index_name;
+    IndexType _index_type;
+    std::vector<int32_t> _col_unique_ids;
+    std::map<string, string> _properties;
+};
+
 class TabletSchema {
 public:
     // TODO(yingchun): better to make constructor as private to avoid
@@ -134,6 +162,8 @@ public:
     int32_t field_index(const std::string& field_name) const;
     int32_t field_index(int32_t col_unique_id) const;
     const TabletColumn& column(size_t ordinal) const;
+    // You must make sure all field name exists in _ext_field_name_to_index
+    // or _field_name_to_index
     const TabletColumn& column(const std::string& field_name) const;
     const TabletColumn& column_by_uid(int32_t col_unique_id) const;
     const std::vector<TabletColumn>& columns() const;
@@ -153,11 +183,18 @@ public:
         _disable_auto_compaction = disable_auto_compaction;
     }
     bool disable_auto_compaction() const { return _disable_auto_compaction; }
+    bool is_dynamic_schema() const { return _is_dynamic_schema; }
     int32_t delete_sign_idx() const { return _delete_sign_idx; }
     void set_delete_sign_idx(int32_t delete_sign_idx) { _delete_sign_idx = delete_sign_idx; }
     bool has_sequence_col() const { return _sequence_col_idx != -1; }
     int32_t sequence_col_idx() const { return _sequence_col_idx; }
     segment_v2::CompressionTypePB compression_type() const { return _compression_type; }
+
+    const std::vector<TabletIndex>& indexes() const { return _indexes; }
+    std::vector<const TabletIndex*> get_indexes_for_column(int32_t col_unique_id) const;
+    bool has_inverted_index(int32_t col_unique_id) const;
+    const TabletIndex* get_inverted_index(int32_t col_unique_id) const;
+    void update_indexes_from_thrift(const std::vector<doris::TOlapTableIndex>& indexes);
 
     int32_t schema_version() const { return _schema_version; }
     void clear_columns();
@@ -165,7 +202,10 @@ public:
             const std::vector<uint32_t>& return_columns,
             const std::unordered_set<uint32_t>* tablet_columns_need_convert_null = nullptr) const;
     vectorized::Block create_block(bool ignore_dropped_col = true) const;
+    void set_schema_version(int32_t version) { _schema_version = version; }
 
+    void set_table_id(int32_t table_id) { _table_id = table_id; }
+    int32_t table_id() const { return _table_id; }
     void build_current_tablet_schema(int64_t index_id, int32_t version,
                                      const POlapTableIndexSchema& index,
                                      const TabletSchema& out_tablet_schema);
@@ -194,6 +234,7 @@ private:
     SortType _sort_type = SortType::LEXICAL;
     size_t _sort_col_num = 0;
     std::vector<TabletColumn> _cols;
+    std::vector<TabletIndex> _indexes;
     std::unordered_map<std::string, int32_t> _field_name_to_index;
     std::unordered_map<int32_t, int32_t> _field_id_to_index;
     size_t _num_columns = 0;
@@ -207,9 +248,11 @@ private:
 
     bool _has_bf_fpp = false;
     double _bf_fpp = 0;
+    bool _is_dynamic_schema = false;
     int32_t _delete_sign_idx = -1;
     int32_t _sequence_col_idx = -1;
     int32_t _schema_version = -1;
+    int32_t _table_id = -1;
     bool _disable_auto_compaction = false;
 };
 

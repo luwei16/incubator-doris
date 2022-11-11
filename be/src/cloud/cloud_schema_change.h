@@ -13,8 +13,22 @@ public:
     // This method is idempotent for a same request.
     Status process_alter_tablet(const TAlterTabletReqV2& request);
 
+    Status process_alter_inverted_index(const TAlterInvertedIndexReq& request);
+
 private:
     Status _convert_historical_rowsets(const SchemaChangeParams& sc_params);
+    Status _do_process_alter_inverted_index(TabletSharedPtr tablet, const TAlterInvertedIndexReq& request);
+    Status _add_inverted_index(
+            std::vector<RowsetReaderSharedPtr> rs_readers, 
+            DeleteHandler* delete_handler,
+            const TabletSchemaSPtr& tablet_schema,
+            TabletSharedPtr tablet, 
+            const TAlterInvertedIndexReq& request);
+    Status _drop_inverted_index(
+            std::vector<RowsetReaderSharedPtr> rs_readers, 
+            const TabletSchemaSPtr& tablet_schema,
+            TabletSharedPtr tablet, 
+            const TAlterInvertedIndexReq& request);
 
 private:
     std::string _job_id;

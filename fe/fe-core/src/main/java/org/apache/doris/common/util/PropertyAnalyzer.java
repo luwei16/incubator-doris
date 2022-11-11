@@ -97,6 +97,9 @@ public class PropertyAnalyzer {
     public static final String PROPERTIES_PERSISTENT = "persistent";
 
     public static final String PROPERTIES_REMOTE_STORAGE_POLICY = "remote_storage_policy";
+    public static final String PROPERTIES_DYNAMIC_SCHEMA = "dynamic_schema";
+
+    public static final String PROPERTIES_REMOTE_STORAGE_RESOURCE = "remote_storage_resource";
 
     public static final String PROPERTIES_TABLET_TYPE = "tablet_type";
 

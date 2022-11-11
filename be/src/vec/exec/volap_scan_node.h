@@ -74,6 +74,16 @@ private:
     Status normalize_conjuncts();
     Status build_key_ranges_and_filters();
 
+    bool _maybe_prune_columns();
+
+    bool is_pruned_column(int32_t col_unique_id);
+
+    // iterate through conjuncts tre
+    void _iterate_conjuncts_tree(const VExpr* conjunct_expr_root, std::function<void(const VExpr*)> fn);
+
+    // get all slot ref column unique ids
+    void _collect_conjuncts_slot_column_unique_ids(const VExpr* expr);
+
     template <bool IsFixed, PrimitiveType PrimitiveType, typename ChangeFixedValueRangeFunc>
     static Status change_value_range(ColumnValueRange<PrimitiveType>& range, void* value,
                                      const ChangeFixedValueRangeFunc& func,
@@ -109,10 +119,34 @@ private:
                                              SlotDescriptor* slot, ColumnValueRange<T>& range,
                                              bool* push_down);
 
+    Status _normalize_compound_predicate(vectorized::VExpr* expr, 
+                    VExprContext* expr_ctx, 
+                    bool* push_down,
+                    std::vector<ColumnValueRangeType>* column_value_rangs,
+                    const std::function<bool(const std::vector<VExpr*>&, const VSlotRef**, VExpr**)>& in_predicate_checker,
+                    const std::function<bool(const std::vector<VExpr*>&, const VSlotRef**, VExpr**)>& eq_predicate_checker);
+
+    template <PrimitiveType T>
+    Status _normalize_binary_in_compound_predicate(
+                vectorized::VExpr* expr, VExprContext* expr_ctx,
+                SlotDescriptor* slot, ColumnValueRange<T>& range,
+                bool* push_down, const TCompoundType::type& compound_type);
+
+    template <PrimitiveType T>
+    Status _normalize_match_in_compound_predicate(vectorized::VExpr* expr, VExprContext* expr_ctx,
+                SlotDescriptor* slot, ColumnValueRange<T>& range,
+                bool* push_down, const TCompoundType::type& compound_type);
+
+    TCompoundType::type _get_compound_type_by_fn_name(const std::string& fn_name);
+
     template <PrimitiveType T>
     Status _normalize_is_null_predicate(vectorized::VExpr* expr, VExprContext* expr_ctx,
                                         SlotDescriptor* slot, ColumnValueRange<T>& range,
                                         bool* push_down);
+    template <PrimitiveType T>
+    Status _normalize_match_predicate(vectorized::VExpr* expr, VExprContext* expr_ctx,
+                                      SlotDescriptor* slot, ColumnValueRange<T>& range,
+                                      bool* push_down);
 
     Status _normalize_bloom_filter(vectorized::VExpr* expr, VExprContext* expr_ctx,
                                    SlotDescriptor* slot, bool* push_down);
@@ -132,6 +166,8 @@ private:
                                       const std::function<bool(const std::vector<VExpr*>&,
                                                                const VSlotRef**, VExpr**)>& checker,
                                       SlotDescriptor** slot_desc, ColumnValueRangeType** range);
+
+    std::unique_ptr<vectorized::Block> _allocate_block(const TupleDescriptor* desc, size_t sz);
 
     bool _should_push_down_binary_predicate(
             VectorizedFnCall* fn_call, VExprContext* expr_ctx, StringRef* constant_val,
@@ -156,16 +192,21 @@ private:
     // collection slots
     std::vector<SlotDescriptor*> _collection_slots;
 
+    // column uniq ids of conjucts
+    std::set<int32_t> _conjuct_column_unique_ids;
+
     bool _eos;
 
     // column -> ColumnValueRange map
     std::map<std::string, ColumnValueRangeType> _column_value_ranges;
+    std::vector<std::vector<ColumnValueRangeType>> _compound_value_ranges;
 
     OlapScanKeys _scan_keys;
 
     std::vector<std::unique_ptr<TPaloScanRange>> _scan_ranges;
 
     std::vector<TCondition> _olap_filter;
+    std::vector<std::vector<TCondition>> _compound_filters;
     // push down bloom filters to storage engine.
     // 1. std::pair.first :: column name
     // 2. std::pair.second :: shared_ptr of BloomFilterFuncBase
@@ -175,6 +216,9 @@ private:
     // push down functions to storage engine
     // only support scalar functions, now just support like / not like
     std::vector<FunctionFilter> _push_down_functions;
+
+    std::set<int32_t> _pruned_column_ids;
+    std::set<int32_t> _maybe_read_column_ids;
 
     // Pool for storing allocated scanner objects.  We don't want to use the
     // runtime pool to ensure that the scanner objects are deleted before this

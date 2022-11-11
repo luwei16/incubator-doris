@@ -1040,4 +1040,8 @@ public abstract class PlanNode extends TreeNode<PlanNode> implements PlanStats {
     public List<Expr> getProjectList() {
         return projectList;
     }
+
+    public List<SlotId> getOutputSlotIds() {
+        return outputSlotIds;
+    }
 }

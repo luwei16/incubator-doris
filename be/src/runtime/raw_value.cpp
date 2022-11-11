@@ -76,6 +76,7 @@ void RawValue::print_value_as_bytes(const void* value, const TypeDescriptor& typ
     case TYPE_VARCHAR:
     case TYPE_HLL:
     case TYPE_CHAR:
+    case TYPE_VARIANT:
     case TYPE_STRING:
         string_val = reinterpret_cast<const StringValue*>(value);
         stream->write(static_cast<char*>(string_val->ptr), string_val->len);
@@ -177,6 +178,7 @@ void RawValue::print_value(const void* value, const TypeDescriptor& type, int sc
     case TYPE_CHAR:
     case TYPE_VARCHAR:
     case TYPE_STRING:
+    case TYPE_VARIANT:
         string_val = reinterpret_cast<const StringValue*>(value);
         tmp.assign(static_cast<char*>(string_val->ptr), string_val->len);
         *stream << tmp;
@@ -415,6 +417,7 @@ void RawValue::write(const void* value, void* dst, const TypeDescriptor& type, M
     case TYPE_QUANTILE_STATE:
     case TYPE_VARCHAR:
     case TYPE_CHAR:
+    case TYPE_VARIANT:
     case TYPE_STRING: {
         const StringValue* src = reinterpret_cast<const StringValue*>(value);
         StringValue* dest = reinterpret_cast<StringValue*>(dst);
@@ -506,6 +509,7 @@ void RawValue::write(const void* value, const TypeDescriptor& type, void* dst, u
         break;
     case TYPE_VARCHAR:
     case TYPE_CHAR:
+    case TYPE_VARIANT:
     case TYPE_STRING: {
         DCHECK(buf != nullptr);
         const StringValue* src = reinterpret_cast<const StringValue*>(value);
@@ -609,6 +613,7 @@ int RawValue::compare(const void* v1, const void* v2, const TypeDescriptor& type
     case TYPE_CHAR:
     case TYPE_VARCHAR:
     case TYPE_HLL:
+    case TYPE_VARIANT:
     case TYPE_STRING:
         string_value1 = reinterpret_cast<const StringValue*>(v1);
         string_value2 = reinterpret_cast<const StringValue*>(v2);

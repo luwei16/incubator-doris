@@ -314,9 +314,11 @@ public:
     void build_tablet_report_info(TTabletInfo* tablet_info,
                                   bool enable_consecutive_missing_check = false);
 
-    void generate_tablet_meta_copy(TabletMetaSharedPtr new_tablet_meta) const;
+    void generate_tablet_meta_copy(TabletMetaSharedPtr new_tablet_meta,
+                                   bool use_max_version_schema = false) const;
     // caller should hold the _meta_lock before calling this method
-    void generate_tablet_meta_copy_unlocked(TabletMetaSharedPtr new_tablet_meta) const;
+    void generate_tablet_meta_copy_unlocked(TabletMetaSharedPtr new_tablet_meta,
+                                            bool use_max_version_schema = false) const;
 
     // return a json string to show the compaction status of this tablet
     void get_compaction_status(std::string* json_result);
@@ -411,11 +413,13 @@ public:
 
     bool check_all_rowset_segment();
 
-    void update_max_version_schema(const TabletSchemaSPtr& tablet_schema);
+    void update_max_version_schema(const TabletSchemaSPtr& tablet_schema,
+                                   bool update_same_version = false);
 
     bool is_in_memory() const { return _tablet_meta->is_in_memory(); }
     bool is_persistent() const { return _tablet_meta->is_persistent(); }
 
+    RowsetSharedPtr get_rowset(const RowsetId& rowset_id);
 private:
     Status _init_once_action();
     void _print_missed_versions(const std::vector<Version>& missed_versions) const;

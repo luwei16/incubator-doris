@@ -246,16 +246,19 @@ void start_schema_change_job(MetaServiceCode& code, std::string& msg, std::strin
         msg = "malformed tablet meta";
         return;
     }
-    if (new_tablet_meta.tablet_state() == doris::TabletStatePB::PB_RUNNING) {
-        code = MetaServiceCode::JOB_ALREADY_SUCCESS;
-        msg = "schema_change job already success";
-        return;
-    }
-    if (!new_tablet_meta.has_tablet_state() ||
-        new_tablet_meta.tablet_state() != doris::TabletStatePB::PB_NOTREADY) {
-        code = MetaServiceCode::INVALID_ARGUMENT;
-        msg = "invalid new tablet state";
-        return;
+
+    if (!schema_change.is_inverted_index_change()) {
+        if (new_tablet_meta.tablet_state() == doris::TabletStatePB::PB_RUNNING) {
+            code = MetaServiceCode::JOB_ALREADY_SUCCESS;
+            msg = "schema_change job already success";
+            return;
+        }
+        if (!new_tablet_meta.has_tablet_state() ||
+            new_tablet_meta.tablet_state() != doris::TabletStatePB::PB_NOTREADY) {
+            code = MetaServiceCode::INVALID_ARGUMENT;
+            msg = "invalid new tablet state";
+            return;
+        }
     }
 
     auto& job_key = *obj_pool.add(new std::string(

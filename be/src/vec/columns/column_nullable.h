@@ -84,6 +84,8 @@ public:
     UInt64 get64(size_t n) const override { return nested_column->get64(n); }
     StringRef get_data_at(size_t n) const override;
 
+    TypeIndex get_data_type() const override { return TypeIndex::Nullable; }
+
     /// Will insert null value if pos=nullptr
     void insert_data(const char* pos, size_t length) override;
 
@@ -234,6 +236,11 @@ public:
         nested_column->clear();
     }
 
+    ColumnPtr create_with_offsets(const Offsets64& offsets, const Field& default_field,
+                                  size_t total_rows, size_t shift) const override;
+
+    bool is_default_at(size_t n) const override { return is_null_at(n); }
+
     NullMap& get_null_map_data() { return get_null_map_column().get_data(); }
     const NullMap& get_null_map_data() const { return get_null_map_column().get_data(); }
 
@@ -314,6 +321,12 @@ public:
 
     void sort_column(const ColumnSorter* sorter, EqualFlags& flags, IColumn::Permutation& perms,
                      EqualRange& range, bool last_column) const override;
+    void get_indices_of_non_default_rows(Offsets64& indices, size_t from,
+                                         size_t limit) const override {
+        get_indices_of_non_default_rows_impl<ColumnNullable>(indices, from, limit);
+    }
+
+    ColumnPtr index(const IColumn& indexes, size_t limit) const override;
 
 private:
     WrappedPtr nested_column;

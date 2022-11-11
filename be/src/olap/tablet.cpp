@@ -259,6 +259,20 @@ Status Tablet::revise_tablet_meta(const std::vector<RowsetMetaSharedPtr>& rowset
     return res;
 }
 
+RowsetSharedPtr Tablet::get_rowset(const RowsetId& rowset_id) {
+    for (auto& version_rowset : _rs_version_map) {
+        if (version_rowset.second->rowset_id() == rowset_id) {
+            return version_rowset.second;
+        }
+    }
+    for (auto& stale_version_rowset : _stale_rs_version_map) {
+        if (stale_version_rowset.second->rowset_id() == rowset_id) {
+            return stale_version_rowset.second;
+        }
+    }   
+    return nullptr;
+}
+
 Status Tablet::add_rowset(RowsetSharedPtr rowset) {
 #ifdef CLOUD_MODE
     LOG(FATAL) << "MUST NOT call add_rowset in CLOUD_MODE";
@@ -1704,17 +1718,24 @@ void Tablet::build_tablet_report_info(TTabletInfo* tablet_info,
 // should use this method to get a copy of current tablet meta
 // there are some rowset meta in local meta store and in in-memory tablet meta
 // but not in tablet meta in local meta store
-void Tablet::generate_tablet_meta_copy(TabletMetaSharedPtr new_tablet_meta) const {
+void Tablet::generate_tablet_meta_copy(TabletMetaSharedPtr new_tablet_meta,
+                                       bool use_max_version_schema) const {
     std::shared_lock rdlock(_meta_lock);
-    generate_tablet_meta_copy_unlocked(new_tablet_meta);
+    generate_tablet_meta_copy_unlocked(new_tablet_meta, use_max_version_schema);
 }
 
 // this is a unlocked version of generate_tablet_meta_copy()
 // some method already hold the _meta_lock before calling this,
 // such as EngineCloneTask::_finish_clone -> tablet->revise_tablet_meta
-void Tablet::generate_tablet_meta_copy_unlocked(TabletMetaSharedPtr new_tablet_meta) const {
+void Tablet::generate_tablet_meta_copy_unlocked(TabletMetaSharedPtr new_tablet_meta,
+                                                bool use_max_version_schema) const {
     TabletMetaPB tablet_meta_pb;
     _tablet_meta->to_meta_pb(&tablet_meta_pb);
+    if (use_max_version_schema && _max_version_schema) {
+        // copy most refresh tablet schema
+        tablet_meta_pb.clear_schema();
+        _max_version_schema->to_schema_pb(tablet_meta_pb.mutable_schema());
+    }
     new_tablet_meta->init_from_pb(tablet_meta_pb);
 }
 
@@ -2136,11 +2157,14 @@ TabletSchemaSPtr Tablet::tablet_schema() const {
     return _max_version_schema;
 }
 
-void Tablet::update_max_version_schema(const TabletSchemaSPtr& tablet_schema) {
+void Tablet::update_max_version_schema(const TabletSchemaSPtr& tablet_schema,
+                                       bool update_same_version) {
     std::lock_guard wrlock(_meta_lock);
     // Double Check for concurrent update
     if (!_max_version_schema ||
-        tablet_schema->schema_version() > _max_version_schema->schema_version()) {
+        tablet_schema->schema_version() > _max_version_schema->schema_version() ||
+        (update_same_version &&
+         tablet_schema->schema_version() == _max_version_schema->schema_version())) {
         _max_version_schema = tablet_schema;
     }
 }

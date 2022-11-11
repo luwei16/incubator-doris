@@ -336,6 +336,15 @@ if [[ "${JEMALLOC_SOURCE}" = "jemalloc-5.2.1" ]]; then
 fi
 echo "Finished patching ${JEMALLOC_SOURCE}"
 
+#patch sqltypes.h
+cd $TP_SOURCE_DIR/$ODBC_SOURCE
+if [ ! -f $PATCHED_MARK ]; then
+    patch -p1 < $TP_PATCH_DIR/sqltypes.h.patch
+    touch $PATCHED_MARK
+fi
+cd -
+echo "Finished patching $ODBC_SOURCE"
+
 # patch hyperscan
 # https://github.com/intel/hyperscan/issues/292
 if [[ "${HYPERSCAN_SOURCE}" == "hyperscan-5.4.0" ]]; then

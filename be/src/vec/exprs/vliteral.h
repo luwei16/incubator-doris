@@ -43,6 +43,8 @@ public:
 
     virtual std::string debug_string() const override;
 
+    std::string value() const;
+
 protected:
     ColumnPtr _column_ptr;
     std::string _expr_name;

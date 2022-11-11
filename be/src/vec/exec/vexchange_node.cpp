@@ -22,6 +22,9 @@
 #include "runtime/thread_context.h"
 #include "vec/runtime/vdata_stream_mgr.h"
 #include "vec/runtime/vdata_stream_recvr.h"
+#include "exec/rowid_fetcher.h"
+#include "common/consts.h"
+#include "util/defer_op.h"
 
 namespace doris::vectorized {
 VExchangeNode::VExchangeNode(ObjectPool* pool, const TPlanNode& tnode, const DescriptorTbl& descs)
@@ -41,9 +44,14 @@ Status VExchangeNode::init(const TPlanNode& tnode, RuntimeState* state) {
         return Status::OK();
     }
 
-    RETURN_IF_ERROR(_vsort_exec_exprs.init(tnode.exchange_node.sort_info, _pool));
+    RETURN_IF_ERROR(_vsort_exec_exprs.init(tnode.exchange_node.sort_info.ordering_exprs, nullptr, _pool));
     _is_asc_order = tnode.exchange_node.sort_info.is_asc_order;
     _nulls_first = tnode.exchange_node.sort_info.nulls_first;
+
+    if (tnode.exchange_node.__isset.nodes_info) {
+        _nodes_info = _pool->add(new DorisNodesInfo(tnode.exchange_node.nodes_info));
+    }
+    _scan_node_tuple_desc = state->desc_tbl().get_tuple_descriptor(tnode.olap_scan_node.tuple_id);
     return Status::OK();
 }
 
@@ -81,6 +89,32 @@ Status VExchangeNode::get_next(RuntimeState* state, RowBatch* row_batch, bool* e
     return Status::NotSupported("Not Implemented VExchange Node::get_next scalar");
 }
 
+Status VExchangeNode::second_phase_fetch_data(RuntimeState* state, Block* final_block) {
+    auto row_id_col =  final_block->try_get_by_name(BeConsts::ROWID_COL);
+    if (row_id_col != nullptr && final_block->rows() > 0) {
+        MonotonicStopWatch watch;
+        watch.start();
+        RowIDFetcher id_fetcher(_scan_node_tuple_desc);
+        RETURN_IF_ERROR(id_fetcher.init(_nodes_info));
+        vectorized::Block materialized_block(_scan_node_tuple_desc->slots(), final_block->rows());
+        auto tmp_block = MutableBlock::build_mutable_block(&materialized_block);
+        // fetch will sort block by sequence of ROWID_COL
+        RETURN_IF_ERROR(id_fetcher.fetch(row_id_col->column, &tmp_block));
+        materialized_block.swap(tmp_block.to_block());
+
+        // materialize by name
+        for (auto& column_type_name : *final_block) {
+            auto materialized_column = materialized_block.try_get_by_name(column_type_name.name); 
+            if (materialized_column != nullptr) {
+                column_type_name.column = std::move(materialized_column->column);
+            }
+        }
+        LOG(INFO) << "fetch_id finished, cost(ms):" << watch.elapsed_time() / 1000 / 1000; 
+    }
+    return Status::OK();
+}
+
+
 Status VExchangeNode::get_next(RuntimeState* state, Block* block, bool* eos) {
     INIT_AND_SCOPE_GET_NEXT_SPAN(state->get_tracer(), _get_next_span, "VExchangeNode::get_next");
     SCOPED_TIMER(runtime_profile()->total_time_counter());
@@ -96,6 +130,7 @@ Status VExchangeNode::get_next(RuntimeState* state, Block* block, bool* eos) {
         }
         COUNTER_SET(_rows_returned_counter, _num_rows_returned);
     }
+    RETURN_IF_ERROR(second_phase_fetch_data(state, block)); 
     return status;
 }
 

@@ -24,6 +24,7 @@
 #include "olap/primary_key_index.h"
 #include "olap/row.h"                             // ContiguousRow
 #include "olap/row_cursor.h"                      // RowCursor
+#include "olap/rowset/rowset_writer_context.h"    // RowsetWriterContext
 #include "olap/rowset/segment_v2/column_writer.h" // ColumnWriter
 #include "olap/rowset/segment_v2/page_io.h"
 #include "olap/schema.h"
@@ -32,6 +33,7 @@
 #include "util/crc32c.h"
 #include "util/faststring.h"
 #include "util/key_util.h"
+#include "vec/common/object_util.h"
 
 namespace doris {
 namespace segment_v2 {
@@ -49,8 +51,7 @@ SegmentWriter::SegmentWriter(io::FileWriter* file_writer, uint32_t segment_id,
           _opts(opts),
           _file_writer(file_writer),
           _mem_tracker(std::make_unique<MemTracker>("SegmentWriter:Segment-" +
-                                                    std::to_string(segment_id))),
-          _olap_data_convertor(tablet_schema.get()) {
+                                                    std::to_string(segment_id))) {
     CHECK_NOTNULL(file_writer);
     if (_tablet_schema->keys_type() == UNIQUE_KEYS && _opts.enable_unique_key_merge_on_write) {
         _num_key_columns = _tablet_schema->num_key_columns();
@@ -90,10 +91,13 @@ void SegmentWriter::init_column_meta(ColumnMetaPB* meta, uint32_t* column_id,
     }
 }
 
-Status SegmentWriter::init(uint32_t write_mbytes_per_sec __attribute__((unused))) {
+Status SegmentWriter::init(uint32_t write_mbytes_per_sec __attribute__((unused)),
+                           const vectorized::Block* block) {
     uint32_t column_id = 0;
+    DCHECK(_olap_data_convertor.empty());
     _column_writers.reserve(_tablet_schema->columns().size());
-    for (auto& column : _tablet_schema->columns()) {
+
+    auto create_column_writer = [&](const auto& column) -> auto {
         ColumnWriterOptions opts;
         opts.meta = _footer.add_columns();
 
@@ -104,6 +108,16 @@ Status SegmentWriter::init(uint32_t write_mbytes_per_sec __attribute__((unused))
         opts.need_zone_map = column.is_key() || _tablet_schema->keys_type() != KeysType::AGG_KEYS;
         opts.need_bloom_filter = column.is_bf_column();
         opts.need_bitmap_index = column.has_bitmap_index();
+        bool skip_inverted_index = _opts.rowset_ctx->skip_inverted_index.count(column.unique_id()) > 0;
+        // indexes for this column
+        opts.indexes = _tablet_schema->get_indexes_for_column(column.unique_id());
+        for (auto index : opts.indexes) {
+            if (!skip_inverted_index && index && index->index_type() == IndexType::INVERTED) {
+                opts.inverted_index = index;
+                // TODO support multiple inverted index
+                break;
+            }
+        }
         if (column.type() == FieldType::OLAP_FIELD_TYPE_ARRAY) {
             opts.need_zone_map = false;
             if (opts.need_bloom_filter) {
@@ -127,7 +141,13 @@ Status SegmentWriter::init(uint32_t write_mbytes_per_sec __attribute__((unused))
         RETURN_IF_ERROR(ColumnWriter::create(opts, &column, _file_writer, &writer));
         RETURN_IF_ERROR(writer->init());
         _column_writers.push_back(std::move(writer));
-    }
+
+        _olap_data_convertor.add_column_data_convertor(column);
+        return Status::OK();
+    };
+
+    _create_dynamic_table_columns_writer(block, create_column_writer);
+    _create_static_table_columns_writer(create_column_writer);
 
     // we don't need the short key index for unique key merge on write table.
     if (_tablet_schema->keys_type() == UNIQUE_KEYS && _opts.enable_unique_key_merge_on_write) {
@@ -145,10 +165,58 @@ Status SegmentWriter::init(uint32_t write_mbytes_per_sec __attribute__((unused))
     return Status::OK();
 }
 
+Status SegmentWriter::_create_static_table_columns_writer(
+        std::function<Status(const TabletColumn&)> create_column_writer) {
+    if (!_tablet_schema->is_dynamic_schema()) {
+        _olap_data_convertor.reserve(_tablet_schema->columns().size());
+        for (auto& column : _tablet_schema->columns()) {
+            RETURN_IF_ERROR(create_column_writer(column));
+        }
+    }
+    return Status::OK();
+}
+
+Status SegmentWriter::_create_dynamic_table_columns_writer(
+        const vectorized::Block* block,
+        std::function<Status(const TabletColumn&)> create_column_writer) {
+    if (_tablet_schema->is_dynamic_schema()) {
+        // generate writers from schema and extended schema info
+        _olap_data_convertor.reserve(block->columns());
+        // new columns added, query column info from Master
+        vectorized::object_util::FullBaseSchemaView schema_view;
+        if (block->columns() > _tablet_schema->num_columns()) {
+            schema_view.table_id = _tablet_schema->table_id();
+            RETURN_IF_ERROR(
+                    vectorized::object_util::send_fetch_full_base_schema_view_rpc(&schema_view));
+        }
+        for (size_t i = 0; i < block->columns(); ++i) {
+            const auto& column_type_name = block->get_by_position(i);
+            auto idx = _tablet_schema->field_index(column_type_name.name);
+            if (idx >= 0) {
+                RETURN_IF_ERROR(create_column_writer(_tablet_schema->column(idx)));
+            } else {
+                if (schema_view.column_name_to_column.count(column_type_name.name) == 0) {
+                    // expr columns, maybe happend in query like `insert into table1 select function(column1), column2 from table2`
+                    // the first column name may become `function(column1)`, so we use column offset to get columns info
+                    // TODO here we could optimize to col_unique_id in the future
+                    RETURN_IF_ERROR(create_column_writer(_tablet_schema->column(i)));
+                    continue;
+                }
+                // extended columns
+                const auto& tcolumn = schema_view.column_name_to_column[column_type_name.name];
+                TabletColumn new_column(tcolumn);
+                RETURN_IF_ERROR(create_column_writer(new_column));
+                _opts.rowset_ctx->schema_change_recorder->add_extended_columns(
+                        new_column, schema_view.schema_version);
+            }
+        }
+    }
+    return Status::OK();
+}
+
 Status SegmentWriter::append_block(const vectorized::Block* block, size_t row_pos,
                                    size_t num_rows) {
-    assert(block && num_rows > 0 && row_pos + num_rows <= block->rows() &&
-           block->columns() == _column_writers.size());
+    assert(block && num_rows > 0 && row_pos + num_rows <= block->rows());
     _olap_data_convertor.set_source_content(block, row_pos, num_rows);
 
     // find all row pos for short key indexes
@@ -312,6 +380,7 @@ Status SegmentWriter::finalize(uint64_t* segment_file_size, uint64_t* index_size
     RETURN_IF_ERROR(_write_ordinal_index());
     RETURN_IF_ERROR(_write_zone_map());
     RETURN_IF_ERROR(_write_bitmap_index());
+    RETURN_IF_ERROR(_write_inverted_index());
     RETURN_IF_ERROR(_write_bloom_filter_index());
     if (_tablet_schema->keys_type() == UNIQUE_KEYS && _opts.enable_unique_key_merge_on_write) {
         RETURN_IF_ERROR(_write_primary_key_index());
@@ -351,6 +420,13 @@ Status SegmentWriter::_write_zone_map() {
 Status SegmentWriter::_write_bitmap_index() {
     for (auto& column_writer : _column_writers) {
         RETURN_IF_ERROR(column_writer->write_bitmap_index());
+    }
+    return Status::OK();
+}
+
+Status SegmentWriter::_write_inverted_index() {
+    for (auto& column_writer : _column_writers) {
+        RETURN_IF_ERROR(column_writer->write_inverted_index());
     }
     return Status::OK();
 }

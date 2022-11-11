@@ -25,11 +25,16 @@ import org.apache.doris.analysis.Expr;
 import org.apache.doris.analysis.SortInfo;
 import org.apache.doris.analysis.TupleDescriptor;
 import org.apache.doris.analysis.TupleId;
+import org.apache.doris.catalog.Env;
 import org.apache.doris.common.UserException;
 import org.apache.doris.common.util.VectorizedUtil;
 import org.apache.doris.statistics.StatisticalType;
 import org.apache.doris.statistics.StatsRecursiveDerive;
+import org.apache.doris.system.Backend;
+import org.apache.doris.system.SystemInfoService;
 import org.apache.doris.thrift.TExchangeNode;
+import org.apache.doris.thrift.TNodeInfo;
+import org.apache.doris.thrift.TPaloNodesInfo;
 import org.apache.doris.thrift.TPlanNode;
 import org.apache.doris.thrift.TPlanNodeType;
 import org.apache.doris.thrift.TSortInfo;
@@ -66,6 +71,9 @@ public class ExchangeNode extends PlanNode {
     // Offset after which the exchange begins returning rows. Currently valid
     // only if mergeInfo_ is non-null, i.e. this is a merging exchange node.
     private long offset;
+
+    // Used send rpc to fetch data by RowIds
+    TPaloNodesInfo nodesInfo;
 
     /**
      * Create ExchangeNode that consumes output of inputNode.
@@ -164,6 +172,10 @@ public class ExchangeNode extends PlanNode {
             msg.exchange_node.setSortInfo(sortInfo);
             msg.exchange_node.setOffset(offset);
         }
+        // nodeinfos for second phase fetch rows
+        if (nodesInfo != null) {
+            msg.exchange_node.setNodesInfo(nodesInfo);
+        }
     }
 
     @Override
@@ -179,4 +191,16 @@ public class ExchangeNode extends PlanNode {
         return numInstances;
     }
 
+    /**
+    * Set the parameters used to fetch data by rowid column
+    * after init().
+    */
+    public void createNodesInfo() {
+        nodesInfo = new TPaloNodesInfo();
+        SystemInfoService systemInfoService = Env.getCurrentSystemInfo();
+        for (Long id : systemInfoService.getBackendIds(true /*need alive*/)) {
+            Backend backend = systemInfoService.getBackend(id);
+            nodesInfo.addToNodes(new TNodeInfo(backend.getId(), 0, backend.getHost(), backend.getBrpcPort()));
+        }
+    }
 }

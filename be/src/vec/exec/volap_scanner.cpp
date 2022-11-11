@@ -45,10 +45,14 @@ VOlapScanner::VOlapScanner(RuntimeState* runtime_state, VOlapScanNode* parent, b
 
 Status VOlapScanner::prepare(
         const TPaloScanRange& scan_range, const std::vector<OlapScanRange*>& key_ranges,
-        const std::vector<TCondition>& filters,
+        VExprContext** vconjunct_ctx_ptr, const std::vector<TCondition>& filters,
         const std::vector<std::pair<string, std::shared_ptr<BloomFilterFuncBase>>>& bloom_filters,
         const std::vector<FunctionFilter>& function_filters) {
     SCOPED_CONSUME_MEM_TRACKER(_mem_tracker);
+    if (vconjunct_ctx_ptr != nullptr) {
+        // Copy vconjunct_ctx_ptr from scan node to this scanner's _vconjunct_ctx.
+        RETURN_IF_ERROR((*vconjunct_ctx_ptr)->clone(_runtime_state, &_vconjunct_ctx));
+    }
     set_tablet_reader();
     // set limit to reduce end of rowset and segment mem use
     _tablet_reader->set_batch_size(
@@ -81,6 +85,7 @@ Status VOlapScanner::prepare(
             LOG(WARNING) << ss.str();
             return Status::InternalError(ss.str());
         }
+
         {
             std::shared_lock rdlock(_tablet->get_header_lock());
             const RowsetSharedPtr rowset = _tablet->rowset_with_max_version();
@@ -120,6 +125,19 @@ Status VOlapScanner::prepare(
                 _tablet_schema->append_column(TabletColumn(column_desc));
             }
         }
+
+        if (_tuple_desc->slots().back()->col_name() == BeConsts::ROWID_COL) {
+            // inject ROWID_COL
+            TabletColumn rowid_column; 
+            rowid_column.set_is_nullable(false);
+            rowid_column.set_name(BeConsts::ROWID_COL);
+            // avoid column reader init error
+            rowid_column.set_has_default_value(true);
+            // fake unique id
+            rowid_column.set_unique_id(INT32_MAX);
+            rowid_column.set_type(FieldType::OLAP_FIELD_TYPE_STRING);
+            _tablet_schema->append_column(rowid_column);
+        }
     }
     return _init_tablet_reader_params(key_ranges, filters, bloom_filters, function_filters);
 }
@@ -156,6 +174,11 @@ TabletStorageType VOlapScanner::get_storage_type() {
         return TabletStorageType::STORAGE_TYPE_REMOTE;
     }
     return TabletStorageType::STORAGE_TYPE_REMOTE_AND_LOCAL;
+}
+
+void VOlapScanner::set_compound_filters(
+        const std::vector<std::vector<TCondition>>& compound_filters) {
+    _compound_filters = compound_filters;
 }
 
 // it will be called under tablet read lock because capture rs readers need
@@ -196,11 +219,34 @@ Status VOlapScanner::_init_tablet_reader_params(
         _tablet_reader_params.push_down_agg_type_opt =
                 _parent->_olap_scan_node.push_down_agg_type_opt;
     _tablet_reader_params.version = Version(0, _version);
+    _tablet_reader_params.remaining_vconjunct_root = (_vconjunct_ctx == nullptr) ? nullptr : _vconjunct_ctx->root();
+    _tablet_reader_params.output_columns = _parent->_maybe_read_column_ids;
 
     // Condition
     for (auto& filter : filters) {
+        if (is_match_condition(filter.condition_op) &&
+                !_tablet_schema->has_inverted_index(
+                    _tablet_schema->column(filter.column_name).unique_id())) {
+                return Status::NotSupported("Match query must with inverted index, column `" +
+                                            filter.column_name + "` is not inverted index column");
+            }
         _tablet_reader_params.conditions.push_back(filter);
     }
+
+    for (auto& filters : _compound_filters) {
+        for (auto& filter : filters) {
+            if (is_match_condition(filter.condition_op) &&
+                !_tablet_schema->has_inverted_index(
+                    _tablet_schema->column(filter.column_name).unique_id())) {
+                return Status::NotSupported("Match query must with inverted index, column `" +
+                                            filter.column_name + "` is not inverted index column");
+            }
+        }
+    }
+    std::copy(_compound_filters.cbegin(), _compound_filters.cend(),
+            std::inserter(_tablet_reader_params.compound_conditions,
+                        _tablet_reader_params.compound_conditions.begin()));
+
     std::copy(bloom_filters.cbegin(), bloom_filters.cend(),
               std::inserter(_tablet_reader_params.bloom_filters,
                             _tablet_reader_params.bloom_filters.begin()));
@@ -270,7 +316,8 @@ Status VOlapScanner::_init_tablet_reader_params(
     }
 
     if (!_runtime_state->skip_storage_engine_merge()) {
-        if (_parent->_olap_scan_node.__isset.sort_info &&
+        if (_parent->_olap_scan_node.use_topn_opt &&
+            _parent->_olap_scan_node.__isset.sort_info &&
             _parent->_olap_scan_node.sort_info.is_asc_order.size() > 0) {
             _limit = _parent->_limit_per_scanner;
             _tablet_reader_params.read_orderby_key = true;
@@ -279,15 +326,24 @@ Status VOlapScanner::_init_tablet_reader_params(
             }
             _tablet_reader_params.read_orderby_key_num_prefix_columns =
                     _parent->_olap_scan_node.sort_info.is_asc_order.size();
+            _tablet_reader_params.read_orderby_key_limit = _limit;
+            _tablet_reader_params.filter_block_vconjunct_ctx_ptr = &_vconjunct_ctx;
         }
     }
+
+    _tablet_reader_params.use_topn_opt = _parent->_olap_scan_node.use_topn_opt;
 
     return Status::OK();
 }
 
 Status VOlapScanner::_init_return_columns(bool need_seq_col) {
+    VOlapScanNode* olap_parent = (VOlapScanNode*)_parent;
     for (auto slot : _tuple_desc->slots()) {
         if (!slot->is_materialized()) {
+            continue;
+        }
+
+        if (olap_parent->is_pruned_column(slot->col_unique_id())) {
             continue;
         }
 
@@ -336,11 +392,13 @@ Status VOlapScanner::get_block(RuntimeState* state, vectorized::Block* block, bo
 
     int64_t raw_rows_threshold = raw_rows_read() + config::doris_scanner_row_num;
     if (!block->mem_reuse()) {
-        for (const auto slot_desc : _tuple_desc->slots()) {
-            block->insert(ColumnWithTypeAndName(slot_desc->get_empty_mutable_column(),
-                                                slot_desc->get_data_type_ptr(),
-                                                slot_desc->col_name()));
-        }
+        // for (const auto slot_desc : _tuple_desc->slots()) {
+        //     block->insert(ColumnWithTypeAndName(slot_desc->get_empty_mutable_column(),
+        //                                         slot_desc->get_data_type_ptr(),
+        //                                         slot_desc->col_name()));
+        // }
+        auto b = _parent->_allocate_block(_tuple_desc, state->batch_size());
+        block->swap(std::move(*b)); 
     }
 
     {
@@ -357,8 +415,11 @@ Status VOlapScanner::get_block(RuntimeState* state, vectorized::Block* block, bo
             }
             _num_rows_read += block->rows();
             _update_realtime_counter();
-            RETURN_IF_ERROR(
-                    VExprContext::filter_block(_vconjunct_ctx, block, _tuple_desc->slots().size()));
+            // skip filter_block if read_orderby_key_limit > 0, since it's called inside tablet_reader
+            if (_tablet_reader_params.read_orderby_key_limit == 0) {
+                RETURN_IF_ERROR(
+                    VExprContext::filter_block(_vconjunct_ctx, block, block->columns()));
+            }
             // record rows return (after filter) for _limit check
             _num_rows_return += block->rows();
         } while (block->rows() == 0 && !(*eof) && raw_rows_read() < raw_rows_threshold);
@@ -370,7 +431,7 @@ Status VOlapScanner::get_block(RuntimeState* state, vectorized::Block* block, bo
 
     // set eof to true if per scanner limit is reached
     // currently for query: ORDER BY key LIMIT n
-    if (_limit > 0 && _num_rows_return > _limit) {
+    if (_limit > 0 && _num_rows_return >= _limit) {
         *eof = true;
     }
 

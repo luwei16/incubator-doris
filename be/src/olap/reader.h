@@ -28,6 +28,7 @@
 #include "olap/tablet_schema.h"
 #include "util/date_func.h"
 #include "util/runtime_profile.h"
+#include "vec/exprs/vexpr_context.h"
 
 namespace doris {
 
@@ -40,6 +41,7 @@ class RuntimeState;
 namespace vectorized {
 class VCollectIterator;
 class Block;
+class VExpr;
 } // namespace vectorized
 
 class TabletReader {
@@ -77,6 +79,7 @@ public:
 
         std::vector<TCondition> conditions;
         std::vector<std::pair<string, std::shared_ptr<BloomFilterFuncBase>>> bloom_filters;
+        std::vector<std::vector<TCondition>> compound_conditions;
         std::vector<FunctionFilter> function_filters;
         std::vector<RowsetMetaSharedPtr> delete_predicates;
 
@@ -85,6 +88,7 @@ public:
 
         std::vector<RowsetReaderSharedPtr> rs_readers;
         std::vector<uint32_t> return_columns;
+        std::set<int32_t> output_columns;
         RuntimeProfile* profile = nullptr;
         RuntimeState* runtime_state = nullptr;
 
@@ -92,15 +96,22 @@ public:
         std::vector<uint32_t>* origin_return_columns = nullptr;
         std::unordered_set<uint32_t>* tablet_columns_convert_to_null_set = nullptr;
         TPushAggOp::type push_down_agg_type_opt = TPushAggOp::NONE;
+        vectorized::VExpr* remaining_vconjunct_root = nullptr;
 
         // used for comapction to record row ids
         bool record_rowids = false;
+        // flag for enable topn opt
+        bool use_topn_opt = false;
         // used for special optimization for query : ORDER BY key LIMIT n
         bool read_orderby_key = false;
         // used for special optimization for query : ORDER BY key DESC LIMIT n
         bool read_orderby_key_reverse = false;
         // num of columns for orderby key
         size_t read_orderby_key_num_prefix_columns = 0;
+        // limit of rows for read_orderby_key
+        size_t read_orderby_key_limit = 0;
+        // filter_block arguments
+        vectorized::VExprContext** filter_block_vconjunct_ctx_ptr = nullptr;
 
         void check_validation() const;
 
@@ -165,6 +176,8 @@ protected:
 
     void _init_conditions_param(const ReaderParams& read_params);
 
+    void _init_compound_conditions_param(const ReaderParams& read_params);
+
     ColumnPredicate* _parse_to_predicate(
             const std::pair<std::string, std::shared_ptr<BloomFilterFuncBase>>& bloom_filter);
 
@@ -193,6 +206,7 @@ protected:
     std::vector<bool> _is_lower_keys_included;
     std::vector<bool> _is_upper_keys_included;
     std::vector<ColumnPredicate*> _col_predicates;
+    std::vector<ColumnPredicate*> _all_compound_col_predicates;
     std::vector<ColumnPredicate*> _value_col_predicates;
     DeleteHandler _delete_handler;
 

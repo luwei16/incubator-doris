@@ -157,6 +157,7 @@ int get_byte_size(PrimitiveType type) {
     case TYPE_QUANTILE_STATE:
     case TYPE_ARRAY:
     case TYPE_MAP:
+    case TYPE_VARIANT:
         return 0;
 
     case TYPE_NULL:
@@ -645,6 +646,7 @@ int get_slot_size(PrimitiveType type) {
     case TYPE_OBJECT:
     case TYPE_HLL:
     case TYPE_QUANTILE_STATE:
+    case TYPE_VARIANT:
         return sizeof(StringValue);
     case TYPE_JSONB:
         return sizeof(JsonBinaryValue);
@@ -691,6 +693,43 @@ int get_slot_size(PrimitiveType type) {
     }
 
     return 0;
+}
+
+PrimitiveType get_primitive_type(vectorized::TypeIndex v_type) {
+    switch (v_type) {
+    case vectorized::TypeIndex::Int8:
+        return PrimitiveType::TYPE_TINYINT;
+    case vectorized::TypeIndex::Int16:
+        return PrimitiveType::TYPE_SMALLINT;
+    case vectorized::TypeIndex::Int32:
+        return PrimitiveType::TYPE_INT;
+    case vectorized::TypeIndex::Int64:
+        return PrimitiveType::TYPE_BIGINT;
+    case vectorized::TypeIndex::Float32:
+        return PrimitiveType::TYPE_FLOAT;
+    case vectorized::TypeIndex::Float64:
+        return PrimitiveType::TYPE_DOUBLE;
+    case vectorized::TypeIndex::Decimal32:
+        return PrimitiveType::TYPE_DECIMALV2;
+    case vectorized::TypeIndex::Array:
+        return PrimitiveType::TYPE_ARRAY;
+    case vectorized::TypeIndex::String:
+        return PrimitiveType::TYPE_STRING;
+    case vectorized::TypeIndex::Date:
+        return PrimitiveType::TYPE_DATE;
+    case vectorized::TypeIndex::DateTime:
+        return PrimitiveType::TYPE_DATETIME;
+    case vectorized::TypeIndex::DateV2:
+        return PrimitiveType::TYPE_DATEV2;
+    case vectorized::TypeIndex::DateTimeV2:
+        return PrimitiveType::TYPE_DATETIMEV2;
+    case vectorized::TypeIndex::Tuple:
+        return PrimitiveType::TYPE_STRUCT;
+    // TODO add vectorized::more types
+    default:
+        LOG(FATAL) << "unknow data_type: " << getTypeName(v_type);
+        return PrimitiveType::INVALID_TYPE;
+    }
 }
 
 } // namespace doris

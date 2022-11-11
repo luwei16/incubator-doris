@@ -392,6 +392,19 @@ public:
     void compare_internal(size_t rhs_row_id, const IColumn& rhs, int nan_direction_hint,
                           int direction, std::vector<uint8>& cmp_res,
                           uint8* __restrict filter) const override;
+    TypeIndex get_data_type() const override { return TypeId<T>::value; }
+
+    void get_indices_of_non_default_rows(IColumn::Offsets64& indices, size_t from,
+                                         size_t limit) const override {
+        return this->template get_indices_of_non_default_rows_impl<Self>(indices, from, limit);
+    }
+
+    ColumnPtr index(const IColumn& indexes, size_t limit) const override;
+
+    bool is_default_at(size_t n) const override { return data[n] == T {}; }
+
+    ColumnPtr create_with_offsets(const IColumn::Offsets64& offsets, const Field& default_field,
+                                  size_t total_rows, size_t shift) const override;
 
 protected:
     Container data;

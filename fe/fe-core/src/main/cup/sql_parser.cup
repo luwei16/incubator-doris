@@ -411,6 +411,7 @@ terminal String
     KW_IS,
     KW_ISNULL,
     KW_ISOLATION,
+    KW_INVERTED,
     KW_JOB,
     KW_JOIN,
     KW_JSON,
@@ -446,6 +447,15 @@ terminal String
     KW_MINUTE,
     KW_MODIFY,
     KW_MONTH,
+    KW_MATCH,
+    KW_MATCH_ALL,
+    KW_MATCH_ANY,
+    KW_MATCH_PHRASE,
+    KW_MATCH_ELEMENT_EQ,
+    KW_MATCH_ELEMENT_GE,
+    KW_MATCH_ELEMENT_GT,
+    KW_MATCH_ELEMENT_LE,
+    KW_MATCH_ELEMENT_LT,
     KW_NAME,
     KW_NAMES,
     KW_NATURAL,
@@ -691,7 +701,7 @@ nonterminal Expr where_clause;
 nonterminal Expr delete_on_clause;
 nonterminal String sequence_col_clause;
 nonterminal Predicate predicate, between_predicate, comparison_predicate,
-  compound_predicate, in_predicate, like_predicate, exists_predicate;
+  compound_predicate, in_predicate, like_predicate, exists_predicate, match_predicate;
 nonterminal ArrayList<Expr> opt_partition_by_clause;
 nonterminal Expr having_clause;
 nonterminal ArrayList<OrderByElement> order_by_elements, order_by_clause;
@@ -893,6 +903,7 @@ precedence left KW_AND;
 precedence left KW_NOT, NOT;
 precedence left KW_BETWEEN, KW_IN, KW_IS, KW_EXISTS;
 precedence left KW_LIKE, KW_REGEXP;
+precedence left KW_MATCH_ANY, KW_MATCH_ALL, KW_MATCH_PHRASE, KW_MATCH, KW_MATCH_ELEMENT_EQ, KW_MATCH_ELEMENT_LT, KW_MATCH_ELEMENT_GT, KW_MATCH_ELEMENT_LE, KW_MATCH_ELEMENT_GE;
 precedence left EQUAL, LESSTHAN, GREATERTHAN;
 precedence left ADD, SUBTRACT;
 precedence left AT, STAR, DIVIDE, MOD, KW_DIV;
@@ -1757,6 +1768,19 @@ create_stmt ::=
         distribution, tblProperties, extProperties, tableComment, index);
     :}
     | KW_CREATE opt_external:isExternal KW_TABLE opt_if_not_exists:ifNotExists table_name:name
+            LPAREN column_definition_list:columns COMMA DOTDOTDOT RPAREN opt_engine:engineName
+            opt_keys:keys
+            opt_comment:tableComment
+            opt_partition:partition
+            opt_distribution:distribution
+            opt_rollup:index
+            opt_properties:tblProperties
+            opt_ext_properties:extProperties
+    {:
+        RESULT = new CreateTableStmt(ifNotExists, isExternal, name, columns, null, engineName, keys, partition,
+        distribution, tblProperties, extProperties, tableComment, index, true);
+    :}
+    | KW_CREATE opt_external:isExternal KW_TABLE opt_if_not_exists:ifNotExists table_name:name
             LPAREN column_definition_list:columns COMMA index_definition_list:indexes RPAREN opt_engine:engineName
             opt_keys:keys
             opt_comment:tableComment
@@ -1767,7 +1791,20 @@ create_stmt ::=
             opt_ext_properties:extProperties
     {:
         RESULT = new CreateTableStmt(ifNotExists, isExternal, name, columns, indexes, engineName, keys, partition,
-        distribution, tblProperties, extProperties, tableComment, index);
+        distribution, tblProperties, extProperties, tableComment, index, false);
+    :}
+    | KW_CREATE opt_external:isExternal KW_TABLE opt_if_not_exists:ifNotExists table_name:name
+            LPAREN column_definition_list:columns COMMA index_definition_list:indexes COMMA DOTDOTDOT RPAREN opt_engine:engineName
+            opt_keys:keys
+            opt_comment:tableComment
+            opt_partition:partition
+            opt_distribution:distribution
+            opt_rollup:index
+            opt_properties:tblProperties
+            opt_ext_properties:extProperties
+    {:
+        RESULT = new CreateTableStmt(ifNotExists, isExternal, name, columns, indexes, engineName, keys, partition,
+        distribution, tblProperties, extProperties, tableComment, index, true);
     :}
     | KW_CREATE opt_external:isExternal KW_TABLE opt_if_not_exists:ifNotExists table_name:name KW_ENGINE EQUAL ident:engineName
           properties:properties opt_comment:tableComment
@@ -1834,9 +1871,9 @@ create_stmt ::=
     {:
         RESULT = new CreateMultiTableMaterializedViewStmt(mvName, buildMethod, refreshInfo, keyDesc, partitionDesc, distributionDesc, properties, query);
     :}
-    | KW_CREATE KW_INDEX opt_if_not_exists:ifNotExists ident:indexName KW_ON table_name:tableName LPAREN ident_list:cols RPAREN opt_index_type:indexType opt_comment:comment
+    | KW_CREATE KW_INDEX opt_if_not_exists:ifNotExists ident:indexName KW_ON table_name:tableName LPAREN ident_list:cols RPAREN opt_index_type:indexType opt_properties:properties opt_comment:comment
     {:
-        RESULT = new AlterTableStmt(tableName, Lists.newArrayList(new CreateIndexClause(tableName, new IndexDef(indexName, ifNotExists, cols, indexType, comment), false)));
+        RESULT = new AlterTableStmt(tableName, Lists.newArrayList(new CreateIndexClause(tableName, new IndexDef(indexName, ifNotExists, cols, indexType, properties, comment), false)));
     :}
     /* resource */
     | KW_CREATE opt_external:isExternal KW_RESOURCE ident_or_text:resourceName opt_properties:properties
@@ -3221,9 +3258,9 @@ column_definition ::=
     ;
 
 index_definition ::=
-    KW_INDEX opt_if_not_exists:ifNotExists ident:indexName LPAREN ident_list:cols RPAREN opt_index_type:indexType opt_comment:comment
+    KW_INDEX opt_if_not_exists:ifNotExists ident:indexName LPAREN ident_list:cols RPAREN opt_index_type:indexType opt_properties:properties opt_comment:comment
     {:
-        RESULT = new IndexDef(indexName, ifNotExists, cols, indexType, comment);
+        RESULT = new IndexDef(indexName, ifNotExists, cols, indexType, properties, comment);
     :}
     ;
 
@@ -3259,6 +3296,10 @@ opt_index_type ::=
     | KW_USING KW_BITMAP
     {:
         RESULT = IndexDef.IndexType.BITMAP;
+    :}
+    | KW_USING KW_INVERTED
+    {:
+        RESULT = IndexDef.IndexType.INVERTED;
     :}
     ;
 
@@ -6020,6 +6061,8 @@ predicate ::=
   {: RESULT = p; :}
   | like_predicate:p
   {: RESULT = p; :}
+  | match_predicate:p
+  {: RESULT = p; :}
   | LPAREN predicate:p RPAREN
   {:
     p.setPrintSqlInParens(true);
@@ -6057,6 +6100,27 @@ like_predicate ::=
   | expr:e1 KW_NOT KW_REGEXP expr:e2
   {: RESULT = new CompoundPredicate(CompoundPredicate.Operator.NOT,
     new LikePredicate(LikePredicate.Operator.REGEXP, e1, e2), null); :}
+  ;
+
+match_predicate ::=
+  expr:e1 KW_MATCH_ANY expr:e2
+  {: RESULT = new MatchPredicate(MatchPredicate.Operator.MATCH_ANY, e1, e2); :}
+  | expr:e1 KW_MATCH expr:e2
+  {: RESULT = new MatchPredicate(MatchPredicate.Operator.MATCH_ANY, e1, e2); :}
+  | expr:e1 KW_MATCH_ALL expr:e2
+  {: RESULT = new MatchPredicate(MatchPredicate.Operator.MATCH_ALL, e1, e2); :}
+  | expr:e1 KW_MATCH_PHRASE expr:e2
+  {: RESULT = new MatchPredicate(MatchPredicate.Operator.MATCH_PHRASE, e1, e2); :}
+  | expr:e1 KW_MATCH_ELEMENT_EQ expr:e2
+  {: RESULT = new MatchPredicate(MatchPredicate.Operator.MATCH_ELEMENT_EQ, e1, e2); :}
+  | expr:e1 KW_MATCH_ELEMENT_LT expr:e2
+  {: RESULT = new MatchPredicate(MatchPredicate.Operator.MATCH_ELEMENT_LT, e1, e2); :}
+  | expr:e1 KW_MATCH_ELEMENT_GT expr:e2
+  {: RESULT = new MatchPredicate(MatchPredicate.Operator.MATCH_ELEMENT_GT, e1, e2); :}
+  | expr:e1 KW_MATCH_ELEMENT_LE expr:e2
+  {: RESULT = new MatchPredicate(MatchPredicate.Operator.MATCH_ELEMENT_LE, e1, e2); :}
+  | expr:e1 KW_MATCH_ELEMENT_GE expr:e2
+  {: RESULT = new MatchPredicate(MatchPredicate.Operator.MATCH_ELEMENT_GE, e1, e2); :}
   ;
 
 // Avoid a reduce/reduce conflict with compound_predicate by explicitly
@@ -6381,6 +6445,8 @@ keyword ::=
     | KW_BACKUP:id
     {: RESULT = id; :}
     | KW_BEGIN:id
+    {: RESULT = id; :}
+    | KW_INVERTED:id
     {: RESULT = id; :}
     | KW_BITMAP:id
     {: RESULT = id; :}
