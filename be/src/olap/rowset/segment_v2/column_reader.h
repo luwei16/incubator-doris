@@ -39,6 +39,7 @@
 #include "olap/rowset/segment_v2/zone_map_index.h"
 #include "olap/tablet_schema.h"
 #include "util/file_cache.h"
+#include "util/lock.h"
 #include "util/once.h"
 #include "vec/columns/column_array.h" // ColumnArray
 
@@ -235,7 +236,7 @@ private:
 
     DorisCallOnce<Status> _load_index_once;
 
-    mutable std::mutex _load_index_lock;
+    doris::Mutex _load_index_lock;
 
     std::unique_ptr<ZoneMapIndexReader> _zone_map_index;
     std::unique_ptr<OrdinalIndexReader> _ordinal_index;
