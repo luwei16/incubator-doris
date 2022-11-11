@@ -17,61 +17,42 @@
 
 /* ******* Do not commit this file unless you know what you are doing ******* */
 
-// **Note**: default db will be create if not exist
-defaultDb = "regression_test"
+isSmokeTest = true
 
-jdbcUrl = "jdbc:mysql://127.0.0.1:9030/?"
-jdbcUser = "root"
+smokeEnv = "dx-smoke-test"
+defaultDb = "smoke_test"
+
+jdbcUrl = "jdbc:mysql://127.0.0.1:8877/?"
+jdbcUser = "admin"
 jdbcPassword = ""
 
-feHttpAddress = "127.0.0.1:8030"
-feHttpUser = "root"
-feHttpPassword = ""
-
-feCloudHttpAddress = "127.0.0.1:8035"
-feCloudHttpUser = "root"
+feCloudHttpAddress = "127.0.0.1:8876"
+feCloudHttpUser = "admin"
 feCloudHttpPassword = ""
 
 // for cloud mode
 instanceId = "clickbench"
 cloudUniqueId = "cloud_unique_id_xxx"
-metaServiceHttpAddress = "127.0.0.1:5000"
-recycleServiceHttpAddress = "127.0.0.1:5001"
+clusterName = "cloud_cluster_for_smoke"
 
 // set DORIS_HOME by system properties
 // e.g. java -DDORIS_HOME=./
-suitePath = "${DORIS_HOME}/regression-test/suites"
-dataPath = "${DORIS_HOME}/regression-test/data"
+DORIS_HOME = "{DORIS_HOME}"
+suitePath = "${DORIS_HOME}/regression-test/suites/cloud/smoke"
+dataPath = "${DORIS_HOME}/regression-test/data/cloud/smoke"
 pluginPath = "${DORIS_HOME}/regression-test/plugins"
 realDataPath = "${DORIS_HOME}/regression-test/realdata"
 // sf1DataPath can be url like "https://doris-community-test-1308700295.cos.ap-hongkong.myqcloud.com" or local path like "/data"
-sf1DataPath = "https://doris-community-test-1308700295.cos.ap-hongkong.myqcloud.com"
+// sf1DataPath = "https://doris-community-test-1308700295.cos.ap-hongkong.myqcloud.com"
 
-// will test <group>/<suite>.groovy
-// empty group will test all group
-testGroups = ""
-// empty suite will test all suite
-testSuites = ""
-// empty directories will test all directories
-testDirectories = ""
+// cloud smoke test
 
-// this groups will not be executed
-excludeGroups = ""
-// this suites will not be executed
-excludeSuites = ""
-// this directories will not be executed
-excludeDirectories = ""
-
-customConf1 = "test_custom_conf_value"
-
-// for test csv with header
-enableHdfs=false // set to true if hdfs is ready
-hdfsFs = "hdfs://127.0.0.1:9000"
-hdfsUser = "doris-test"
-hdfsPasswd = ""
-brokerName = "broker_name"
-
-// broker load test config
-enableBrokerLoad=true
-ak=""
-sk=""
+// for external stage
+ak="ak"
+sk="sk"
+objPrefix="dx-smoke-test"
+s3Endpoint="cos.ap-beijing.myqcloud.com"
+s3Region="ap-beijing"
+s3BucketName="justtmp-bj-1308700295"
+// must same as meta service's obj prefix, smoke test internal、external stage use the same prefix
+s3Prefix="dx-test"

@@ -65,6 +65,7 @@ class ConfigOptions {
     static Option timesOpt
     static Option withOutLoadDataOpt
     static Option dryRunOpt
+    static Option isSmokeTestOpt
 
     static CommandLine initCommands(String[] args) {
         helpOption = Option.builder("h")
@@ -370,6 +371,11 @@ class ConfigOptions {
                 .hasArg(false)
                 .desc("just print cases and does not run")
                 .build()
+        isSmokeTestOpt = Option.builder("isSmokeTest")
+                .required(false)
+                .hasArg(false)
+                .desc("is smoke test")
+                .build()
 
         Options options = new Options()
                 .addOption(helpOption)
@@ -405,6 +411,7 @@ class ConfigOptions {
                 .addOption(timesOpt)
                 .addOption(withOutLoadDataOpt)
                 .addOption(dryRunOpt)
+                .addOption(isSmokeTestOpt)
 
         CommandLine cmd = new DefaultParser().parse(options, args, true)
         if (cmd.hasOption(helpOption)) {

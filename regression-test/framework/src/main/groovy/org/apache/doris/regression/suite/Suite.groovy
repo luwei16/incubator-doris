@@ -305,6 +305,11 @@ class Suite implements GroovyInterceptable {
         return (enableBrokerLoad != null && enableBrokerLoad.equals("true"));
     }
 
+    String getSmokeEnv() {
+        String env = context.config.otherConfigs.get("cloudSmokeEnv");
+        return env
+    }
+
     String getS3Region() {
         String s3Region = context.config.otherConfigs.get("s3Region");
         return s3Region
@@ -328,6 +333,10 @@ class Suite implements GroovyInterceptable {
     String getS3SK() {
         String sk = context.config.otherConfigs.get("sk");
         return sk
+    }
+
+    String getS3Prefix() {
+        return context.config.otherConfigs.get("s3Prefix");
     }
 
     String getS3Url() {

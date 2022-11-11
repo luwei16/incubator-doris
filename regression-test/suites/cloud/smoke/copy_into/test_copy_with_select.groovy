@@ -8,7 +8,7 @@ suite("smoke_test_copy_with_select","smoke") {
         properties ('endpoint' = '${getS3Endpoint()}' ,
         'region' = '${getS3Region()}' ,
         'bucket' = '${getS3BucketName()}' ,
-        'prefix' = 'smoke-test' ,
+        'prefix' = 'regression' ,
         'ak' = '${getS3AK()}' ,
         'sk' = '${getS3SK()}' ,
         'provider' = '${getProvider()}',

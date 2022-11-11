@@ -92,6 +92,7 @@ class Config {
     public Integer actionParallel
     public Integer times
     public boolean withOutLoadData
+    public boolean isSmokeTest
 
     Config() {}
 
@@ -140,6 +141,18 @@ class Config {
             def systemProperties = Maps.newLinkedHashMap(System.getProperties())
             configSlurper.setBinding(systemProperties)
             ConfigObject configObj = configSlurper.parse(new File(confFilePath).toURI().toURL())
+            config = Config.fromConfigObject(configObj)
+        }
+
+        // TODO(dx): copy from https://github.com/apache/doris/pull/13783/files, when merge code delete it.
+        String customConfFilePath = confFile.getParentFile().getPath() + "/regression-conf-custom.groovy"
+        File custFile = new File(customConfFilePath)
+        if (custFile.exists() && custFile.isFile()) {
+            log.info("Load custom config file ${customConfFilePath}".toString())
+            def configSlurper = new ConfigSlurper()
+            def systemProperties = Maps.newLinkedHashMap(System.getProperties())
+            configSlurper.setBinding(systemProperties)
+            ConfigObject configObj = configSlurper.parse(new File(customConfFilePath).toURI().toURL())
             config = Config.fromConfigObject(configObj)
         }
 
@@ -251,6 +264,7 @@ class Config {
         config.randomOrder = cmd.hasOption(randomOrderOpt)
         config.stopWhenFail = cmd.hasOption(stopWhenFailOpt)
         config.withOutLoadData = cmd.hasOption(withOutLoadDataOpt)
+        config.isSmokeTest = cmd.hasOption(isSmokeTestOpt)
         config.dryRun = cmd.hasOption(dryRunOpt)
 
         log.info("randomOrder is ${config.randomOrder}".toString())
@@ -294,7 +308,7 @@ class Config {
             configToString(obj.excludeSuites),
             configToString(obj.testDirectories),
             configToString(obj.excludeDirectories),
-            configToString(obj.pluginPath)
+            configToString(obj.pluginPath),
         )
 
         def declareFileNames = config.getClass()
@@ -307,7 +321,53 @@ class Config {
                 config.otherConfigs.put(key, kv.getValue())
             }
         }
+
+        // check smoke config
+        if (obj.isSmokeTest) {
+            config.isSmokeTest = true
+            String env = config.otherConfigs.getOrDefault("smokeEnv", "UNKNOWN")
+            log.info("Start to check $env config")
+            def c = config.otherConfigs
+            c.put("feCloudHttpAddress", obj.feCloudHttpAddress)
+            checkCloudSmokeEnv(c)
+        }
+
         return config
+    }
+
+    static String getProvider(String endpoint) {
+        def providers = ["cos", "oss", "s3", "obs", "bos"]
+        for (final def provider in providers) {
+            if (endpoint.containsIgnoreCase(provider)) {
+                return provider
+            }
+        }
+        return ""
+    }
+
+    static void checkCloudSmokeEnv(Properties properties) {
+        // external stage obj info
+        String s3Endpoint = properties.getOrDefault("s3Endpoint", "")
+        String feCloudHttpAddress = properties.getOrDefault("feCloudHttpAddress", "")
+        String s3Region = properties.getOrDefault("s3Region", "")
+        String s3BucketName = properties.getOrDefault("s3BucketName", "")
+        String s3AK = properties.getOrDefault("ak", "")
+        String s3SK = properties.getOrDefault("sk", "")
+
+        def items = [
+                fecloudHttpAddrConf:feCloudHttpAddress,
+                s3RegionConf:s3Region,
+                s3EndpointConf:s3Endpoint,
+                s3BucketConf:s3BucketName,
+                s3AKConf:s3AK,
+                s3SKConf:s3SK,
+                s3ProviderConf:getProvider(s3Endpoint)
+        ]
+        for (final def item in items) {
+            if (item.value == null || item.value.isEmpty()) {
+                throw new IllegalStateException("cloud smoke conf err, plz check " + item.key)
+            }
+        }
     }
 
     static void fillDefaultConfig(Config config) {
@@ -367,7 +427,7 @@ class Config {
         }
 
         if (config.feCloudHttpAddress == null) {
-            config.feCloudHttpAddress = "127.0.0.1:8035"
+            config.feCloudHttpAddress = "127.0.0.1:8876"
             log.info("Set feCloudHttpAddress to '${config.feCloudHttpAddress}' because not specify.".toString())
         }
 
@@ -412,7 +472,11 @@ class Config {
         }
 
         if (config.testGroups == null) {
-            config.testGroups = "default"
+            if (config.isSmokeTest){
+                config.testGroups = "smoke"
+            } else {
+                config.testGroups = "default"
+            }
             log.info("Set testGroups to '${config.testGroups}' because not specify.".toString())
         }
 
