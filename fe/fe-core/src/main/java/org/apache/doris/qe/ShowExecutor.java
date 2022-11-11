@@ -174,6 +174,7 @@ import org.apache.doris.load.LoadErrorHub.HubType;
 import org.apache.doris.load.LoadJob;
 import org.apache.doris.load.LoadJob.JobState;
 import org.apache.doris.load.routineload.RoutineLoadJob;
+import org.apache.doris.mysql.privilege.PaloAuth;
 import org.apache.doris.mysql.privilege.PrivPredicate;
 import org.apache.doris.statistics.StatisticsJobManager;
 import org.apache.doris.system.Backend;
@@ -336,10 +337,25 @@ public class ShowExecutor {
         } else if (stmt instanceof ShowTrashDiskStmt) {
             handleShowTrashDisk();
         } else if (stmt instanceof AdminShowReplicaStatusStmt) {
+            if (!Config.cloud_unique_id.isEmpty() && !ctx.getCurrentUserIdentity()
+                    .getUser().equals(PaloAuth.ROOT_USER)) {
+                LOG.info("stmt={}, not supported in cloud mode", stmt.toString());
+                throw new AnalysisException("Unsupported operaiton");
+            }
             handleAdminShowTabletStatus();
         } else if (stmt instanceof AdminShowReplicaDistributionStmt) {
+            if (!Config.cloud_unique_id.isEmpty() && !ctx.getCurrentUserIdentity()
+                    .getUser().equals(PaloAuth.ROOT_USER)) {
+                LOG.info("stmt={}, not supported in cloud mode", stmt.toString());
+                throw new AnalysisException("Unsupported operaiton");
+            }
             handleAdminShowTabletDistribution();
         } else if (stmt instanceof AdminShowConfigStmt) {
+            if (!Config.cloud_unique_id.isEmpty() && !ctx.getCurrentUserIdentity()
+                    .getUser().equals(PaloAuth.ROOT_USER)) {
+                LOG.info("stmt={}, not supported in cloud mode", stmt.toString());
+                throw new AnalysisException("Unsupported operaiton");
+            }
             handleAdminShowConfig();
         } else if (stmt instanceof ShowSmallFilesStmt) {
             handleShowSmallFiles();
@@ -372,8 +388,17 @@ public class ShowExecutor {
         } else if (stmt instanceof ShowLastInsertStmt) {
             handleShowLastInsert();
         } else if (stmt instanceof AdminShowTabletStorageFormatStmt) {
+            if (!Config.cloud_unique_id.isEmpty()) {
+                LOG.info("stmt={}, not supported in cloud mode", stmt.toString());
+                throw new AnalysisException("Unsupported operaiton");
+            }
             handleAdminShowTabletStorageFormat();
         } else if (stmt instanceof AdminDiagnoseTabletStmt) {
+            if (!Config.cloud_unique_id.isEmpty() && !ctx.getCurrentUserIdentity()
+                    .getUser().equals(PaloAuth.ROOT_USER)) {
+                LOG.info("stmt={}, not supported in cloud mode", stmt.toString());
+                throw new AnalysisException("Unsupported operaiton");
+            }
             handleAdminDiagnoseTablet();
         } else if (stmt instanceof ShowCreateMaterializedViewStmt) {
             handleShowCreateMaterializedView();
