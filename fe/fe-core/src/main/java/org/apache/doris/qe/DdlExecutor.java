@@ -316,7 +316,7 @@ public class DdlExecutor {
             env.compactTable((AdminCompactTableStmt) ddlStmt);
         } else if (ddlStmt instanceof AdminSetConfigStmt) {
             if (!Config.cloud_unique_id.isEmpty()
-                    && ConnectContext.get().getCurrentUserIdentity().getUser().equals(PaloAuth.ROOT_USER)) {
+                    && !ConnectContext.get().getCurrentUserIdentity().getUser().equals(PaloAuth.ROOT_USER)) {
                 LOG.info("stmt={}, not supported in cloud mode", ddlStmt.toString());
                 throw new DdlException("Unsupported operaiton");
             }
