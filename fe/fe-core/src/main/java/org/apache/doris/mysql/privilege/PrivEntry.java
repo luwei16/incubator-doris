@@ -44,7 +44,7 @@ public abstract class PrivEntry implements Comparable<PrivEntry>, Writable {
     // user name is case sensitive
     protected PatternMatcher userPattern;
     protected String origUser;
-    protected String origUserId;
+    protected String origUserId = "";
     protected boolean isAnyUser = false;
     protected PrivBitSet privSet;
     // true if this entry is set by domain resolver

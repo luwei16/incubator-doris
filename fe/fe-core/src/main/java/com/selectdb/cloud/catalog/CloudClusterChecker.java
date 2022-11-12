@@ -113,7 +113,13 @@ public class CloudClusterChecker extends MasterDaemon {
         for (String cid : clusterIdToBackend.keySet()) {
             List<Backend> toAdd = new ArrayList<>();
             List<Backend> toDel = new ArrayList<>();
-            String newClusterName = remoteClusterIdToPB.get(cid).getClusterName();
+            ClusterPB cp = remoteClusterIdToPB.get(cid);
+            if (cp == null) {
+                LOG.warn("can't get cid {} info, and local cluster info {}, remote cluster info {}",
+                        cid, clusterIdToBackend, remoteClusterIdToPB);
+                continue;
+            }
+            String newClusterName = cp.getClusterName();
             List<Backend> currentBes = clusterIdToBackend.get(cid);
             String currentClusterName = currentBes.stream().map(Backend::getCloudClusterName).findFirst().orElse("");
 
@@ -214,15 +220,23 @@ public class CloudClusterChecker extends MasterDaemon {
                 Env.getCurrentSystemInfo().updateMysqlUserNameToClusterPb(userOwnedClusterMap);
                 Set<String> localClusterIds = clusterIdToBackend.keySet();
 
-                // cluster_ids diff remote <clusterId, nodes> and local <clusterId, nodes>
-                // remote - local > 0, add bes to local
-                checkToAddCluster(remoteClusterIdToPB, localClusterIds);
+                try {
+                    // cluster_ids diff remote <clusterId, nodes> and local <clusterId, nodes>
+                    // remote - local > 0, add bes to local
+                    checkToAddCluster(remoteClusterIdToPB, localClusterIds);
 
-                // local - remote > 0, drop bes from local
-                checkToDelCluster(remoteClusterIdToPB, localClusterIds, clusterIdToBackend);
+                    // local - remote > 0, drop bes from local
+                    checkToDelCluster(remoteClusterIdToPB, localClusterIds, clusterIdToBackend);
 
-                // clusterID local == remote, diff nodes
-                checkDiffNode(remoteClusterIdToPB, clusterIdToBackend);
+                    if (remoteClusterIdToPB.keySet().size() != clusterIdToBackend.keySet().size()) {
+                        LOG.warn("impossible cluster id size not match, check it local {}, remote {}",
+                                clusterIdToBackend, remoteClusterIdToPB);
+                    }
+                    // clusterID local == remote, diff nodes
+                    checkDiffNode(remoteClusterIdToPB, clusterIdToBackend);
+                } catch (Exception e) {
+                    LOG.warn("diff cluster has exception, {}", e.getMessage(), e);
+                }
             }
         }
 
@@ -255,7 +269,7 @@ public class CloudClusterChecker extends MasterDaemon {
             }).setValue(aliveNum);
         }
 
-        LOG.debug("daemon cluster get cluster info succ, current cloudClusterIdToBackendMap: {}",
+        LOG.info("daemon cluster get cluster info succ, current cloudClusterIdToBackendMap: {}",
                 Env.getCurrentSystemInfo().getCloudClusterIdToBackend());
         getObserverFes();
     }
@@ -312,7 +326,7 @@ public class CloudClusterChecker extends MasterDaemon {
             }
             return nodeMap;
         });
-        LOG.debug("diffFrontends nodes: {}, current: {}, toAdd: {}, toDel: {}",
+        LOG.info("diffFrontends nodes: {}, current: {}, toAdd: {}, toDel: {}",
                 expectedFes, currentFes, toAdd, toDel);
         if (toAdd.isEmpty() && toDel.isEmpty()) {
             LOG.debug("runAfterCatalogReady getObserverFes nothing todo");

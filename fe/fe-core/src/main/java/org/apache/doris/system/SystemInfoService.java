@@ -283,6 +283,7 @@ public class SystemInfoService {
             }
             Set<Long> d = toDel.stream().map(i -> i.getId()).collect(Collectors.toSet());
             be = be.stream().filter(i -> !d.contains(i.getId())).collect(Collectors.toList());
+            // ATTN: clusterId may have zero nodes
             clusterIdToBackend.replace(clusterId, be);
             LOG.info("update (del) cloud cluster map, clusterName={} clusterId={} backendNum={} current backend={}",
                     clusterName, clusterId, be.size(), b);
