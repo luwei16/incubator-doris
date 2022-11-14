@@ -234,6 +234,7 @@ class PStatus;
     M(OLAP_ERR_ROWSET_ADD_MIGRATION_V2, -3114, "", true)                 \
     M(OLAP_ERR_PUBLISH_VERSION_NOT_CONTINUOUS, -3115, "", false)         \
     M(JOB_ALREADY_SUCCESS, -4000, "", false)                             \
+    M(STALE_TABLET_CACHE, -4001, "", false)                              \
     M(OLAP_ERR_INVERTED_INDEX_INVALID_PARAMETERS, -6000, "", false)      \
     M(OLAP_ERR_INVERTED_INDEX_NOT_SUPPORTED, -6001, "", false)           \
     M(OLAP_ERR_INVERTED_INDEX_CLUCENE_ERROR, -6002, "", false)           \

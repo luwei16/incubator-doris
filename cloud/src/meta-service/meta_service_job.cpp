@@ -123,7 +123,7 @@ void start_compaction_job(MetaServiceCode& code, std::string& msg, std::stringst
     CHECK(stats.ParseFromString(stats_val));
     if (compaction.base_compaction_cnt() < stats.base_compaction_cnt() ||
         compaction.cumulative_compaction_cnt() < stats.cumulative_compaction_cnt()) {
-        code = MetaServiceCode::INVALID_ARGUMENT;
+        code = MetaServiceCode::STALE_TABLET_CACHE;
         SS << "could not perform compaction on expired tablet cache."
            << " req_base_compaction_cnt=" << compaction.base_compaction_cnt()
            << ", base_compaction_cnt=" << stats.base_compaction_cnt()

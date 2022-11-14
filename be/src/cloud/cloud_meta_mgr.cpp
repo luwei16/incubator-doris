@@ -345,6 +345,8 @@ Status CloudMetaMgr::prepare_tablet_job(const selectdb::TabletJobInfoPB& job) {
             return Status::OK();
         } else if (res.status().code() == selectdb::MetaServiceCode::JOB_ALREADY_SUCCESS) {
             return Status::OLAPInternalError(JOB_ALREADY_SUCCESS);
+        } else if (res.status().code() == selectdb::MetaServiceCode::STALE_TABLET_CACHE) {
+            return Status::OLAPInternalError(STALE_TABLET_CACHE);
         } else if (res.status().code() == selectdb::KV_TXN_CONFLICT) {
             continue;
         }

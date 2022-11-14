@@ -48,7 +48,20 @@ Status CloudCumulativeCompaction::prepare_compact() {
     }
     TRACE("got cumulative compaction lock");
 
-    RETURN_IF_ERROR(_tablet->cloud_sync_rowsets());
+    bool need_sync_tablet = true;
+    {
+        std::shared_lock rlock(_tablet->get_header_lock());
+        // If number of rowsets is equal to approximate_num_rowsets, it is very likely that this tablet has been
+        // synchronized with meta-service.
+        if (_tablet->tablet_meta()->all_rs_metas().size() >=
+                    _tablet->fetch_add_approximate_num_rowsets(0) &&
+            _tablet->last_sync_time() > 0) {
+            need_sync_tablet = false;
+        }
+    }
+    if (need_sync_tablet) {
+        RETURN_IF_ERROR(_tablet->cloud_sync_rowsets());
+    }
 
     // MUST get compaction_cnt before `pick_rowsets_to_compact` to ensure statistic of tablet during `pick_rowsets_to_compact`
     // not lag behind start tablet job request.
@@ -102,7 +115,12 @@ Status CloudCumulativeCompaction::prepare_compact() {
     _expiration = duration_cast<seconds>(system_clock::now().time_since_epoch()).count() +
                   config::compaction_timeout_seconds;
     compaction_job->set_expiration(_expiration);
-    return cloud::meta_mgr()->prepare_tablet_job(job);
+    st = cloud::meta_mgr()->prepare_tablet_job(job);
+    if (st.precise_code() == STALE_TABLET_CACHE) {
+        // set last_sync_time to 0 to force sync tablet next time
+        _tablet->set_last_sync_time(0);
+    }
+    return st;
 }
 
 Status CloudCumulativeCompaction::execute_compact_impl() {
