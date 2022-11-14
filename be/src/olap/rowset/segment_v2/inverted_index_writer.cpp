@@ -33,7 +33,6 @@ public:
                                            const TabletIndex* index_meta)
             : _segment_file_name(segment_file_name),
               _directory(dir),
-              _uuid(uuid),
               _fs(fs),
               _index_meta(index_meta) {
         _parser_type = get_inverted_index_parser_type_from_string(
@@ -139,7 +138,7 @@ public:
 #ifdef CLOUD_MODE
         _lfs = std::make_unique<doris::io::LocalFileSystem>(io::TmpFileMgr::instance()->get_tmp_file_dir());
         auto lfs_index_path = InvertedIndexDescriptor::get_temporary_index_path(
-                io::TmpFileMgr::instance()->get_tmp_file_dir() + "/" + _segment_file_name, _uuid);
+                io::TmpFileMgr::instance()->get_tmp_file_dir() + "/" + _segment_file_name, _index_meta->index_id());
         lucene::store::Directory* dir = DorisCompoundDirectory::getDirectory(
                 _lfs.get(), lfs_index_path.c_str(), true, _fs, index_path.c_str());
 #else
@@ -363,7 +362,7 @@ public:
                 _lfs = std::make_unique<doris::io::LocalFileSystem>(io::TmpFileMgr::instance()->get_tmp_file_dir());
             }
             auto lfs_index_path = InvertedIndexDescriptor::get_temporary_index_path(
-                    io::TmpFileMgr::instance()->get_tmp_file_dir() + "/" + _segment_file_name, _uuid);
+                    io::TmpFileMgr::instance()->get_tmp_file_dir() + "/" + _segment_file_name, _index_meta->index_id());
             lucene::store::Directory* dir = DorisCompoundDirectory::getDirectory(
                     _lfs.get(), lfs_index_path.c_str(), true, _fs, index_path.c_str());
 #else
@@ -409,7 +408,6 @@ private:
     std::shared_ptr<lucene::util::bkd::bkd_writer> _bkd_writer;
     std::string _segment_file_name;
     std::string _directory;
-    uint32_t _uuid;
     io::FileSystem* _fs;
 #ifdef CLOUD_MODE
     std::unique_ptr<io::FileSystem> _lfs;
