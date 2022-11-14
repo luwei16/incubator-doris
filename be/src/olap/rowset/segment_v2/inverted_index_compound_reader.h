@@ -26,6 +26,7 @@
 #include <vector>
 
 #include "io/fs/file_system.h"
+#include "util/lock.h"
 
 namespace doris {
 
@@ -57,6 +58,8 @@ private:
                                    CL_NS(util)::Deletor::Object<ReaderFileEntry> > EntriesType;
 
     EntriesType* entries;
+
+    doris::Mutex _this_lock;
 
 protected:
     /** Removes an existing file in the directory-> */

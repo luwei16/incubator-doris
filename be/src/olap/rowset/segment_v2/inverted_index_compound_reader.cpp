@@ -16,6 +16,7 @@
 // under the License.
 
 #include "olap/rowset/segment_v2/inverted_index_compound_reader.h"
+#include "olap/rowset/segment_v2/inverted_index_compound_directory.h"
 
 #include "io/fs/file_reader.h"
 #include "io/fs/file_writer.h"
@@ -81,6 +82,7 @@ private:
     CL_NS(store)::IndexInput* base;
     int64_t fileOffset;
     int64_t _length;
+    doris::Mutex _this_lock;
 
 protected:
     /** Expert: implements buffer refill.  Reads uint8_ts from the current
@@ -117,7 +119,8 @@ CSIndexInput::CSIndexInput(CL_NS(store)::IndexInput* base, const int64_t fileOff
 }
 
 void CSIndexInput::readInternal(uint8_t* b, const int32_t len) {
-    SCOPED_LOCK_MUTEX(base->THIS_LOCK)
+    // SCOPED_LOCK_MUTEX(base->THIS_LOCK)
+    std::lock_guard<doris::Mutex> wlock(((DorisCompoundDirectory::FSIndexInput*)base)->_this_lock);
 
     int64_t start = getFilePointer();
     if (start + len > _length) {
@@ -296,7 +299,8 @@ bool DorisCompoundReader::openInput(const char* name, lucene::store::IndexInput*
 }
 
 void DorisCompoundReader::close() {
-    SCOPED_LOCK_MUTEX(THIS_LOCK);
+    // SCOPED_LOCK_MUTEX(THIS_LOCK);
+    std::lock_guard<doris::Mutex> wlock(_this_lock);
     if (stream != NULL) {
         entries->clear();
         stream->close();

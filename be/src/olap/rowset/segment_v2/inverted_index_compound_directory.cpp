@@ -79,6 +79,7 @@ const int64_t MAX_HEADER_DATA_SIZE = 1024 * 128; // 128k
 static CL_NS(util)::CLHashMap<const char*, DorisCompoundDirectory*, CL_NS(util)::Compare::Char,
                               CL_NS(util)::Equals::Char> DIRECTORIES(false, false);
 STATIC_DEFINE_MUTEX(DIRECTORIES_LOCK)
+static doris::Mutex _DIRECTORIES_LOCK;
 
 bool DorisCompoundDirectory::disableLocks = false;
 
@@ -262,60 +263,6 @@ void DorisCompoundFileWriter::copyFile(const char* fileName, lucene::store::Inde
     input->close();
 }
 
-class DorisCompoundDirectory::FSIndexInput : public lucene::store::BufferedIndexInput {
-    /**
-		* We used a shared handle between all the fsindexinput clones.
-		* This reduces number of file readers we need, and it means
-		* we dont have to use file tell (which is slow) before doing
-		* a read.
-    * TODO: get rid of this and dup/fctnl or something like that...
-		*/
-    class SharedHandle : LUCENE_REFBASE {
-    public:
-        // int32_t fhandle;
-        // int64_t _length;
-        // int64_t _fpos;
-        io::FileReaderSPtr reader;
-        uint64_t _length;
-        int64_t _fpos;
-        DEFINE_MUTEX(*SHARED_LOCK)
-        char path
-                [CL_MAX_DIR]; //todo: this is only used for cloning, better to get information from the fhandle
-        SharedHandle(const char* path);
-        ~SharedHandle() override;
-    };
-
-    SharedHandle* handle;
-    int64_t _pos;
-
-    FSIndexInput(SharedHandle* handle, int32_t __bufferSize) : BufferedIndexInput(__bufferSize) {
-        this->_pos = 0;
-        this->handle = handle;
-    };
-
-protected:
-    FSIndexInput(const FSIndexInput& clone);
-
-public:
-    static bool open(io::FileSystem* fs, const char* path, IndexInput*& ret, CLuceneError& error,
-                     int32_t bufferSize = -1);
-    ~FSIndexInput() override;
-
-    IndexInput* clone() const override;
-    void close() override;
-    int64_t length() const override { return handle->_length; }
-
-    const char* getDirectoryType() const override { return DorisCompoundDirectory::getClassName(); }
-    const char* getObjectName() const override { return getClassName(); }
-    static const char* getClassName() { return "FSIndexInput"; }
-
-protected:
-    // Random-access methods
-    void seekInternal(const int64_t position) override;
-    // IndexInput methods
-    void readInternal(uint8_t* b, const int32_t len) override;
-};
-
 class DorisCompoundDirectory::FSIndexOutput : public lucene::store::BufferedIndexOutput {
 private:
     // int32_t fhandle;
@@ -394,7 +341,8 @@ DorisCompoundDirectory::FSIndexInput::FSIndexInput(const FSIndexInput& other)
     //Post - The instance has been created and initialized by clone
     if (other.handle == NULL) _CLTHROWA(CL_ERR_NullPointer, "other handle is null");
 
-    SCOPED_LOCK_MUTEX(*other.handle->SHARED_LOCK)
+    // SCOPED_LOCK_MUTEX(*other.handle->SHARED_LOCK)
+    std::lock_guard<doris::Mutex> wlock(other.handle->_shared_lock);
     handle = _CL_POINTER(other.handle);
     _pos = other.handle->_fpos; //note where we are currently...
 }
@@ -471,7 +419,8 @@ void DorisCompoundDirectory::FSIndexInput::readInternal(uint8_t* b, const int32_
     CND_PRECONDITION(handle != NULL, "shared file handle has closed");
     // CND_PRECONDITION(handle->fhandle >= 0, "file is not open");
     CND_PRECONDITION(handle->reader != nullptr, "file is not open");
-    SCOPED_LOCK_MUTEX(*handle->SHARED_LOCK)
+    // SCOPED_LOCK_MUTEX(*handle->SHARED_LOCK)
+    std::lock_guard<doris::Mutex> wlock(handle->_shared_lock);
 
     if (handle->_fpos != _pos) {
         // if (fileSeek(handle->fhandle, _pos, SEEK_SET) != _pos) {
@@ -664,7 +613,8 @@ void DorisCompoundDirectory::init(io::FileSystem* _fs, const char* _path,
 }
 
 void DorisCompoundDirectory::create() {
-    SCOPED_LOCK_MUTEX(THIS_LOCK)
+    // SCOPED_LOCK_MUTEX(THIS_LOCK)
+    std::lock_guard<doris::Mutex> wlock(_this_lock);
 
     //clear old files
     std::vector<std::string> files;
@@ -814,7 +764,8 @@ DorisCompoundDirectory* DorisCompoundDirectory::getDirectory(
             mkdir(file, 0777); // TODO xk
         }
 
-        SCOPED_LOCK_MUTEX(DIRECTORIES_LOCK)
+        // SCOPED_LOCK_MUTEX(DIRECTORIES_LOCK)
+        std::lock_guard<doris::Mutex> wlock(_DIRECTORIES_LOCK);
         // NOTE: we use cfs_file for cache key here, because *file* is temporary file path in cloud mode.
         dir = DIRECTORIES.get(cfs_file);
         if (dir == NULL) {
@@ -831,7 +782,8 @@ DorisCompoundDirectory* DorisCompoundDirectory::getDirectory(
         }
 
         {
-            SCOPED_LOCK_MUTEX(dir->THIS_LOCK)
+            // SCOPED_LOCK_MUTEX(dir->THIS_LOCK)
+            std::lock_guard<doris::Mutex> wlock(dir->_this_lock);
             dir->refCount++;
         }
     }
@@ -901,8 +853,11 @@ bool DorisCompoundDirectory::openInput(const char* name, lucene::store::IndexInp
 }
 
 void DorisCompoundDirectory::close() {
-    SCOPED_LOCK_MUTEX(DIRECTORIES_LOCK) {
-        THIS_LOCK.lock();
+    // SCOPED_LOCK_MUTEX(DIRECTORIES_LOCK) {
+    {
+        std::lock_guard<doris::Mutex> wlock(_DIRECTORIES_LOCK);
+        std::lock_guard<doris::Mutex> wlock2(_this_lock);
+        // THIS_LOCK.lock();
 
         CND_PRECONDITION(directory[0] != 0, "directory is not open");
 
@@ -924,7 +879,7 @@ void DorisCompoundDirectory::close() {
                 return;
             }
         }
-        THIS_LOCK.unlock();
+        // THIS_LOCK.unlock();
     }
 }
 
@@ -985,7 +940,8 @@ bool DorisCompoundDirectory::deleteDirectory() {
 
 void DorisCompoundDirectory::renameFile(const char* from, const char* to) {
     CND_PRECONDITION(directory[0] != 0, "directory is not open");
-    SCOPED_LOCK_MUTEX(THIS_LOCK)
+    // SCOPED_LOCK_MUTEX(THIS_LOCK)
+    std::lock_guard<doris::Mutex> wlock(_this_lock);
     char old[CL_MAX_DIR];
     priv_getFN(old, from);
 

@@ -26,6 +26,7 @@
 #include <vector>
 
 #include "io/fs/file_system.h"
+#include "util/lock.h"
 
 namespace doris {
 
@@ -54,12 +55,10 @@ class CLUCENE_EXPORT DorisCompoundDirectory : public lucene::store::Directory {
     * @see Directory
     */
 private:
-    class FSIndexOutput;
-    class FSIndexInput;
-    friend class DorisCompoundDirectory::FSIndexOutput;
-    friend class DorisCompoundDirectory::FSIndexInput;
 
     int filemode;
+
+    doris::Mutex _this_lock;
 
 protected:
     DorisCompoundDirectory();
@@ -90,6 +89,11 @@ protected:
     bool doDeleteFile(const char* name) override;
 
 public:
+    class FSIndexOutput;
+    class FSIndexInput;
+    friend class DorisCompoundDirectory::FSIndexOutput;
+    friend class DorisCompoundDirectory::FSIndexInput;
+
     io::FileSystem* getFileSystem() { return fs; }
     io::FileSystem* getCompoundFileSystem() { return compound_fs; }
     ///Destructor - only call this if you are sure the directory
@@ -215,6 +219,63 @@ public:
 
     // Removes current directory
     bool deleteDirectory();
+};
+
+class DorisCompoundDirectory::FSIndexInput : public lucene::store::BufferedIndexInput {
+    /**
+		* We used a shared handle between all the fsindexinput clones.
+		* This reduces number of file readers we need, and it means
+		* we dont have to use file tell (which is slow) before doing
+		* a read.
+    * TODO: get rid of this and dup/fctnl or something like that...
+		*/
+    class SharedHandle : LUCENE_REFBASE {
+    public:
+        // int32_t fhandle;
+        // int64_t _length;
+        // int64_t _fpos;
+        io::FileReaderSPtr reader;
+        uint64_t _length;
+        int64_t _fpos;
+        DEFINE_MUTEX(*SHARED_LOCK)
+        doris::Mutex _shared_lock;
+        char path
+                [4096]; //todo: this is only used for cloning, better to get information from the fhandle
+        SharedHandle(const char* path);
+        ~SharedHandle() override;
+    };
+
+    SharedHandle* handle;
+    int64_t _pos;
+
+    FSIndexInput(SharedHandle* handle, int32_t __bufferSize) : BufferedIndexInput(__bufferSize) {
+        this->_pos = 0;
+        this->handle = handle;
+    };
+
+protected:
+    FSIndexInput(const FSIndexInput& clone);
+
+public:
+    static bool open(io::FileSystem* fs, const char* path, IndexInput*& ret, CLuceneError& error,
+                     int32_t bufferSize = -1);
+    ~FSIndexInput() override;
+
+    IndexInput* clone() const override;
+    void close() override;
+    int64_t length() const override { return handle->_length; }
+
+    const char* getDirectoryType() const override { return DorisCompoundDirectory::getClassName(); }
+    const char* getObjectName() const override { return getClassName(); }
+    static const char* getClassName() { return "FSIndexInput"; }
+
+    doris::Mutex _this_lock;
+
+protected:
+    // Random-access methods
+    void seekInternal(const int64_t position) override;
+    // IndexInput methods
+    void readInternal(uint8_t* b, const int32_t len) override;
 };
 
 } // namespace segment_v2
