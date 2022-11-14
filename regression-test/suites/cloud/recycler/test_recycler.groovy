@@ -37,7 +37,7 @@ suite("test_recycler") {
         PARTITION p1996 VALUES [("19960101"), ("19970101")),
         PARTITION p1997 VALUES [("19970101"), ("19980101")),
         PARTITION p1998 VALUES [("19980101"), ("19990101")))
-        DISTRIBUTED BY HASH(`lo_orderkey`) BUCKETS 4;
+        DISTRIBUTED BY HASH(`lo_orderkey`) BUCKETS 2;
     """
 
     // create indexes
@@ -47,7 +47,7 @@ suite("test_recycler") {
                     lo_shippriority,lo_quantity,lo_extendedprice,lo_ordtotalprice,lo_discount, 
                     lo_revenue,lo_supplycost,lo_tax,lo_commitdate,lo_shipmode,lo_dummy"""
 
-    for (i = 0; i < 5; i++) {
+    for (i = 0; i < 1; i++) {
         streamLoad {
             table tableName
 
@@ -85,16 +85,22 @@ suite("test_recycler") {
     String[][] tabletInfoList = sql """ show tablets from ${tableName}; """
     logger.debug("tabletInfoList:${tabletInfoList}")
 
+    HashSet<String> tabletIdSet= new HashSet<String>()
+    for (tabletInfo : tabletInfoList) {
+        tabletIdSet.add(tabletInfo[0])
+    }
+    logger.info("tabletIdSet:${tabletIdSet}")
+
     // drop table
     sql """ DROP TABLE IF EXISTS ${tableName} FORCE"""
 
-    int retry = 30
+    int retry = 15
     boolean success = false
     // recycle data
     do {
         triggerRecycle(token, instanceId)
-        Thread.sleep(10000) // 1min
-        if (checkRecycleTable(token, instanceId, cloudUniqueId, tableName, tabletInfoList)) {
+        Thread.sleep(20000) // 1min
+        if (checkRecycleTable(token, instanceId, cloudUniqueId, tableName, tabletIdSet)) {
             success = true
             break
         }

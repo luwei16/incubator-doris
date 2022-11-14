@@ -1,12 +1,12 @@
 import groovy.json.JsonOutput
 import org.codehaus.groovy.runtime.IOGroovyMethods
 
-suite("test_recycler_with_compaction") {
+suite("test_recycler_with_drop_partition") {
     // create table
     def token = "greedisgood9999"
     def instanceId = context.config.instanceId;
-    def cloudUniqueId = context.config.cloudUniqueId;
-    def tableName = 'test_recycler_with_compaction'
+    def cloudUniqueId = context.config.cloudUniqueId
+    def tableName = 'test_recycler_with_drop_partition'
 
     sql """ DROP TABLE IF EXISTS ${tableName} FORCE"""
     sql """
@@ -40,12 +40,14 @@ suite("test_recycler_with_compaction") {
         DISTRIBUTED BY HASH(`lo_orderkey`) BUCKETS 4;
     """
 
+    // create indexes
+
     // load data
     def columns = """lo_orderkey,lo_linenumber,lo_custkey,lo_partkey,lo_suppkey,lo_orderdate,lo_orderpriority, 
                     lo_shippriority,lo_quantity,lo_extendedprice,lo_ordtotalprice,lo_discount, 
                     lo_revenue,lo_supplycost,lo_tax,lo_commitdate,lo_shipmode,lo_dummy"""
 
-    for (i = 0; i < 5; i++) {
+    for (i = 0; i < 2; i++) {
         streamLoad {
             table tableName
 
@@ -80,27 +82,55 @@ suite("test_recycler_with_compaction") {
         }
     }
 
-    // do cloud compaction
-    doCloudCompaction(tableName);
-
-    String[][] tabletInfoList = sql """ show tablets from ${tableName}; """
-    logger.info("tabletInfoList:${tabletInfoList}")
-    HashSet<String> tabletIdSet= new HashSet<String>()
-    for (tabletInfo : tabletInfoList) {
-        tabletIdSet.add(tabletInfo[0])
+    String[][] tabletInfoList1 = sql """ show tablets from ${tableName}; """
+    logger.debug("tabletInfoList1:${tabletInfoList1}")
+    HashSet<String> tabletIdSet1 = new HashSet<String>()
+    for (tabletInfo : tabletInfoList1) {
+        tabletIdSet1.add(tabletInfo[0])
     }
-    logger.info("tabletIdSet:${tabletIdSet}")
+    logger.info("tabletIdSet1:${tabletIdSet1}")
 
-    // drop table
-    sql """ DROP TABLE IF EXISTS ${tableName} FORCE"""
+    //drop partition
+    sql """ alter table ${tableName} drop partition p1992; """
 
+    String[][] tabletInfoList2 = sql """ show tablets from ${tableName}; """
+    logger.debug("tabletInfoList2:${tabletInfoList2}")
+    HashSet<String> tabletIdSet2 = new HashSet<String>()
+    for (tabletInfo : tabletInfoList2) {
+        tabletIdSet2.add(tabletInfo[0])
+    }
+    logger.info("tabletIdSet2:${tabletIdSet2}")
+
+    HashSet<String> tabletIdSet3 = new HashSet<String>()
+    for (tableId : tabletIdSet1) {
+        if (!tabletIdSet2.contains(tableId)) {
+            tabletIdSet3.add(tableId);
+        }
+    }
+    logger.info("tabletIdSet3:${tabletIdSet3}")
     int retry = 15
     boolean success = false
     // recycle data
     do {
         triggerRecycle(token, instanceId)
         Thread.sleep(20000) // 2min
-        if (checkRecycleTable(token, instanceId, cloudUniqueId, tableName, tabletIdSet)) {
+        if (checkRecycleTable(token, instanceId, cloudUniqueId, tableName, tabletIdSet3)) {
+            success = true
+            break
+        }
+    } while (retry--)
+    assertTrue(success)
+
+    // drop table
+    sql """ DROP TABLE IF EXISTS ${tableName} FORCE"""
+
+    retry = 15
+    success = false;
+    // recycle data
+    do {
+        triggerRecycle(token, instanceId)
+        Thread.sleep(20000) // 2min
+        if (checkRecycleTable(token, instanceId, cloudUniqueId, tableName, tabletIdSet1)) {
             success = true
             break
         }

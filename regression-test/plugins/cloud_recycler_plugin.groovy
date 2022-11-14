@@ -60,7 +60,7 @@ logger.info("Added 'triggerRecycle' function to Suite")
 
 //cloud mode recycler plugin
 Suite.metaClass.checkRecycleTable = { String token, String instanceId, String cloudUniqueId, String tableName, 
-        String[][] tabletInfoList /* param */ ->
+        Collection<String> tabletIdList /* param */ ->
     // which suite invoke current function?
     Suite suite = delegate as Suite
 
@@ -83,11 +83,11 @@ Suite.metaClass.checkRecycleTable = { String token, String instanceId, String cl
     def s3Client = AmazonS3ClientBuilder.standard().withEndpointConfiguration(endpointConfiguration)
             .withCredentials(new AWSStaticCredentialsProvider(credentials)).build()
 
-    assertTrue(tabletInfoList.size() > 0)
-    for (tabletInfo : tabletInfoList) {
-        suite.getLogger().info("tableName: ${tableName}, tabletId:${tabletInfo[0]}");
+    assertTrue(tabletIdList.size() > 0)
+    for (tabletId : tabletIdList) {
+        suite.getLogger().info("tableName: ${tableName}, tabletId:${tabletId}");
         def objectListing = s3Client.listObjects(
-            new ListObjectsRequest().withMaxKeys(1).withBucketName(bucket).withPrefix("${prefix}/data/${tabletInfo[0]}"))
+            new ListObjectsRequest().withMaxKeys(1).withBucketName(bucket).withPrefix("${prefix}/data/${tabletId}"))
 
         suite.getLogger().info("tableName: ${tableName}, objectListing:${objectListing.getObjectSummaries()}".toString())
         if (!objectListing.getObjectSummaries().isEmpty()) {

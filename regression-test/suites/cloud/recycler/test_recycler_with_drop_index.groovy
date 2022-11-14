@@ -1,12 +1,13 @@
 import groovy.json.JsonOutput
 import org.codehaus.groovy.runtime.IOGroovyMethods
 
-suite("test_recycler_with_compaction") {
+suite("test_recycler_recycler_with_drop_index") {
     // create table
     def token = "greedisgood9999"
     def instanceId = context.config.instanceId;
-    def cloudUniqueId = context.config.cloudUniqueId;
-    def tableName = 'test_recycler_with_compaction'
+    def cloudUniqueId = context.config.cloudUniqueId
+    def tableName = 'test_recycler_recycler_with_drop_index'
+    def mvName = "mv1"
 
     sql """ DROP TABLE IF EXISTS ${tableName} FORCE"""
     sql """
@@ -40,12 +41,57 @@ suite("test_recycler_with_compaction") {
         DISTRIBUTED BY HASH(`lo_orderkey`) BUCKETS 4;
     """
 
+    String[][] tabletInfoList1 = sql """ show tablets from ${tableName}; """
+    logger.debug("tabletInfoList1:${tabletInfoList1}")
+    HashSet<String> tabletIdSet1 = new HashSet<String>()
+    for (tabletInfo : tabletInfoList1) {
+        tabletIdSet1.add(tabletInfo[0])
+    }
+    logger.info("tabletIdSet1:${tabletIdSet1}")
+
+    // create indexes
+    def getJobState = { tbName ->
+        def jobStateResult = sql """  SHOW ALTER TABLE MATERIALIZED VIEW WHERE TableName='${tbName}' ORDER BY CreateTime DESC LIMIT 1; """
+        return jobStateResult[0][8]
+    }
+
+    sql "CREATE materialized VIEW ${mvName} AS SELECT lo_orderkey, lo_linenumber FROM ${tableName};"
+    int max_try_secs = 60
+    while (max_try_secs--) {
+        String res = getJobState(tableName)
+        if (res == "FINISHED") {
+            break
+        } else {
+            Thread.sleep(2000)
+            if (max_try_secs < 1) {
+                println "test timeout," + "state:" + res
+                assertEquals("FINISHED",res)
+            }
+        }
+    }
+
+    String[][] tabletInfoList2 = sql """ show tablets from ${tableName}; """
+    logger.debug("tabletInfoList2:${tabletInfoList2}")
+    HashSet<String> tabletIdSet2 = new HashSet<String>()
+    for (tabletInfo : tabletInfoList2) {
+        tabletIdSet2.add(tabletInfo[0])
+    }
+    logger.info("tabletIdSet2:${tabletIdSet2}")
+
+    HashSet<String> tabletIdSet3 = new HashSet<String>()
+    for (tableId : tabletIdSet2) {
+        if (!tabletIdSet1.contains(tableId)) {
+            tabletIdSet3.add(tableId);
+        }
+    }
+    logger.info("tabletIdSet3:${tabletIdSet3}")
+
     // load data
     def columns = """lo_orderkey,lo_linenumber,lo_custkey,lo_partkey,lo_suppkey,lo_orderdate,lo_orderpriority, 
                     lo_shippriority,lo_quantity,lo_extendedprice,lo_ordtotalprice,lo_discount, 
                     lo_revenue,lo_supplycost,lo_tax,lo_commitdate,lo_shipmode,lo_dummy"""
 
-    for (i = 0; i < 5; i++) {
+    for (i = 0; i < 2; i++) {
         streamLoad {
             table tableName
 
@@ -80,27 +126,33 @@ suite("test_recycler_with_compaction") {
         }
     }
 
-    // do cloud compaction
-    doCloudCompaction(tableName);
+    qt_sql """ select count(*) from ${tableName} """
 
-    String[][] tabletInfoList = sql """ show tablets from ${tableName}; """
-    logger.info("tabletInfoList:${tabletInfoList}")
-    HashSet<String> tabletIdSet= new HashSet<String>()
-    for (tabletInfo : tabletInfoList) {
-        tabletIdSet.add(tabletInfo[0])
-    }
-    logger.info("tabletIdSet:${tabletIdSet}")
-
-    // drop table
-    sql """ DROP TABLE IF EXISTS ${tableName} FORCE"""
-
+    sql """ DROP MATERIALIZED VIEW ${mvName} ON ${tableName};"""
     int retry = 15
     boolean success = false
     // recycle data
     do {
         triggerRecycle(token, instanceId)
+        Thread.sleep(20000)  // 2min
+        if (checkRecycleTable(token, instanceId, cloudUniqueId, tableName, tabletIdSet3)) {
+            success = true
+            break
+        }
+    } while (retry--)
+    assertTrue(success)
+
+     qt_sql """ select count(*) from ${tableName} """
+    // drop table
+    sql """ DROP TABLE IF EXISTS ${tableName} FORCE"""
+
+    retry = 15
+    success = false
+    // recycle data
+    do {
+        triggerRecycle(token, instanceId)
         Thread.sleep(20000) // 2min
-        if (checkRecycleTable(token, instanceId, cloudUniqueId, tableName, tabletIdSet)) {
+        if (checkRecycleTable(token, instanceId, cloudUniqueId, tableName, tabletIdSet1)) {
             success = true
             break
         }

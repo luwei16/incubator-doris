@@ -1,14 +1,18 @@
 import groovy.json.JsonOutput
 import org.codehaus.groovy.runtime.IOGroovyMethods
 
-suite("test_recycler_with_compaction") {
+suite("test_recycler_with_drop_db") {
     // create table
     def token = "greedisgood9999"
     def instanceId = context.config.instanceId;
-    def cloudUniqueId = context.config.cloudUniqueId;
-    def tableName = 'test_recycler_with_compaction'
+    def cloudUniqueId = context.config.cloudUniqueId
+    def databaseName = "regression_test_cloud_test_recycler_with_drop_db"
+    def tableName = 'test_recycler_with_drop_db'
 
-    sql """ DROP TABLE IF EXISTS ${tableName} FORCE"""
+    sql """ DROP DATABASE IF EXISTS ${databaseName} FORCE"""
+    sql """ DROP TABLE IF EXISTS ${tableName} FORCE """
+    sql """ create database ${databaseName}"""
+    sql """ use ${databaseName}"""
     sql """
         CREATE TABLE IF NOT EXISTS `${tableName}` (
         `lo_orderkey` bigint(20) NOT NULL COMMENT "",
@@ -39,14 +43,14 @@ suite("test_recycler_with_compaction") {
         PARTITION p1998 VALUES [("19980101"), ("19990101")))
         DISTRIBUTED BY HASH(`lo_orderkey`) BUCKETS 4;
     """
-
     // load data
     def columns = """lo_orderkey,lo_linenumber,lo_custkey,lo_partkey,lo_suppkey,lo_orderdate,lo_orderpriority, 
-                    lo_shippriority,lo_quantity,lo_extendedprice,lo_ordtotalprice,lo_discount, 
-                    lo_revenue,lo_supplycost,lo_tax,lo_commitdate,lo_shipmode,lo_dummy"""
+            lo_shippriority,lo_quantity,lo_extendedprice,lo_ordtotalprice,lo_discount, 
+            lo_revenue,lo_supplycost,lo_tax,lo_commitdate,lo_shipmode,lo_dummy"""
 
-    for (i = 0; i < 5; i++) {
+    for (i = 0; i < 1; i++) {
         streamLoad {
+            db databaseName
             table tableName
 
             // default label is UUID:
@@ -80,11 +84,8 @@ suite("test_recycler_with_compaction") {
         }
     }
 
-    // do cloud compaction
-    doCloudCompaction(tableName);
-
     String[][] tabletInfoList = sql """ show tablets from ${tableName}; """
-    logger.info("tabletInfoList:${tabletInfoList}")
+    logger.debug("tabletInfoList:${tabletInfoList}")
     HashSet<String> tabletIdSet= new HashSet<String>()
     for (tabletInfo : tabletInfoList) {
         tabletIdSet.add(tabletInfo[0])
@@ -92,14 +93,14 @@ suite("test_recycler_with_compaction") {
     logger.info("tabletIdSet:${tabletIdSet}")
 
     // drop table
-    sql """ DROP TABLE IF EXISTS ${tableName} FORCE"""
+    sql """ DROP DATABASE IF EXISTS ${databaseName} FORCE"""
 
     int retry = 15
     boolean success = false
     // recycle data
     do {
         triggerRecycle(token, instanceId)
-        Thread.sleep(20000) // 2min
+        Thread.sleep(20000)  // 2min
         if (checkRecycleTable(token, instanceId, cloudUniqueId, tableName, tabletIdSet)) {
             success = true
             break
@@ -107,3 +108,4 @@ suite("test_recycler_with_compaction") {
     } while (retry--)
     assertTrue(success)
 }
+

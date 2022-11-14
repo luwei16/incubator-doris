@@ -1,12 +1,12 @@
 import groovy.json.JsonOutput
 import org.codehaus.groovy.runtime.IOGroovyMethods
 
-suite("test_recycler_with_compaction") {
+suite("test_recycler_with_truncate_table") {
     // create table
     def token = "greedisgood9999"
     def instanceId = context.config.instanceId;
-    def cloudUniqueId = context.config.cloudUniqueId;
-    def tableName = 'test_recycler_with_compaction'
+    def cloudUniqueId = context.config.cloudUniqueId
+    def tableName = 'test_recycler_with_truncate_table'
 
     sql """ DROP TABLE IF EXISTS ${tableName} FORCE"""
     sql """
@@ -40,12 +40,14 @@ suite("test_recycler_with_compaction") {
         DISTRIBUTED BY HASH(`lo_orderkey`) BUCKETS 4;
     """
 
+    // create indexes
+
     // load data
     def columns = """lo_orderkey,lo_linenumber,lo_custkey,lo_partkey,lo_suppkey,lo_orderdate,lo_orderpriority, 
                     lo_shippriority,lo_quantity,lo_extendedprice,lo_ordtotalprice,lo_discount, 
                     lo_revenue,lo_supplycost,lo_tax,lo_commitdate,lo_shipmode,lo_dummy"""
 
-    for (i = 0; i < 5; i++) {
+    for (i = 0; i < 1; i++) {
         streamLoad {
             table tableName
 
@@ -80,27 +82,88 @@ suite("test_recycler_with_compaction") {
         }
     }
 
-    // do cloud compaction
-    doCloudCompaction(tableName);
-
-    String[][] tabletInfoList = sql """ show tablets from ${tableName}; """
-    logger.info("tabletInfoList:${tabletInfoList}")
-    HashSet<String> tabletIdSet= new HashSet<String>()
-    for (tabletInfo : tabletInfoList) {
-        tabletIdSet.add(tabletInfo[0])
+    String[][] tabletInfoList1 = sql """ show tablets from ${tableName}; """
+    logger.debug("tabletInfoList1:${tabletInfoList1}")
+    HashSet<String> tabletIdSet1 = new HashSet<String>()
+    for (tabletInfo : tabletInfoList1) {
+        tabletIdSet1.add(tabletInfo[0])
     }
-    logger.info("tabletIdSet:${tabletIdSet}")
+    logger.info("tabletIdSet1:${tabletIdSet1}")
 
-    // drop table
-    sql """ DROP TABLE IF EXISTS ${tableName} FORCE"""
+    qt_sql "select count(*) from ${tableName};"
+
+    sql """truncate table ${tableName}"""
+
+    qt_sql "select count(*) from ${tableName};"
 
     int retry = 15
     boolean success = false
     // recycle data
     do {
         triggerRecycle(token, instanceId)
-        Thread.sleep(20000) // 2min
-        if (checkRecycleTable(token, instanceId, cloudUniqueId, tableName, tabletIdSet)) {
+        Thread.sleep(20000) // 1min
+        if (checkRecycleTable(token, instanceId, cloudUniqueId, tableName, tabletIdSet1)) {
+            success = true
+            break
+        }
+    } while (retry--)
+    assertTrue(success)
+
+    for (i = 0; i < 1; i++) {
+        streamLoad {
+            table tableName
+
+            // default label is UUID:
+            // set 'label' UUID.randomUUID().toString()
+
+            // default column_separator is specify in doris fe config, usually is '\t'.
+            // this line change to ','
+            set 'column_separator', '|'
+            set 'compress_type', 'GZ'
+            set 'columns', columns
+            // relate to ${DORIS_HOME}/regression-test/data/demo/streamload_input.csv.
+            // also, you can stream load a http stream, e.g. http://xxx/some.csv
+            file """${context.sf1DataPath}/ssb/sf1/lineorder.tbl.split01.gz"""
+
+            time 10000 // limit inflight 10s
+
+            // stream load action will check result, include Success status, and NumberTotalRows == NumberLoadedRows
+
+            // if declared a check callback, the default check condition will ignore.
+            // So you must check all condition
+            check { result, exception, startTime, endTime ->
+                if (exception != null) {
+                    throw exception
+                }
+                log.info("Stream load result: ${result}".toString())
+                def json = parseJson(result)
+                assertEquals("success", json.Status.toLowerCase())
+                assertEquals(json.NumberTotalRows, json.NumberLoadedRows)
+                assertTrue(json.NumberLoadedRows > 0 && json.LoadBytes > 0)
+            }
+        }
+    }
+
+    String[][] tabletInfoList2 = sql """ show tablets from ${tableName}; """
+    logger.debug("tabletInfoList2:${tabletInfoList2}")
+    HashSet<String> tabletIdSet2 = new HashSet<String>()
+    for (tabletInfo : tabletInfoList2) {
+        tabletIdSet2.add(tabletInfo[0])
+    }
+    logger.info("tabletIdSet2:${tabletIdSet2}")
+
+     qt_sql "select count(*) from ${tableName};"
+
+    // drop table
+    sql """ DROP TABLE IF EXISTS ${tableName} FORCE"""
+
+    retry = 15
+    success = false
+    // recycle data
+    do {
+        triggerRecycle(token, instanceId)
+        Thread.sleep(20000) // 1min
+        if (checkRecycleTable(token, instanceId, cloudUniqueId, tableName, tabletIdSet2)) {
             success = true
             break
         }
