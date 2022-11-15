@@ -1566,14 +1566,12 @@ public class StmtExecutor implements ProfileWriter {
 
     private void handleUseCloudClusterStmt() throws AnalysisException {
         UseCloudClusterStmt useCloudClusterStmt = (UseCloudClusterStmt) parsedStmt;
-        String cluster = useCloudClusterStmt.getCluster();
         try {
-            Env.getCurrentSystemInfo().addCloudCluster(cluster, "");
-        } catch (UserException e) {
+            context.getEnv().changeCloudCluster(useCloudClusterStmt.getCluster(), context);
+        } catch (DdlException e) {
             context.getState().setError(e.getMysqlErrorCode(), e.getMessage());
             return;
         }
-        context.setCloudCluster(cluster);
 
         if (Strings.isNullOrEmpty(useCloudClusterStmt.getDatabase())) {
             return;

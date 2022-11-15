@@ -121,6 +121,8 @@ public class SessionVariable implements Serializable, Writable {
 
     public static final String DIV_PRECISION_INCREMENT = "div_precision_increment";
 
+    public static final String CLOUD_CLUSTER = "cloud_cluster";
+
     // see comment of `doris_max_scan_key_num` and `max_pushdown_conditions_per_column` in BE config
     public static final String MAX_SCAN_KEY_NUM = "max_scan_key_num";
     public static final String MAX_PUSHDOWN_CONDITIONS_PER_COLUMN = "max_pushdown_conditions_per_column";
@@ -226,6 +228,7 @@ public class SessionVariable implements Serializable, Writable {
     public static final String ENABLE_PUSH_DOWN_NO_GROUP_AGG = "enable_push_down_no_group_agg";
 
     public static final String ENABLE_CBO_STATISTICS = "enable_cbo_statistics";
+
 
     // session origin value
     public Map<Field, String> sessionOriginValue = new HashMap<Field, String>();
@@ -421,6 +424,9 @@ public class SessionVariable implements Serializable, Writable {
     public String defaultTmpStorageEngine = "olap";
     @VariableMgr.VarAttr(name = DIV_PRECISION_INCREMENT)
     public int divPrecisionIncrement = 4;
+
+    @VariableMgr.VarAttr(name = CLOUD_CLUSTER)
+    public String cloudCluster = "";
 
     // -1 means unset, BE will use its config value
     @VariableMgr.VarAttr(name = MAX_SCAN_KEY_NUM)
@@ -993,6 +999,14 @@ public class SessionVariable implements Serializable, Writable {
 
     public boolean getEnableCboStatistics() {
         return enableCboStatistics;
+    }
+
+    public String getCloudCluster() {
+        return cloudCluster;
+    }
+
+    public String setCloudCluster(String cloudCluster) {
+        return this.cloudCluster = cloudCluster;
     }
 
     /**

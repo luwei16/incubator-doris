@@ -277,8 +277,7 @@ public class MysqlProto {
         String db = authPacket.getDb();
         if (!Strings.isNullOrEmpty(db)) {
             try {
-                //dbName = handleInitCloudCluster(dbName);
-                db = Env.getCurrentEnv().changeCloudCluster(db, context);
+                db = Env.getCurrentEnv().analyzeCloudCluster(db, context);
             } catch (DdlException e) {
                 context.getState().setError(e.getMysqlErrorCode(), e.getMessage());
                 sendResponsePacket(context);

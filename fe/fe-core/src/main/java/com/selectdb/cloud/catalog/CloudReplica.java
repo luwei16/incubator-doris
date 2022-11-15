@@ -97,7 +97,17 @@ public class CloudReplica extends Replica {
         // Not in a connect session
         ConnectContext context = ConnectContext.get();
         if (context != null) {
-            cluster = context.getCloudCluster();
+            if (!Strings.isNullOrEmpty(context.getSessionVariable().getCloudCluster())) {
+                cluster = context.getSessionVariable().getCloudCluster();
+                try {
+                    Env.getCurrentEnv().checkCloudClusterPriv(cluster);
+                } catch (Exception e) {
+                    return -1;
+                }
+            } else {
+                cluster = context.getCloudCluster();
+            }
+
             if (Strings.isNullOrEmpty(cluster)) {
                 // try set default cluster
                 String defaultCloudCluster = Env.getCurrentEnv().getAuth()

@@ -4885,7 +4885,7 @@ public class Env {
         this.alter.getClusterHandler().cancel(stmt);
     }
 
-    public String changeCloudCluster(String name, ConnectContext ctx) throws DdlException {
+    public String analyzeCloudCluster(String name, ConnectContext ctx) throws DdlException {
         if (Config.cloud_unique_id.isEmpty()) {
             return name;
         }
@@ -4899,8 +4899,11 @@ public class Env {
             return name;
         }
 
-        String clusterName = res[1];
+        changeCloudCluster(res[1], ctx);
+        return res[0];
+    }
 
+    public void checkCloudClusterPriv(String clusterName) throws DdlException {
         // check resource usage privilege
         if (!Env.getCurrentEnv().getAuth().checkCloudPriv(ConnectContext.get().getCurrentUserIdentity(),
                 clusterName, PrivPredicate.USAGE, ResourceTypeEnum.CLUSTER)) {
@@ -4911,11 +4914,13 @@ public class Env {
 
         if (!Env.getCurrentSystemInfo().getCloudClusterNames().contains(clusterName)) {
             LOG.debug("current instance does not have a cluster name :{}", clusterName);
-            ctx.getState().setError(ErrorCode.ERR_ClOUD_CLUSTER_ERROR,
-                    String.format("Cluster %s not exist", clusterName));
-            return null;
+            throw new DdlException(String.format("Cluster %s not exist", clusterName),
+                                                 ErrorCode.ERR_ClOUD_CLUSTER_ERROR);
         }
+    }
 
+    public void changeCloudCluster(String clusterName, ConnectContext ctx) throws DdlException {
+        checkCloudClusterPriv(clusterName);
         try {
             Env.getCurrentSystemInfo().addCloudCluster(clusterName, "");
         } catch (UserException e) {
@@ -4923,7 +4928,6 @@ public class Env {
         }
         ctx.setCloudCluster(clusterName);
         ctx.getState().setOk();
-        return res[0];
     }
 
     // Switch catalog of this sesseion.

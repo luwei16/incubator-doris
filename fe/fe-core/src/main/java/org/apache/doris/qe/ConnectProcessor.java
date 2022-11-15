@@ -21,7 +21,6 @@ import org.apache.doris.analysis.InsertStmt;
 import org.apache.doris.analysis.KillStmt;
 import org.apache.doris.analysis.Queriable;
 import org.apache.doris.analysis.QueryStmt;
-import org.apache.doris.analysis.ResourceTypeEnum;
 import org.apache.doris.analysis.SelectStmt;
 import org.apache.doris.analysis.SqlParser;
 import org.apache.doris.analysis.SqlScanner;
@@ -53,7 +52,6 @@ import org.apache.doris.mysql.MysqlPacket;
 import org.apache.doris.mysql.MysqlProto;
 import org.apache.doris.mysql.MysqlSerializer;
 import org.apache.doris.mysql.MysqlServerStatusFlag;
-import org.apache.doris.mysql.privilege.PrivPredicate;
 import org.apache.doris.nereids.glue.LogicalPlanAdapter;
 import org.apache.doris.nereids.parser.NereidsParser;
 import org.apache.doris.plugin.AuditEvent.EventType;
@@ -116,46 +114,6 @@ public class ConnectProcessor {
         this.ctx = context;
     }
 
-    private String handleInitCloudCluster(String name) {
-        String[] res = name.split("@");
-        if (res.length != 1 && res.length != 2) {
-            ctx.getState().setError(ErrorCode.ERR_BAD_DB_ERROR,  "Invalid database name: " + name);
-            return null;
-        }
-
-        if (res.length == 1) {
-            return name;
-        }
-
-        String clusterName = res[1];
-
-        // check resource usage privilege
-        if (!Env.getCurrentEnv().getAuth().checkCloudPriv(ConnectContext.get().getCurrentUserIdentity(),
-                clusterName, PrivPredicate.USAGE, ResourceTypeEnum.CLUSTER)) {
-            ctx.getState().setError(ErrorCode.ERR_CLUSTER_NO_PERMISSIONS, "USAGE denied to user"
-                    + ConnectContext.get().getQualifiedUser() + "'@'" + ConnectContext.get().getRemoteIP()
-                    + "' for cloud cluster '" + clusterName + "'");
-            return null;
-        }
-
-        if (!Env.getCurrentSystemInfo().getCloudClusterNames().contains(clusterName)) {
-            LOG.debug("current instance does not have a cluster name :{}", clusterName);
-            ctx.getState().setError(ErrorCode.ERR_ClOUD_CLUSTER_ERROR,
-                    String.format("Cluster %s not exist", clusterName));
-            return null;
-        }
-
-        try {
-            Env.getCurrentSystemInfo().addCloudCluster(clusterName, "");
-        } catch (UserException e) {
-            ctx.getState().setError(e.getMysqlErrorCode(), e.getMessage());
-            return null;
-        }
-        ctx.setCloudCluster(clusterName);
-        ctx.getState().setOk();
-        return res[0];
-    }
-
     // COM_INIT_DB: change current database of this session.
     private void handleInitDb() {
         String fullDbName = new String(packetBuf.array(), 1, packetBuf.limit() - 1);
@@ -178,8 +136,7 @@ public class ConnectProcessor {
         }
 
         try {
-            //dbName = handleInitCloudCluster(dbName);
-            dbName = ctx.getEnv().changeCloudCluster(dbName, ctx);
+            dbName = ctx.getEnv().analyzeCloudCluster(dbName, ctx);
         } catch (DdlException e) {
             ctx.getState().setError(e.getMysqlErrorCode(), e.getMessage());
             return;
