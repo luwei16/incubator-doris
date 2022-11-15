@@ -154,6 +154,7 @@ int main(int argc, char** argv) {
         return -1;
     }
 
+    std::cout << build_info() << std::endl;
     if (args.get<bool>(ARG_META_SERVICE)) {
         selectdb::MetaServer meta_server;
         int ret = meta_server.start();

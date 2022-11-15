@@ -44,7 +44,8 @@ fi
 mkdir -p ${selectdb_home}/log
 echo "starts ${process} with args: $@"
 if [ ${daemonized} -eq 1 ]; then
-    nohup ${bin} "$@" > ${selectdb_home}/log/${process}.out 2>&1 &
+    date >> ${selectdb_home}/log/${process}.out
+    nohup ${bin} "$@" >> ${selectdb_home}/log/${process}.out 2>&1 &
 else
     ${bin} "$@"
 fi
