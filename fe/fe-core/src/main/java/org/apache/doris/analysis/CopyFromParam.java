@@ -24,16 +24,21 @@ import org.apache.doris.catalog.Env;
 import org.apache.doris.catalog.KeysType;
 import org.apache.doris.catalog.OlapTable;
 import org.apache.doris.common.AnalysisException;
+import org.apache.doris.common.ErrorCode;
+import org.apache.doris.common.ErrorReport;
 
 import com.google.common.base.Function;
 import com.google.common.base.Joiner;
 import com.google.common.collect.Lists;
+import com.google.common.collect.Sets;
 import lombok.Getter;
+import lombok.Setter;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 public class CopyFromParam {
     private static final Logger LOG = LogManager.getLogger(CopyFromParam.class);
@@ -49,6 +54,8 @@ public class CopyFromParam {
     private List<String> fileColumns;
     @Getter
     private List<Expr> columnMappingList;
+    @Setter
+    private List<String> targetColumns;
 
     public CopyFromParam(StageAndPattern stageAndPattern) {
         this.stageAndPattern = stageAndPattern;
@@ -69,34 +76,54 @@ public class CopyFromParam {
 
         Database db = Env.getCurrentInternalCatalog().getDbOrAnalysisException(fullDbName);
         OlapTable olapTable = db.getOlapTableOrAnalysisException(tableName.getTbl());
-        List<Column> tableColumns = olapTable.getBaseSchema(false);
-        if (useDeleteSign) {
-            if (olapTable.getKeysType() != KeysType.UNIQUE_KEYS) {
-                throw new AnalysisException("copy.use_delete_sign property only support unique table");
+
+        // Analyze columns mentioned in the statement.
+        if (targetColumns == null) {
+            targetColumns = new ArrayList<>();
+            for (Column col : olapTable.getBaseSchema()) {
+                targetColumns.add(col.getName());
             }
-            tableColumns.add(getDeleteSignColumn(olapTable));
+            if (useDeleteSign) {
+                if (olapTable.getKeysType() != KeysType.UNIQUE_KEYS) {
+                    throw new AnalysisException("copy.use_delete_sign property only support unique table");
+                }
+                targetColumns.add(getDeleteSignColumn(olapTable).getName());
+            }
+        } else {
+            Set<String> mentionedColumns = Sets.newTreeSet(String.CASE_INSENSITIVE_ORDER);
+            for (String colName : targetColumns) {
+                Column col = olapTable.getColumn(colName);
+                if (col == null) {
+                    ErrorReport.reportAnalysisException(ErrorCode.ERR_BAD_FIELD_ERROR, colName, olapTable.getName());
+                }
+                if (!mentionedColumns.add(colName)) {
+                    ErrorReport.reportAnalysisException(ErrorCode.ERR_FIELD_SPECIFIED_TWICE, colName);
+                }
+            }
         }
 
-        int maxFileColumnId = getMaxFileColumnId();
-        maxFileColumnId = tableColumns.size() > maxFileColumnId ? tableColumns.size() : maxFileColumnId;
-        for (int i = 1; i <= maxFileColumnId; i++) {
-            fileColumns.add(DOLLAR + i);
+        if (exprList == null || !getFileColumnNames()) {
+            int maxFileColumnId = getMaxFileColumnId();
+            maxFileColumnId = targetColumns.size() > maxFileColumnId ? targetColumns.size() : maxFileColumnId;
+            for (int i = 1; i <= maxFileColumnId; i++) {
+                fileColumns.add(DOLLAR + i);
+            }
         }
 
         if (exprList != null) {
-            if (tableColumns.size() > exprList.size()) {
-                throw new AnalysisException("select column size is less than table column size");
+            if (targetColumns.size() != exprList.size()) {
+                ErrorReport.reportAnalysisException(ErrorCode.ERR_WRONG_VALUE_COUNT);
             }
-            for (int i = 0; i < exprList.size(); i++) {
+            for (int i = 0; i < targetColumns.size(); i++) {
                 Expr expr = exprList.get(i);
-                String name = tableColumns.get(i).getName();
-                BinaryPredicate binaryPredicate = new BinaryPredicate(Operator.EQ, new SlotRef(null, name), expr);
+                BinaryPredicate binaryPredicate = new BinaryPredicate(Operator.EQ,
+                        new SlotRef(null, targetColumns.get(i)), expr);
                 columnMappingList.add(binaryPredicate);
             }
         } else {
-            for (int i = 0; i < tableColumns.size(); i++) {
-                String name = tableColumns.get(i).getName();
-                BinaryPredicate binaryPredicate = new BinaryPredicate(Operator.EQ, new SlotRef(null, name),
+            for (int i = 0; i < targetColumns.size(); i++) {
+                BinaryPredicate binaryPredicate = new BinaryPredicate(Operator.EQ,
+                        new SlotRef(null, targetColumns.get(i)),
                         new SlotRef(null, fileColumns.get(i)));
                 columnMappingList.add(binaryPredicate);
             }
@@ -110,6 +137,26 @@ public class CopyFromParam {
             }
         }
         throw new AnalysisException("Can not find DeleteSignColumn for unique table");
+    }
+
+    // expr use column name
+    private boolean getFileColumnNames() throws AnalysisException {
+        List<SlotRef> slotRefs = Lists.newArrayList();
+        Expr.collectList(exprList, SlotRef.class, slotRefs);
+        Set<String> columnSet = Sets.newTreeSet(String.CASE_INSENSITIVE_ORDER);
+        for (SlotRef slotRef : slotRefs) {
+            String columnName = slotRef.getColumnName();
+            if (columnName.startsWith(DOLLAR)) {
+                if (fileColumns.size() > 0) {
+                    throw new AnalysisException("can not mix column name and dollar sign");
+                }
+                return false;
+            }
+            if (columnSet.add(columnName)) {
+                fileColumns.add(columnName);
+            }
+        }
+        return true;
     }
 
     private int getMaxFileColumnId() throws AnalysisException {
@@ -139,7 +186,10 @@ public class CopyFromParam {
     private int getFileColumnIdOfSlotRef(SlotRef slotRef) throws AnalysisException {
         String columnName = slotRef.getColumnName();
         try {
-            return columnName.startsWith(DOLLAR) ? Integer.parseInt(columnName.substring(1)) : 0;
+            if (!columnName.startsWith(DOLLAR)) {
+                throw new AnalysisException("can not mix column name and dollar sign");
+            }
+            return Integer.parseInt(columnName.substring(1));
         } catch (NumberFormatException e) {
             throw new AnalysisException("column name: " + columnName + " can not parse to a number");
         }

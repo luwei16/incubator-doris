@@ -89,9 +89,11 @@ public class CopyStmt extends DdlStmt {
     /**
      * Use for cup.
      */
-    public CopyStmt(TableName tableName, CopyFromParam copyFromParam, Map<String, String> properties) {
+    public CopyStmt(TableName tableName, List<String> cols,
+            CopyFromParam copyFromParam, Map<String, String> properties) {
         this.tableName = tableName;
         this.copyFromParam = copyFromParam;
+        this.copyFromParam.setTargetColumns(cols);
         this.stage = copyFromParam.getStageAndPattern().getStageName();
         this.copyIntoProperties = new CopyIntoProperties(properties);
     }

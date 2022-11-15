@@ -16,12 +16,20 @@
 ## 语法
 
 ```
-COPY INTO [<db_name>.]<table_name> FROM {copy_from_param} PROPERTIES (
+COPY INTO [<db_name>.]<table_name> [ ( <col_name> [ , <col_name> ... ] ) ] FROM {copy_from_param} PROPERTIES (
     {copy_into_properties}
 )
 ```
 
 其中:
+
+- `( <col_name> [ , <col_name> ... ] )`
+
+  指定插入数据的列名
+  - 若向表中的所有列插入数据，则可省略所有列名
+  - 列名放在小括号中，多个列名用逗号分隔
+  - 列名不能重复
+  - 不在该列表中的列将使用其默认值填充
 
 - `copy_from_param`
 
@@ -305,6 +313,18 @@ mysql> SHOW COPY WHERE id = '8fcf20b156dc4f66_99aa062042941aff';
 
   ```
   COPY INTO test_table FROM (SELECT $1, substring($2, 2), $3 FROM @ext_stage('1.csv'))
+  ```
+
+  假如文件为parquet格式，有`col1`,`col2`,`col3`三列，分别导入到表的三列：`id`, `name`, `score`：
+
+  ```
+  COPY INTO test_table FROM (SELECT col1, col2, col3 FROM @ext_stage('1.parquet'))
+  ```
+
+  假如文件为parquet格式，有`col1`,`col2`,`col3`三列，将前两列分别导入到表的前两列：`id`, `name`, 表的`score`列使用默认值填充：
+
+  ```
+  COPY INTO test_table (id, name) FROM (SELECT col1, col2 FROM @ext_stage('1.parquet'))
   ```
 
 * 导入unique表指定`__DORIS_DELETE_SIGN__`列

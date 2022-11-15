@@ -2045,14 +2045,15 @@ opt_user_role ::=
 
 // Copy Statement
 copy_stmt ::=
-    KW_COPY KW_INTO table_name:name KW_FROM copy_from_param:copyFromParam KW_PROPERTIES opt_key_value_map:properties
+    KW_COPY KW_INTO table_name:name opt_col_list:cols KW_FROM copy_from_param:copyFromParam KW_PROPERTIES opt_key_value_map:properties
     {:
-        RESULT = new CopyStmt(name, copyFromParam, properties);
+        RESULT = new CopyStmt(name, cols, copyFromParam, properties);
     :}
-    | KW_COPY KW_INTO table_name:name KW_FROM copy_from_param:copyFromParam
+    | KW_COPY KW_INTO table_name:name opt_col_list:cols KW_FROM copy_from_param:copyFromParam
     {:
-        RESULT = new CopyStmt(name, copyFromParam, new HashMap());
-    :};
+        RESULT = new CopyStmt(name, cols, copyFromParam, new HashMap());
+    :}
+    ;
 
 copy_from_param ::=
     stage_and_pattern:stage

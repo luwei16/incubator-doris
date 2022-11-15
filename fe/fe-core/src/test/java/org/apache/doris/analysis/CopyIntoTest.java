@@ -21,6 +21,7 @@ import org.apache.doris.catalog.Column;
 import org.apache.doris.catalog.Env;
 import org.apache.doris.common.AnalysisException;
 import org.apache.doris.common.DdlException;
+import org.apache.doris.common.Pair;
 import org.apache.doris.utframe.TestWithFeService;
 import org.apache.doris.utframe.UtFrameUtils;
 
@@ -136,13 +137,13 @@ public class CopyIntoTest extends TestWithFeService {
         copySql = copySqlPrefix + copyProperties;
         checkCopyInto(copySql, null, 0, true, 1, 0, false, -1);
         copySql = copySqlPrefix2 + copyProperties;
-        checkCopyInto(copySql, null, 100, true, 7, 2, false, 2);
+        checkCopyInto(copySql, "csv", 100, true, 7, 2, false, 2);
 
         copyProperties = "properties ('file.type' = 'csv', 'file.compression' = 'gz') ";
         copySql = copySqlPrefix + copyProperties;
-        checkCopyInto(copySql, null, 0, true, 2, 0, false, -1);
+        checkCopyInto(copySql, "csv", 0, true, 2, 0, false, -1);
         copySql = copySqlPrefix2 + copyProperties;
-        checkCopyInto(copySql, null, 100, true, 7, 2, false, 2);
+        checkCopyInto(copySql, "csv", 100, true, 7, 2, false, 2);
 
         copyProperties = "properties('copy.strict_mode' = 'true')";
         copySql = copySqlPrefix + copyProperties;
@@ -259,6 +260,96 @@ public class CopyIntoTest extends TestWithFeService {
 
         copySql = "copy into t2 from (select $3, $1, $a from @ex_stage_1) ";
         checkDataDescriptionWithException(copySql);
+
+        copySql = "copy into t2 (id, name) from (select $3, $1 from @ex_stage_1) ";
+        checkPartialDataDescription(copySql, 2, Lists.newArrayList("$1", "$2", "$3"),
+                Lists.newArrayList(Pair.of("id", "$3"), Pair.of("name", "$1")));
+
+        copySql = "copy into t2 (id, name) from (select $3, $1, $2 from @ex_stage_1) ";
+        checkDataDescriptionWithException(copySql);
+
+        copySql = "copy into t2 (id, name, score) from (select $3, $1 from @ex_stage_1) ";
+        checkDataDescriptionWithException(copySql);
+
+        copySql = "copy into t2 (id, name) from (select col1, col2 from @ex_stage_1) ";
+        checkPartialDataDescription(copySql, 2, Lists.newArrayList("col1", "col2"),
+                Lists.newArrayList(Pair.of("id", "col1"), Pair.of("name", "col2")));
+
+        copySql = "copy into t2 (id, name) from (select col1, col2, col3 from @ex_stage_1) ";
+        checkDataDescriptionWithException(copySql);
+
+        copySql = "copy into t2 (id, name, score) from (select col1, col2, col3 from @ex_stage_1) ";
+        checkPartialDataDescription(copySql, 3, Lists.newArrayList("col1", "col2", "col3"),
+                Lists.newArrayList(Pair.of("id", "col1"), Pair.of("name", "col2"), Pair.of("score", "col3")));
+
+        copySql = "copy into t2 (id, name, score) from (select col1 + 10, col2 * 2, col3 from @ex_stage_1) ";
+        checkPartialDataDescription(copySql, 3, Lists.newArrayList("col1", "col2", "col3"),
+                Lists.newArrayList(Pair.of("id", "col1"), Pair.of("name", "col2"), Pair.of("score", "col3")));
+
+        copySql = "copy into t2 (id, name, score) from (select col1 + 10, col2 * 2, col1 from @ex_stage_1) ";
+        checkPartialDataDescription(copySql, 3, Lists.newArrayList("col1", "col2"),
+                Lists.newArrayList(Pair.of("id", "col1"), Pair.of("name", "col2"), Pair.of("score", "col1")));
+
+        copySql = "copy into t2 (id, name, score) from (select col1, col2 from @ex_stage_1) ";
+        checkDataDescriptionWithException(copySql);
+
+        copySql = "copy into t2 (id, wrong_col) from (select col1, col2 from @ex_stage_1) ";
+        checkDataDescriptionWithException(copySql);
+
+        copySql = "copy into t2 from (select col1, col2, col3 from @ex_stage_1) ";
+        checkPartialDataDescription(copySql, 2, Lists.newArrayList("col1", "col2", "col3"),
+                Lists.newArrayList(Pair.of("id", "col1"), Pair.of("name", "col2"), Pair.of("score", "col3")));
+
+        copySql = "copy into t2 from (select col1, col2 from @ex_stage_1) ";
+        checkDataDescriptionWithException(copySql);
+
+        copySql = "copy into t2 from (select col1, col2, col3, col4 from @ex_stage_1) ";
+        checkDataDescriptionWithException(copySql);
+
+        copySql = "copy into t2 from (select col1, col2, $3 from @ex_stage_1) ";
+        checkDataDescriptionWithException(copySql);
+
+        copySql = "copy into t2 from (select $1, $2, col2 from @ex_stage_1) ";
+        checkDataDescriptionWithException(copySql);
+
+        copySql = "copy into t2 (id, name, score) from (select col1, col2, $3 from @ex_stage_1) ";
+        checkDataDescriptionWithException(copySql);
+
+        copySql = "copy into t2 (id, name, score) from (select col1, col2, col2 from @ex_stage_1) ";
+        checkPartialDataDescription(copySql, 3, Lists.newArrayList("col1", "col2"),
+                Lists.newArrayList(Pair.of("id", "col1"), Pair.of("name", "col2"), Pair.of("score", "col2")));
+    }
+
+    private void checkPartialDataDescription(String sql, int mapSize, List<String> expectFileFiledColumns,
+            List<Pair<String, String>> expectColumnMap) {
+        try {
+            CopyStmt copyStmt = (CopyStmt) UtFrameUtils.parseAndAnalyzeStmt(sql, connectContext);
+            System.out.println("original sql: " + sql);
+            System.out.println("parsed sql: " + copyStmt.toSql());
+            List<DataDescription> dataDescriptions = copyStmt.getDataDescriptions();
+            Assert.assertEquals(1, dataDescriptions.size());
+            DataDescription dataDescription = dataDescriptions.get(0);
+            // check file field names
+            List<String> fileFieldNames = dataDescription.getFileFieldNames();
+            Assert.assertEquals(expectFileFiledColumns.size(), fileFieldNames.size());
+            for (int i = 0; i < fileFieldNames.size(); i++) {
+                Assert.assertEquals(expectFileFiledColumns.get(i), fileFieldNames.get(i));
+            }
+            // check column mapping
+            List<Expr> columnMappingList = dataDescription.getColumnMappingList();
+            Assert.assertNotNull(columnMappingList);
+            Assert.assertEquals(expectColumnMap.size(), columnMappingList.size());
+            for (int i = 0; i < columnMappingList.size(); i++) {
+                Expr expr = columnMappingList.get(i);
+                List<SlotRef> slotRefs = Lists.newArrayList();
+                Expr.collectList(Lists.newArrayList(expr), SlotRef.class, slotRefs);
+                Assert.assertEquals(2, slotRefs.size());
+                Assert.assertEquals(expectColumnMap.get(i).first, slotRefs.get(0).getColumnName());
+                Assert.assertEquals(expectColumnMap.get(i).second, slotRefs.get(1).getColumnName());
+            }
+        } catch (Exception e) {
+            Assert.fail("must be success.");
+        }
     }
 
     private void checkDataDescription(String sql, List<String> filedColumns) {
@@ -375,7 +466,7 @@ public class CopyIntoTest extends TestWithFeService {
     @Test
     public void testDeleteOn() throws DdlException {
         List<StagePB> stages = Lists.newArrayList(externalStagePB);
-        new Expectations(connectContext.getEnv(), connectContext.getEnv().getInternalCatalog()) {
+        new Expectations(connectContext.getEnv().getInternalCatalog()) {
             {
                 Env.getCurrentInternalCatalog().getStage(StageType.EXTERNAL, anyString, "ex_stage_1", null);
                 minTimes = 0;
