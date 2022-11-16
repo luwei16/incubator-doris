@@ -83,6 +83,10 @@ CREATE STAGE [IF NOT EXISTS] <stage_name> PROPERTIES (
 
       对于导入过程中的列类型转换进行严格过滤，参考[导入严格模式](https://doris.apache.org/zh-CN/docs/data-operate/import/import-scenes/load-strict-mode?_highlight=stric)。默认为`false`。非必需，导入时可覆盖该参数。
 
+    - `default.copy.load_parallelism`
+
+      导入的默认并发度，参考[default_load_parallelism](https://doris.apache.org/zh-CN/docs/admin-manual/config/fe-config/?#default_load_parallelism)。默认为`1`。非必需，导入时可覆盖该参数。
+
 ## 举例
  
 1. 创建名为`test_stage`的stage:

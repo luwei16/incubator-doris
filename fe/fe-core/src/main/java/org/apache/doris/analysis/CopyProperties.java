@@ -50,6 +50,7 @@ public class CopyProperties {
     public static final String ON_ERROR_ABORT_STATEMENT = "abort_statement";
     public static final String ON_ERROR_MAX_FILTER_RATIO = LoadStmt.MAX_FILTER_RATIO_PROPERTY + "_";
     public static final String STRICT_MODE = COPY_PREFIX + LoadStmt.STRICT_MODE;
+    public static final String LOAD_PARALLELISM = COPY_PREFIX + LoadStmt.LOAD_PARALLELISM;
 
     public CopyProperties(Map<String, String> properties, String prefix) {
         this.properties = properties;
@@ -71,6 +72,18 @@ public class CopyProperties {
             String value = properties.get(key);
             try {
                 Long.parseLong(value);
+            } catch (Exception e) {
+                throw new AnalysisException("Property " + key + " with invalid value " + value);
+            }
+        }
+    }
+
+    protected void analyzeLoadParallelism() throws AnalysisException {
+        String key = addKeyPrefix(LOAD_PARALLELISM);
+        if (properties.containsKey(key)) {
+            String value = properties.get(key);
+            try {
+                Integer.parseInt(value);
             } catch (Exception e) {
                 throw new AnalysisException("Property " + key + " with invalid value " + value);
             }

@@ -203,6 +203,19 @@ public class StageTest extends TestWithFeService {
     }
 
     @Test
+    public void testAnalyzeLoadParallelism() throws Exception {
+        // create stage with load parallelism
+        String sql = CREATE_STAGE_SQL + ", 'default.copy.load_parallelism'='2')";
+        Assert.assertEquals(2, Integer.parseInt(
+                parseAndAnalyze(sql).getStageProperties().getDefaultPropertiesWithoutPrefix()
+                        .get("copy.load_parallelism")));
+
+        // create stage with invalid load parallelism
+        sql = CREATE_STAGE_SQL + ", 'default.copy.load_parallelism'='def')";
+        parseAndAnalyzeWithException(sql, "Property default.copy.load_parallelism with invalid value def");
+    }
+
+    @Test
     public void testOtherProperties() throws Exception {
         String sql = CREATE_STAGE_SQL + ", 'default.file.column_separator'=\",\", "
                 + "'default.file.line_delimiter'=\"\n\")";

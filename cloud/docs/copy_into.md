@@ -131,6 +131,12 @@ COPY INTO [<db_name>.]<table_name> FROM {copy_from_param} PROPERTIES (
 
       非必需。如未设置，优先使用stage配置的默认模式；如果stage上未设置，使用系统默认策略。
 
+    - `copy.load_parallelism`
+
+      导入的默认并发度，参考[default_load_parallelism](https://doris.apache.org/zh-CN/docs/admin-manual/config/fe-config/?#default_load_parallelism)。默认为`1`。
+
+      非必需。如未设置，优先使用stage配置的默认值；如果stage上未设置，使用系统默认值。
+
 ## 输出
 
 Copy into默认异步执行，返回一个`queryId`，如：

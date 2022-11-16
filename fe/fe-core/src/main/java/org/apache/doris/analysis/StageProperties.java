@@ -51,7 +51,7 @@ public class StageProperties extends CopyProperties {
             .add(KEY_PREFIX + PARAM_FUZZY_PARSE).add(KEY_PREFIX + PARAM_NUM_AS_STRING)
             .add(KEY_PREFIX + PARAM_JSONPATHS).add(KEY_PREFIX + PARAM_JSONROOT)
             .add(KEY_PREFIX + SIZE_LIMIT).add(KEY_PREFIX + ON_ERROR).add(KEY_PREFIX + ASYNC)
-            .add(KEY_PREFIX + STRICT_MODE).build();
+            .add(KEY_PREFIX + STRICT_MODE).add(KEY_PREFIX + LOAD_PARALLELISM).build();
 
     public StageProperties(Map<String, String> properties) {
         super(properties, KEY_PREFIX);
@@ -64,6 +64,7 @@ public class StageProperties extends CopyProperties {
         analyzeOnError();
         analyzeAsync();
         analyzeStrictMode();
+        analyzeLoadParallelism();
         for (Entry<String, String> entry : properties.entrySet()) {
             if (!STAGE_PROPERTIES.contains(entry.getKey())) {
                 throw new AnalysisException("Property '" + entry.getKey() + "' is invalid");

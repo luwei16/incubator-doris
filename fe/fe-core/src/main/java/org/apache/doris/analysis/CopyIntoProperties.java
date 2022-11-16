@@ -37,7 +37,7 @@ public class CopyIntoProperties extends CopyProperties {
             .build();
 
     private static final ImmutableSet<String> EXEC_PROPERTIES = new ImmutableSet.Builder<String>()
-            .add(STRICT_MODE)
+            .add(STRICT_MODE).add(LOAD_PARALLELISM)
             .build();
 
     private static final ImmutableSet<String> COPY_PROPERTIES = new ImmutableSet.Builder<String>()
@@ -54,6 +54,7 @@ public class CopyIntoProperties extends CopyProperties {
         analyzeOnError();
         analyzeAsync();
         analyzeStrictMode();
+        analyzeLoadParallelism();
         for (Entry<String, String> entry : properties.entrySet()) {
             if (!COPY_PROPERTIES.contains(entry.getKey())) {
                 throw new AnalysisException("Property '" + entry.getKey() + "' is invalid");
