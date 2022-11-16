@@ -55,7 +55,6 @@ class CLUCENE_EXPORT DorisCompoundDirectory : public lucene::store::Directory {
     * @see Directory
     */
 private:
-
     int filemode;
 
     doris::Mutex _this_lock;
@@ -64,8 +63,7 @@ protected:
     DorisCompoundDirectory();
     virtual void init(io::FileSystem* fs, const char* path,
                       lucene::store::LockFactory* lockFactory = nullptr,
-                      io::FileSystem* compound_fs = nullptr,
-                      const char* cfs_path = nullptr);
+                      io::FileSystem* compound_fs = nullptr, const char* cfs_path = nullptr);
     void priv_getFN(char* buffer, const char* name) const;
 
 private:
@@ -73,7 +71,6 @@ private:
     io::FileSystem* compound_fs;
     std::string directory;
     std::string cfs_directory;
-    int refCount;
     void create();
 
     static const char* LOCK_DIR;

@@ -76,10 +76,10 @@ const int64_t MAX_HEADER_DATA_SIZE = 1024 * 128; // 128k
    * instance per path, so that synchronization on the Directory can be used to
    * synchronize access between readers and writers.
    */
-static CL_NS(util)::CLHashMap<const char*, DorisCompoundDirectory*, CL_NS(util)::Compare::Char,
-                              CL_NS(util)::Equals::Char> DIRECTORIES(false, false);
-STATIC_DEFINE_MUTEX(DIRECTORIES_LOCK)
-static doris::Mutex _DIRECTORIES_LOCK;
+//static CL_NS(util)::CLHashMap<const char*, DorisCompoundDirectory*, CL_NS(util)::Compare::Char,
+//                              CL_NS(util)::Equals::Char> DIRECTORIES(false, false);
+//STATIC_DEFINE_MUTEX(DIRECTORIES_LOCK)
+//static doris::Mutex _DIRECTORIES_LOCK;
 
 bool DorisCompoundDirectory::disableLocks = false;
 
@@ -361,8 +361,7 @@ DorisCompoundDirectory::FSIndexInput::SharedHandle::SharedHandle(const char* pat
 
 DorisCompoundDirectory::FSIndexInput::SharedHandle::~SharedHandle() {
     if (reader) {
-        if (reader->close().ok())
-            reader = nullptr;
+        if (reader->close().ok()) reader = nullptr;
     }
 }
 
@@ -558,15 +557,14 @@ const char* DorisCompoundDirectory::getLockDir() {
     return LOCK_DIR;
 }
 
-DorisCompoundDirectory::DorisCompoundDirectory()
-        : Directory(), refCount(0), useMMap(LUCENE_USE_MMAP) {
+DorisCompoundDirectory::DorisCompoundDirectory() : Directory(), useMMap(LUCENE_USE_MMAP) {
     filemode = 0644;
     this->lockFactory = NULL;
 }
 
 void DorisCompoundDirectory::init(io::FileSystem* _fs, const char* _path,
-                                  lucene::store::LockFactory* lockFactory,
-                                  io::FileSystem* cfs, const char* cfs_path) {
+                                  lucene::store::LockFactory* lockFactory, io::FileSystem* cfs,
+                                  const char* cfs_path) {
     fs = _fs;
     directory = _path;
 
@@ -691,7 +689,6 @@ const char* DorisCompoundDirectory::getDirName() const {
     return directory.c_str();
 }
 
-
 const char* DorisCompoundDirectory::getCfsDirName() const {
     return cfs_directory.c_str();
 }
@@ -712,8 +709,10 @@ DorisCompoundDirectory* DorisCompoundDirectory::getDirectory(
 
 DorisCompoundDirectory* DorisCompoundDirectory::getDirectory(io::FileSystem* fs, const char* file,
                                                              bool useCompoundFileWriter,
-                                                             io::FileSystem* cfs_fs, const char* cfs_file) {
-    DorisCompoundDirectory* dir = getDirectory(fs, file, (lucene::store::LockFactory*)nullptr, cfs_fs, cfs_file);
+                                                             io::FileSystem* cfs_fs,
+                                                             const char* cfs_file) {
+    DorisCompoundDirectory* dir =
+            getDirectory(fs, file, (lucene::store::LockFactory*)nullptr, cfs_fs, cfs_file);
     dir->useCompoundFileWriter = useCompoundFileWriter;
     return dir;
 }
@@ -727,68 +726,22 @@ DorisCompoundDirectory* DorisCompoundDirectory::getDirectory(
         cfs_file = _file;
     }
     DorisCompoundDirectory* dir = nullptr;
-    {
-        if (!_file || !*_file) {
-            _CLTHROWA(CL_ERR_IO, "Invalid directory");
-        }
-
-        // char buf[CL_MAX_PATH];
-        // char* file = _realpath(
-        //         _file, buf); //set a realpath so that if we change directory, we can still function
-        // if (!file || !*file) {
-        //     strncpy(buf, _file, CL_MAX_PATH);
-        //     file = buf;
-        // }
-
-        const char* file = _file; // TODO xk
-
-        // struct cl_stat_t fstat;
-        // if (fileStat(file, &fstat) == 0 && !(fstat.st_mode & S_IFDIR)) {
-        //     char tmp[1024];
-        //     _snprintf(tmp, 1024, "%s not a directory", file);
-        //     _CLTHROWA(CL_ERR_IO, tmp);
-        // }
-
-        // if (fileStat(file, &fstat) != 0) {
-        //     //todo: should construct directory using _mkdirs... have to write replacement
-        //    if (_mkdir(file) == -1) {
-        //         string err = "Couldn't create directory: ";
-        //         err += string(file);
-        //         _CLTHROWA(CL_ERR_IO, err.c_str());
-        //     }
-        // }
-
-        bool exists = false;
-        fs->exists(file, &exists);
-        if (!exists) {
-            mkdir(file, 0777); // TODO xk
-        }
-
-        // SCOPED_LOCK_MUTEX(DIRECTORIES_LOCK)
-        std::lock_guard<doris::Mutex> wlock(_DIRECTORIES_LOCK);
-        // NOTE: we use cfs_file for cache key here, because *file* is temporary file path in cloud mode.
-        dir = DIRECTORIES.get(cfs_file);
-        if (dir == NULL) {
-            dir = _CLNEW DorisCompoundDirectory();
-            dir->init(fs, file, lockFactory, cfs, cfs_file);
-            DIRECTORIES.put(dir->cfs_directory.c_str(), dir);
-        } else {
-            if (lockFactory != NULL && lockFactory != dir->getLockFactory()) {
-                _CLTHROWA(CL_ERR_IO,
-                          "Directory was previously created with a different LockFactory instance, "
-                          "please pass NULL as the lockFactory instance and use setLockFactory to "
-                          "change it");
-            }
-        }
-
-        {
-            // SCOPED_LOCK_MUTEX(dir->THIS_LOCK)
-            std::lock_guard<doris::Mutex> wlock(dir->_this_lock);
-            dir->refCount++;
-        }
+    if (!_file || !*_file) {
+        _CLTHROWA(CL_ERR_IO, "Invalid directory");
     }
 
-    return _CL_POINTER(dir); // TODO: Isn't this a double ref increment?
+    const char* file = _file; // TODO xk
+
+    bool exists = false;
+    fs->exists(file, &exists);
+    if (!exists) {
+        mkdir(file, 0777); // TODO xk
+    }
+
+    dir = _CLNEW DorisCompoundDirectory();
+    dir->init(fs, file, lockFactory, cfs, cfs_file);
+
+    return dir; // TODO: Isn't this a double ref increment?
 }
 
 int64_t DorisCompoundDirectory::fileModified(const char* name) const {
@@ -853,33 +806,13 @@ bool DorisCompoundDirectory::openInput(const char* name, lucene::store::IndexInp
 }
 
 void DorisCompoundDirectory::close() {
-    // SCOPED_LOCK_MUTEX(DIRECTORIES_LOCK) {
-    {
-        std::lock_guard<doris::Mutex> wlock(_DIRECTORIES_LOCK);
-        std::lock_guard<doris::Mutex> wlock2(_this_lock);
-        // THIS_LOCK.lock();
-
-        CND_PRECONDITION(directory[0] != 0, "directory is not open");
-
-        if (--refCount <= 0) { //refcount starts at 1
-            Directory* dir = DIRECTORIES.get(getCfsDirName());
-            if (dir) {
-                if (useCompoundFileWriter) {
-                    DorisCompoundFileWriter* cfsWriter = _CLNEW DorisCompoundFileWriter(dir);
-                    // write compound file
-                    cfsWriter->writeCompoundFile();
-                    // delete index path, which contains separated inverted index files
-                    deleteDirectory();
-                    _CLDELETE(cfsWriter);
-                }
-
-                DIRECTORIES.remove(getCfsDirName()); //this will be removed in ~DorisCompoundDirectory
-                _CLDECDELETE(dir);
-                //NOTE: Don't unlock the mutex, since it has been destroyed now...
-                return;
-            }
-        }
-        // THIS_LOCK.unlock();
+    if (useCompoundFileWriter) {
+        DorisCompoundFileWriter* cfsWriter = _CLNEW DorisCompoundFileWriter(this);
+        // write compound file
+        cfsWriter->writeCompoundFile();
+        // delete index path, which contains separated inverted index files
+        deleteDirectory();
+        _CLDELETE(cfsWriter);
     }
 }
 

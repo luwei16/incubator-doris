@@ -36,7 +36,7 @@ public:
               _fs(fs),
               _index_meta(index_meta) {
         _parser_type = get_inverted_index_parser_type_from_string(
-            get_parser_string_from_properties(_index_meta->properties()));
+                get_parser_string_from_properties(_index_meta->properties()));
         _value_key_coder = get_key_coder(field_type);
         _field_name = std::wstring(field_name.begin(), field_name.end());
     };
@@ -46,7 +46,7 @@ public:
             if constexpr (field_is_slice_type(field_type)) {
                 if (_index_writer) {
                     auto index_file_name = InvertedIndexDescriptor::get_index_file_name(
-                        _segment_file_name, _index_meta->index_id());
+                            _segment_file_name, _index_meta->index_id());
                     LOG(WARNING) << "inverted index column writer should be null here, close it "
                                  << index_file_name;
                 }
@@ -72,7 +72,7 @@ public:
             // open index searcher into cache
             InvertedIndexSearcherCache::instance()->prune();
             auto index_file_name = InvertedIndexDescriptor::get_index_file_name(
-                _segment_file_name, _index_meta->index_id());
+                    _segment_file_name, _index_meta->index_id());
             InvertedIndexSearcherCache::instance()->insert(_fs, _directory, index_file_name);
             _CLLDELETE(_index_writer);
             _index_writer = nullptr;
@@ -136,24 +136,27 @@ public:
         _default_char_analyzer = _CLNEW lucene::analysis::SimpleAnalyzer<char>();
         _standard_analyzer = _CLNEW lucene::analysis::standard::StandardAnalyzer();
 #ifdef CLOUD_MODE
-        _lfs = std::make_unique<doris::io::LocalFileSystem>(io::TmpFileMgr::instance()->get_tmp_file_dir());
+        _lfs = std::make_unique<doris::io::LocalFileSystem>(
+                io::TmpFileMgr::instance()->get_tmp_file_dir());
         auto lfs_index_path = InvertedIndexDescriptor::get_temporary_index_path(
-                io::TmpFileMgr::instance()->get_tmp_file_dir() + "/" + _segment_file_name, _index_meta->index_id());
-        lucene::store::Directory* dir = DorisCompoundDirectory::getDirectory(
-                _lfs.get(), lfs_index_path.c_str(), true, _fs, index_path.c_str());
+                io::TmpFileMgr::instance()->get_tmp_file_dir() + "/" + _segment_file_name,
+                _index_meta->index_id());
+        _dir.reset(DorisCompoundDirectory::getDirectory(_lfs.get(), lfs_index_path.c_str(), true,
+                                                        _fs, index_path.c_str()));
 #else
-        lucene::store::Directory* dir =
-                DorisCompoundDirectory::getDirectory(_fs, index_path.c_str(), true);
+        _dir.reset(DorisCompoundDirectory::getDirectory(_fs, index_path.c_str(), true));
 #endif
 
         if (_parser_type == InvertedIndexParserType::PARSER_STANDARD) {
             _index_writer =
-                    _CLNEW lucene::index::IndexWriter(dir, _standard_analyzer, create, true);
+                    _CLNEW lucene::index::IndexWriter(_dir.get(), _standard_analyzer, create, true);
         } else if (_parser_type == InvertedIndexParserType::PARSER_ENGLISH) {
-            _index_writer = _CLNEW lucene::index::IndexWriter(dir, _default_char_analyzer, create, true);
+            _index_writer = _CLNEW lucene::index::IndexWriter(_dir.get(), _default_char_analyzer,
+                                                              create, true);
         } else {
             // ANALYSER_NOT_SET, ANALYSER_NONE use default SimpleAnalyzer
-            _index_writer = _CLNEW lucene::index::IndexWriter(dir, _default_analyzer, create, true);
+            _index_writer =
+                    _CLNEW lucene::index::IndexWriter(_dir.get(), _default_analyzer, create, true);
         }
 
         _index_writer->setMaxBufferedDocs(config::inverted_index_max_buffer_docs);
@@ -178,7 +181,7 @@ public:
         // NOTE: need to ref_cnt-- for dir,
         // when index_writer is destroyed, if closeDir is set, dir will be close
         // _CLDECDELETE(dir) will try to ref_cnt--, when it decreases to 1, dir will be destroyed.
-        _CLLDECDELETE(dir)
+        //_CLLDECDELETE(dir)
 
         return Status::OK();
     }
@@ -232,7 +235,7 @@ public:
                 if (_parser_type == InvertedIndexParserType::PARSER_ENGLISH) {
                     _char_string_reader->init(v->get_data(), v->get_size(), false);
                     auto stream = _default_char_analyzer->reusableTokenStream(_field_name.c_str(),
-                                                                         _char_string_reader);
+                                                                              _char_string_reader);
                     _field->setValue(stream);
                     ++v;
                     _rid++;
@@ -249,7 +252,8 @@ public:
                     _index_writer->addDocument(_doc);
                     _CLDELETE_ARRAY(field_value)
                 } else {
-                    auto field_value = lucene::util::Misc::_charToWide(v->get_data(), v->get_size());
+                    auto field_value =
+                            lucene::util::Misc::_charToWide(v->get_data(), v->get_size());
                     _field->setValue(field_value, false);
                     // setValue did not duplicate value, so we don't have to delete
                     //_CLDELETE_ARRAY(field_value)
@@ -359,10 +363,12 @@ public:
             }
 #ifdef CLOUD_MODE
             if (_lfs == nullptr) {
-                _lfs = std::make_unique<doris::io::LocalFileSystem>(io::TmpFileMgr::instance()->get_tmp_file_dir());
+                _lfs = std::make_unique<doris::io::LocalFileSystem>(
+                        io::TmpFileMgr::instance()->get_tmp_file_dir());
             }
             auto lfs_index_path = InvertedIndexDescriptor::get_temporary_index_path(
-                    io::TmpFileMgr::instance()->get_tmp_file_dir() + "/" + _segment_file_name, _index_meta->index_id());
+                    io::TmpFileMgr::instance()->get_tmp_file_dir() + "/" + _segment_file_name,
+                    _index_meta->index_id());
             lucene::store::Directory* dir = DorisCompoundDirectory::getDirectory(
                     _lfs.get(), lfs_index_path.c_str(), true, _fs, index_path.c_str());
 #else
@@ -377,7 +383,9 @@ public:
                     InvertedIndexDescriptor::get_temporary_bkd_index_meta_file_name().c_str()));
             std::unique_ptr<lucene::store::IndexOutput> index_out(dir->createOutput(
                     InvertedIndexDescriptor::get_temporary_bkd_index_file_name().c_str()));
-            _bkd_writer->meta_finish(meta_out.get(), _bkd_writer->finish(data_out.get(), index_out.get()), field_type);
+            _bkd_writer->meta_finish(meta_out.get(),
+                                     _bkd_writer->finish(data_out.get(), index_out.get()),
+                                     field_type);
             meta_out->close();
             data_out->close();
             index_out->close();
@@ -416,13 +424,13 @@ private:
     const TabletIndex* _index_meta;
     InvertedIndexParserType _parser_type;
     std::wstring _field_name;
+    std::unique_ptr<DorisCompoundDirectory> _dir;
 };
 
 Status InvertedIndexColumnWriter::create(const Field* field,
                                          std::unique_ptr<InvertedIndexColumnWriter>* res,
                                          uint32_t uuid, const std::string& segment_file_name,
-                                         const std::string& dir,
-                                         const TabletIndex* index_meta,
+                                         const std::string& dir, const TabletIndex* index_meta,
                                          io::FileSystem* fs) {
     //RETURN_IF_ERROR(InvertedIndexDescriptor::init_index_directory(path));
 
