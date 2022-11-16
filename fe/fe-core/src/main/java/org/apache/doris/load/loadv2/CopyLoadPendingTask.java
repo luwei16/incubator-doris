@@ -98,7 +98,8 @@ public class CopyLoadPendingTask extends BrokerLoadPendingTask {
                     LOG.debug("input path = {}", path);
                     parseFileForCopyJob(copyJob.getStageId(), fileGroup.getTableId(), copyJob.getCopyId(),
                             copyJob.getPattern(), copyJob.getSizeLimit(), Config.max_file_num_per_copy_into_job,
-                            Config.max_meta_size_per_copy_into_job, fileStatuses, copyJob.getObjectInfo());
+                            Config.max_meta_size_per_copy_into_job, fileStatuses, copyJob.getObjectInfo(),
+                            copyJob.isForceCopy());
                 }
                 boolean isBinaryFileFormat = fileGroup.isBinaryFileFormat();
                 List<Pair<TBrokerFileStatus, ObjectFilePB>> filteredFileStatuses = Lists.newArrayList();
@@ -161,9 +162,10 @@ public class CopyLoadPendingTask extends BrokerLoadPendingTask {
             List<ObjectFilePB> objectFiles = value.stream().flatMap(List::stream).map(l -> l.second)
                     .collect(Collectors.toList());
             // groupId is 0 because the tableId is unique in FileGroupAggKey(copy into can't set partition now)
-            List<ObjectFilePB> filteredObjectFiles = Env.getCurrentInternalCatalog()
-                    .beginCopy(copyJob.getStageId(), copyJob.getStageType(), fileGroupAggKey.getTableId(),
-                            copyJob.getCopyId(), 0, startTime, timeoutTime, objectFiles);
+            List<ObjectFilePB> filteredObjectFiles = copyJob.isForceCopy() ? objectFiles
+                    : Env.getCurrentInternalCatalog()
+                            .beginCopy(copyJob.getStageId(), copyJob.getStageType(), fileGroupAggKey.getTableId(),
+                                    copyJob.getCopyId(), 0, startTime, timeoutTime, objectFiles);
             if (filteredObjectFiles.isEmpty()) {
                 retryTime = 0;
                 LOG.warn(NO_FILES_ERROR_MSG + ", matched {} files, filtered {} files "
@@ -214,8 +216,9 @@ public class CopyLoadPendingTask extends BrokerLoadPendingTask {
 
     protected void parseFileForCopyJob(String stageId, long tableId, String copyId, String pattern, long sizeLimit,
             int fileNumLimit, int fileMetaSizeLimit, List<Pair<TBrokerFileStatus, ObjectFilePB>> fileStatus,
-            ObjectInfo objectInfo) throws UserException {
-        List<ObjectFilePB> copiedFiles = Env.getCurrentInternalCatalog().getCopyFiles(stageId, tableId);
+            ObjectInfo objectInfo, boolean forceCopy) throws UserException {
+        List<ObjectFilePB> copiedFiles = forceCopy ? new ArrayList<>()
+                : Env.getCurrentInternalCatalog().getCopyFiles(stageId, tableId);
         if (LOG.isDebugEnabled()) {
             LOG.debug("Get copy files for stage={}, table={}, size={}", stageId, tableId, copiedFiles.size());
             for (ObjectFilePB copyFile : copiedFiles) {

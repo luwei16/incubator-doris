@@ -51,6 +51,9 @@ public class CopyProperties {
     public static final String ON_ERROR_MAX_FILTER_RATIO = LoadStmt.MAX_FILTER_RATIO_PROPERTY + "_";
     public static final String STRICT_MODE = COPY_PREFIX + LoadStmt.STRICT_MODE;
     public static final String LOAD_PARALLELISM = COPY_PREFIX + LoadStmt.LOAD_PARALLELISM;
+    // If 'copy.force' is true, load files to table without checking if files have been loaded, and copy job will not
+    // be recorded in meta service. So it may cause one file is copied to a table many times.
+    public static final String FORCE = COPY_PREFIX + "force";
 
     public CopyProperties(Map<String, String> properties, String prefix) {
         this.properties = properties;
@@ -118,6 +121,10 @@ public class CopyProperties {
         analyzeBooleanProperty(STRICT_MODE);
     }
 
+    protected void analyzeForce() throws AnalysisException {
+        analyzeBooleanProperty(FORCE);
+    }
+
     private void analyzeBooleanProperty(String keyWithoutPrefix) throws AnalysisException {
         String key = addKeyPrefix(keyWithoutPrefix);
         if (properties.containsKey(key)) {
@@ -171,6 +178,11 @@ public class CopyProperties {
     public boolean isAsync() {
         String key = addKeyPrefix(ASYNC);
         return properties.containsKey(key) ? Boolean.parseBoolean(properties.get(key)) : true;
+    }
+
+    public boolean isForce() {
+        String key = addKeyPrefix(FORCE);
+        return properties.containsKey(key) ? Boolean.parseBoolean(properties.get(key)) : false;
     }
 
     public Map<String, String> getProperties() {

@@ -69,6 +69,8 @@ public class CopyJob extends BrokerLoadJob {
     private ObjectInfo objectInfo;
     @Getter
     private String copyId;
+    @Getter
+    private boolean forceCopy;
     private String loadFilePaths = "";
     private Map<String, String> properties = new HashMap<>();
     private volatile boolean abortedCopy = false;
@@ -79,13 +81,14 @@ public class CopyJob extends BrokerLoadJob {
 
     public CopyJob(long dbId, String label, TUniqueId queryId, BrokerDesc brokerDesc, OriginStatement originStmt,
             UserIdentity userInfo, String stageId, StagePB.StageType stageType, long sizeLimit, String pattern,
-            ObjectInfo objectInfo) throws MetaNotFoundException {
+            ObjectInfo objectInfo, boolean forceCopy) throws MetaNotFoundException {
         super(EtlJobType.COPY, dbId, label, brokerDesc, originStmt, userInfo);
         this.stageId = stageId;
         this.stageType = stageType;
         this.sizeLimit =  sizeLimit;
         this.pattern = pattern;
         this.objectInfo = objectInfo;
+        this.forceCopy = forceCopy;
         this.copyId = DebugUtil.printId(queryId);
     }
 
@@ -106,6 +109,9 @@ public class CopyJob extends BrokerLoadJob {
     @Override
     protected void afterCommit() throws DdlException {
         super.afterCommit();
+        if (forceCopy) {
+            return;
+        }
         for (Entry<FileGroupAggKey, List<BrokerFileGroup>> entry : fileGroupAggInfo.getAggKeyToFileGroups()
                 .entrySet()) {
             long tableId = entry.getKey().getTableId();
@@ -117,7 +123,7 @@ public class CopyJob extends BrokerLoadJob {
     @Override
     public void cancelJob(FailMsg failMsg) throws DdlException {
         super.cancelJob(failMsg);
-        if (abortedCopy) {
+        if (forceCopy || abortedCopy) {
             return;
         }
         for (Entry<FileGroupAggKey, List<BrokerFileGroup>> entry : fileGroupAggInfo.getAggKeyToFileGroups()
@@ -132,7 +138,7 @@ public class CopyJob extends BrokerLoadJob {
     @Override
     public void cancelJobWithoutCheck(FailMsg failMsg, boolean abortTxn, boolean needLog) {
         super.cancelJobWithoutCheck(failMsg, abortTxn, needLog);
-        if (abortedCopy) {
+        if (forceCopy || abortedCopy) {
             return;
         }
         abortCopy();
@@ -141,7 +147,7 @@ public class CopyJob extends BrokerLoadJob {
     @Override
     protected void unprotectedExecuteCancel(FailMsg failMsg, boolean abortTxn) {
         super.unprotectedExecuteCancel(failMsg, abortTxn);
-        if (abortedCopy) {
+        if (forceCopy || abortedCopy) {
             return;
         }
         abortCopy();

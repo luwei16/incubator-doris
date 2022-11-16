@@ -86,11 +86,6 @@ public class CopyStmt extends DdlStmt {
     @Getter
     private ObjectInfo objectInfo;
 
-    @Getter
-    private long sizeLimit;
-    @Getter
-    private boolean async;
-
     /**
      * Use for cup.
      */
@@ -138,7 +133,6 @@ public class CopyStmt extends DdlStmt {
         analyzeStagePB(stagePB);
 
         // generate broker desc
-        sizeLimit = copyIntoProperties.getSizeLimit();
         brokerDesc = new BrokerDesc("S3", StorageBackend.StorageType.S3, brokerProperties);
         // generate data description
         String filePath = "s3://" + brokerProperties.get(S3_BUCKET) + "/" + brokerProperties.get(S3_PREFIX);
@@ -196,7 +190,6 @@ public class CopyStmt extends DdlStmt {
         StageProperties stageProperties = new StageProperties(stagePB.getPropertiesMap());
         this.copyIntoProperties.mergeProperties(stageProperties);
         this.copyIntoProperties.analyze();
-        this.async = this.copyIntoProperties.isAsync();
     }
 
     public String getDbName() {
@@ -217,6 +210,18 @@ public class CopyStmt extends DdlStmt {
 
     public LabelName getLabel() {
         return label;
+    }
+
+    public long getSizeLimit() {
+        return this.copyIntoProperties.getSizeLimit();
+    }
+
+    public boolean isAsync() {
+        return this.copyIntoProperties.isAsync();
+    }
+
+    public boolean isForce() {
+        return this.copyIntoProperties.isForce();
     }
 
     @Override

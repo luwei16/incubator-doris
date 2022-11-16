@@ -407,9 +407,7 @@ public class DdlExecutor {
         CopyJob job = (CopyJob) env.getLoadManager().createLoadJobFromStmt(copyStmt);
         if (!copyStmt.isAsync()) {
             // wait for execute finished
-            while (!job.isCompleted()) {
-                Thread.sleep(5000);
-            }
+            waitJobCompleted(job);
             if (job.getState() == JobState.UNKNOWN || job.getState() == JobState.CANCELLED) {
                 QueryState queryState = new QueryState();
                 FailMsg failMsg = job.getFailMsg();
@@ -462,5 +460,29 @@ public class DdlExecutor {
         result.add(entry);
         queryState.setResultSet(new ShowResultSet(copyStmt.getMetaData(), result));
         copyStmt.getAnalyzer().getContext().setState(queryState);
+    }
+
+    private static void waitJobCompleted(CopyJob job) throws InterruptedException {
+        // check the job is completed or not.
+        // sleep 10ms, 1000 times(10s)
+        // sleep 100ms, 1000 times(100s + 10s = 110s)
+        // sleep 1000ms, 1000 times(1000s + 110s = 1110s)
+        // sleep 5000ms...
+        long retry = 0;
+        long currentInterval = 10;
+        while (!job.isCompleted()) {
+            Thread.sleep(currentInterval);
+            if (retry > 3010) {
+                continue;
+            }
+            retry++;
+            if (retry > 3000) {
+                currentInterval = 5000;
+            } else if (retry > 2000) {
+                currentInterval = 1000;
+            } else if (retry > 1000) {
+                currentInterval = 100;
+            }
+        }
     }
 }

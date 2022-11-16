@@ -144,7 +144,7 @@ public class CopyLoadPendingTaskTest extends TestWithFeService {
             String pattern = pair.first;
             List<Pair<TBrokerFileStatus, ObjectFilePB>> fileStatus = new ArrayList<>();
             task.parseFileForCopyJob(stageId, tableId, "q1", pattern, sizeLimit, fileNumLimit, fileMetaSizeLimit,
-                    fileStatus, objectInfo);
+                    fileStatus, objectInfo, false);
             Assert.assertEquals(pair.second.intValue(), fileStatus.size());
         }
         // test loaded files is not empty
@@ -152,7 +152,7 @@ public class CopyLoadPendingTaskTest extends TestWithFeService {
             String pattern = null;
             List<Pair<TBrokerFileStatus, ObjectFilePB>> fileStatus = new ArrayList<>();
             task.parseFileForCopyJob(stageId, 200, "q1", pattern, sizeLimit, fileNumLimit, fileMetaSizeLimit,
-                    fileStatus, objectInfo);
+                    fileStatus, objectInfo, false);
             Assert.assertEquals(9, fileStatus.size());
         } while (false);
         // test size limit
@@ -160,7 +160,7 @@ public class CopyLoadPendingTaskTest extends TestWithFeService {
             String pattern = null;
             List<Pair<TBrokerFileStatus, ObjectFilePB>> fileStatus = new ArrayList<>();
             task.parseFileForCopyJob(stageId, tableId, "q1", pattern, 100, fileNumLimit, fileMetaSizeLimit, fileStatus,
-                    objectInfo);
+                    objectInfo, false);
             Assert.assertEquals(4, fileStatus.size());
         } while (false);
         // test file num limit
@@ -168,7 +168,7 @@ public class CopyLoadPendingTaskTest extends TestWithFeService {
             String pattern = null;
             List<Pair<TBrokerFileStatus, ObjectFilePB>> fileStatus = new ArrayList<>();
             task.parseFileForCopyJob(stageId, tableId, "q1", pattern, sizeLimit, 6, fileMetaSizeLimit, fileStatus,
-                    objectInfo);
+                    objectInfo, false);
             Assert.assertEquals(6, fileStatus.size());
         } while (false);
         // test file meta size limit
@@ -176,7 +176,7 @@ public class CopyLoadPendingTaskTest extends TestWithFeService {
             String pattern = null;
             List<Pair<TBrokerFileStatus, ObjectFilePB>> fileStatus = new ArrayList<>();
             task.parseFileForCopyJob(stageId, tableId, "q1", pattern, sizeLimit, fileNumLimit, 60, fileStatus,
-                    objectInfo);
+                    objectInfo, false);
             Assert.assertEquals(2, fileStatus.size());
         } while (false);
         // test size and file num limit
@@ -184,7 +184,7 @@ public class CopyLoadPendingTaskTest extends TestWithFeService {
             String pattern = null;
             List<Pair<TBrokerFileStatus, ObjectFilePB>> fileStatus = new ArrayList<>();
             task.parseFileForCopyJob(stageId, tableId, "q1", pattern, 100, fileNumLimit, fileMetaSizeLimit, fileStatus,
-                    objectInfo);
+                    objectInfo, false);
             Assert.assertEquals(4, fileStatus.size());
         } while (false);
     }
@@ -248,7 +248,7 @@ public class CopyLoadPendingTaskTest extends TestWithFeService {
             String pattern = pair.first;
             List<Pair<TBrokerFileStatus, ObjectFilePB>> fileStatus = new ArrayList<>();
             task.parseFileForCopyJob(stageId, tableId, "q1", pattern, sizeLimit, fileNumLimit, fileMetaSizeLimit,
-                    fileStatus, objectInfo);
+                    fileStatus, objectInfo, false);
             Assert.assertTrue("expected: " + pair.second * 2 + ", real: " + fileStatus.size(),
                     pair.second * 2 == fileStatus.size());
         }
@@ -344,7 +344,7 @@ public class CopyLoadPendingTaskTest extends TestWithFeService {
 
             List<Pair<TBrokerFileStatus, ObjectFilePB>> fileStatus = new ArrayList<>();
             task.parseFileForCopyJob(stageId, tableId, "q1", pattern, sizeLimit, fileNumLimit, fileMetaSizeLimit,
-                    fileStatus, objectInfo);
+                    fileStatus, objectInfo, false);
             Assert.assertEquals("pattern=" + pattern, pair.second.intValue(), fileStatus.size());
         }
     }
