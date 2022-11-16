@@ -3091,6 +3091,45 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
         return;
     }
 
+    if (unresolved_path == "abort_txn") {
+        AbortTxnRequest r;
+        auto st = google::protobuf::util::JsonStringToMessage(request_body, &r);
+        if (!st.ok()) {
+            msg = "failed to parse AbortTxnRequest, error: " + st.message().ToString();
+            ret = MetaServiceCode::PROTOBUF_PARSE_ERR;
+            response_body = msg;
+            LOG(WARNING) << msg;
+            return;
+        }
+
+        AbortTxnResponse res;
+        abort_txn(cntl, &r, &res, nullptr);
+        ret = res.status().code();
+        msg = res.status().msg();
+        response_body = msg;
+        return;
+    }
+
+    if (unresolved_path == "abort_tablet_job") {
+        FinishTabletJobRequest r;
+        auto st = google::protobuf::util::JsonStringToMessage(request_body, &r);
+        if (!st.ok()) {
+            msg = "failed to parse FinishTabletJobRequest, error: " + st.message().ToString();
+            ret = MetaServiceCode::PROTOBUF_PARSE_ERR;
+            response_body = msg;
+            LOG(WARNING) << msg;
+            return;
+        }
+        r.set_action(FinishTabletJobRequest::ABORT);
+
+        FinishTabletJobResponse res;
+        finish_tablet_job(cntl, &r, &res, nullptr);
+        ret = res.status().code();
+        msg = res.status().msg();
+        response_body = msg;
+        return;
+    }
+
     // TODO:
     // * unresolved_path == "encode_key"
     // * unresolved_path == "set_token"
