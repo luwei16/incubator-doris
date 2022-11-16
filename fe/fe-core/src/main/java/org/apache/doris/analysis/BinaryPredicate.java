@@ -387,6 +387,11 @@ public class BinaryPredicate extends Predicate implements Writable {
                 return Type.fromPrimitiveType(t2);
             }
         }
+        // NOTE:when column type is cast in schema, we cannot cast it to float even in query,
+        // so we need to getAssignmentCompatibleType to float here.
+        if (t1 == PrimitiveType.DOUBLE && t2 == PrimitiveType.DOUBLE) {
+            return Type.getAssignmentCompatibleType(getChild(0).getType(), getChild(1).getType(), false);
+        }
 
         return Type.DOUBLE;
     }

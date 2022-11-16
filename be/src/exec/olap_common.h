@@ -477,7 +477,8 @@ using ColumnValueRangeType =
                      ColumnValueRange<TYPE_DATETIME>, ColumnValueRange<TYPE_DATETIMEV2>,
                      ColumnValueRange<TYPE_DECIMALV2>, ColumnValueRange<TYPE_BOOLEAN>,
                      ColumnValueRange<TYPE_HLL>, ColumnValueRange<TYPE_DECIMAL32>,
-                     ColumnValueRange<TYPE_DECIMAL64>, ColumnValueRange<TYPE_DECIMAL128>>;
+                     ColumnValueRange<TYPE_DECIMAL64>, ColumnValueRange<TYPE_DECIMAL128>,
+                     ColumnValueRange<TYPE_DOUBLE>, ColumnValueRange<TYPE_FLOAT>>;
 
 template <PrimitiveType primitive_type>
 const typename ColumnValueRange<primitive_type>::CppType

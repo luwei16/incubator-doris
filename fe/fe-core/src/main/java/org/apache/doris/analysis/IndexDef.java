@@ -166,7 +166,8 @@ public class IndexDef {
             String indexColName = column.getName();
             PrimitiveType colType = column.getDataType();
             if (!(colType.isDateType() || colType.isDecimalV2Type() || colType.isDecimalV3Type()
-                    || colType.isFixedPointType() || colType.isStringType() || colType == PrimitiveType.BOOLEAN)) {
+                    || colType.isFixedPointType() || colType.isStringType() || colType == PrimitiveType.BOOLEAN
+                    || (indexType == IndexType.INVERTED && colType.isFloatingPointType()))) {
                 throw new AnalysisException(colType + " is not supported in " + indexType.toString() + " index. "
                         + "invalid column: " + indexColName);
             } else if ((keysType == KeysType.AGG_KEYS && !column.isKey())) {

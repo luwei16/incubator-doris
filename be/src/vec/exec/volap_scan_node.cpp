@@ -957,7 +957,8 @@ Status VOlapScanNode::change_value_range(ColumnValueRange<PrimitiveType>& temp_r
                          (PrimitiveType == TYPE_BIGINT) || (PrimitiveType == TYPE_LARGEINT) ||
                          (PrimitiveType == TYPE_DECIMAL32) || (PrimitiveType == TYPE_DECIMAL64) ||
                          (PrimitiveType == TYPE_DECIMAL128) || (PrimitiveType == TYPE_STRING) ||
-                         (PrimitiveType == TYPE_BOOLEAN) || (PrimitiveType == TYPE_DATEV2)) {
+                         (PrimitiveType == TYPE_BOOLEAN) || (PrimitiveType == TYPE_DATEV2) ||
+                         (PrimitiveType == TYPE_FLOAT) || (PrimitiveType == TYPE_DOUBLE)) {
         if constexpr (IsFixed) {
             func(temp_range,
                  reinterpret_cast<typename PrimitiveTypeTraits<PrimitiveType>::CppType*>(value));

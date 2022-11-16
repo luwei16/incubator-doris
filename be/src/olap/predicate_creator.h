@@ -139,6 +139,33 @@ private:
     std::function<CppType(const std::string& condition)> _convert;
 };
 
+template <PrimitiveType Type, PredicateType PT, typename ConditionType>
+class FloatingPredicateCreator : public PredicateCreator<ConditionType> {
+public:
+    using CppType = typename PredicatePrimitiveTypeTraits<Type>::PredicateFieldType;
+    ColumnPredicate* create(const TabletColumn& column, int index, const ConditionType& conditions,
+                            bool opposite, MemPool* pool) override {
+        if constexpr (PredicateTypeTraits::is_list(PT)) {
+            return new InListPredicateBase<Type, PT>(index, conditions, convert, opposite);
+        } else {
+            static_assert(PredicateTypeTraits::is_comparison(PT));
+            return new ComparisonPredicateBase<Type, PT>(index, convert(conditions), opposite);
+        }
+    }
+
+private:
+    static CppType convert(const std::string& condition) {
+        CppType value = 0.0;
+        StringParser::ParseResult result = StringParser::ParseResult::PARSE_SUCCESS;
+        if constexpr (Type == TYPE_FLOAT) {
+            value = StringParser::string_to_float<float>(condition.data(), condition.size(), &result);
+        } else {
+            value = StringParser::string_to_float<double>(condition.data(), condition.size(), &result);
+        }
+        return value;
+    }
+};
+
 template <PredicateType PT, typename ConditionType>
 inline std::unique_ptr<PredicateCreator<ConditionType>> get_creator(const FieldType& type) {
     switch (type) {
@@ -212,6 +239,12 @@ inline std::unique_ptr<PredicateCreator<ConditionType>> get_creator(const FieldT
                                                               &parse_result);
                     return value;
                 });
+    }
+    case OLAP_FIELD_TYPE_FLOAT: {
+        return std::make_unique<FloatingPredicateCreator<TYPE_FLOAT, PT, ConditionType>>();
+    }
+    case OLAP_FIELD_TYPE_DOUBLE: {
+        return std::make_unique<FloatingPredicateCreator<TYPE_DOUBLE, PT, ConditionType>>();
     }
     default:
         return nullptr;
