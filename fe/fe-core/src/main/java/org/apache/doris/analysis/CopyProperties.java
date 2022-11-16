@@ -54,6 +54,7 @@ public class CopyProperties {
     // If 'copy.force' is true, load files to table without checking if files have been loaded, and copy job will not
     // be recorded in meta service. So it may cause one file is copied to a table many times.
     public static final String FORCE = COPY_PREFIX + "force";
+    public static final String USE_DELETE_SIGN = COPY_PREFIX + "use_delete_sign";
 
     public CopyProperties(Map<String, String> properties, String prefix) {
         this.properties = properties;
@@ -125,6 +126,10 @@ public class CopyProperties {
         analyzeBooleanProperty(FORCE);
     }
 
+    protected void analyzeUseDeleteSign() throws AnalysisException {
+        analyzeBooleanProperty(USE_DELETE_SIGN);
+    }
+
     private void analyzeBooleanProperty(String keyWithoutPrefix) throws AnalysisException {
         String key = addKeyPrefix(keyWithoutPrefix);
         if (properties.containsKey(key)) {
@@ -182,6 +187,11 @@ public class CopyProperties {
 
     public boolean isForce() {
         String key = addKeyPrefix(FORCE);
+        return properties.containsKey(key) ? Boolean.parseBoolean(properties.get(key)) : false;
+    }
+
+    public boolean useDeleteSign() {
+        String key = addKeyPrefix(USE_DELETE_SIGN);
         return properties.containsKey(key) ? Boolean.parseBoolean(properties.get(key)) : false;
     }
 

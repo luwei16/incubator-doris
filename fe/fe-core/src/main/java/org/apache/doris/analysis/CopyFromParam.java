@@ -21,6 +21,7 @@ import org.apache.doris.analysis.BinaryPredicate.Operator;
 import org.apache.doris.catalog.Column;
 import org.apache.doris.catalog.Database;
 import org.apache.doris.catalog.Env;
+import org.apache.doris.catalog.KeysType;
 import org.apache.doris.catalog.OlapTable;
 import org.apache.doris.common.AnalysisException;
 
@@ -47,40 +48,42 @@ public class CopyFromParam {
     @Getter
     private Expr fileFilterExpr;
     @Getter
-    private boolean isSelect;
+    private List<String> fileColumns;
     @Getter
-    private List<String> fileColumns = new ArrayList<>();
-    @Getter
-    private List<Expr> columnMappingList = new ArrayList<>();
+    private List<Expr> columnMappingList;
 
     public CopyFromParam(StageAndPattern stageAndPattern) {
         this.stageAndPattern = stageAndPattern;
-        this.isSelect = false;
     }
 
     public CopyFromParam(StageAndPattern stageAndPattern, List<Expr> exprList, Expr whereExpr) {
         this.stageAndPattern = stageAndPattern;
         this.exprList = exprList;
         this.fileFilterExpr = whereExpr;
-        this.isSelect = true;
     }
 
-    public void analyze(String fullDbName, TableName tableName) throws AnalysisException {
-        if (!isSelect || (exprList == null && fileFilterExpr == null)) {
+    public void analyze(String fullDbName, TableName tableName, boolean useDeleteSign) throws AnalysisException {
+        if (exprList == null && fileFilterExpr == null && !useDeleteSign) {
             return;
         }
+        this.fileColumns = new ArrayList<>();
+        this.columnMappingList = new ArrayList<>();
 
         Database db = Env.getCurrentInternalCatalog().getDbOrAnalysisException(fullDbName);
         OlapTable olapTable = db.getOlapTableOrAnalysisException(tableName.getTbl());
-        List<Column> tableColumns = olapTable.getBaseSchema();
+        List<Column> tableColumns = olapTable.getBaseSchema(false);
+        if (useDeleteSign) {
+            if (olapTable.getKeysType() != KeysType.UNIQUE_KEYS) {
+                throw new AnalysisException("copy.use_delete_sign property only support unique table");
+            }
+            tableColumns.add(getDeleteSignColumn(olapTable));
+        }
 
         if (!getFileColumnNames()) {
             int maxFileColumnId = getMaxFileColumnId();
-            if (maxFileColumnId > 0) {
-                maxFileColumnId = tableColumns.size() > maxFileColumnId ? tableColumns.size() : maxFileColumnId;
-                for (int i = 1; i <= maxFileColumnId; i++) {
-                    fileColumns.add(DOLLAR + i);
-                }
+            maxFileColumnId = tableColumns.size() > maxFileColumnId ? tableColumns.size() : maxFileColumnId;
+            for (int i = 1; i <= maxFileColumnId; i++) {
+                fileColumns.add(DOLLAR + i);
             }
         }
 
@@ -103,6 +106,9 @@ public class CopyFromParam {
 
     // expr use column name, not use $
     private boolean getFileColumnNames() throws AnalysisException {
+        if (exprList == null) {
+            return false;
+        }
         List<SlotRef> slotRefs = Lists.newArrayList();
         Expr.collectList(exprList, SlotRef.class, slotRefs);
         Set<String> columnSet = new HashSet<String>();
@@ -120,6 +126,15 @@ public class CopyFromParam {
             }
         }
         return true;
+    }
+
+    private Column getDeleteSignColumn(OlapTable olapTable) throws AnalysisException {
+        for (Column column : olapTable.getFullSchema()) {
+            if (column.isDeleteSignColumn()) {
+                return column;
+            }
+        }
+        throw new AnalysisException("Can not find DeleteSignColumn for unique table");
     }
 
     private int getMaxFileColumnId() throws AnalysisException {
@@ -160,7 +175,7 @@ public class CopyFromParam {
 
     public String toSql() {
         StringBuilder sb = new StringBuilder();
-        if (isSelect) {
+        if (columnMappingList != null || fileFilterExpr != null) {
             sb.append("(SELECT ");
             if (columnMappingList != null) {
                 Joiner.on(", ").appendTo(sb,

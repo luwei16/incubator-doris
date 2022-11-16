@@ -140,17 +140,16 @@ public class CopyStmt extends DdlStmt {
                 copyIntoProperties.getColumnSeparator()) : null;
         String fileFormatStr = copyIntoProperties.getFileType();
         Map<String, String> dataDescProperties = copyIntoProperties.getDataDescriptionProperties();
-        copyFromParam.analyze(label.getDbName(), tableName);
-        if (copyFromParam.isSelect()) {
-            dataDescription = new DataDescription(tableName.getTbl(), null, Lists.newArrayList(filePath),
-                    copyFromParam.getFileColumns(), separator, fileFormatStr, null, false,
-                    copyFromParam.getColumnMappingList(), copyFromParam.getFileFilterExpr(),
-                    null, MergeType.APPEND, null, null, dataDescProperties);
-        } else {
-            dataDescription = new DataDescription(tableName.getTbl(), null, Lists.newArrayList(filePath), null,
-                    separator, fileFormatStr, null, false, null, null, null, MergeType.APPEND, null, null,
-                    dataDescProperties);
+        copyFromParam.analyze(label.getDbName(), tableName, this.copyIntoProperties.useDeleteSign());
+        if (LOG.isDebugEnabled()) {
+            LOG.debug("copy into params. sql: {}, fileColumns: {}, columnMappingList: {}, filter: {}",
+                    getOrigStmt() != null ? getOrigStmt().originStmt : "", copyFromParam.getFileColumns(),
+                    copyFromParam.getColumnMappingList(), copyFromParam.getFileFilterExpr());
         }
+        dataDescription = new DataDescription(tableName.getTbl(), null, Lists.newArrayList(filePath),
+                copyFromParam.getFileColumns(), separator, fileFormatStr, null, false,
+                copyFromParam.getColumnMappingList(), copyFromParam.getFileFilterExpr(), null, MergeType.APPEND, null,
+                null, dataDescProperties);
         // analyze data description
         dataDescription.analyze(label.getDbName());
         for (int i = 0; i < dataDescription.getFilePaths().size(); i++) {

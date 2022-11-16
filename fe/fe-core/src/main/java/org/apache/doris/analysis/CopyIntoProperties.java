@@ -42,7 +42,7 @@ public class CopyIntoProperties extends CopyProperties {
 
     private static final ImmutableSet<String> COPY_PROPERTIES = new ImmutableSet.Builder<String>()
             .add(TYPE).add(COMPRESSION).add(COLUMN_SEPARATOR).add(SIZE_LIMIT).add(ON_ERROR).add(ASYNC).add(FORCE)
-            .addAll(DATA_DESC_PROPERTIES).addAll(EXEC_PROPERTIES).build();
+            .addAll(DATA_DESC_PROPERTIES).addAll(EXEC_PROPERTIES).add(USE_DELETE_SIGN).build();
 
     public CopyIntoProperties(Map<String, String> properties) {
         super(properties, "");
@@ -56,6 +56,7 @@ public class CopyIntoProperties extends CopyProperties {
         analyzeStrictMode();
         analyzeLoadParallelism();
         analyzeForce();
+        analyzeUseDeleteSign();
         for (Entry<String, String> entry : properties.entrySet()) {
             if (!COPY_PROPERTIES.contains(entry.getKey())) {
                 throw new AnalysisException("Property '" + entry.getKey() + "' is invalid");

@@ -17,8 +17,10 @@
 
 package org.apache.doris.analysis;
 
+import org.apache.doris.catalog.Column;
 import org.apache.doris.catalog.Env;
 import org.apache.doris.common.AnalysisException;
+import org.apache.doris.common.DdlException;
 import org.apache.doris.utframe.TestWithFeService;
 import org.apache.doris.utframe.UtFrameUtils;
 
@@ -54,6 +56,11 @@ public class CopyIntoTest extends TestWithFeService {
                 + "DUPLICATE KEY(id, name)\n" + "DISTRIBUTED BY HASH(id) BUCKETS 1\n"
                 + "PROPERTIES ('replication_num' = '1');";
         createTable(varcharTable);
+
+        String uniqueTable = "CREATE TABLE u1 (\n" + "id INT,\n" + "name varchar(20),\n" + "score INT\n" + ")\n"
+                + "UNIQUE KEY(id, name)\n" + "DISTRIBUTED BY HASH(id) BUCKETS 1\n"
+                + "PROPERTIES ('replication_num' = '1');";
+        createTable(uniqueTable);
 
         String query = "create stage if not exists ex_stage_1 " + OBJ_INFO
                 + ", 'default.file.type' = 'csv', 'default.file.column_separator'=\",\" "
@@ -363,5 +370,51 @@ public class CopyIntoTest extends TestWithFeService {
             Assert.fail("must be success.");
             throw e;
         }
+    }
+
+    @Test
+    public void testDeleteOn() throws DdlException {
+        List<StagePB> stages = Lists.newArrayList(externalStagePB);
+        new Expectations(connectContext.getEnv(), connectContext.getEnv().getInternalCatalog()) {
+            {
+                Env.getCurrentInternalCatalog().getStage(StageType.EXTERNAL, anyString, "ex_stage_1", null);
+                minTimes = 0;
+                result = stages;
+            }
+        };
+
+        String sql = "copy into t2 from @ex_stage_1 properties('copy.use_delete_sign'='true')";
+        parseAndAnalyzeWithException(sql, "copy.use_delete_sign property only support unique table");
+
+        try {
+            sql = "copy into u1 from @ex_stage_1 properties('copy.use_delete_sign'='true')";
+            CopyStmt copyStmt = (CopyStmt) UtFrameUtils.parseAndAnalyzeStmt(sql, connectContext);
+            List<DataDescription> dataDescriptions = copyStmt.getDataDescriptions();
+            Assert.assertEquals(1, dataDescriptions.size());
+            DataDescription dataDescription = dataDescriptions.get(0);
+            List<Expr> columnMappingList = dataDescription.getColumnMappingList();
+            Assert.assertEquals(4, columnMappingList.size());
+            Assert.assertEquals(2, columnMappingList.get(3).getChildren().size());
+            Assert.assertTrue(columnMappingList.get(3).getChildren().get(0) instanceof SlotRef);
+            Assert.assertTrue(((SlotRef) columnMappingList.get(3).getChildren().get(0)).getColumnName()
+                    .equals(Column.DELETE_SIGN));
+        } catch (Exception e) {
+            e.printStackTrace();
+            Assert.fail("must be success.");
+        }
+    }
+
+    private void parseAndAnalyzeWithException(String sql, String errorMsg) {
+        do {
+            try {
+                UtFrameUtils.parseAndAnalyzeStmt(sql, connectContext);
+            } catch (AnalysisException e) {
+                Assert.assertTrue(e.getMessage().contains(errorMsg));
+                break;
+            } catch (Exception e) {
+                Assert.fail("must be AnalysisException.");
+            }
+            Assert.fail("must be AnalysisException.");
+        } while (false);
     }
 }

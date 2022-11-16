@@ -137,6 +137,12 @@ COPY INTO [<db_name>.]<table_name> FROM {copy_from_param} PROPERTIES (
 
       非必需。如未设置，优先使用stage配置的默认值；如果stage上未设置，使用系统默认值。
 
+    - `copy.use_delete_sign`
+       
+      对于unique表，指定导入是否包含了`__DORIS_DELETE_SIGN__`列，`true`代表包含，`false`代表不包含。
+
+      非必需。
+
 ## 输出
 
 Copy into默认异步执行，返回一个`queryId`，如：
@@ -299,4 +305,19 @@ mysql> SHOW COPY WHERE id = '8fcf20b156dc4f66_99aa062042941aff';
 
   ```
   COPY INTO test_table FROM (SELECT $1, substring($2, 2), $3 FROM @ext_stage('1.csv'))
+  ```
+
+* 导入unique表指定`__DORIS_DELETE_SIGN__`列
+
+  假如unique表有`id`,`name`,`score`三列和`__DORIS_DELETE_SIGN__`隐藏列，文件有四列，与表的列一一对应：
+
+  ```
+  COPY INTO unique_table FROM @ext_stage('1.csv') properties ('copy.use_delete_sign' = 'true');
+  COPY INTO unique_table FROM (SELECT $1, $2, $3, $4 @ext_stage('1.csv')) properties ('copy.use_delete_sign' = 'true');
+  ```
+
+  假如unique表有`id`,`name`,`score`三列和`__DORIS_DELETE_SIGN__`隐藏列，文件有四列，按照第4列的值大于10的删除：
+
+  ```
+  COPY INTO unique_table FROM (SELECT $1, $2, $3, $4 > 10 @ext_stage('1.csv')) properties ('copy.use_delete_sign' = 'true');
   ```
