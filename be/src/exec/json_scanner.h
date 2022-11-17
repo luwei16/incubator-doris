@@ -46,6 +46,7 @@ class RuntimeState;
 class TupleDescriptor;
 class JsonReader;
 class LineReader;
+class Decompressor;
 class FileReader;
 
 class JsonScanner : public BaseScanner {
@@ -71,6 +72,7 @@ public:
 
 protected:
     Status open_file_reader();
+    Status create_decompressor(TFileFormatType::type type);
     Status open_line_reader();
     Status open_json_reader();
     Status open_next_reader();
@@ -89,6 +91,7 @@ protected:
     // Reader
     std::shared_ptr<FileReader> _cur_file_reader;
     LineReader* _cur_line_reader;
+    Decompressor* _cur_decompressor;
     JsonReader* _cur_json_reader;
     bool _cur_reader_eof;
     bool _read_json_by_line;

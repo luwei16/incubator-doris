@@ -328,6 +328,12 @@ std::unique_ptr<BaseScanner> VBrokerScanNode::create_scanner(const TBrokerScanRa
                                            _pre_filter_texprs, counter);
         break;
     case TFileFormatType::FORMAT_JSON:
+    case TFileFormatType::FORMAT_JSON_GZ:
+    case TFileFormatType::FORMAT_JSON_BZ2:
+    case TFileFormatType::FORMAT_JSON_LZO:
+    case TFileFormatType::FORMAT_JSON_LZOP:
+    case TFileFormatType::FORMAT_JSON_DEFLATE:
+    case TFileFormatType::FORMAT_JSON_LZ4FRAME:
         if (config::enable_simdjson_reader) {
             scan = new vectorized::VJsonScanner<vectorized::VSIMDJsonReader>(
                     _runtime_state, runtime_profile(), scan_range.params, scan_range.ranges,

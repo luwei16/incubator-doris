@@ -21,6 +21,7 @@
 
 #include <algorithm>
 
+#include "exec/decompressor.h"
 #include "exec/plain_text_line_reader.h"
 #include "exprs/json_functions.h"
 #include "io/file_factory.h"
@@ -37,6 +38,7 @@ JsonScanner::JsonScanner(RuntimeState* state, RuntimeProfile* profile,
         : BaseScanner(state, profile, params, ranges, broker_addresses, pre_filter_texprs, counter),
           _cur_file_reader(nullptr),
           _cur_line_reader(nullptr),
+          _cur_decompressor(nullptr),
           _cur_json_reader(nullptr),
           _cur_reader_eof(false),
           _read_json_by_line(false) {
@@ -134,7 +136,48 @@ Status JsonScanner::open_file_reader() {
     return _cur_file_reader->open();
 }
 
+Status JsonScanner::create_decompressor(TFileFormatType::type type) {
+    if (_cur_decompressor != nullptr) {
+        delete _cur_decompressor;
+        _cur_decompressor = nullptr;
+    }
+
+    CompressType compress_type;
+    switch (type) {
+    case TFileFormatType::FORMAT_JSON:
+        compress_type = CompressType::UNCOMPRESSED;
+        break;
+    case TFileFormatType::FORMAT_JSON_GZ:
+        compress_type = CompressType::GZIP;
+        break;
+    case TFileFormatType::FORMAT_JSON_BZ2:
+        compress_type = CompressType::BZIP2;
+        break;
+    case TFileFormatType::FORMAT_JSON_LZ4FRAME:
+        compress_type = CompressType::LZ4FRAME;
+        break;
+    case TFileFormatType::FORMAT_JSON_LZOP:
+    case TFileFormatType::FORMAT_JSON_LZO:
+        compress_type = CompressType::LZOP;
+        break;
+    case TFileFormatType::FORMAT_JSON_DEFLATE:
+        compress_type = CompressType::DEFLATE;
+        break;
+    default: {
+        return Status::InternalError("Unknown format type, cannot inference compress type, type={}",
+                                     type);
+    }
+    }
+    RETURN_IF_ERROR(Decompressor::create_decompressor(compress_type, &_cur_decompressor));
+    return Status::OK();
+}
+
 Status JsonScanner::open_line_reader() {
+    if (_cur_decompressor != nullptr) {
+        delete _cur_decompressor;
+        _cur_decompressor = nullptr;
+    }
+
     if (_cur_line_reader != nullptr) {
         delete _cur_line_reader;
         _cur_line_reader = nullptr;
@@ -148,8 +191,12 @@ Status JsonScanner::open_line_reader() {
     } else {
         _skip_next_line = false;
     }
-    _cur_line_reader = new PlainTextLineReader(_profile, _cur_file_reader.get(), nullptr, size,
-                                               _line_delimiter, _line_delimiter_length);
+
+    // create decompressor.
+    // _decompressor may be nullptr if this is not a compressed file
+    RETURN_IF_ERROR(create_decompressor(range.format_type));
+    _cur_line_reader = new PlainTextLineReader(_profile, _cur_file_reader.get(), _cur_decompressor,
+                                               size, _line_delimiter, _line_delimiter_length);
     _cur_reader_eof = false;
     return Status::OK();
 }
@@ -210,6 +257,10 @@ void JsonScanner::close() {
     if (_cur_json_reader != nullptr) {
         delete _cur_json_reader;
         _cur_json_reader = nullptr;
+    }
+    if (_cur_decompressor != nullptr) {
+        delete _cur_decompressor;
+        _cur_decompressor = nullptr;
     }
     if (_cur_line_reader != nullptr) {
         delete _cur_line_reader;

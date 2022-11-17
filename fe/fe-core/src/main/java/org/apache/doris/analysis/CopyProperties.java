@@ -65,8 +65,9 @@ public class CopyProperties {
         // analyze type and compression: See {@link BrokerScanNode#formatType}, we only support COMPRESSION on CSV
         String compression = properties.get(addKeyPrefix(COMPRESSION));
         String type = properties.get(addKeyPrefix(TYPE));
-        if (!StringUtils.isEmpty(compression) && !isTypeEmpty(type) && !type.equalsIgnoreCase("csv")) {
-            throw new AnalysisException("Compression only support CSV file type, but input type is " + type);
+        if (!StringUtils.isEmpty(compression) && !isTypeEmpty(type) && !(type.equalsIgnoreCase("csv")
+                || type.equalsIgnoreCase("json"))) {
+            throw new AnalysisException("Compression only support CSV or JSON file type, but input type is " + type);
         }
     }
 
@@ -167,10 +168,7 @@ public class CopyProperties {
     }
 
     public String getFileType() {
-        if (!StringUtils.isEmpty(properties.get(addKeyPrefix(COMPRESSION)))) {
-            // See {@link BrokerScanNode#formatType}, if file format is null, can judge by the file name.
-            return null;
-        }
+        // See {@link BrokerScanNode#formatType}, if file format is null, can judge by the file name.
         // if file format type is set on stage, and we want to override by copy into, can set null
         String type = properties.get(addKeyPrefix(TYPE));
         return isTypeEmpty(type) ? null : type;

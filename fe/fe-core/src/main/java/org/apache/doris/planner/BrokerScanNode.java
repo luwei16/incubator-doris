@@ -531,6 +531,18 @@ public class BrokerScanNode extends LoadScanNode {
             } else if (fileFormat.toLowerCase().equals("orc")) {
                 return TFileFormatType.FORMAT_ORC;
             } else if (fileFormat.toLowerCase().equals("json")) {
+                String lowerCasePath = path.toLowerCase();
+                if (lowerCasePath.endsWith(".gz")) {
+                    return TFileFormatType.FORMAT_JSON_GZ;
+                } else if (lowerCasePath.endsWith(".bz2")) {
+                    return TFileFormatType.FORMAT_JSON_BZ2;
+                } else if (lowerCasePath.endsWith(".lz4")) {
+                    return TFileFormatType.FORMAT_JSON_LZ4FRAME;
+                } else if (lowerCasePath.endsWith(".lzo")) {
+                    return TFileFormatType.FORMAT_JSON_LZOP;
+                } else if (lowerCasePath.endsWith(".deflate")) {
+                    return TFileFormatType.FORMAT_JSON_DEFLATE;
+                }
                 return TFileFormatType.FORMAT_JSON;
                 // csv/csv_with_name/csv_with_names_and_types treat as csv format
             } else if (fileFormat.toLowerCase().equals(FeConstants.csv)
@@ -538,12 +550,16 @@ public class BrokerScanNode extends LoadScanNode {
                     || fileFormat.toLowerCase().equals(FeConstants.csv_with_names_and_types)
                     // TODO: Add TEXTFILE to TFileFormatType to Support hive text file format.
                     || fileFormat.toLowerCase().equals(FeConstants.text)) {
-                return TFileFormatType.FORMAT_CSV_PLAIN;
+                return getCsvFormatType(path);
             } else {
                 throw new UserException("Not supported file format: " + fileFormat);
             }
         }
 
+        return getCsvFormatType(path);
+    }
+
+    private TFileFormatType getCsvFormatType(String path) {
         String lowerCasePath = path.toLowerCase();
         if (lowerCasePath.endsWith(".parquet") || lowerCasePath.endsWith(".parq")) {
             return TFileFormatType.FORMAT_PARQUET;
@@ -609,14 +625,7 @@ public class BrokerScanNode extends LoadScanNode {
                     long rangeBytes = bytesPerInstance - curInstanceBytes;
                     TBrokerRangeDesc rangeDesc = createBrokerRangeDesc(curFileOffset, fileStatus, formatType,
                             rangeBytes, columnsFromPath, numberOfColumnsFromFile, brokerDesc, headerType);
-                    if (formatType == TFileFormatType.FORMAT_JSON) {
-                        rangeDesc.setStripOuterArray(context.fileGroup.isStripOuterArray());
-                        rangeDesc.setJsonpaths(context.fileGroup.getJsonPaths());
-                        rangeDesc.setJsonRoot(context.fileGroup.getJsonRoot());
-                        rangeDesc.setFuzzyParse(context.fileGroup.isFuzzyParse());
-                        rangeDesc.setNumAsString(context.fileGroup.isNumAsString());
-                        rangeDesc.setReadJsonByLine(context.fileGroup.isReadJsonByLine());
-                    }
+                    setJsonPropertiesForRangeDesc(formatType, context, rangeDesc);
                     // See http://jira.selectdb.com:8090/browse/CORE-785 for more details
                     rangeDesc.setReadByColumnDef(Config.range_desc_read_by_column_def);
                     curLocations.getScanRange().getBrokerScanRange().addToRanges(rangeDesc);
@@ -625,6 +634,7 @@ public class BrokerScanNode extends LoadScanNode {
                 } else {
                     TBrokerRangeDesc rangeDesc = createBrokerRangeDesc(curFileOffset, fileStatus, formatType,
                             leftBytes, columnsFromPath, numberOfColumnsFromFile, brokerDesc, headerType);
+                    setJsonPropertiesForRangeDesc(formatType, context, rangeDesc);
                     if (rangeDesc.hdfs_params != null && rangeDesc.hdfs_params.getFsName() == null) {
                         rangeDesc.hdfs_params.setFsName(fsName);
                     } else if (rangeDesc.hdfs_params == null) {
@@ -645,14 +655,7 @@ public class BrokerScanNode extends LoadScanNode {
             } else {
                 TBrokerRangeDesc rangeDesc = createBrokerRangeDesc(curFileOffset, fileStatus, formatType,
                         leftBytes, columnsFromPath, numberOfColumnsFromFile, brokerDesc, headerType);
-                if (formatType == TFileFormatType.FORMAT_JSON) {
-                    rangeDesc.setStripOuterArray(context.fileGroup.isStripOuterArray());
-                    rangeDesc.setJsonpaths(context.fileGroup.getJsonPaths());
-                    rangeDesc.setJsonRoot(context.fileGroup.getJsonRoot());
-                    rangeDesc.setFuzzyParse(context.fileGroup.isFuzzyParse());
-                    rangeDesc.setNumAsString(context.fileGroup.isNumAsString());
-                    rangeDesc.setReadJsonByLine(context.fileGroup.isReadJsonByLine());
-                }
+                setJsonPropertiesForRangeDesc(formatType, context, rangeDesc);
                 if (rangeDesc.hdfs_params != null && rangeDesc.hdfs_params.getFsName() == null) {
                     rangeDesc.hdfs_params.setFsName(fsName);
                 } else if (rangeDesc.hdfs_params == null) {
@@ -670,6 +673,21 @@ public class BrokerScanNode extends LoadScanNode {
         // Put the last file
         if (curLocations.getScanRange().getBrokerScanRange().isSetRanges()) {
             locationsList.add(curLocations);
+        }
+    }
+
+    private void setJsonPropertiesForRangeDesc(TFileFormatType formatType, ParamCreateContext context,
+            TBrokerRangeDesc rangeDesc) {
+        if (formatType == TFileFormatType.FORMAT_JSON || formatType == TFileFormatType.FORMAT_JSON_GZ
+                || formatType == TFileFormatType.FORMAT_JSON_BZ2 || formatType == TFileFormatType.FORMAT_JSON_LZO
+                || formatType == TFileFormatType.FORMAT_JSON_LZOP || formatType == TFileFormatType.FORMAT_JSON_LZ4FRAME
+                || formatType == TFileFormatType.FORMAT_JSON_DEFLATE) {
+            rangeDesc.setStripOuterArray(context.fileGroup.isStripOuterArray());
+            rangeDesc.setJsonpaths(context.fileGroup.getJsonPaths());
+            rangeDesc.setJsonRoot(context.fileGroup.getJsonRoot());
+            rangeDesc.setFuzzyParse(context.fileGroup.isFuzzyParse());
+            rangeDesc.setNumAsString(context.fileGroup.isNumAsString());
+            rangeDesc.setReadJsonByLine(context.fileGroup.isReadJsonByLine());
         }
     }
 
