@@ -33,9 +33,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 
 public class CopyFromParam {
     private static final Logger LOG = LogManager.getLogger(CopyFromParam.class);
@@ -79,16 +77,17 @@ public class CopyFromParam {
             tableColumns.add(getDeleteSignColumn(olapTable));
         }
 
-        if (!getFileColumnNames()) {
-            int maxFileColumnId = getMaxFileColumnId();
-            maxFileColumnId = tableColumns.size() > maxFileColumnId ? tableColumns.size() : maxFileColumnId;
-            for (int i = 1; i <= maxFileColumnId; i++) {
-                fileColumns.add(DOLLAR + i);
-            }
+        int maxFileColumnId = getMaxFileColumnId();
+        maxFileColumnId = tableColumns.size() > maxFileColumnId ? tableColumns.size() : maxFileColumnId;
+        for (int i = 1; i <= maxFileColumnId; i++) {
+            fileColumns.add(DOLLAR + i);
         }
 
         if (exprList != null) {
-            for (int i = 0; i < exprList.size() && i < tableColumns.size(); i++) {
+            if (tableColumns.size() > exprList.size()) {
+                throw new AnalysisException("select column size is less than table column size");
+            }
+            for (int i = 0; i < exprList.size(); i++) {
                 Expr expr = exprList.get(i);
                 String name = tableColumns.get(i).getName();
                 BinaryPredicate binaryPredicate = new BinaryPredicate(Operator.EQ, new SlotRef(null, name), expr);
@@ -102,30 +101,6 @@ public class CopyFromParam {
                 columnMappingList.add(binaryPredicate);
             }
         }
-    }
-
-    // expr use column name, not use $
-    private boolean getFileColumnNames() throws AnalysisException {
-        if (exprList == null) {
-            return false;
-        }
-        List<SlotRef> slotRefs = Lists.newArrayList();
-        Expr.collectList(exprList, SlotRef.class, slotRefs);
-        Set<String> columnSet = new HashSet<String>();
-        for (SlotRef slotRef : slotRefs) {
-            String columnName = slotRef.getColumnName();
-            if (columnName.startsWith(DOLLAR)) {
-                if (fileColumns.size() > 0) {
-                    throw new AnalysisException("can not mix column name and $");
-                }
-                return false;
-            }
-            if (!columnSet.contains(columnName)) {
-                columnSet.add(columnName);
-                fileColumns.add(columnName);
-            }
-        }
-        return true;
     }
 
     private Column getDeleteSignColumn(OlapTable olapTable) throws AnalysisException {
@@ -164,10 +139,7 @@ public class CopyFromParam {
     private int getFileColumnIdOfSlotRef(SlotRef slotRef) throws AnalysisException {
         String columnName = slotRef.getColumnName();
         try {
-            if (!columnName.startsWith(DOLLAR)) {
-                throw new AnalysisException("can not mix column name and $");
-            }
-            return Integer.parseInt(columnName.substring(1));
+            return columnName.startsWith(DOLLAR) ? Integer.parseInt(columnName.substring(1)) : 0;
         } catch (NumberFormatException e) {
             throw new AnalysisException("column name: " + columnName + " can not parse to a number");
         }

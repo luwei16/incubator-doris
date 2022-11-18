@@ -1,5 +1,0 @@
-CREATE TABLE IF NOT EXISTS set6 (
-  `partkey` integer NOT NULL default '0',
-  `partsize` integer NOT NULL default '0'
-)ENGINE=OLAP
-DISTRIBUTED BY HASH(partkey) BUCKETS 24;

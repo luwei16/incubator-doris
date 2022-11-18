@@ -62,36 +62,4 @@ suite("test_copy_with_select") {
             try_sql("DROP TABLE IF EXISTS ${tableName}")
         }
     }
-
-    try {
-        sql """ DROP TABLE IF EXISTS ${tableName}; """
-        sql """
-        CREATE TABLE IF NOT EXISTS ${tableName} (
-        C_CUSTKEY     INTEGER NOT NULL,
-        C_NAME        VARCHAR(40) NOT NULL,
-        C_ADDRESS     VARCHAR(40) NOT NULL,
-        C_NATIONKEY   INTEGER NOT NULL,
-        C_PHONE       CHAR(15) NULL,
-        C_ACCTBAL     DECIMAL(15,2)   NOT NULL,
-        C_MKTSEGMENT  CHAR(10) NOT NULL,
-        C_COMMENT     VARCHAR(117) NULL
-        )
-        UNIQUE KEY(C_CUSTKEY)
-        DISTRIBUTED BY HASH(C_CUSTKEY) BUCKETS 1
-        """
-
-        def mixSelect = 'select col1, col2, $1, $2, $3, $4, $5, $6' + sql_stage
-        test {
-            sql """ ${sql_prefix} ${mixSelect} ${sql_postfix} """
-            exception 'errCode = 2, detailMessage = can not mix column name and $'
-        }
-
-        mixSelect = 'select $1, $2, $3, $4, $5, $6, col1, col2' + sql_stage
-        test {
-            sql """ ${sql_prefix} ${mixSelect} ${sql_postfix} """
-            exception 'errCode = 2, detailMessage = can not mix column name and $'
-        }
-    } finally {
-        try_sql("DROP TABLE IF EXISTS ${tableName}")
-    }
 }
