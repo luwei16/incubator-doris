@@ -501,9 +501,8 @@ void DorisCompoundDirectory::FSIndexOutput::close() {
         //ignore IO errors...
         if (err.number() != CL_ERR_IO) throw;
     }
-
     // if (::_close(fhandle) != 0)
-    if (!writer->close().ok())
+    if (!writer->finalize().ok() || !writer->close().ok())
         _CLTHROWA(CL_ERR_IO, "File IO Close error");
     else
         // fhandle = -1; //-1 now indicates closed
