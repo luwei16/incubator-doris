@@ -3872,17 +3872,37 @@ public class InternalCatalog implements CatalogIf<Database> {
         SelectdbCloud.CreateStageRequest createStageRequest = SelectdbCloud.CreateStageRequest.newBuilder()
                 .setCloudUniqueId(Config.cloud_unique_id).setStage(stagePB).build();
         SelectdbCloud.CreateStageResponse response = null;
-        try {
-            response = MetaServiceProxy.getInstance().createStage(createStageRequest);
-            // Now only create external stage
-            if (ifNotExists && response.getStatus().getCode() == SelectdbCloud.MetaServiceCode.ALREADY_EXISTED) {
-                LOG.info("stage already exists, stage_name: {}", stagePB.getName());
-                return;
+        int retryTime = 0;
+        while (retryTime++ < 3) {
+            try {
+                response = MetaServiceProxy.getInstance().createStage(createStageRequest);
+                LOG.debug("create stage, stage: {}, {}, response: {}", stagePB, ifNotExists, response);
+                if (ifNotExists && response.getStatus().getCode() == SelectdbCloud.MetaServiceCode.ALREADY_EXISTED) {
+                    LOG.info("stage already exists, stage_name: {}", stagePB.getName());
+                    return;
+                }
+                if (response.getStatus().getCode() != MetaServiceCode.KV_TXN_CONFLICT
+                        && response.getStatus().getCode() != MetaServiceCode.KV_TXN_COMMIT_ERR) {
+                    break;
+                }
+            } catch (RpcException e) {
+                LOG.warn("createStage response: {} ", response);
             }
-        } catch (RpcException e) {
-            LOG.warn("createStage response: {} ", response);
-            throw new DdlException(e.getMessage());
+            // sleep random millis [20, 200] ms, avoid txn conflict
+            int randomMillis = 20 + (int) (Math.random() * (200 - 20));
+            LOG.debug("randomMillis:{}", randomMillis);
+            try {
+                Thread.sleep(randomMillis);
+            } catch (InterruptedException e) {
+                LOG.info("InterruptedException: ", e);
+            }
         }
+
+        if (response == null) {
+            LOG.warn("createStage failed.");
+            throw new DdlException("createStage failed");
+        }
+
         if (response.getStatus().getCode() != SelectdbCloud.MetaServiceCode.OK) {
             LOG.warn("createStage response: {} ", response);
             throw new DdlException(response.getStatus().getMsg());
