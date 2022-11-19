@@ -17,6 +17,8 @@
 
 package org.apache.doris.analysis;
 
+import org.apache.doris.catalog.ArrayType;
+import org.apache.doris.catalog.Column;
 import org.apache.doris.catalog.PrimitiveType;
 import org.apache.doris.common.AnalysisException;
 
@@ -37,9 +39,17 @@ public class InvertedIndexUtil {
         return parser != null ? parser : INVERTED_INDEX_PARSER_NONE;
     }
 
-    public static void checkInvertedIndexParser(String indexColName, PrimitiveType colType,
+    public static void checkInvertedIndexParser(Column column, String indexColName, PrimitiveType colType,
             Map<String, String> properties) throws AnalysisException {
         String parser = getInvertedIndexParser(properties);
+        if (colType.isArrayType()) {
+            colType = ((ArrayType) column.getType()).getItemType().getPrimitiveType();
+            if (parser.equals(INVERTED_INDEX_PARSER_NONE)) {
+                throw new AnalysisException(colType + " is not supported in array inverted index without tokenizer. "
+                            + "invalid column: " + indexColName);
+            }
+        }
+
         if (colType.isStringType()) {
             if (!(parser.equals(INVERTED_INDEX_PARSER_NONE)
                     || parser.equals(INVERTED_INDEX_PARSER_STANDARD)

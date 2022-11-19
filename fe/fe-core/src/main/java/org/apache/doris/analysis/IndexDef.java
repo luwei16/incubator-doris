@@ -17,6 +17,7 @@
 
 package org.apache.doris.analysis;
 
+import org.apache.doris.catalog.ArrayType;
 import org.apache.doris.catalog.Column;
 import org.apache.doris.catalog.KeysType;
 import org.apache.doris.catalog.PrimitiveType;
@@ -165,6 +166,13 @@ public class IndexDef {
         if (indexType == IndexType.BITMAP || indexType == IndexType.INVERTED || indexType == IndexType.BLOOMFILTER) {
             String indexColName = column.getName();
             PrimitiveType colType = column.getDataType();
+            if (indexType == IndexType.INVERTED) {
+                InvertedIndexUtil.checkInvertedIndexParser(column, indexColName, colType, properties);
+            }
+            if (colType.isArrayType()) {
+                colType = ((ArrayType) column.getType()).getItemType().getPrimitiveType();
+            }
+
             if (!(colType.isDateType() || colType.isDecimalV2Type() || colType.isDecimalV3Type()
                     || colType.isFixedPointType() || colType.isStringType() || colType == PrimitiveType.BOOLEAN
                     || (indexType == IndexType.INVERTED && colType.isFloatingPointType()))) {
@@ -174,10 +182,6 @@ public class IndexDef {
                 throw new AnalysisException(indexType.toString()
                         + " index only used in columns of DUP_KEYS/UNIQUE_KEYS table or key columns of"
                                 + " AGG_KEYS table. invalid column: " + indexColName);
-            }
-
-            if (indexType == IndexType.INVERTED) {
-                InvertedIndexUtil.checkInvertedIndexParser(indexColName, colType, properties);
             }
         } else {
             throw new AnalysisException("Unsupported index type: " + indexType);

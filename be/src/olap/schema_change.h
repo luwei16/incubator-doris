@@ -189,6 +189,7 @@ private:
             vectorized::Block* block);
     Status _add_data(const std::string& column_name,
             const std::string& index_writer_sign,
+            Field* field,
             const uint8_t** ptr, 
             size_t num_rows);
     Status _add_nullable(const std::string& column_name,

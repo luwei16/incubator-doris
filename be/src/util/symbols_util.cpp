@@ -179,6 +179,9 @@ static void append_any_val_type(int namespace_id, const TypeDescriptor& type,
     case TYPE_DECIMAL128:
         append_mangled_token("Decimal128Val", s);
         break;
+    case TYPE_ARRAY:
+        append_mangled_token("CollectionVal", s);
+        break;
     default:
         DCHECK(false) << "NYI: " << type.debug_string();
     }

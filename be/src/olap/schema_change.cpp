@@ -1220,7 +1220,15 @@ Status SchemaChangeForInvertedIndex::_add_nullable(const std::string& column_nam
                 RETURN_IF_ERROR(_inverted_index_builders[index_writer_sign]->add_nulls(step));
                 *ptr += field->size() * step;
             } else {
-                RETURN_IF_ERROR(_inverted_index_builders[index_writer_sign]->add_values(column_name, *ptr, step));
+                if (field->type() == FieldType::OLAP_FIELD_TYPE_ARRAY) {
+                    DCHECK(field->get_sub_field_count() == 1);
+                    const auto* col_cursor = reinterpret_cast<const CollectionValue*>(*ptr);
+                    RETURN_IF_ERROR(_inverted_index_builders[index_writer_sign]->add_array_values(
+                                                                                field->get_sub_field(0)->size(), col_cursor, step));
+                } else {
+                    RETURN_IF_ERROR(_inverted_index_builders[index_writer_sign]->add_values(column_name, *ptr,
+                                                                                        step));
+                }
             }
             offset += step;
         } while (offset < num_rows);
@@ -1234,10 +1242,19 @@ Status SchemaChangeForInvertedIndex::_add_nullable(const std::string& column_nam
 
 Status SchemaChangeForInvertedIndex::_add_data(const std::string& column_name,
             const std::string& index_writer_sign,
+            Field* field,
             const uint8_t** ptr, 
             size_t num_rows) {
     try {
-        RETURN_IF_ERROR(_inverted_index_builders[index_writer_sign]->add_values(column_name, *ptr, num_rows));
+        if (field->type() == FieldType::OLAP_FIELD_TYPE_ARRAY) {
+            DCHECK(field->get_sub_field_count() == 1);
+            const auto* col_cursor = reinterpret_cast<const CollectionValue*>(*ptr);
+            RETURN_IF_ERROR(_inverted_index_builders[index_writer_sign]->add_array_values(
+                                                                        field->get_sub_field(0)->size(), col_cursor, num_rows));
+        } else {
+            RETURN_IF_ERROR(_inverted_index_builders[index_writer_sign]->add_values(column_name, *ptr,
+                                                                                num_rows));
+        }
     } catch (const std::exception& e) {
         LOG(WARNING) << "CLuceneError occured: " << e.what();
         return Status::OLAPInternalError(OLAP_ERR_IO_ERROR);
@@ -1282,7 +1299,7 @@ Status SchemaChangeForInvertedIndex::_write_inverted_index(
                         converted_result.second->get_nullmap(), &ptr, block->rows()));
         } else {
             RETURN_IF_ERROR(
-                _add_data(column_name, writer_sign, &ptr, block->rows()));
+                _add_data(column_name, writer_sign, field.get(), &ptr, block->rows()));
         }
     }
 

@@ -206,20 +206,38 @@ public:
     }
 
     void new_fulltext_field(const char* field_value_data, size_t field_value_size) {
-        auto field_value = lucene::util::Misc::_charToWide(field_value_data, field_value_size);
-        int field_config = lucene::document::Field::STORE_NO;
-        if (_parser_type == InvertedIndexParserType::PARSER_NONE) {
-            field_config |= lucene::document::Field::INDEX_UNTOKENIZED;
+        if (_parser_type == InvertedIndexParserType::PARSER_ENGLISH) {
+            new_char_token_stream(field_value_data, field_value_size, _field);
+        } else if (_parser_type == InvertedIndexParserType::PARSER_STANDARD) {
+            new_field_value(field_value_data, field_value_size, _field);
         } else {
-            field_config |= lucene::document::Field::INDEX_TOKENIZED;
+            new_field_value(field_value_data, field_value_size, _field);
         }
-        bool duplicate_value = false;
-        auto field = _CLNEW lucene::document::Field(_field_name.c_str(), field_value, field_config,
-                                                    duplicate_value);
-        _doc->add(*field);
-        // Field did not duplicate value, so we don't have to delete field_value
+    }
+
+    void new_char_token_stream(const char* s, size_t len, lucene::document::Field* field) {
+        _char_string_reader->init(s, len, false);
+        auto stream =
+                _default_char_analyzer->reusableTokenStream(field->name(), _char_string_reader);
+        field->setValue(stream);
+    }
+
+    //NOTE:be careful that using this function will doc document inside
+    void new_string_reader(const char* s, size_t len, lucene::document::Field* field) {
+        auto field_value = lucene::util::Misc::_charToWide(s, len);
+        // NOTE: avoid another data copy for string reader init in documentWriterThreadState
+        auto stringReader =
+                _CLNEW lucene::util::StringReader(field_value, wcslen(field_value), false);
+        field->setValue(stringReader);
+        _index_writer->addDocument(_doc);
+        _CLDELETE_ARRAY(field_value)
+    }
+
+    void new_field_value(const char* s, size_t len, lucene::document::Field* field) {
+        auto field_value = lucene::util::Misc::_charToWide(s, len);
+        field->setValue(field_value, false);
+        // setValue did not duplicate value, so we don't have to delete
         //_CLDELETE_ARRAY(field_value)
-        //_CLDELETE(field);
     }
 
     Status add_values(const std::string fn, const void* values, size_t count) override {
@@ -232,35 +250,10 @@ public:
             }
             auto* v = (Slice*)values;
             for (int i = 0; i < count; ++i) {
-                if (_parser_type == InvertedIndexParserType::PARSER_ENGLISH) {
-                    _char_string_reader->init(v->get_data(), v->get_size(), false);
-                    auto stream = _default_char_analyzer->reusableTokenStream(_field_name.c_str(),
-                                                                              _char_string_reader);
-                    _field->setValue(stream);
-                    ++v;
-                    _rid++;
-                    _index_writer->addDocument(_doc);
-                } else if (_parser_type == InvertedIndexParserType::PARSER_STANDARD) {
-                    auto field_value =
-                            lucene::util::Misc::_charToWide(v->get_data(), v->get_size());
-                    // NOTE: avoid another data copy for string reader init in documentWriterThreadState
-                    auto stringReader = _CLNEW lucene::util::StringReader(
-                            field_value, wcslen(field_value), false);
-                    _field->setValue(stringReader);
-                    ++v;
-                    _rid++;
-                    _index_writer->addDocument(_doc);
-                    _CLDELETE_ARRAY(field_value)
-                } else {
-                    auto field_value =
-                            lucene::util::Misc::_charToWide(v->get_data(), v->get_size());
-                    _field->setValue(field_value, false);
-                    // setValue did not duplicate value, so we don't have to delete
-                    //_CLDELETE_ARRAY(field_value)
-                    ++v;
-                    _rid++;
-                    _index_writer->addDocument(_doc);
-                }
+                new_fulltext_field(v->get_data(), v->get_size());
+                _index_writer->addDocument(_doc);
+                ++v;
+                _rid++;
             }
         } else if constexpr (field_is_numeric_type(field_type)) {
             add_numeric_values(values, count);
@@ -279,20 +272,21 @@ public:
                            "index writer";
                 return Status::InternalError("could not find field in clucene");
             }
-            _doc->clear();
-
             for (int i = 0; i < count; ++i) {
+                std::stringstream value_stream;
+
                 for (size_t j = 0; j < values->length(); ++j) {
                     auto* v = (Slice*)item_data_ptr;
 
-                    if (values->is_null_at(j)) {
-                        std::string empty_value;
-                        new_fulltext_field(empty_value.c_str(), empty_value.size());
-                    } else {
-                        new_fulltext_field(v->get_data(), v->get_size());
+                    if (!values->is_null_at(j)) {
+                        value_stream.write(v->get_data(), v->get_size());
+                    }
+                    if (j < values->length() - 1) {
+                        value_stream << " ";
                     }
                     item_data_ptr = (uint8_t*)item_data_ptr + field_size;
                 }
+                new_fulltext_field(value_stream.str().c_str(), value_stream.str().length());
                 _rid++;
                 _index_writer->addDocument(_doc);
             }
