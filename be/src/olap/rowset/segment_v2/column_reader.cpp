@@ -1215,8 +1215,8 @@ Status DefaultValueColumnIterator::init(const ColumnIteratorOptions& opts) {
                 ((Slice*)_mem_value)->size = length;
                 ((Slice*)_mem_value)->data = string_buffer;
             } else if (_type_info->type() == OLAP_FIELD_TYPE_ARRAY) {
-                // TODO llj for Array default value
-                return Status::NotSupported("Array default type is unsupported");
+                // empty array
+                new (_mem_value) CollectionValue(0); 
             } else {
                 s = _type_info->from_string(_mem_value, _default_value, _precision, _scale);
             }
@@ -1262,6 +1262,7 @@ void DefaultValueColumnIterator::insert_default_data(const TypeInfo* type_info, 
 
     switch (type_info->type()) {
     case OLAP_FIELD_TYPE_OBJECT:
+    case OLAP_FIELD_TYPE_ARRAY:
     case OLAP_FIELD_TYPE_HLL: {
         dst->insert_many_defaults(n);
         break;
