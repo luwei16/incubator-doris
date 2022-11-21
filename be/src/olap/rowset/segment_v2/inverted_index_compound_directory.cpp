@@ -327,7 +327,7 @@ bool DorisCompoundDirectory::FSIndexInput::open(io::FileSystem* fs, const char* 
             error.set(CL_ERR_IO, "Could not open file");
     }
 #ifndef _CL_DISABLE_MULTITHREADING
-    delete handle->SHARED_LOCK;
+    //delete handle->SHARED_LOCK;
 #endif
     _CLDECDELETE(handle);
     return false;
@@ -355,7 +355,7 @@ DorisCompoundDirectory::FSIndexInput::SharedHandle::SharedHandle(const char* pat
     strcpy(this->path, path);
 
 #ifndef _CL_DISABLE_MULTITHREADING
-    SHARED_LOCK = new _LUCENE_THREADMUTEX;
+    //SHARED_LOCK = new _LUCENE_THREADMUTEX;
 #endif
 }
 
@@ -386,9 +386,9 @@ void DorisCompoundDirectory::FSIndexInput::close() {
         //won't be able to unlock the mutex...
 
         //take a reference of the lock object...
-        _LUCENE_THREADMUTEX* mutex = handle->SHARED_LOCK;
+        //_LUCENE_THREADMUTEX* mutex = handle->SHARED_LOCK;
         //lock the mutex
-        mutex->lock();
+        handle->_shared_lock.lock();
 
         //determine if we are about to delete the handle...
         bool dounlock = (_LUCENE_ATOMIC_INT_GET(handle->__cl_refcount) > 1);
@@ -398,9 +398,7 @@ void DorisCompoundDirectory::FSIndexInput::close() {
 
         //printf("handle=%d\n", handle->__cl_refcount);
         if (dounlock) {
-            mutex->unlock();
-        } else {
-            delete mutex;
+            handle->_shared_lock.unlock();
         }
     }
 #else
@@ -502,11 +500,16 @@ void DorisCompoundDirectory::FSIndexOutput::close() {
         if (err.number() != CL_ERR_IO) throw;
     }
     // if (::_close(fhandle) != 0)
-    if (!writer->finalize().ok() || !writer->close().ok())
-        _CLTHROWA(CL_ERR_IO, "File IO Close error");
-    else
-        // fhandle = -1; //-1 now indicates closed
-        writer = nullptr;
+    Status ret = writer->finalize();
+    if (ret != Status::OK()) {
+        _CLTHROWA(CL_ERR_IO, ret.to_string().c_str());
+    }
+    ret = writer->close();
+    if (ret != Status::OK()) {
+        _CLTHROWA(CL_ERR_IO, ret.to_string().c_str());
+    }
+    // fhandle = -1; //-1 now indicates closed
+    writer = nullptr;
 }
 
 void DorisCompoundDirectory::FSIndexOutput::seek(const int64_t pos) {

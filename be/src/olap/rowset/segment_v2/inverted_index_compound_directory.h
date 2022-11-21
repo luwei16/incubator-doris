@@ -234,7 +234,7 @@ class DorisCompoundDirectory::FSIndexInput : public lucene::store::BufferedIndex
         io::FileReaderSPtr reader;
         uint64_t _length;
         int64_t _fpos;
-        DEFINE_MUTEX(*SHARED_LOCK)
+        //DEFINE_MUTEX(*SHARED_LOCK)
         doris::Mutex _shared_lock;
         char path
                 [4096]; //todo: this is only used for cloning, better to get information from the fhandle
