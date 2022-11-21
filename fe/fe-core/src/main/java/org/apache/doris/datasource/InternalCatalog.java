@@ -2626,6 +2626,8 @@ public class InternalCatalog implements CatalogIf<Database> {
         // before replacing, we need to check again.
         // Things may be changed outside the table lock.
         olapTable = (OlapTable) db.getTableOrDdlException(copiedTbl.getId());
+        List<Long> oldPartitionsIds = Lists.newArrayList();
+        List<Long> oldPartitionIndexIds = Lists.newArrayList();
         olapTable.writeLockOrDdlException();
         try {
             if (olapTable.getState() != OlapTableState.NORMAL) {
@@ -2666,8 +2668,13 @@ public class InternalCatalog implements CatalogIf<Database> {
             }
 
             // replace
-            truncateTableInternal(olapTable, newPartitions, truncateEntireTable);
-
+            List<Partition> oldPartitions = truncateTableInternal(olapTable, newPartitions, truncateEntireTable);
+            for (Partition oldPartition : oldPartitions) {
+                oldPartitionsIds.add(oldPartition.getId());
+                for (MaterializedIndex index : oldPartition.getMaterializedIndices(IndexExtState.ALL)) {
+                    oldPartitionIndexIds.add(index.getId());
+                }
+            }
             // write edit log
             TruncateTableInfo info = new TruncateTableInfo(db.getId(), olapTable.getId(), newPartitions,
                     truncateEntireTable);
@@ -2676,14 +2683,37 @@ public class InternalCatalog implements CatalogIf<Database> {
             olapTable.writeUnlock();
         }
 
+        if (!Config.cloud_unique_id.isEmpty()) {
+            int tryCnt = 0;
+            while (true) {
+                try {
+                    Env.getCurrentInternalCatalog().dropCloudPartition(olapTable.getId(),
+                            oldPartitionsIds, oldPartitionIndexIds);
+                    tryCnt++;
+                } catch (Exception e) {
+                    LOG.warn("failed to drop partition {} of table {}, try cnt {}, execption {}",
+                            oldPartitionsIds, olapTable.getId(), tryCnt, e);
+                    try {
+                        Thread.sleep(3000);
+                    } catch (InterruptedException ie) {
+                        LOG.warn("Thread sleep is interrupted");
+                    }
+                    continue;
+                }
+                break;
+            }
+        }
         LOG.info("finished to truncate table {}, partitions: {}", tblRef.getName().toSql(), tblRef.getPartitionNames());
     }
 
-    private void truncateTableInternal(OlapTable olapTable, List<Partition> newPartitions, boolean isEntireTable) {
+    private List<Partition> truncateTableInternal(OlapTable olapTable, List<Partition> newPartitions,
+            boolean isEntireTable) {
         // use new partitions to replace the old ones.
+        List<Partition> oldPartitions = Lists.newArrayList();
         Set<Long> oldTabletIds = Sets.newHashSet();
         for (Partition newPartition : newPartitions) {
             Partition oldPartition = olapTable.replacePartition(newPartition);
+            oldPartitions.add(oldPartition);
             // save old tablets to be removed
             for (MaterializedIndex index : oldPartition.getMaterializedIndices(IndexExtState.ALL)) {
                 index.getTablets().stream().forEach(t -> {
@@ -2701,14 +2731,24 @@ public class InternalCatalog implements CatalogIf<Database> {
         for (Long tabletId : oldTabletIds) {
             Env.getCurrentInvertedIndex().deleteTablet(tabletId);
         }
+        return oldPartitions;
     }
 
     public void replayTruncateTable(TruncateTableInfo info) throws MetaNotFoundException {
         Database db = (Database) getDbOrMetaException(info.getDbId());
         OlapTable olapTable = (OlapTable) db.getTableOrMetaException(info.getTblId(), TableType.OLAP);
+        List<Long> oldPartitionsIds = Lists.newArrayList();
+        List<Long> oldPartitionIndexIds = Lists.newArrayList();
         olapTable.writeLock();
         try {
-            truncateTableInternal(olapTable, info.getPartitions(), info.isEntireTable());
+            List<Partition> oldPartitions = truncateTableInternal(olapTable, info.getPartitions(),
+                    info.isEntireTable());
+            for (Partition oldPartition : oldPartitions) {
+                oldPartitionsIds.add(oldPartition.getId());
+                for (MaterializedIndex index : oldPartition.getMaterializedIndices(IndexExtState.ALL)) {
+                    oldPartitionIndexIds.add(index.getId());
+                }
+            }
 
             if (!Env.isCheckpointThread()) {
                 // add tablet to inverted index
@@ -2734,6 +2774,27 @@ public class InternalCatalog implements CatalogIf<Database> {
             }
         } finally {
             olapTable.writeUnlock();
+        }
+
+        if (!Config.cloud_unique_id.isEmpty() && !Env.isCheckpointThread()) {
+            int tryCnt = 0;
+            while (true) {
+                try {
+                    Env.getCurrentInternalCatalog().dropCloudPartition(olapTable.getId(),
+                            oldPartitionsIds, oldPartitionIndexIds);
+                    tryCnt++;
+                } catch (Exception e) {
+                    LOG.warn("failed to drop partition {} of table {}, try cnt {}, execption {}",
+                            oldPartitionsIds, olapTable.getId(), tryCnt, e);
+                    try {
+                        Thread.sleep(3000);
+                    } catch (InterruptedException ie) {
+                        LOG.warn("Thread sleep is interrupted");
+                    }
+                    continue;
+                }
+                break;
+            }
         }
     }
 

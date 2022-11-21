@@ -811,19 +811,32 @@ public class SchemaChangeJobV2 extends AlterJobV2 {
         Env.getCurrentEnv().getEditLog().logAlterJob(this);
         LOG.info("schema change job finished: {}", jobId);
 
-        List<Long> originIdxList = null;
-        try {
-            if (!Config.cloud_unique_id.isEmpty()) {
-                originIdxList = new ArrayList<Long>();
-                for (Long originIdx : indexIdMap.values()) {
-                    originIdxList.add(originIdx);
-                }
-                Env.getCurrentInternalCatalog().dropCloudMaterializedIndex(tbl, originIdxList);
+        if (!Config.cloud_unique_id.isEmpty()) {
+            List<Long> originIdxList = new ArrayList<Long>();
+            for (Long originIdx : indexIdMap.values()) {
+                originIdxList.add(originIdx);
             }
-        } catch (Exception e) {
-            //Do not throw exception. we think schema change successfully here.
-            LOG.warn("dropCloudMaterializedIndex exception : {}, tableId:{}, originIdxList:{}",
-                    e, tbl.getId(), originIdxList);
+
+            int tryCnt = 0;
+            while (true) {
+                try {
+                    Env.getCurrentInternalCatalog().dropCloudMaterializedIndex(tbl, originIdxList);
+                    tryCnt++;
+                } catch (Exception e) {
+                    //Do not throw exception. we think schema change successfully here.
+                    LOG.warn("dropCloudMaterializedIndex exception : {}, tableId:{}, originIdxList:{}, cnt:{}",
+                            e, tbl.getId(), originIdxList, tryCnt);
+                    try {
+                        Thread.sleep(3000);
+                    } catch (InterruptedException ie) {
+                        LOG.warn("Thread sleep is interrupted");
+                    }
+                    continue;
+                }
+                break;
+            }
+            LOG.info("dropCloudMaterializedIndex finished, tableId:{}, originIdxList:{}, jobId: {}",
+                    tbl.getId(), originIdxList, jobId);
         }
     }
 
@@ -1053,20 +1066,38 @@ public class SchemaChangeJobV2 extends AlterJobV2 {
                 tbl.writeLock();
                 try {
                     onFinished(tbl);
-                    if (!Config.cloud_unique_id.isEmpty()) {
-                        List<Long> originIdxList = new ArrayList<Long>();
-                        for (Long originIdx : indexIdMap.values()) {
-                            originIdxList.add(originIdx);
-                        }
-                        Env.getCurrentInternalCatalog().dropCloudMaterializedIndex(tbl, originIdxList);
-                    }
-                } catch (Exception e) {
-                    LOG.error("replayRunningJob Exception:{}", e);
-                    System.exit(-1);
                 } finally {
                     tbl.writeUnlock();
                 }
 
+            }
+
+            if (!Config.cloud_unique_id.isEmpty()) {
+                List<Long> originIdxList = new ArrayList<Long>();
+                for (Long originIdx : indexIdMap.values()) {
+                    originIdxList.add(originIdx);
+                }
+
+                int tryCnt = 0;
+                while (true) {
+                    try {
+                        Env.getCurrentInternalCatalog().dropCloudMaterializedIndex(tbl, originIdxList);
+                        tryCnt++;
+                    } catch (Exception e) {
+                        //Do not throw exception. we think schema change successfully here.
+                        LOG.warn("dropCloudMaterializedIndex exception : {}, tableId:{}, originIdxList:{}, cnt:{}",
+                                e, tbl.getId(), originIdxList, tryCnt);
+                        try {
+                            Thread.sleep(3000);
+                        } catch (InterruptedException ie) {
+                            LOG.warn("Thread sleep is interrupted");
+                        }
+                        continue;
+                    }
+                    break;
+                }
+                LOG.info("dropCloudMaterializedIndex finished, tableId: {}, originIdxList:{}, jobId:{}",
+                        tbl.getId(), originIdxList, jobId);
             }
         }
         jobState = JobState.FINISHED;

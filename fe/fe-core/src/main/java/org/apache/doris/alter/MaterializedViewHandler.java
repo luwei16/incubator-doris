@@ -762,6 +762,7 @@ public class MaterializedViewHandler extends AlterHandler {
 
     public void processBatchDropRollup(List<AlterClause> dropRollupClauses, Database db, OlapTable olapTable)
             throws DdlException, MetaNotFoundException {
+        List<Long> deleteIndexList = null;
         olapTable.writeLockOrDdlException();
         try {
             if (olapTable.existTempPartitions()) {
@@ -794,28 +795,43 @@ public class MaterializedViewHandler extends AlterHandler {
             LOG.info("finished drop rollup index[{}] in table[{}]",
                     String.join("", rollupNameSet), olapTable.getName());
 
-            //When editLog.logBatchDropRollup successfully, we think processBatchDropRollup finished.
-            List<Long> deleteIndexList = null;
-            try {
-                if (!Config.cloud_unique_id.isEmpty()) {
-                    deleteIndexList = new ArrayList<Long>();
-                    for (Long deleteIdx : indexIdSet) {
-                        deleteIndexList.add(deleteIdx);
-                    }
-                    Env.getCurrentInternalCatalog().dropCloudMaterializedIndex(olapTable, deleteIndexList);
+            if (!Config.cloud_unique_id.isEmpty()) {
+                deleteIndexList = new ArrayList<Long>();
+                for (Long deleteIdx : indexIdSet) {
+                    deleteIndexList.add(deleteIdx);
                 }
-            } catch (Exception e) {
-                //Do not throw exception. we think schema change successfully here.
-                LOG.warn("dropCloudMaterializedIndex exception : {}, tableId:{}, originIdxList:{}",
-                        e, olapTable.getId(), deleteIndexList);
             }
         } finally {
             olapTable.writeUnlock();
+        }
+
+        if (!Config.cloud_unique_id.isEmpty()) {
+            int tryCnt = 0;
+            while (true) {
+                try {
+                    Env.getCurrentInternalCatalog().dropCloudMaterializedIndex(olapTable, deleteIndexList);
+                    tryCnt++;
+                } catch (Exception e) {
+                    //Do not throw exception. we think schema change successfully here.
+                    LOG.warn("dropCloudMaterializedIndex exception : {}, tableId:{}, deleteIndexList:{}, cnt:{}",
+                            e, olapTable.getId(), deleteIndexList, tryCnt);
+                    try {
+                        Thread.sleep(3000);
+                    } catch (InterruptedException ie) {
+                        LOG.warn("Thread sleep is interrupted");
+                    }
+                    continue;
+                }
+                break;
+            }
+            LOG.info("dropCloudMaterializedIndex finished, tableId: {}, deleteIndexList: {}",
+                    olapTable.getId(), deleteIndexList);
         }
     }
 
     public void processDropMaterializedView(DropMaterializedViewStmt dropMaterializedViewStmt, Database db,
                                             OlapTable olapTable) throws DdlException, MetaNotFoundException {
+        List<Long> deleteIndexList = null;
         olapTable.writeLockOrDdlException();
         try {
             // check table state
@@ -834,18 +850,9 @@ public class MaterializedViewHandler extends AlterHandler {
             editLog.logDropRollup(new DropInfo(db.getId(), olapTable.getId(), mvIndexId, false));
             LOG.info("finished drop materialized view [{}] in table [{}]", mvName, olapTable.getName());
 
-            //When editLog.logDropRollup successfully, we think processDropMaterializedView finished.
-            List<Long> deleteIndexList = null;
-            try {
-                if (!Config.cloud_unique_id.isEmpty()) {
-                    deleteIndexList = new ArrayList<Long>();
-                    deleteIndexList.add(mvIndexId);
-                    Env.getCurrentInternalCatalog().dropCloudMaterializedIndex(olapTable, deleteIndexList);
-                }
-            } catch (Exception e) {
-                //Do not throw exception. we think schema change successfully here.
-                LOG.warn("dropCloudMaterializedIndex exception : {}, tableId:{}, deleteIndexList:{}",
-                        e, olapTable.getId(), deleteIndexList);
+            if (!Config.cloud_unique_id.isEmpty()) {
+                deleteIndexList = new ArrayList<Long>();
+                deleteIndexList.add(mvIndexId);
             }
         } catch (MetaNotFoundException e) {
             if (dropMaterializedViewStmt.isIfExists()) {
@@ -855,6 +862,29 @@ public class MaterializedViewHandler extends AlterHandler {
             }
         } finally {
             olapTable.writeUnlock();
+        }
+
+        if (!Config.cloud_unique_id.isEmpty()) {
+            int tryCnt = 0;
+            while (true) {
+                try {
+                    Env.getCurrentInternalCatalog().dropCloudMaterializedIndex(olapTable, deleteIndexList);
+                    tryCnt++;
+                } catch (Exception e) {
+                    //Do not throw exception. we think schema change successfully here.
+                    LOG.warn("dropCloudMaterializedIndex exception : {}, tableId:{}, deleteIndexList:{}, cnt:{}",
+                            e, olapTable.getId(), deleteIndexList, tryCnt);
+                    try {
+                        Thread.sleep(3000);
+                    } catch (InterruptedException ie) {
+                        LOG.warn("Thread sleep is interrupted");
+                    }
+                    continue;
+                }
+                break;
+            }
+            LOG.info("dropCloudMaterializedIndex finished, tableId: {}, deleteIndexList: {}",
+                    olapTable.getId(), deleteIndexList);
         }
     }
 
@@ -931,25 +961,35 @@ public class MaterializedViewHandler extends AlterHandler {
                     }
                 }
             }
-
             String rollupIndexName = olapTable.getIndexNameById(rollupIndexId);
             olapTable.deleteIndexInfo(rollupIndexName);
-
-            List<Long> deleteIndexList = null;
-            try {
-                if (!Config.cloud_unique_id.isEmpty()) {
-                    deleteIndexList = new ArrayList<Long>();
-                    deleteIndexList.add(rollupIndexId);
-                    Env.getCurrentInternalCatalog().dropCloudMaterializedIndex(olapTable, deleteIndexList);
-                }
-            } catch (Exception e) {
-                //Do not throw exception. we think schema change successfully here.
-                LOG.warn("replay dropCloudMaterializedIndex exception : {}, tableId:{}, deleteIndexList:{}",
-                        e, olapTable.getId(), deleteIndexList);
-                System.exit(-1);
-            }
         } finally {
             olapTable.writeUnlock();
+        }
+
+        if (!Config.cloud_unique_id.isEmpty()) {
+            List<Long> deleteIndexList = new ArrayList<Long>();
+            deleteIndexList.add(rollupIndexId);
+            int tryCnt = 0;
+            while (true) {
+                try {
+                    Env.getCurrentInternalCatalog().dropCloudMaterializedIndex(olapTable, deleteIndexList);
+                    tryCnt++;
+                } catch (Exception e) {
+                    //Do not throw exception. we think schema change successfully here.
+                    LOG.warn("dropCloudMaterializedIndex exception : {}, tableId:{}, deleteIndexList:{}, cnt:{}",
+                            e, olapTable.getId(), deleteIndexList, tryCnt);
+                    try {
+                        Thread.sleep(3000);
+                    } catch (InterruptedException ie) {
+                        LOG.warn("Thread sleep is interrupted");
+                    }
+                    continue;
+                }
+                break;
+            }
+            LOG.info("dropCloudMaterializedIndex finished, tableId: {}, deleteIndexList: {}",
+                    olapTable.getId(), deleteIndexList);
         }
         LOG.info("replay drop rollup {}", dropInfo.getIndexId());
     }
