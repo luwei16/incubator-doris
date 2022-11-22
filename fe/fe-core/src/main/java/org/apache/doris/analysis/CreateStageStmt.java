@@ -22,11 +22,14 @@ import org.apache.doris.common.AnalysisException;
 import org.apache.doris.common.DdlException;
 import org.apache.doris.common.ErrorCode;
 import org.apache.doris.common.ErrorReport;
+import org.apache.doris.common.FeNameFormat;
 import org.apache.doris.common.UserException;
 import org.apache.doris.mysql.privilege.PrivPredicate;
 import org.apache.doris.qe.ConnectContext;
 
 import com.selectdb.cloud.proto.SelectdbCloud.StagePB;
+import com.selectdb.cloud.storage.RemoteBase;
+import com.selectdb.cloud.storage.RemoteBase.ObjectInfo;
 import lombok.Getter;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -67,10 +70,31 @@ public class CreateStageStmt extends DdlStmt {
             ErrorReport.reportAnalysisException(ErrorCode.ERR_SPECIFIC_ACCESS_DENIED_ERROR, "ADMIN");
         }
         // check stage name
-        if (stageName.contains("@") || stageName.contains("~") || stageName.contains("%")) {
-            throw new AnalysisException("Stage name='" + stageName + "', can not include '@', '~' or '%'");
-        }
+        FeNameFormat.checkResourceName(stageName, ResourceTypeEnum.STAGE);
         stageProperties.analyze();
+        checkObjectStorageInfo();
+    }
+
+    private void checkObjectStorageInfo() throws AnalysisException {
+        RemoteBase remote = null;
+        try {
+            remote = RemoteBase.newInstance(new ObjectInfo(stageProperties.getObjectStoreInfoPB()));
+            // RemoteBase#headObject does not throw exception if key does not exist.
+            remote.headObject("1");
+        } catch (Exception e) {
+            String message = e.getMessage();
+            if (message != null) {
+                int index = message.indexOf("Error message=");
+                if (index != -1) {
+                    message = message.substring(index);
+                }
+            }
+            throw new AnalysisException("Incorrect object storage info, " + message);
+        } finally {
+            if (remote != null) {
+                remote.close();
+            }
+        }
     }
 
     public StagePB toStageProto() throws DdlException {

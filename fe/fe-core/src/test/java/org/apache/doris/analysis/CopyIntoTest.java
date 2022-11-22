@@ -26,9 +26,14 @@ import org.apache.doris.utframe.TestWithFeService;
 import org.apache.doris.utframe.UtFrameUtils;
 
 import com.google.common.collect.Lists;
+import com.selectdb.cloud.proto.SelectdbCloud.ObjectStoreInfoPB.Provider;
 import com.selectdb.cloud.proto.SelectdbCloud.StagePB;
 import com.selectdb.cloud.proto.SelectdbCloud.StagePB.StageType;
+import com.selectdb.cloud.storage.MockRemote;
+import com.selectdb.cloud.storage.RemoteBase;
+import com.selectdb.cloud.storage.RemoteBase.ObjectInfo;
 import mockit.Expectations;
+import mockit.Mocked;
 import org.junit.Assert;
 import org.junit.jupiter.api.Test;
 
@@ -48,6 +53,9 @@ public class CopyIntoTest extends TestWithFeService {
     private static final String INTERNAL_STAGE_ID = "test_in_stage_id";
     private StagePB externalStagePB;
     private StagePB internalStagePB;
+
+    @Mocked
+    RemoteBase remote = new MockRemote(new ObjectInfo(Provider.COS, "", "", "", "", "", ""));
 
     @Override
     protected void runBeforeAll() throws Exception {

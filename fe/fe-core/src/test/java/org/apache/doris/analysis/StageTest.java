@@ -27,6 +27,10 @@ import com.selectdb.cloud.proto.SelectdbCloud.ObjectStoreInfoPB;
 import com.selectdb.cloud.proto.SelectdbCloud.ObjectStoreInfoPB.Provider;
 import com.selectdb.cloud.proto.SelectdbCloud.StagePB;
 import com.selectdb.cloud.proto.SelectdbCloud.StagePB.StageType;
+import com.selectdb.cloud.storage.MockRemote;
+import com.selectdb.cloud.storage.RemoteBase;
+import com.selectdb.cloud.storage.RemoteBase.ObjectInfo;
+import mockit.Mocked;
 import org.junit.Assert;
 import org.junit.jupiter.api.Test;
 import org.junit.platform.commons.util.StringUtils;
@@ -47,6 +51,9 @@ public class StageTest extends TestWithFeService {
             + "\"region\" = \"ap-beijing\"";
 
     private static final String CREATE_STAGE_SQL = "create stage if not exists ex_stage_1 " + OBJ_INFO;
+
+    @Mocked
+    RemoteBase remote = new MockRemote(new ObjectInfo(Provider.COS, "", "", "", "", "", ""));
 
     @Override
     protected void runBeforeAll() throws Exception {
