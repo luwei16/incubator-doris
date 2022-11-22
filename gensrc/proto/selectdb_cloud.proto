@@ -552,6 +552,16 @@ message UpdateTabletResponse {
     optional MetaServiceResponseStatus status = 1;
 }
 
+message UpdateTabletSchemaRequest {
+    optional string cloud_unique_id = 1; // For auth
+    optional int64 tablet_id = 2;
+    optional doris.TabletSchemaPB tablet_schema = 3;
+}
+
+message UpdateTabletSchemaResponse {
+    optional MetaServiceResponseStatus status = 1;
+}
+
 message DropTabletRequest {
     optional string cloud_unique_id = 1; // For auth
     optional int64 tablet_id = 2;
@@ -869,6 +879,7 @@ service MetaService {
     rpc get_version(GetVersionRequest) returns (GetVersionResponse);
     rpc create_tablets(CreateTabletsRequest) returns (CreateTabletsResponse);
     rpc update_tablet(UpdateTabletRequest) returns (UpdateTabletResponse);
+    rpc update_tablet_schema(UpdateTabletSchemaRequest) returns (UpdateTabletSchemaResponse);
 
     rpc get_tablet(GetTabletRequest) returns (GetTabletResponse);
     rpc prepare_rowset(CreateRowsetRequest) returns (CreateRowsetResponse);

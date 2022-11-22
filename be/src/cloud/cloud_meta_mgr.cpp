@@ -405,6 +405,29 @@ Status CloudMetaMgr::lease_tablet_job(const selectdb::TabletJobInfoPB& job) {
     RETRY_RPC(finish_tablet_job);
 }
 
+Status CloudMetaMgr::update_tablet_schema(int64_t tablet_id, TabletSchemaSPtr tablet_schema) {
+    VLOG_DEBUG << "send UpdateTabletSchemaRequest, tablet_id: " << tablet_id;
+    brpc::Controller cntl;
+    cntl.set_timeout_ms(config::meta_service_brpc_timeout_ms);
+    selectdb::UpdateTabletSchemaRequest req;
+    selectdb::UpdateTabletSchemaResponse resp;
+    req.set_cloud_unique_id(config::cloud_unique_id);
+    req.set_tablet_id(tablet_id);
+
+    TabletSchemaPB tablet_schema_pb;
+    tablet_schema->to_schema_pb(&tablet_schema_pb);
+    req.mutable_tablet_schema()->CopyFrom(tablet_schema_pb);
+    _stub->update_tablet_schema(&cntl, &req, &resp, nullptr);
+    if (cntl.Failed()) {
+        return Status::RpcError("failed to update tablet schema: {}", cntl.ErrorText());
+    }
+    if (resp.status().code() != selectdb::MetaServiceCode::OK) {
+        return Status::InternalError("failed to update tablet schema: {}", resp.status().msg());
+    }
+    VLOG_DEBUG << "succeed to update tablet schema, tablet_id: " << tablet_id;
+    return Status::OK();
+}
+
 } // namespace doris::cloud
 
 // vim: et tw=100 ts=4 sw=4 cc=80:

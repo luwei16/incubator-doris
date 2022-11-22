@@ -1316,16 +1316,11 @@ Status SchemaChangeForInvertedIndex::process(
     }
 
     std::vector<ColumnId> return_columns;
-    std::unordered_set<uint32_t> tablet_columns_convert_to_null_set;
     for (auto& inverted_index : _alter_inverted_indexs) {
         DCHECK_EQ(inverted_index.columns.size(), 1);
         auto column_name = inverted_index.columns[0];
         auto idx = _tablet_schema->field_index(column_name);
         return_columns.emplace_back(idx);
-        
-        if (!_tablet_schema->column(idx).is_nullable()) {
-            tablet_columns_convert_to_null_set.emplace(idx);
-        }
     }
 
     // create inverted index writer
@@ -1388,8 +1383,7 @@ Status SchemaChangeForInvertedIndex::process(
         }
 
         std::shared_ptr<vectorized::Block> block = std::make_shared<vectorized::Block>(
-                    _tablet_schema->create_block(return_columns, &tablet_columns_convert_to_null_set));
-        
+                    _tablet_schema->create_block(return_columns));
         do {
             block->clear_column_data();
             res = iter->next_batch(block.get());
@@ -1398,6 +1392,9 @@ Status SchemaChangeForInvertedIndex::process(
                     res = Status::OK();
                     break;
                 } 
+                if (res.is_end_of_file()) {
+                    return Status::OLAPInternalError(OLAP_ERR_DATA_EOF);
+                }
                 RETURN_NOT_OK_LOG(res, "failed to read next block when schema change for inverted index.");
             }
 
@@ -2035,7 +2032,6 @@ Status SchemaChangeHandler::_get_rowset_readers(
     Status res = Status::OK();
     std::vector<Version> versions_to_be_changed;
     std::vector<ColumnId> return_columns;
-    std::unordered_set<uint32_t> tablet_columns_convert_to_null_set;
     std::vector<TOlapTableIndex> alter_inverted_indexs;
 
     if (request.__isset.alter_inverted_indexes) {
@@ -2047,9 +2043,6 @@ Status SchemaChangeHandler::_get_rowset_readers(
         auto column_name = inverted_index.columns[0];
         auto idx = tablet_schema->field_index(column_name);
         return_columns.emplace_back(idx);
-        if (!tablet_schema->column(idx).is_nullable()) {
-            tablet_columns_convert_to_null_set.emplace(idx);
-        }
     }
 
     // obtain base tablet's push lock and header write lock to prevent loading data
@@ -2225,13 +2218,7 @@ Status SchemaChangeHandler::_do_process_alter_inverted_index(TabletSharedPtr tab
     }
 
     TabletSchemaSPtr tablet_schema = std::make_shared<TabletSchema>();
-    tablet_schema->copy_from(*tablet->tablet_schema());
-    if (!request.columns.empty() && request.columns[0].col_unique_id >= 0) {
-        tablet_schema->clear_columns();
-        for (const auto& column : request.columns) {
-            tablet_schema->append_column(TabletColumn(column));
-        }
-    }
+    tablet_schema->update_tablet_columns(*tablet->tablet_schema(), request.columns);
 
     // get rowset reader
     std::vector<RowsetReaderSharedPtr> rs_readers;
@@ -2255,7 +2242,7 @@ Status SchemaChangeHandler::_do_process_alter_inverted_index(TabletSharedPtr tab
     {
         // update tablet level schema
         auto new_tablet_schema = std::make_shared<TabletSchema>();
-        new_tablet_schema->copy_from(*tablet->tablet_schema());
+        new_tablet_schema->update_tablet_columns(*tablet->tablet_schema(), request.columns);
         new_tablet_schema->update_indexes_from_thrift(request.indexes);
         tablet->update_max_version_schema(new_tablet_schema, true);
 
@@ -2264,7 +2251,7 @@ Status SchemaChangeHandler::_do_process_alter_inverted_index(TabletSharedPtr tab
         // update tablet level schema
         for (RowsetMetaSharedPtr rowset_meta : tablet->tablet_meta()->all_mutable_rs_metas()) {
             auto new_tablet_schema = std::make_shared<TabletSchema>();
-            new_tablet_schema->copy_from(*rowset_meta->tablet_schema());
+            new_tablet_schema->update_tablet_columns(*rowset_meta->tablet_schema(), request.columns);
             new_tablet_schema->update_indexes_from_thrift(request.indexes);
             rowset_meta->set_tablet_schema(new_tablet_schema);
         }
@@ -2333,13 +2320,7 @@ Status SchemaChangeHandler::_do_process_alter_tablet_v2(const TAlterTabletReqV2&
     std::vector<ColumnId> return_columns;
     // Create a new tablet schema, should merge with dropped columns in light weight schema change
     TabletSchemaSPtr base_tablet_schema = std::make_shared<TabletSchema>();
-    base_tablet_schema->copy_from(*base_tablet->tablet_schema());
-    if (!request.columns.empty() && request.columns[0].col_unique_id >= 0) {
-        base_tablet_schema->clear_columns();
-        for (const auto& column : request.columns) {
-            base_tablet_schema->append_column(TabletColumn(column));
-        }
-    }
+    base_tablet_schema->update_tablet_columns(*base_tablet->tablet_schema(), request.columns);
     // Use tablet schema directly from base tablet, they are the newest schema, not contain
     // dropped column during light weight schema change.
     // But the tablet schema in base tablet maybe not the latest from FE, so that if fe pass through
@@ -2661,8 +2642,8 @@ Status SchemaChangeHandler::_rebuild_inverted_index(
     for (auto& rs_reader : rs_readers) {
         VLOG_TRACE << "begin to read a history rowset. version=" << rs_reader->version().first
                    << "-" << rs_reader->version().second;
-
-        if ((res = sc_procedure->process(rs_reader, nullptr, nullptr, tablet, nullptr)) != Status::OK()) {
+        res = sc_procedure->process(rs_reader, nullptr, nullptr, tablet, nullptr);
+        if (!res.ok() && res.precise_code() != OLAP_ERR_DATA_EOF) {
             LOG(WARNING) << "failed to process the version."
                          << " version=" << rs_reader->version().first << "-"
                          << rs_reader->version().second;

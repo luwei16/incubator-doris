@@ -1803,6 +1803,59 @@ void MetaServiceImpl::update_tablet(::google::protobuf::RpcController* controlle
     }
 }
 
+void MetaServiceImpl::update_tablet_schema(::google::protobuf::RpcController* controller,
+                       const ::selectdb::UpdateTabletSchemaRequest* request,
+                       ::selectdb::UpdateTabletSchemaResponse* response,
+                       ::google::protobuf::Closure* done) {
+    RPC_PREPROCESS(update_tablet_schema);
+    instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
+    if (instance_id.empty()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "empty instance_id";
+        LOG(WARNING) << msg << ", cloud_unique_id=" << request->cloud_unique_id();
+        return;
+    }
+
+    std::unique_ptr<Transaction> txn;
+    if (txn_kv_->create_txn(&txn) != 0) {
+        code = MetaServiceCode::KV_TXN_CREATE_ERR;
+        msg = "failed to init txn";
+        return;
+    }
+
+    doris::TabletMetaPB tablet_meta;
+    selectdb::get_tablet(code, msg, ss, ret, instance_id, txn.get(),
+                            request->tablet_id(), &tablet_meta);
+    if (code != MetaServiceCode::OK) {
+        return;
+    }
+
+    if (request->has_tablet_schema()) {
+        tablet_meta.mutable_schema()->CopyFrom(request->tablet_schema());
+    }
+
+    int64_t table_id = tablet_meta.table_id();
+    int64_t index_id = tablet_meta.index_id();
+    int64_t partition_id = tablet_meta.partition_id();
+    int64_t tablet_id = tablet_meta.tablet_id();
+    MetaTabletKeyInfo key_info {instance_id, table_id, index_id, partition_id, tablet_id};
+    std::string key;
+    std::string val;
+    meta_tablet_key(key_info, &key);
+    if (!tablet_meta.SerializeToString(&val)) {
+        code = MetaServiceCode::PROTOBUF_SERIALIZE_ERR;
+        msg = "failed to serialize tablet meta";
+        return;
+    }
+    txn->put(key, val);
+    if (txn->commit() != 0) {
+        code = ret == -1 ? MetaServiceCode::KV_TXN_CONFLICT : MetaServiceCode::KV_TXN_COMMIT_ERR;
+        ss << "failed to update tablet meta, ret=" << ret;
+        msg = ss.str();
+        return;
+    }
+}
+
 void MetaServiceImpl::get_tablet(::google::protobuf::RpcController* controller,
                                  const ::selectdb::GetTabletRequest* request,
                                  ::selectdb::GetTabletResponse* response,

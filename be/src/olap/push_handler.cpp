@@ -53,13 +53,7 @@ Status PushHandler::cloud_process_streaming_ingestion(const TabletSharedPtr& tab
     // check delete condition if push for delete
     DeletePredicatePB del_pred;
     auto tablet_schema = std::make_shared<TabletSchema>();
-    tablet_schema->copy_from(*tablet->tablet_schema());
-    if (!request.columns_desc.empty() && request.columns_desc[0].col_unique_id >= 0) {
-        tablet_schema->clear_columns();
-        for (const auto& column_desc : request.columns_desc) {
-            tablet_schema->append_column(TabletColumn(column_desc));
-        }
-    }
+    tablet_schema->update_tablet_columns(*tablet->tablet_schema(), request.columns_desc);
     RETURN_IF_ERROR(DeleteHandler::generate_delete_predicate(*tablet_schema,
                                                              request.delete_conditions, &del_pred));
     PUniqueId load_id;
@@ -157,13 +151,7 @@ Status PushHandler::_do_streaming_ingestion(TabletSharedPtr tablet, const TPushR
     if (push_type == PUSH_FOR_DELETE) {
         DeletePredicatePB del_pred;
         TabletSchema tablet_schema;
-        tablet_schema.copy_from(*tablet->tablet_schema());
-        if (!request.columns_desc.empty() && request.columns_desc[0].col_unique_id >= 0) {
-            tablet_schema.clear_columns();
-            for (const auto& column_desc : request.columns_desc) {
-                tablet_schema.append_column(TabletColumn(column_desc));
-            }
-        }
+        tablet_schema.update_tablet_columns(*tablet->tablet_schema(), request.columns_desc);
         res = DeleteHandler::generate_delete_predicate(tablet_schema, request.delete_conditions,
                                                        &del_pred);
         del_preds.push(del_pred);
@@ -182,13 +170,7 @@ Status PushHandler::_do_streaming_ingestion(TabletSharedPtr tablet, const TPushR
         return Status::OLAPInternalError(OLAP_ERR_TOO_MANY_VERSION);
     }
     auto tablet_schema = std::make_shared<TabletSchema>();
-    tablet_schema->copy_from(*tablet->tablet_schema());
-    if (!request.columns_desc.empty() && request.columns_desc[0].col_unique_id >= 0) {
-        tablet_schema->clear_columns();
-        for (const auto& column_desc : request.columns_desc) {
-            tablet_schema->append_column(TabletColumn(column_desc));
-        }
-    }
+    tablet_schema->update_tablet_columns(*tablet->tablet_schema(), request.columns_desc);
     RowsetSharedPtr rowset_to_add;
     // writes
     if (push_type == PUSH_NORMAL_V2) {

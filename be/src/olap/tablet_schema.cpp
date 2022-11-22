@@ -610,6 +610,17 @@ void TabletSchema::copy_from(const TabletSchema& tablet_schema) {
     init_from_pb(tablet_schema_pb);
 }
 
+void TabletSchema::update_tablet_columns(const TabletSchema& tablet_schema, 
+                                    const std::vector<TColumn>& t_columns) {
+    copy_from(tablet_schema);
+    if (!t_columns.empty() && t_columns[0].col_unique_id >= 0) {
+        clear_columns();
+        for (const auto& column : t_columns) {
+            append_column(TabletColumn(column));
+        }
+    }
+}
+
 std::string TabletSchema::to_key() const {
     TabletSchemaPB pb;
     to_schema_pb(&pb);

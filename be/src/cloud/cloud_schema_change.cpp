@@ -64,13 +64,7 @@ Status CloudSchemaChange::process_alter_tablet(const TAlterTabletReqV2& request)
 
     // Create a new tablet schema, should merge with dropped columns in light weight schema change
     TabletSchemaSPtr base_tablet_schema = std::make_shared<TabletSchema>();
-    base_tablet_schema->copy_from(*base_tablet->tablet_schema());
-    if (!request.columns.empty() && request.columns[0].col_unique_id >= 0) {
-        base_tablet_schema->clear_columns();
-        for (const auto& column : request.columns) {
-            base_tablet_schema->append_column(TabletColumn(column));
-        }
-    }
+    base_tablet_schema->update_tablet_columns(*base_tablet->tablet_schema(), request.columns);
 
     // delete handlers for new tablet
     DeleteHandler delete_handler;
@@ -354,13 +348,7 @@ Status CloudSchemaChange::_do_process_alter_inverted_index(TabletSharedPtr table
 
     // Create a new tablet schema, should merge with dropped columns in light weight schema change
     TabletSchemaSPtr tablet_schema = std::make_shared<TabletSchema>();
-    tablet_schema->copy_from(*tablet->tablet_schema());
-    if (!request.columns.empty() && request.columns[0].col_unique_id >= 0) {
-        tablet_schema->clear_columns();
-        for (const auto& column : request.columns) {
-            tablet_schema->append_column(TabletColumn(column));
-        }
-    }
+    tablet_schema->update_tablet_columns(*tablet->tablet_schema(), request.columns);
 
     // delete handlers for base tablet
     DeleteHandler delete_handler;
@@ -513,8 +501,8 @@ Status CloudSchemaChange::_add_inverted_index(
     for (auto& rs_reader : rs_readers) {
         VLOG_TRACE << "begin to read a history rowset. version=" << rs_reader->version().first
                    << "-" << rs_reader->version().second;
-
-        if ((res = sc_procedure->process(rs_reader, nullptr, nullptr, tablet, nullptr)) != Status::OK()) {
+        res = sc_procedure->process(rs_reader, nullptr, nullptr, tablet, nullptr);
+        if (!res.ok() && res.precise_code() != OLAP_ERR_DATA_EOF) {
             LOG(WARNING) << "failed to process the version."
                          << " version=" << rs_reader->version().first << "-"
                          << rs_reader->version().second;
@@ -527,15 +515,19 @@ Status CloudSchemaChange::_add_inverted_index(
         {
             // update tablet level schema
             auto new_tablet_schema = std::make_shared<TabletSchema>();
-            new_tablet_schema->copy_from(*tablet->tablet_schema());
+            new_tablet_schema->update_tablet_columns(*tablet->tablet_schema(), request.columns);
             new_tablet_schema->update_indexes_from_thrift(request.indexes);
+            if ((res = meta_mgr()->update_tablet_schema(tablet->tablet_id(), new_tablet_schema)) != Status::OK()) {
+                LOG(WARNING) << "failed to update tablet schema, tablet id: " << tablet->tablet_id();
+                return res;
+            }
             tablet->update_max_version_schema(new_tablet_schema, true);
             
             // update rowset meta level schema
             std::lock_guard<std::mutex> rwlock(tablet->get_rowset_update_lock());
             std::shared_lock<std::shared_mutex> wlock(tablet->get_header_lock());
             auto new_rs_tablet_schema = std::make_shared<TabletSchema>();
-            new_rs_tablet_schema->copy_from(*rowset_meta->tablet_schema());
+            new_rs_tablet_schema->update_tablet_columns(*rowset_meta->tablet_schema(), request.columns);
             new_rs_tablet_schema->update_indexes_from_thrift(request.indexes);
             rowset_meta->set_tablet_schema(new_rs_tablet_schema);
         }
@@ -611,15 +603,19 @@ Status CloudSchemaChange::_drop_inverted_index(
         {
             // update tablet level schema
             auto new_tablet_schema = std::make_shared<TabletSchema>();
-            new_tablet_schema->copy_from(*tablet->tablet_schema());
+            new_tablet_schema->update_tablet_columns(*tablet->tablet_schema(), request.columns);
             new_tablet_schema->update_indexes_from_thrift(request.indexes);
+            if ((res = meta_mgr()->update_tablet_schema(tablet->tablet_id(), new_tablet_schema)) != Status::OK()) {
+                LOG(WARNING) << "failed to update tablet schema, tablet id: " << tablet->tablet_id();
+                return res;
+            }
             tablet->update_max_version_schema(new_tablet_schema, true);
             
             // update rowset meta level schema
             std::lock_guard<std::mutex> rwlock(tablet->get_rowset_update_lock());
             std::shared_lock<std::shared_mutex> wlock(tablet->get_header_lock());
             auto new_rs_tablet_schema = std::make_shared<TabletSchema>();
-            new_rs_tablet_schema->copy_from(*rowset_meta->tablet_schema());
+            new_rs_tablet_schema->update_tablet_columns(*rowset_meta->tablet_schema(), request.columns);
             new_rs_tablet_schema->update_indexes_from_thrift(request.indexes);
             rowset_meta->set_tablet_schema(new_rs_tablet_schema);
         }

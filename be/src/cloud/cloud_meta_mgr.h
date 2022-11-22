@@ -43,6 +43,8 @@ public:
 
     Status lease_tablet_job(const selectdb::TabletJobInfoPB& job) override;
 
+    Status update_tablet_schema(int64_t tablet_id, TabletSchemaSPtr tablet_schema) override;
+
 private:
     std::unique_ptr<selectdb::MetaService_Stub> _stub;
 };

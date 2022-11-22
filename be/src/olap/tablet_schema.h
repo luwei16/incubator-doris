@@ -155,6 +155,8 @@ public:
     void to_schema_pb(TabletSchemaPB* tablet_meta_pb) const;
     void append_column(TabletColumn column, bool is_dropped_column = false);
     void copy_from(const TabletSchema& tablet_schema);
+    void update_tablet_columns(const TabletSchema& tablet_schema, 
+                            const std::vector<TColumn>& t_columns);
     std::string to_key() const;
     uint32_t mem_size() const;
 

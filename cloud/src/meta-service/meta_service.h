@@ -65,6 +65,11 @@ public:
                        ::selectdb::UpdateTabletResponse* response,
                        ::google::protobuf::Closure* done) override;
 
+    void update_tablet_schema(::google::protobuf::RpcController* controller,
+                       const ::selectdb::UpdateTabletSchemaRequest* request,
+                       ::selectdb::UpdateTabletSchemaResponse* response,
+                       ::google::protobuf::Closure* done) override;
+
     void get_tablet(::google::protobuf::RpcController* controller,
                     const ::selectdb::GetTabletRequest* request,
                     ::selectdb::GetTabletResponse* response,

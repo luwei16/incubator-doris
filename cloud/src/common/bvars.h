@@ -62,6 +62,7 @@ extern BvarLatencyRecorderWithTag g_bvar_ms_check_txn_conflict;
 extern BvarLatencyRecorderWithTag g_bvar_ms_get_version;
 extern BvarLatencyRecorderWithTag g_bvar_ms_create_tablets;
 extern BvarLatencyRecorderWithTag g_bvar_ms_update_tablet;
+extern BvarLatencyRecorderWithTag g_bvar_ms_update_tablet_schema;
 extern BvarLatencyRecorderWithTag g_bvar_ms_get_tablet;
 extern BvarLatencyRecorderWithTag g_bvar_ms_prepare_rowset;
 extern BvarLatencyRecorderWithTag g_bvar_ms_commit_rowset;
