@@ -167,6 +167,12 @@ for f in "${DORIS_HOME}/lib"/*.jar; do
 done
 export CLASSPATH="${CLASSPATH}:${DORIS_HOME}/lib:${DORIS_HOME}/conf"
 
+if [[ "${OPT_VERSION}" != "" ]]; then
+    export DORIS_LOG_TO_STDERR=1
+    "${JAVA}" -XX:OnOutOfMemoryError="kill -9 %p" org.apache.doris.PaloFe ${OPT_VERSION:+${OPT_VERSION}} "$@" </dev/null
+    exit 0
+fi
+
 pidfile="${PID_DIR}/fe.pid"
 
 if [[ -f "${pidfile}" ]]; then
