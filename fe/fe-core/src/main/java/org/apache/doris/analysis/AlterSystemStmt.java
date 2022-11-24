@@ -22,6 +22,7 @@ import org.apache.doris.common.Config;
 import org.apache.doris.common.ErrorCode;
 import org.apache.doris.common.ErrorReport;
 import org.apache.doris.common.UserException;
+import org.apache.doris.mysql.privilege.PaloAuth;
 import org.apache.doris.mysql.privilege.PrivPredicate;
 import org.apache.doris.qe.ConnectContext;
 
@@ -41,7 +42,8 @@ public class AlterSystemStmt extends DdlStmt {
 
     @Override
     public void analyze(Analyzer analyzer) throws UserException {
-        if (!Config.cloud_unique_id.isEmpty()) {
+        if (!Config.cloud_unique_id.isEmpty()
+                && !ConnectContext.get().getCurrentUserIdentity().getUser().equals(PaloAuth.ROOT_USER)) {
             ErrorReport.reportAnalysisException(ErrorCode.ERR_UNSUPPORTED_OPERATION_ERROR);
         }
 
