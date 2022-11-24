@@ -179,6 +179,12 @@ void VOlapScanNode::_init_counter(RuntimeState* state) {
             ADD_COUNTER(_segment_profile, "RowsBitmapIndexFiltered", TUnit::UNIT);
     _bitmap_index_filter_timer = ADD_TIMER(_segment_profile, "BitmapIndexFilterTimer");
 
+    _inverted_index_filter_counter =
+            ADD_COUNTER(_segment_profile, "RowsInvertedIndexFiltered", TUnit::UNIT);
+    _inverted_index_filter_timer = ADD_TIMER(_segment_profile, "InvertedIndexFilterTimer");
+
+    _output_index_return_column_timer = ADD_TIMER(_segment_profile, "OutputIndexReturnColumnTimer");
+
     _num_scanners = ADD_COUNTER(_runtime_profile, "NumScanners", TUnit::UNIT);
 
     _filtered_segment_counter = ADD_COUNTER(_segment_profile, "NumSegmentFiltered", TUnit::UNIT);

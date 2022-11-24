@@ -535,6 +535,11 @@ void VOlapScanner::update_counter() {
     COUNTER_UPDATE(_parent->_bitmap_index_filter_counter, stats.rows_bitmap_index_filtered);
     COUNTER_UPDATE(_parent->_bitmap_index_filter_timer, stats.bitmap_index_filter_timer);
 
+    COUNTER_UPDATE(_parent->_inverted_index_filter_counter, stats.rows_inverted_index_filtered);
+    COUNTER_UPDATE(_parent->_inverted_index_filter_timer, stats.inverted_index_filter_timer);
+
+    COUNTER_UPDATE(_parent->_output_index_return_column_timer, stats.output_index_return_column_timer);
+
     COUNTER_UPDATE(_parent->_filtered_segment_counter, stats.filtered_segment_number);
     COUNTER_UPDATE(_parent->_total_segment_counter, stats.total_segment_number);
 
