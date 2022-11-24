@@ -18,6 +18,8 @@
 package com.selectdb.cloud.catalog;
 
 import com.google.common.base.Strings;
+import com.google.common.hash.HashCode;
+import com.google.common.hash.Hashing;
 import com.google.gson.annotations.SerializedName;
 import org.apache.doris.catalog.Env;
 import org.apache.doris.catalog.Partition;
@@ -180,14 +182,21 @@ public class CloudReplica extends Replica {
         }
         LOG.debug("availableBes={}", availableBes);
         long index = -1;
+        HashCode hashCode = null;
         if (idx == -1) {
             index = getId() % availableBes.size();
         } else {
-            index = (partitionId + idx) % availableBes.size();
+            hashCode = Hashing.murmur3_128().hashLong(partitionId);
+            int beNum = availableBes.size();
+            // (hashCode.asLong() + idx) % beNum may be a negative value, so we
+            // need to take the modulus of beNum again to ensure that index is
+            // a positive value
+            index = ((hashCode.asLong() + idx) % beNum + beNum) % beNum;
         }
         long pickedBeId = availableBes.get((int) index).getId();
-        LOG.info("picked be Id {}, replica id {}, partition id {}, alive be num {}, replica idx {}, picked Index {}",
-                pickedBeId, getId(), partitionId, availableBes.size(), idx, index);
+        LOG.info("picked beId {}, replicaId {}, partitionId {}, beNum {}, replicaIdx {}, picked Index {}, hashVal {}",
+                pickedBeId, getId(), partitionId, availableBes.size(), idx, index,
+                hashCode == null ? -1 : hashCode.asLong());
 
         // save to clusterToBackends map
         List<Long> bes = new ArrayList<Long>();

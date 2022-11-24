@@ -39,11 +39,14 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 
 public class CloudTabletRebalancer extends MasterDaemon {
     private static final Logger LOG = LogManager.getLogger(CloudTabletRebalancer.class);
 
     Map<Long, List<Tablet>> beToTablets;
+
+    private Random rand = new Random();
 
     public CloudTabletRebalancer() {
         super("cloud tablet rebalancer", Config.tablet_rebalancer_interval_second * 1000);
@@ -153,7 +156,8 @@ public class CloudTabletRebalancer extends MasterDaemon {
                 return;
             }
 
-            Tablet pickedTablet = beToTablets.get(maxBe).get(0);
+            int randomIndex = rand.nextInt(beToTablets.get(maxBe).size());
+            Tablet pickedTablet = beToTablets.get(maxBe).get(randomIndex);
 
             // update clusterToBackens
             CloudReplica cloudReplica = (CloudReplica) pickedTablet.getReplicas().get(0);
@@ -161,7 +165,7 @@ public class CloudTabletRebalancer extends MasterDaemon {
             LOG.info("cloud rebalancer transfer {} from to {} cluster {}", pickedTablet.getId(), maxBe, minBe,
                     clusterId, minTabletsNum, maxTabletsNum, beNum, totalTabletsNum);
 
-            beToTablets.get(maxBe).remove(0);
+            beToTablets.get(maxBe).remove(randomIndex);
 
             beToTablets.putIfAbsent(minBe, new ArrayList<Tablet>());
             beToTablets.get(minBe).add(pickedTablet);
