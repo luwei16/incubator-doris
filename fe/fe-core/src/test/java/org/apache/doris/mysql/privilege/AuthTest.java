@@ -152,6 +152,13 @@ public class AuthTest {
     @Test
     public void test()
             throws IllegalAccessException, IllegalArgumentException, InvocationTargetException, UserException {
+        new Expectations(auth) {
+            {
+                auth.getUserId(anyString);
+                minTimes = 0;
+                result = "4802c5dd-38a8-430a-9d8c-a9714690ca9e";
+            }
+        };
         // 1. create cmy@%
         UserIdentity userIdentity = new UserIdentity("cmy", "%");
         UserDesc userDesc = new UserDesc(userIdentity, "12345", true);
@@ -165,10 +172,19 @@ public class AuthTest {
 
         try {
             auth.createUser(createUserStmt);
+            String cmyUid = auth.getUserPrivTable().getUserIdByUser("cmy");
+            Assert.assertEquals(cmyUid, "4802c5dd-38a8-430a-9d8c-a9714690ca9e");
         } catch (DdlException e) {
             Assert.fail();
         }
 
+        new Expectations(auth) {
+            {
+                auth.getUserId(anyString);
+                minTimes = 0;
+                result = "9e804163-db74-408c-8881-5dff1739241c";
+            }
+        };
         // 1.1 create cmy@% again with IF NOT EXISTS
         userIdentity = new UserIdentity("cmy", "%");
         userDesc = new UserDesc(userIdentity, "54321", true);
@@ -182,6 +198,9 @@ public class AuthTest {
 
         try {
             auth.createUser(createUserStmt);
+            String cmyUid = auth.getUserPrivTable().getUserIdByUser("cmy");
+            Assert.assertNotEquals(cmyUid, "9e804163-db74-408c-8881-5dff1739241c");
+            Assert.assertEquals(cmyUid, "4802c5dd-38a8-430a-9d8c-a9714690ca9e");
         } catch (DdlException e) {
             Assert.fail();
         }
@@ -192,6 +211,9 @@ public class AuthTest {
         createUserStmt = new CreateUserStmt(false, userDesc, null);
         try {
             createUserStmt.analyze(analyzer);
+            String cmyUid = auth.getUserPrivTable().getUserIdByUser("cmy");
+            Assert.assertNotEquals(cmyUid, "9e804163-db74-408c-8881-5dff1739241c");
+            Assert.assertEquals(cmyUid, "4802c5dd-38a8-430a-9d8c-a9714690ca9e");
         } catch (UserException e) {
             e.printStackTrace();
             Assert.fail();
@@ -217,6 +239,13 @@ public class AuthTest {
         Assert.assertTrue(currentUser.get(0).equals(userIdentity));
 
         // 3. create another user: zhangsan@"192.%"
+        new Expectations(auth) {
+            {
+                auth.getUserId(anyString);
+                minTimes = 0;
+                result = "";
+            }
+        };
         userIdentity = new UserIdentity("zhangsan", "192.%");
         userDesc = new UserDesc(userIdentity, "12345", true);
         createUserStmt = new CreateUserStmt(false, userDesc, null);
@@ -229,6 +258,9 @@ public class AuthTest {
 
         try {
             auth.createUser(createUserStmt);
+            String zsUid = auth.getUserPrivTable().getUserIdByUser("zhangsan");
+            // get a new uuid, not eq ""
+            Assert.assertNotEquals(zsUid, "");
         } catch (DdlException e) {
             Assert.fail();
         }

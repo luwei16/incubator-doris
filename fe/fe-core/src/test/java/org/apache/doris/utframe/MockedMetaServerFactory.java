@@ -19,8 +19,15 @@ package org.apache.doris.utframe;
 
 import com.selectdb.cloud.proto.MetaServiceGrpc;
 import com.selectdb.cloud.proto.SelectdbCloud;
+import com.selectdb.cloud.proto.SelectdbCloud.GetStageResponse;
 import com.selectdb.cloud.proto.SelectdbCloud.MetaServiceCode;
+import com.selectdb.cloud.proto.SelectdbCloud.MetaServiceResponseStatus;
+import com.selectdb.cloud.proto.SelectdbCloud.ObjectStoreInfoPB;
+import com.selectdb.cloud.proto.SelectdbCloud.ObjectStoreInfoPB.Provider;
+import com.selectdb.cloud.proto.SelectdbCloud.StagePB;
 import io.grpc.stub.StreamObserver;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import java.io.IOException;
 
@@ -33,6 +40,7 @@ import java.io.IOException;
 public class MockedMetaServerFactory {
     public static final String METASERVER_DEFAULT_IP = "127.0.0.100";
     public static final int METASERVER_DEFAULT_BRPC_PORT = 5001;
+    private static final Logger LOG = LogManager.getLogger(MockedMetaServerFactory.class);
 
     // create a mocked meta server with customize parameters
     public static MockedMetaServer createMetaServer(String host, int brpcPort,
@@ -51,6 +59,32 @@ public class MockedMetaServerFactory {
                     .setStatus(SelectdbCloud.MetaServiceResponseStatus.newBuilder().setCode(MetaServiceCode.OK).setMsg("OK"))
                     .setVersion(1).build());
             responseObserver.onCompleted();
+        }
+
+        @Override
+        public void getStage(SelectdbCloud.GetStageRequest request,
+                               StreamObserver<SelectdbCloud.GetStageResponse> responseObserver) {
+            if (request.hasCloudUniqueId()) {
+                // reuse uniqueId for mock ut response
+                switch (request.getCloudUniqueId()) {
+                    case "Internal-MetaServiceCode.OK":
+                        ObjectStoreInfoPB obj = ObjectStoreInfoPB.newBuilder()
+                                .setEndpoint("cos.ap-beijing.myqcloud.internal.com")
+                                .setAk("akak").setSk("sksk").setRegion("ap-beijing")
+                                .setBucket("bucketbucket").setExternalEndpoint("cos.ap-beijing.myqcloud.com")
+                                .setPrefix("ut-test").setProvider(Provider.OSS).build();
+                        StagePB stage = StagePB.newBuilder().setObjInfo(obj).build();
+                        GetStageResponse resp = GetStageResponse.newBuilder()
+                                .setStatus(MetaServiceResponseStatus.newBuilder().setCode(MetaServiceCode.OK).setMsg("OK"))
+                                .addStage(stage).build();
+                        responseObserver.onNext(resp);
+                        responseObserver.onCompleted();
+                        LOG.info("mock get Stage request: {}, response: {}", request, resp);
+                        return;
+                    default:
+                        return;
+                }
+            }
         }
     }
 }

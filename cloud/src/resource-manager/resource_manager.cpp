@@ -870,7 +870,7 @@ std::pair<MetaServiceCode, std::string> ResourceManager::refresh_instance(
     for (int i = 0; i < instance.clusters_size(); ++i) {
         add_cluster_to_index_no_lock(instance_id, instance.clusters(i));
     }
-    LOG(INFO) << "finish refresing instance, instance_id=" << instance_id << " seq=" << seq;
+    LOG(INFO) << "finish refreshing instance, instance_id=" << instance_id << " seq=" << seq;
     return ret0;
 }
 

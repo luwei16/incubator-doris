@@ -57,6 +57,11 @@ public class CloudLoadAction extends RestBaseController {
 
     private final String external = "external";
 
+    // for ut
+    public static StatementSubmitter getStmtSubmitter() {
+        return stmtSubmitter;
+    }
+
     private boolean isIP(String addr) {
         if (Strings.isNullOrEmpty(addr)) {
             return false;

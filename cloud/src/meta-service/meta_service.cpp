@@ -4094,8 +4094,6 @@ void MetaServiceImpl::create_stage(::google::protobuf::RpcController* controller
         as->add_mysql_user_id(stage.mysql_user_id(0));
         as->set_stage_id(stage.stage_id());
     } else if (stage.type() == StagePB::EXTERNAL) {
-        // external stage does not need mysql user_name
-        stage.clear_mysql_user_name();
         instance.add_stages()->CopyFrom(stage);
     }
     val = instance.SerializeAsString();

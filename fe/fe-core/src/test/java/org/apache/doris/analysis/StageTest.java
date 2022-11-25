@@ -298,7 +298,6 @@ public class StageTest extends TestWithFeService {
         StagePB stagePB = createStageStmt.toStageProto();
         Assert.assertEquals(StageType.EXTERNAL, stagePB.getType());
         Assert.assertEquals("ex_stage_1", stagePB.getName());
-        Assert.assertEquals(1, stagePB.getMysqlUserNameList().size());
         Assert.assertTrue(StringUtils.isNotBlank(stagePB.getStageId()));
         ObjectStoreInfoPB objInfo = stagePB.getObjInfo();
         Assert.assertEquals("cos.ap-beijing.myqcloud.com", objInfo.getEndpoint());

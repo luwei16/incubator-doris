@@ -1,6 +1,41 @@
 import org.codehaus.groovy.runtime.IOGroovyMethods
 
 suite("test_internal_stage") {
+    // Internal and external stage cross use
+    def tableNamExternal = "customer_external_stage"
+    def externalStageName = "internal_external_stage_cross_use"
+    try {
+        sql """ DROP TABLE IF EXISTS ${tableNamExternal}; """
+        sql """
+            CREATE TABLE IF NOT EXISTS ${tableNamExternal} (
+            C_CUSTKEY     INTEGER NOT NULL,
+            C_NAME        VARCHAR(25) NOT NULL,
+            C_ADDRESS     VARCHAR(40) NOT NULL,
+            C_NATIONKEY   INTEGER NOT NULL,
+            C_PHONE       CHAR(15) NOT NULL,
+            C_ACCTBAL     DECIMAL(15,2)   NOT NULL,
+            C_MKTSEGMENT  CHAR(10) NOT NULL,
+            C_COMMENT     VARCHAR(117) NOT NULL
+            )
+            UNIQUE KEY(C_CUSTKEY)
+            DISTRIBUTED BY HASH(C_CUSTKEY) BUCKETS 1
+        """
+
+        sql """
+            create stage if not exists ${externalStageName} 
+            properties ('endpoint' = '${getS3Endpoint()}' ,
+            'region' = '${getS3Region()}' ,
+            'bucket' = '${getS3BucketName()}' ,
+            'prefix' = 'regression' ,
+            'ak' = '${getS3AK()}' ,
+            'sk' = '${getS3SK()}' ,
+            'provider' = '${getProvider()}', 
+            'default.file.column_separator' = "|");
+        """
+    } finally {
+        try_sql("DROP TABLE IF EXISTS ${tableNamExternal}")
+    }
+
     def tableName = "customer_internal_stage"
     def fileName = "internal_customer.csv"
     def filePath = "${context.config.dataPath}/cloud/copy_into/" + fileName

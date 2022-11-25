@@ -18,7 +18,6 @@
 package org.apache.doris.analysis;
 
 import org.apache.doris.catalog.Env;
-import org.apache.doris.cluster.ClusterNamespace;
 import org.apache.doris.common.AnalysisException;
 import org.apache.doris.common.DdlException;
 import org.apache.doris.common.ErrorCode;
@@ -76,9 +75,8 @@ public class CreateStageStmt extends DdlStmt {
 
     public StagePB toStageProto() throws DdlException {
         StagePB.Builder stageBuilder = StagePB.newBuilder();
-        stageBuilder.addMysqlUserName(ClusterNamespace
-                        .getNameFromFullName(ConnectContext.get().getCurrentUserIdentity().getQualifiedUser()))
-                .setStageId(UUID.randomUUID().toString());
+        // external stage doesn't need username
+        stageBuilder.setStageId(UUID.randomUUID().toString());
         switch (type) {
             case EXTERNAL:
                 stageBuilder.setName(getStageName()).setType(StagePB.StageType.EXTERNAL)

@@ -113,8 +113,10 @@ public abstract class DorisHttpTestCase {
     public static int testSchemaHash = 93423942;
 
     public static int HTTP_PORT;
+    public static int CLOUD_HTTP_PORT;
 
     protected static String URI;
+    protected static String CloudURI;
 
     protected String rootAuth = Credentials.basic("root", "");
 
@@ -330,11 +332,16 @@ public abstract class DorisHttpTestCase {
     @BeforeClass
     public static void initHttpServer() throws IllegalArgException, InterruptedException {
         ServerSocket socket = null;
+        ServerSocket socketCloud = null;
         try {
             socket = new ServerSocket(0);
             socket.setReuseAddress(true);
             HTTP_PORT = socket.getLocalPort();
+            socketCloud = new ServerSocket(0);
+            socketCloud.setReuseAddress(true);
+            CLOUD_HTTP_PORT = socketCloud.getLocalPort();
             URI = "http://localhost:" + HTTP_PORT + "/api/" + DB_NAME + "/" + TABLE_NAME;
+            CloudURI = "http://localhost:" + CLOUD_HTTP_PORT;
         } catch (Exception e) {
             throw new IllegalStateException("Could not find a free TCP/IP port to start HTTP Server on");
         } finally {
@@ -345,11 +352,19 @@ public abstract class DorisHttpTestCase {
                     // CHECKSTYLE IGNORE THIS LINE
                 }
             }
+            if (socketCloud != null) {
+                try {
+                    socketCloud.close();
+                } catch (Exception e) {
+                    // CHECKSTYLE IGNORE THIS LINE
+                }
+            }
         }
 
         FeConstants.runningUnitTest = true;
         httpServer = new HttpServer();
         httpServer.setPort(HTTP_PORT);
+        httpServer.setCloudPort(CLOUD_HTTP_PORT);
         httpServer.setMaxHttpPostSize(100 * 1024 * 1024);
         httpServer.setAcceptors(2);
         httpServer.setSelectors(4);
