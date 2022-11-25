@@ -96,14 +96,7 @@ install(FILES
     DESTINATION ${BUILD_DIR}/test)
 
 install(FILES
-    ${THIRDPARTY_DIR}/lib/ld-linux-x86-64.so.2
-    ${THIRDPARTY_DIR}/lib/libc.so.6
-    ${THIRDPARTY_DIR}/lib/libdl.so.2
     ${THIRDPARTY_DIR}/lib/libfdb_c.so
-    ${THIRDPARTY_DIR}/lib/libgcc_s.so.1
-    ${THIRDPARTY_DIR}/lib/libm.so.6
-    ${THIRDPARTY_DIR}/lib/libpthread.so.0
-    ${THIRDPARTY_DIR}/lib/librt.so.1
     PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE
     GROUP_READ GROUP_WRITE GROUP_EXECUTE
     WORLD_READ WORLD_EXECUTE
