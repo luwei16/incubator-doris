@@ -47,7 +47,7 @@ suite("test_recycler") {
                     lo_shippriority,lo_quantity,lo_extendedprice,lo_ordtotalprice,lo_discount, 
                     lo_revenue,lo_supplycost,lo_tax,lo_commitdate,lo_shipmode,lo_dummy"""
 
-    for (i = 0; i < 1; i++) {
+    for (int index = 0; index < 1; index++) {
         streamLoad {
             table tableName
 
@@ -61,7 +61,7 @@ suite("test_recycler") {
             set 'columns', columns
             // relate to ${DORIS_HOME}/regression-test/data/demo/streamload_input.csv.
             // also, you can stream load a http stream, e.g. http://xxx/some.csv
-            file """${context.sf1DataPath}/ssb/sf1/lineorder.tbl.split01.gz"""
+            file """${context.sf1DataPath}/ssb/sf0.1/lineorder.tbl.gz"""
 
             time 10000 // limit inflight 10s
 
@@ -80,7 +80,10 @@ suite("test_recycler") {
                 assertTrue(json.NumberLoadedRows > 0 && json.LoadBytes > 0)
             }
         }
+        logger.info("index:${index}")
     }
+
+    qt_sql """ select count(*) from ${tableName};"""
 
     String[][] tabletInfoList = sql """ show tablets from ${tableName}; """
     logger.debug("tabletInfoList:${tabletInfoList}")
@@ -99,7 +102,7 @@ suite("test_recycler") {
     // recycle data
     do {
         triggerRecycle(token, instanceId)
-        Thread.sleep(20000) // 1min
+        Thread.sleep(20000) // 2min
         if (checkRecycleTable(token, instanceId, cloudUniqueId, tableName, tabletIdSet)) {
             success = true
             break

@@ -52,7 +52,7 @@ suite("test_recycler_with_schema_change") {
                     lo_shippriority,lo_quantity,lo_extendedprice,lo_ordtotalprice,lo_discount, 
                     lo_revenue,lo_supplycost,lo_tax,lo_commitdate,lo_shipmode,lo_dummy"""
 
-    for (i = 0; i < 2; i++) {
+    for (int index = 0; index < 2; index++) {
         streamLoad {
             table tableName
 
@@ -66,7 +66,7 @@ suite("test_recycler_with_schema_change") {
             set 'columns', columns
             // relate to ${DORIS_HOME}/regression-test/data/demo/streamload_input.csv.
             // also, you can stream load a http stream, e.g. http://xxx/some.csv
-            file """${context.sf1DataPath}/ssb/sf1/lineorder.tbl.split01.gz"""
+            file """${context.sf1DataPath}/ssb/sf0.1/lineorder.tbl.gz"""
 
             time 10000 // limit inflight 10s
 
@@ -85,7 +85,10 @@ suite("test_recycler_with_schema_change") {
                 assertTrue(json.NumberLoadedRows > 0 && json.LoadBytes > 0)
             }
         }
+        logger.info("index:${index}")
     }
+
+    qt_sql """ select count(*) from ${tableName}"""
 
     String[][] tabletInfoList = sql """ show tablets from ${tableName}; """
     logger.debug("tabletInfoList:${tabletInfoList}")
@@ -125,7 +128,7 @@ suite("test_recycler_with_schema_change") {
     } while (retry--)
     assertTrue(success)
 
-    order_qt_select """ select count(*) from ${tableName}"""
+    qt_sql """ select count(*) from ${tableName}"""
 
     String[][] tabletInfoList2 = sql """ show tablets from ${tableName}; """
     logger.debug("tabletInfoList2:${tabletInfoList2}")
@@ -142,7 +145,7 @@ suite("test_recycler_with_schema_change") {
     // recycle data
     do {
         triggerRecycle(token, instanceId)
-        Thread.sleep(20000) // 1min
+        Thread.sleep(20000) // 2min
         if (checkRecycleTable(token, instanceId, cloudUniqueId, tableName, tabletIdSet)) {
             success = true
             break

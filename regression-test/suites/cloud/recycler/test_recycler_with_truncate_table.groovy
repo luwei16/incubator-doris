@@ -61,7 +61,7 @@ suite("test_recycler_with_truncate_table") {
             set 'columns', columns
             // relate to ${DORIS_HOME}/regression-test/data/demo/streamload_input.csv.
             // also, you can stream load a http stream, e.g. http://xxx/some.csv
-            file """${context.sf1DataPath}/ssb/sf1/lineorder.tbl.split01.gz"""
+            file """${context.sf1DataPath}/ssb/sf0.1/lineorder.tbl.gz"""
 
             time 10000 // limit inflight 10s
 
@@ -109,7 +109,9 @@ suite("test_recycler_with_truncate_table") {
     } while (retry--)
     assertTrue(success)
 
-    for (i = 0; i < 1; i++) {
+    qt_sql "select count(*) from ${tableName};"
+
+    for (int index = 0; index < 2; index++) {
         streamLoad {
             table tableName
 
@@ -123,7 +125,7 @@ suite("test_recycler_with_truncate_table") {
             set 'columns', columns
             // relate to ${DORIS_HOME}/regression-test/data/demo/streamload_input.csv.
             // also, you can stream load a http stream, e.g. http://xxx/some.csv
-            file """${context.sf1DataPath}/ssb/sf1/lineorder.tbl.split01.gz"""
+            file """${context.sf1DataPath}/ssb/sf0.1/lineorder.tbl.gz"""
 
             time 10000 // limit inflight 10s
 
@@ -142,7 +144,10 @@ suite("test_recycler_with_truncate_table") {
                 assertTrue(json.NumberLoadedRows > 0 && json.LoadBytes > 0)
             }
         }
+        logger.info("index:${index}")
     }
+
+    qt_sql "select count(*) from ${tableName};"
 
     String[][] tabletInfoList2 = sql """ show tablets from ${tableName}; """
     logger.debug("tabletInfoList2:${tabletInfoList2}")
@@ -152,8 +157,6 @@ suite("test_recycler_with_truncate_table") {
     }
     logger.info("tabletIdSet2:${tabletIdSet2}")
 
-     qt_sql "select count(*) from ${tableName};"
-
     // drop table
     sql """ DROP TABLE IF EXISTS ${tableName} FORCE"""
 
@@ -162,7 +165,7 @@ suite("test_recycler_with_truncate_table") {
     // recycle data
     do {
         triggerRecycle(token, instanceId)
-        Thread.sleep(20000) // 1min
+        Thread.sleep(20000) // 2min
         if (checkRecycleTable(token, instanceId, cloudUniqueId, tableName, tabletIdSet2)) {
             success = true
             break

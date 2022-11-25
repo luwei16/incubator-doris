@@ -47,7 +47,7 @@ suite("test_recycler_with_drop_partition") {
                     lo_shippriority,lo_quantity,lo_extendedprice,lo_ordtotalprice,lo_discount, 
                     lo_revenue,lo_supplycost,lo_tax,lo_commitdate,lo_shipmode,lo_dummy"""
 
-    for (i = 0; i < 2; i++) {
+    for (int index = 0; index < 2; index++) {
         streamLoad {
             table tableName
 
@@ -61,7 +61,7 @@ suite("test_recycler_with_drop_partition") {
             set 'columns', columns
             // relate to ${DORIS_HOME}/regression-test/data/demo/streamload_input.csv.
             // also, you can stream load a http stream, e.g. http://xxx/some.csv
-            file """${context.sf1DataPath}/ssb/sf1/lineorder.tbl.split01.gz"""
+            file """${context.sf1DataPath}/ssb/sf0.1/lineorder.tbl.gz"""
 
             time 10000 // limit inflight 10s
 
@@ -80,7 +80,10 @@ suite("test_recycler_with_drop_partition") {
                 assertTrue(json.NumberLoadedRows > 0 && json.LoadBytes > 0)
             }
         }
+        logger.info("index:${index}")
     }
+
+    qt_sql """ select count(*) from ${tableName} """
 
     String[][] tabletInfoList1 = sql """ show tablets from ${tableName}; """
     logger.debug("tabletInfoList1:${tabletInfoList1}")
@@ -91,7 +94,9 @@ suite("test_recycler_with_drop_partition") {
     logger.info("tabletIdSet1:${tabletIdSet1}")
 
     //drop partition
-    sql """ alter table ${tableName} drop partition p1992; """
+    sql """ alter table ${tableName} drop partition p1992 force; """
+
+    qt_sql """ select count(*) from ${tableName} """
 
     String[][] tabletInfoList2 = sql """ show tablets from ${tableName}; """
     logger.debug("tabletInfoList2:${tabletInfoList2}")
@@ -120,6 +125,8 @@ suite("test_recycler_with_drop_partition") {
         }
     } while (retry--)
     assertTrue(success)
+
+    qt_sql """ select count(*) from ${tableName} """
 
     // drop table
     sql """ DROP TABLE IF EXISTS ${tableName} FORCE"""

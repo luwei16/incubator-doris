@@ -45,7 +45,7 @@ suite("test_recycler_with_compaction") {
                     lo_shippriority,lo_quantity,lo_extendedprice,lo_ordtotalprice,lo_discount, 
                     lo_revenue,lo_supplycost,lo_tax,lo_commitdate,lo_shipmode,lo_dummy"""
 
-    for (i = 0; i < 5; i++) {
+    for (int index = 0; index < 5; index++) {
         streamLoad {
             table tableName
 
@@ -59,7 +59,7 @@ suite("test_recycler_with_compaction") {
             set 'columns', columns
             // relate to ${DORIS_HOME}/regression-test/data/demo/streamload_input.csv.
             // also, you can stream load a http stream, e.g. http://xxx/some.csv
-            file """${context.sf1DataPath}/ssb/sf1/lineorder.tbl.split01.gz"""
+            file """${context.sf1DataPath}/ssb/sf0.1/lineorder.tbl.gz"""
 
             time 10000 // limit inflight 10s
 
@@ -78,10 +78,15 @@ suite("test_recycler_with_compaction") {
                 assertTrue(json.NumberLoadedRows > 0 && json.LoadBytes > 0)
             }
         }
+        logger.info("index:${index}")
     }
+
+    qt_sql " select count(*) from ${tableName}"
 
     // do cloud compaction
     doCloudCompaction(tableName);
+
+    qt_sql " select count(*) from ${tableName}"
 
     String[][] tabletInfoList = sql """ show tablets from ${tableName}; """
     logger.info("tabletInfoList:${tabletInfoList}")

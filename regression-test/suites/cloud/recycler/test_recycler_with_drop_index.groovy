@@ -1,12 +1,12 @@
 import groovy.json.JsonOutput
 import org.codehaus.groovy.runtime.IOGroovyMethods
 
-suite("test_recycler_recycler_with_drop_index") {
+suite("test_recycler_with_drop_index") {
     // create table
     def token = "greedisgood9999"
     def instanceId = context.config.instanceId;
     def cloudUniqueId = context.config.cloudUniqueId
-    def tableName = 'test_recycler_recycler_with_drop_index'
+    def tableName = 'test_recycler_with_drop_index'
     def mvName = "mv1"
 
     sql """ DROP TABLE IF EXISTS ${tableName} FORCE"""
@@ -91,7 +91,7 @@ suite("test_recycler_recycler_with_drop_index") {
                     lo_shippriority,lo_quantity,lo_extendedprice,lo_ordtotalprice,lo_discount, 
                     lo_revenue,lo_supplycost,lo_tax,lo_commitdate,lo_shipmode,lo_dummy"""
 
-    for (i = 0; i < 2; i++) {
+    for (int index = 0; index < 2; index++) {
         streamLoad {
             table tableName
 
@@ -105,7 +105,7 @@ suite("test_recycler_recycler_with_drop_index") {
             set 'columns', columns
             // relate to ${DORIS_HOME}/regression-test/data/demo/streamload_input.csv.
             // also, you can stream load a http stream, e.g. http://xxx/some.csv
-            file """${context.sf1DataPath}/ssb/sf1/lineorder.tbl.split01.gz"""
+            file """${context.sf1DataPath}/ssb/sf0.1/lineorder.tbl.gz"""
 
             time 10000 // limit inflight 10s
 
@@ -124,6 +124,7 @@ suite("test_recycler_recycler_with_drop_index") {
                 assertTrue(json.NumberLoadedRows > 0 && json.LoadBytes > 0)
             }
         }
+        logger.info("index:${index}")
     }
 
     qt_sql """ select count(*) from ${tableName} """
@@ -142,7 +143,7 @@ suite("test_recycler_recycler_with_drop_index") {
     } while (retry--)
     assertTrue(success)
 
-     qt_sql """ select count(*) from ${tableName} """
+    qt_sql """ select count(*) from ${tableName} """
     // drop table
     sql """ DROP TABLE IF EXISTS ${tableName} FORCE"""
 

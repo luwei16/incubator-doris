@@ -94,10 +94,49 @@ Suite.metaClass.checkRecycleTable = { String token, String instanceId, String cl
             return false;
         }
     }
-
     return true;
 }
 
 logger.info("Added 'checkRecycleTable' function to Suite")
 
+Suite.metaClass.checkRecycleInternalStage = { String token, String instanceId, String cloudUniqueId, String fileName
+    /* param */ ->
+    // which suite invoke current function?
+    Suite suite = delegate as Suite
+
+    // function body
+    suite.getLogger().info("""Test plugin: suiteName: ${suite.name}, instanceId: ${instanceId}, token:${token}, cloudUniqueId:${cloudUniqueId}""".toString())
+
+    def getObjStoreInfoApiResult = suite.getObjStoreInfo(token, cloudUniqueId);
+    suite.getLogger().info("checkRecycleTable(): getObjStoreInfoApiResult:${getObjStoreInfoApiResult}".toString())
+
+    String ak = getObjStoreInfoApiResult.result.obj_info[0].ak
+    String sk = getObjStoreInfoApiResult.result.obj_info[0].sk
+    String endpoint = getObjStoreInfoApiResult.result.obj_info[0].endpoint
+    String region = getObjStoreInfoApiResult.result.obj_info[0].region
+    String prefix = getObjStoreInfoApiResult.result.obj_info[0].prefix
+    String bucket = getObjStoreInfoApiResult.result.obj_info[0].bucket
+    suite.getLogger().info("ak:${ak}, sk:${sk}, endpoint:${endpoint}, prefix:${prefix}".toString())
+
+    def credentials = new BasicAWSCredentials(ak, sk)
+    def endpointConfiguration = new EndpointConfiguration(endpoint, region)
+    def s3Client = AmazonS3ClientBuilder.standard().withEndpointConfiguration(endpointConfiguration)
+            .withCredentials(new AWSStaticCredentialsProvider(credentials)).build()
+
+    // for root and admin, userId equal userName
+    String userName = suite.context.config.jdbcUser;
+    String userId = suite.context.config.jdbcUser;
+    def objectListing = s3Client.listObjects(
+        new ListObjectsRequest().withMaxKeys(1)
+            .withBucketName(bucket)
+            .withPrefix("${prefix}/stage/${userName}/${userId}/${fileName}"))
+
+    suite.getLogger().info("${prefix}/stage/${userName}/${userId}/${fileName}, objectListing:${objectListing.getObjectSummaries()}".toString())
+    if (!objectListing.getObjectSummaries().isEmpty()) {
+        return false;
+    }
+
+    return true;
+}
+logger.info("Added 'checkRecycleInternalStage' function to Suite")
 

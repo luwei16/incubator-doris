@@ -21,7 +21,6 @@ suite("test_recycler_with_txn_label") {
         DISTRIBUTED BY HASH(siteid) BUCKETS 1;
     """
 
-
     String label = UUID.randomUUID().toString()
     streamLoad {
         table tableName
@@ -54,9 +53,10 @@ suite("test_recycler_with_txn_label") {
         }
     }
 
+    qt_sql """ select count(*) from ${tableName};"""
+
     streamLoad {
         table tableName
-
         // default label is UUID:
         set 'label', "${label}"
 
@@ -83,13 +83,17 @@ suite("test_recycler_with_txn_label") {
         }
     }
 
+    qt_sql """ select count(*) from ${tableName};"""
+
     int retry = 3
     boolean success = false
     // recycle data
     do {
         triggerRecycle(token, instanceId)
-        Thread.sleep(50000) // 1min
+        Thread.sleep(50000) // 5min
     } while (retry--)
+
+    qt_sql """ select count(*) from ${tableName};"""
 
     streamLoad {
         table tableName
@@ -121,4 +125,29 @@ suite("test_recycler_with_txn_label") {
             assertTrue(json.NumberLoadedRows > 0 && json.LoadBytes > 0)
         }
     }
+
+    String[][] tabletInfoList = sql """ show tablets from ${tableName}; """
+    logger.debug("tabletInfoList:${tabletInfoList}")
+
+    HashSet<String> tabletIdSet= new HashSet<String>()
+    for (tabletInfo : tabletInfoList) {
+        tabletIdSet.add(tabletInfo[0])
+    }
+    logger.info("tabletIdSet:${tabletIdSet}")
+
+    // drop table
+    sql """ DROP TABLE IF EXISTS ${tableName} FORCE"""
+
+    retry = 3
+    success = false
+    // recycle data
+    do {
+        triggerRecycle(token, instanceId)
+        Thread.sleep(50000)
+        if (checkRecycleTable(token, instanceId, cloudUniqueId, tableName, tabletIdSet)) {
+            success = true
+            break
+        }
+    } while (retry--)
+    assertTrue(success)
 }

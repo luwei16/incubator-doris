@@ -1,18 +1,15 @@
 import groovy.json.JsonOutput
 import org.codehaus.groovy.runtime.IOGroovyMethods
 
-suite("test_recycler_with_drop_db") {
+suite("test_recycler_recycler_with_drop_rollup") {
     // create table
     def token = "greedisgood9999"
     def instanceId = context.config.instanceId;
     def cloudUniqueId = context.config.cloudUniqueId
-    def databaseName = "regression_test_cloud_test_recycler_with_drop_db"
-    def tableName = 'test_recycler_with_drop_db'
+    def tableName = 'test_recycler_recycler_with_drop_rollup'
+    def rollupName = "rollup1"
 
-    sql """ DROP DATABASE IF EXISTS ${databaseName} FORCE"""
-    sql """ DROP TABLE IF EXISTS ${tableName} FORCE """
-    sql """ create database ${databaseName}"""
-    sql """ use ${databaseName}"""
+    sql """ DROP TABLE IF EXISTS ${tableName} FORCE"""
     sql """
         CREATE TABLE IF NOT EXISTS `${tableName}` (
         `lo_orderkey` bigint(20) NOT NULL COMMENT "",
@@ -43,14 +40,58 @@ suite("test_recycler_with_drop_db") {
         PARTITION p1998 VALUES [("19980101"), ("19990101")))
         DISTRIBUTED BY HASH(`lo_orderkey`) BUCKETS 4;
     """
+
+    String[][] tabletInfoList1 = sql """ show tablets from ${tableName}; """
+    logger.debug("tabletInfoList1:${tabletInfoList1}")
+    HashSet<String> tabletIdSet1 = new HashSet<String>()
+    for (tabletInfo : tabletInfoList1) {
+        tabletIdSet1.add(tabletInfo[0])
+    }
+    logger.info("tabletIdSet1:${tabletIdSet1}")
+
+    def getJobRollupState = { tbName ->
+        def jobStateResult = sql """  SHOW ALTER TABLE ROLLUP WHERE TableName='${tbName}' ORDER BY CreateTime DESC LIMIT 1; """
+        return jobStateResult[0][8]
+    }
+
+    sql "alter table ${tableName} add rollup ${rollupName}(lo_orderkey, lo_linenumber);"
+    int max_try_secs = 60
+    while (max_try_secs--) {
+        String res = getJobRollupState(tableName)
+        if (res == "FINISHED") {
+            break
+        } else {
+            Thread.sleep(2000)
+            if (max_try_secs < 1) {
+                println "test timeout," + "state:" + res
+                assertEquals("FINISHED",res)
+            }
+        }
+    }
+
+    String[][] tabletInfoList2 = sql """ show tablets from ${tableName}; """
+    logger.debug("tabletInfoList2:${tabletInfoList2}")
+    HashSet<String> tabletIdSet2 = new HashSet<String>()
+    for (tabletInfo : tabletInfoList2) {
+        tabletIdSet2.add(tabletInfo[0])
+    }
+    logger.info("tabletIdSet2:${tabletIdSet2}")
+
+    HashSet<String> tabletIdSet3 = new HashSet<String>()
+    for (tableId : tabletIdSet2) {
+        if (!tabletIdSet1.contains(tableId)) {
+            tabletIdSet3.add(tableId);
+        }
+    }
+    logger.info("tabletIdSet3:${tabletIdSet3}")
+
     // load data
     def columns = """lo_orderkey,lo_linenumber,lo_custkey,lo_partkey,lo_suppkey,lo_orderdate,lo_orderpriority, 
-            lo_shippriority,lo_quantity,lo_extendedprice,lo_ordtotalprice,lo_discount, 
-            lo_revenue,lo_supplycost,lo_tax,lo_commitdate,lo_shipmode,lo_dummy"""
+                    lo_shippriority,lo_quantity,lo_extendedprice,lo_ordtotalprice,lo_discount, 
+                    lo_revenue,lo_supplycost,lo_tax,lo_commitdate,lo_shipmode,lo_dummy"""
 
-    for (int index = 0; index < 1; index++) {
+    for (int index = 0; index < 2; index++) {
         streamLoad {
-            db databaseName
             table tableName
 
             // default label is UUID:
@@ -81,34 +122,40 @@ suite("test_recycler_with_drop_db") {
                 assertEquals(json.NumberTotalRows, json.NumberLoadedRows)
                 assertTrue(json.NumberLoadedRows > 0 && json.LoadBytes > 0)
             }
+            logger.info("index:${index}")
         }
-        logger.info("index:${index}")
     }
 
     qt_sql """ select count(*) from ${tableName} """
 
-    String[][] tabletInfoList = sql """ show tablets from ${tableName}; """
-    logger.debug("tabletInfoList:${tabletInfoList}")
-    HashSet<String> tabletIdSet= new HashSet<String>()
-    for (tabletInfo : tabletInfoList) {
-        tabletIdSet.add(tabletInfo[0])
-    }
-    logger.info("tabletIdSet:${tabletIdSet}")
-
-    // drop table
-    sql """ DROP DATABASE IF EXISTS ${databaseName} FORCE"""
-
+    sql """ alter table ${tableName} drop rollup ${rollupName};"""
     int retry = 15
     boolean success = false
     // recycle data
     do {
         triggerRecycle(token, instanceId)
         Thread.sleep(20000)  // 2min
-        if (checkRecycleTable(token, instanceId, cloudUniqueId, tableName, tabletIdSet)) {
+        if (checkRecycleTable(token, instanceId, cloudUniqueId, tableName, tabletIdSet3)) {
+            success = true
+            break
+        }
+    } while (retry--)
+    assertTrue(success)
+
+    qt_sql """ select count(*) from ${tableName} """
+    // drop table
+    sql """ DROP TABLE IF EXISTS ${tableName} FORCE"""
+
+    retry = 15
+    success = false
+    // recycle data
+    do {
+        triggerRecycle(token, instanceId)
+        Thread.sleep(20000) // 2min
+        if (checkRecycleTable(token, instanceId, cloudUniqueId, tableName, tabletIdSet1)) {
             success = true
             break
         }
     } while (retry--)
     assertTrue(success)
 }
-
