@@ -32,16 +32,16 @@ import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class CloudReplica extends Replica {
     private static final Logger LOG = LogManager.getLogger(CloudReplica.class);
 
     // In the future, a replica may be mapped to multiple BEs in a cluster,
     // so this value is be list
-    private Map<String, List<Long>> clusterToBackends = new HashMap<String, List<Long>>();
+    private Map<String, List<Long>> clusterToBackends = new ConcurrentHashMap<String, List<Long>>();
     @SerializedName(value = "dbId")
     private long dbId = -1;
     @SerializedName(value = "tableId")
@@ -67,7 +67,7 @@ public class CloudReplica extends Replica {
     }
 
     private boolean isColocated() {
-        return idx != -1;
+        return Env.getCurrentColocateIndex().isColocateTable(tableId);
     }
 
     private long getColocatedBeId(String cluster) {
@@ -161,6 +161,10 @@ public class CloudReplica extends Replica {
             }
         }
 
+        return hashReplicaToBe(cluster);
+    }
+
+    private long hashReplicaToBe(String cluster) {
         // TODO(luwei) list shoule be sorted
         List<Backend> clusterBes = Env.getCurrentSystemInfo().getBackendsByClusterName(cluster);
         // use alive be to exec sql
@@ -175,9 +179,15 @@ public class CloudReplica extends Replica {
             return -1;
         }
         LOG.debug("availableBes={}", availableBes);
-        long index = getId() % availableBes.size();
+        long index = -1;
+        if (idx == -1) {
+            index = getId() % availableBes.size();
+        } else {
+            index = (partitionId + idx) % availableBes.size();
+        }
         long pickedBeId = availableBes.get((int) index).getId();
-        LOG.debug("picked backendId={}", pickedBeId);
+        LOG.info("picked be Id {}, replica id {}, partition id {}, alive be num {}, replica idx {}, picked Index {}",
+                pickedBeId, getId(), partitionId, availableBes.size(), idx, index);
 
         // save to clusterToBackends map
         List<Long> bes = new ArrayList<Long>();

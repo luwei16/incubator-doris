@@ -3514,7 +3514,6 @@ public class InternalCatalog implements CatalogIf<Database> {
     private void createCloudTablets(String clusterName, MaterializedIndex index, ReplicaState replicaState,
             DistributionInfo distributionInfo, long version, ReplicaAllocation replicaAlloc, TabletMeta tabletMeta,
             Set<Long> tabletIdSet) throws DdlException {
-        ColocateTableIndex colocateIndex = Env.getCurrentColocateIndex();
         for (int i = 0; i < distributionInfo.getBucketNum(); ++i) {
             Tablet tablet = new Tablet(Env.getCurrentEnv().getNextId());
 
@@ -3522,11 +3521,10 @@ public class InternalCatalog implements CatalogIf<Database> {
             index.addTablet(tablet, tabletMeta);
             tabletIdSet.add(tablet.getId());
 
-            long idx = colocateIndex.isColocateTable(tabletMeta.getTableId()) ? i : -1;
             long replicaId = Env.getCurrentEnv().getNextId();
             Replica replica = new CloudReplica(replicaId, null, replicaState, version,
                     tabletMeta.getOldSchemaHash(), tabletMeta.getDbId(), tabletMeta.getTableId(),
-                    tabletMeta.getPartitionId(), tabletMeta.getIndexId(), idx);
+                    tabletMeta.getPartitionId(), tabletMeta.getIndexId(), i);
             tablet.addReplica(replica);
         }
     }
