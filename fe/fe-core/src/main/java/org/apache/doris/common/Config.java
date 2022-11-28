@@ -855,7 +855,7 @@ public class Config extends ConfigBase {
      * Do not set this if you know what you are doing.
      */
     @ConfField(mutable = true, masterOnly = true)
-    public static int max_broker_concurrency = 10;
+    public static int max_broker_concurrency = 30;
 
     /**
      * Export checker's running interval.
