@@ -7,12 +7,13 @@
 #include <filesystem>
 #include <thread>
 
-#include "common/sync_point.h"
+#include "common/config.h"
 #include "io/cloud/cloud_file_cache.h"
 #include "io/cloud/cloud_file_cache_profile.h"
 #include "io/cloud/cloud_file_cache_settings.h"
 #include "io/cloud/cloud_file_segment.h"
 #include "io/cloud/cloud_lru_file_cache.h"
+#include "olap/options.h"
 #include "util/slice.h"
 
 namespace doris::cloud {
@@ -61,6 +62,35 @@ void complete(const io::FileSegmentsHolder& holder) {
     for (const auto& file_segment : holder.file_segments) {
         ASSERT_TRUE(file_segment->get_or_set_downloader() == io::FileSegment::get_caller_id());
         download(file_segment);
+    }
+}
+
+TEST(LRUFileCache, init) {
+    std::string string = std::string(R"(
+        [
+        {
+            "path" : "/mnt/ssd01/clickbench/hot/be/file_cache",
+            "normal" : 193273528320,
+            "persistent" : 193273528320,
+            "query_limit" : 38654705664
+        },
+        {
+            "path" : "/mnt/ssd01/clickbench/hot/be/file_cache",
+            "normal" : 193273528320,
+            "persistent" : 193273528320,
+            "query_limit" : 38654705664
+        }
+        ]
+        )");
+    config::enable_file_cache_query_limit = true;
+    std::vector<CachePath> cache_paths;
+    parse_conf_cache_paths(string, cache_paths);
+    EXPECT_EQ(cache_paths.size(), 2);
+    for (const auto& cache_path : cache_paths) {
+        io::FileCacheSettings settings = cache_path.init_settings();
+        EXPECT_EQ(settings.max_size, 193273528320);
+        EXPECT_EQ(settings.persistent_max_size, 193273528320);
+        EXPECT_EQ(settings.max_query_cache_size, 38654705664);
     }
 }
 

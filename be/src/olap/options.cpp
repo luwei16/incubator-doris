@@ -184,7 +184,7 @@ Status parse_conf_cache_paths(const std::string& config_path, std::vector<CacheP
                 map.HasMember(CACHE_PERSISTENT_SIZE.c_str())
                         ? map.FindMember(CACHE_PERSISTENT_SIZE.c_str())->value.GetInt64()
                         : 0;
-        int query_limit_bytes = 0;
+        int64_t query_limit_bytes = 0;
         if (config::enable_file_cache_query_limit) {
             query_limit_bytes =
                     map.HasMember(CACHE_QUERY_LIMIT_SIZE.c_str())
