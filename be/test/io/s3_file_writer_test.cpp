@@ -19,12 +19,12 @@
 
 #include "common/config.h"
 #include "common/status.h"
+#include "io/cloud/tmp_file_mgr.h"
 #include "io/fs/file_reader.h"
 #include "io/fs/file_writer.h"
 #include "io/fs/local_file_system.h"
 #include "io/fs/s3_file_system.h"
 #include "util/s3_util.h"
-
 namespace doris {
 
 static io::S3FileSystem* s3_fs = nullptr;
@@ -32,10 +32,10 @@ static io::S3FileSystem* s3_fs = nullptr;
 class S3FileWriterTest : public testing::Test {
 public:
     static void SetUpTestSuite() {
-        config::tmp_file_dir = "./ut_dir/s3_file_writer_test";
-        auto fs = io::global_local_filesystem();
-        fs->delete_directory(config::tmp_file_dir);
-        fs->create_directory(config::tmp_file_dir);
+        std::string cur_path = std::filesystem::current_path();
+        config::tmp_file_dirs = R"([{"path":")" + cur_path +
+                R"(/ut_dir/s3_file_writer_test","max_cache_bytes":21474836480,"max_upload_bytes":10737418240}])";
+        io::TmpFileMgr::create_tmp_file_mgrs();
         S3Conf s3_conf;
         s3_conf.ak = config::test_s3_ak;
         s3_conf.sk = config::test_s3_sk;
@@ -47,11 +47,7 @@ public:
         ASSERT_EQ(Status::OK(), s3_fs->connect());
     }
 
-    static void TearDownTestSuite() {
-        auto fs = io::global_local_filesystem();
-        fs->delete_directory(config::tmp_file_dir);
-        delete s3_fs;
-    }
+    static void TearDownTestSuite() { delete s3_fs; }
 };
 
 TEST_F(S3FileWriterTest, normal) {
@@ -87,7 +83,9 @@ TEST_F(S3FileWriterTest, normal) {
     }
     // tmp file in s3_file_writer should be deleted
     bool exists = true;
-    fs->exists(io::Path(config::tmp_file_dir) / "s3_file_writer_test_normal", &exists);
+    fs->exists(
+            io::Path(io::TmpFileMgr::instance()->get_tmp_file_dir()) / "s3_file_writer_test_normal",
+            &exists);
     ASSERT_FALSE(exists);
 }
 
@@ -99,7 +97,9 @@ TEST_F(S3FileWriterTest, abort) {
         s3_file_writer->abort();
     }
     bool exists = true;
-    fs->exists(io::Path(config::tmp_file_dir) / "s3_file_writer_test_abort1", &exists);
+    fs->exists(
+            io::Path(io::TmpFileMgr::instance()->get_tmp_file_dir()) / "s3_file_writer_test_abort1",
+            &exists);
     ASSERT_FALSE(exists);
     {
         io::FileWriterPtr s3_file_writer;
@@ -108,7 +108,9 @@ TEST_F(S3FileWriterTest, abort) {
         s3_file_writer->abort();
     }
     exists = true;
-    fs->exists(io::Path(config::tmp_file_dir) / "s3_file_writer_test_abort2", &exists);
+    fs->exists(
+            io::Path(io::TmpFileMgr::instance()->get_tmp_file_dir()) / "s3_file_writer_test_abort2",
+            &exists);
     ASSERT_FALSE(exists);
     // Sleep to ensure S3FileWriter::_handle async Cancel finished before _executor released.
     sleep(1);
