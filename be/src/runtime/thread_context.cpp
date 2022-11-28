@@ -29,6 +29,15 @@ ThreadContextPtr::ThreadContextPtr() {
     init = true;
 }
 
+ScopeMemCount::ScopeMemCount(int64_t* scope_mem) {
+    _scope_mem = scope_mem;
+    thread_context()->_thread_mem_tracker_mgr->start_count_scope_mem();
+}
+
+ScopeMemCount::~ScopeMemCount() {
+    *_scope_mem = thread_context()->_thread_mem_tracker_mgr->stop_count_scope_mem();
+}
+
 AttachTask::AttachTask(const std::shared_ptr<MemTrackerLimiter>& mem_tracker,
                        const ThreadContext::TaskType& type, const std::string& task_id,
                        const TUniqueId& fragment_instance_id) {
@@ -42,9 +51,10 @@ AttachTask::AttachTask(RuntimeState* runtime_state) {
     DCHECK(runtime_state->fragment_instance_id() != TUniqueId());
 #endif // BE_TEST
     DCHECK(runtime_state->instance_mem_tracker());
-    thread_context()->attach_task(
-            query_to_task_type(runtime_state->query_type()), print_id(runtime_state->query_id()),
-            runtime_state->fragment_instance_id(), runtime_state->instance_mem_tracker());
+    thread_context()->attach_task(ThreadContext::query_to_task_type(runtime_state->query_type()),
+                                  print_id(runtime_state->query_id()),
+                                  runtime_state->fragment_instance_id(),
+                                  runtime_state->instance_mem_tracker());
 }
 
 AttachTask::~AttachTask() {
@@ -54,19 +64,33 @@ AttachTask::~AttachTask() {
 #endif // NDEBUG
 }
 
+SwitchThreadMemTrackerLimiter::SwitchThreadMemTrackerLimiter(
+        const std::shared_ptr<MemTrackerLimiter>& mem_tracker_limiter) {
+    DCHECK(mem_tracker_limiter);
+    thread_context()->_thread_mem_tracker_mgr->attach_limiter_tracker("", TUniqueId(),
+                                                                      mem_tracker_limiter);
+}
+
+SwitchThreadMemTrackerLimiter::~SwitchThreadMemTrackerLimiter() {
+    thread_context()->_thread_mem_tracker_mgr->detach_limiter_tracker();
+}
+
 AddThreadMemTrackerConsumer::AddThreadMemTrackerConsumer(MemTracker* mem_tracker) {
-    if (config::memory_verbose_track) {
-        thread_context()->_thread_mem_tracker_mgr->push_consumer_tracker(mem_tracker);
-    }
+    _need_pop = thread_context()->_thread_mem_tracker_mgr->push_consumer_tracker(mem_tracker);
+}
+
+AddThreadMemTrackerConsumer::AddThreadMemTrackerConsumer(
+        const std::shared_ptr<MemTracker>& mem_tracker)
+        : _mem_tracker(mem_tracker) {
+    _need_pop =
+            thread_context()->_thread_mem_tracker_mgr->push_consumer_tracker(_mem_tracker.get());
 }
 
 AddThreadMemTrackerConsumer::~AddThreadMemTrackerConsumer() {
-    if (config::memory_verbose_track) {
 #ifndef NDEBUG
-        DorisMetrics::instance()->add_thread_mem_tracker_consumer_count->increment(1);
+    DorisMetrics::instance()->add_thread_mem_tracker_consumer_count->increment(1);
 #endif // NDEBUG
-        thread_context()->_thread_mem_tracker_mgr->pop_consumer_tracker();
-    }
+    if (_need_pop) thread_context()->_thread_mem_tracker_mgr->pop_consumer_tracker();
 }
 
 } // namespace doris

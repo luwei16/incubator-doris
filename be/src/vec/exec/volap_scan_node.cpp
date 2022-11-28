@@ -234,8 +234,6 @@ Status VOlapScanNode::prepare(RuntimeState* state) {
     _init_counter(state);
     _tuple_desc = state->desc_tbl().get_tuple_descriptor(_tuple_id);
 
-    _scanner_mem_tracker = std::make_unique<MemTracker>("OlapScanners");
-
     if (_tuple_desc == nullptr) {
         // TODO: make sure we print all available diagnostic output to our error log
         return Status::InternalError("Failed to get tuple descriptor.");
@@ -299,7 +297,7 @@ void VOlapScanNode::transfer_thread(RuntimeState* state) {
     // scanner open pushdown to scanThread
     START_AND_SCOPE_SPAN(state->get_tracer(), span, "VOlapScanNode::transfer_thread");
     SCOPED_ATTACH_TASK(state);
-    SCOPED_CONSUME_MEM_TRACKER(mem_tracker());
+    SCOPED_CONSUME_MEM_TRACKER(mem_tracker_shared());
     Status status = Status::OK();
 
     if (_vconjunct_ctx_ptr) {
@@ -420,8 +418,10 @@ void VOlapScanNode::transfer_thread(RuntimeState* state) {
 
 void VOlapScanNode::scanner_thread(VOlapScanner* scanner) {
 #if !defined(USE_BTHREAD_SCANNER)
-    // SCOPED_ATTACH_TASK(_runtime_state); // TODO Recorded on an independent tracker
-    SCOPED_CONSUME_MEM_TRACKER(mem_tracker());
+    SCOPED_ATTACH_TASK(_runtime_state->scanner_mem_tracker(),
+                       ThreadContext::query_to_task_type(_runtime_state->query_type()),
+                       print_id(_runtime_state->query_id()),
+                       _runtime_state->fragment_instance_id());
     Thread::set_self_name("volap_scanner");
 #else
     // TODO: not support mem_tracker now
@@ -1109,7 +1109,7 @@ Status VOlapScanNode::start_scan_thread(RuntimeState* state) {
             }
             VOlapScanner* scanner =
                     new VOlapScanner(state, this, _olap_scan_node.is_preaggregation,
-                                     _need_agg_finalize, *scan_range, _scanner_mem_tracker.get());
+                                     _need_agg_finalize, *scan_range);
             
             scanner->set_compound_filters(_compound_filters);
             // add scanner to pool before doing prepare.

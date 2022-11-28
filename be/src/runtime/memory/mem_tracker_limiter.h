@@ -82,6 +82,7 @@ public:
         return false;
     }
 
+    void set_consumption() { LOG(FATAL) << "MemTrackerLimiter set_consumption not supported"; }
     int64_t group_num() const { return _group_num; }
     bool has_limit() const { return _limit >= 0; }
     int64_t limit() const { return _limit; }
@@ -163,10 +164,6 @@ public:
             << "all ancestor size: " << _all_ancestors.size() - 1 << "; "
             << "limited ancestor size: " << _limited_ancestors.size() - 1 << "; ";
         return msg.str();
-    }
-
-    static std::string print_bytes(int64_t bytes) {
-        return PrettyPrinter::print(bytes, TUnit::BYTES);
     }
 
 private:

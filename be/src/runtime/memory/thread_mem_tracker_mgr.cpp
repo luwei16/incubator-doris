@@ -36,12 +36,15 @@ void ThreadMemTrackerMgr::attach_limiter_tracker(
 }
 
 void ThreadMemTrackerMgr::detach_limiter_tracker() {
-    DCHECK(!_limiter_tracker_stack.empty());
-    flush_untracked_mem<false>();
-    _task_id_stack.pop_back();
-    _fragment_instance_id_stack.pop_back();
-    _limiter_tracker_stack.pop_back();
-    _limiter_tracker_raw = _limiter_tracker_stack.back().get();
+    // DCHECK(!_limiter_tracker_stack.empty());
+    // wait pick 0b945fe3619cffb7b41333ded81aeee3b8971587
+    if (!_limiter_tracker_stack.empty()) {
+        flush_untracked_mem<false>();
+        _task_id_stack.pop_back();
+        _fragment_instance_id_stack.pop_back();
+        _limiter_tracker_stack.pop_back();
+        _limiter_tracker_raw = _limiter_tracker_stack.back().get();
+    }
 }
 
 void ThreadMemTrackerMgr::exceeded_cancel_task(const std::string& cancel_details) {
@@ -56,13 +59,13 @@ void ThreadMemTrackerMgr::exceeded(const std::string& failed_msg) {
     if (_cb_func != nullptr) {
         _cb_func();
     }
+    auto cancel_msg = _limiter_tracker_raw->mem_limit_exceeded(
+            fmt::format("exec node:<{}>", last_consumer_tracker()),
+            _limiter_tracker_raw->parent().get(), failed_msg);
     if (is_attach_query()) {
-        auto cancel_msg = _limiter_tracker_raw->mem_limit_exceeded(
-                fmt::format("exec node:<{}>", last_consumer_tracker()),
-                _limiter_tracker_raw->parent().get(), failed_msg);
         exceeded_cancel_task(cancel_msg);
-        _check_limit = false; // Make sure it will only be canceled once
     }
+    _check_limit = false; // Make sure it will only be canceled once
 }
 
 } // namespace doris

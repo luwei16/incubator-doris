@@ -36,14 +36,14 @@
 
 namespace doris {
 
-Status DeltaWriter::open(WriteRequest* req, DeltaWriter** writer,
-                         const std::shared_ptr<MemTrackerLimiter>& parent_tracker, bool is_vec) {
-    *writer = new DeltaWriter(req, StorageEngine::instance(), parent_tracker, is_vec);
+Status DeltaWriter::open(WriteRequest* req, DeltaWriter** writer, const UniqueId& load_id,
+                         bool is_vec) {
+    *writer = new DeltaWriter(req, StorageEngine::instance(), load_id, is_vec);
     return Status::OK();
 }
 
-DeltaWriter::DeltaWriter(WriteRequest* req, StorageEngine* storage_engine,
-                         const std::shared_ptr<MemTrackerLimiter>& parent_tracker, bool is_vec)
+DeltaWriter::DeltaWriter(WriteRequest* req, StorageEngine* storage_engine, const UniqueId& load_id,
+                         bool is_vec)
         : _req(*req),
           _tablet(nullptr),
           _cur_rowset(nullptr),
@@ -51,7 +51,7 @@ DeltaWriter::DeltaWriter(WriteRequest* req, StorageEngine* storage_engine,
           _tablet_schema(new TabletSchema),
           _delta_written_success(false),
           _storage_engine(storage_engine),
-          _parent_tracker(parent_tracker),
+          _load_id(load_id),
           _is_vec(is_vec) {}
 
 DeltaWriter::~DeltaWriter() {
@@ -118,9 +118,6 @@ Status DeltaWriter::init() {
         _cur_max_version = _tablet->max_version_unlocked().second;
         _rowset_ids = _tablet->all_rs_id(_cur_max_version);
     }
-
-    _mem_tracker = std::make_shared<MemTrackerLimiter>(
-            -1, fmt::format("DeltaWriter:tabletId={}", _tablet->tablet_id()), _parent_tracker);
 
 #ifdef CLOUD_MODE
     if (_tablet->fetch_add_approximate_num_rowsets(0) > config::max_tablet_version_num) {
@@ -193,8 +190,6 @@ Status DeltaWriter::write(Tuple* tuple) {
         // just return ERROR if writer is cancelled.
         return Status::OLAPInternalError(OLAP_ERR_ALREADY_CANCELLED);
     }
-
-    SCOPED_ATTACH_TASK(_mem_tracker, ThreadContext::TaskType::LOAD);
 
     _mem_table->insert(tuple);
 
@@ -311,9 +306,21 @@ void DeltaWriter::_reset_mem_table() {
     if (_tablet->enable_unique_key_merge_on_write() && _delete_bitmap == nullptr) {
         _delete_bitmap.reset(new DeleteBitmap(_tablet->tablet_id()));
     }
+    auto mem_table_insert_tracker = std::make_shared<MemTracker>(
+            fmt::format("MemTableManualInsert:TabletId={}:MemTableNum={}#loadID={}",
+                        std::to_string(tablet_id()), _mem_table_num, _load_id.to_string()));
+    auto mem_table_flush_tracker = std::make_shared<MemTracker>(
+            fmt::format("MemTableHookFlush:TabletId={}:MemTableNum={}#loadID={}",
+                        std::to_string(tablet_id()), _mem_table_num++, _load_id.to_string()));
+    {
+        std::lock_guard<SpinLock> l(_mem_table_tracker_lock);
+        _mem_table_tracker.push_back(mem_table_insert_tracker);
+        _mem_table_tracker.push_back(mem_table_flush_tracker);
+    }
     _mem_table.reset(new MemTable(_tablet, _schema.get(), _tablet_schema.get(), _req.slots,
                                   _req.tuple_desc, _rowset_writer.get(), _delete_bitmap,
-                                  _rowset_ids, _cur_max_version, _mem_tracker, _is_vec));
+                                  _rowset_ids, _cur_max_version, mem_table_insert_tracker,
+                                  mem_table_flush_tracker, _is_vec));
 }
 
 Status DeltaWriter::close() {
@@ -425,8 +432,13 @@ Status DeltaWriter::cancel() {
 }
 
 void DeltaWriter::save_mem_consumption_snapshot() {
+    std::lock_guard<std::mutex> l(_lock);
     _mem_consumption_snapshot = mem_consumption();
-    _memtable_consumption_snapshot = memtable_consumption();
+    if (_mem_table == nullptr) {
+        _memtable_consumption_snapshot = 0;
+    } else {
+        _memtable_consumption_snapshot = _mem_table->memory_usage();
+    }
 }
 
 int64_t DeltaWriter::get_memtable_consumption_inflush() const {
@@ -438,20 +450,20 @@ int64_t DeltaWriter::get_memtable_consumption_snapshot() const {
     return _memtable_consumption_snapshot;
 }
 
-int64_t DeltaWriter::mem_consumption() const {
-    if (_mem_tracker == nullptr) {
+int64_t DeltaWriter::mem_consumption() {
+    if (_flush_token == nullptr) {
         // This method may be called before this writer is initialized.
-        // So _mem_tracker may be null.
+        // So _flush_token may be null.
         return 0;
     }
-    return _mem_tracker->consumption();
-}
-
-int64_t DeltaWriter::memtable_consumption() const {
-    if (_mem_table == nullptr) {
-        return 0;
+    int64_t mem_usage = 0;
+    {
+        std::lock_guard<SpinLock> l(_mem_table_tracker_lock);
+        for (auto mem_table_tracker : _mem_table_tracker) {
+            mem_usage += mem_table_tracker->consumption();
+        }
     }
-    return _mem_table->mem_tracker_hook()->consumption();
+    return mem_usage;
 }
 
 int64_t DeltaWriter::partition_id() const {

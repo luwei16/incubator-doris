@@ -19,6 +19,7 @@
 // and modified by Doris
 #pragma once
 
+#include "util/pretty_printer.h"
 #include "util/runtime_profile.h"
 
 namespace doris {
@@ -56,6 +57,11 @@ public:
     static std::shared_ptr<MemTracker> get_global_mem_tracker(const std::string& label);
     static void make_global_mem_tracker_snapshot(std::vector<MemTracker::Snapshot>* snapshots);
 
+    static std::string print_bytes(int64_t bytes) {
+        return bytes >= 0 ? PrettyPrinter::print(bytes, TUnit::BYTES)
+                          : "-" + PrettyPrinter::print(std::abs(bytes), TUnit::BYTES);
+    }
+
 public:
     const std::string& label() const { return _label; }
     // Returns the memory consumed in bytes.
@@ -66,6 +72,7 @@ public:
     void release(int64_t bytes) { consume(-bytes); }
     // Transfer 'bytes' of consumption from this tracker to 'dst'.
     void transfer_to(MemTracker* dst, int64_t bytes);
+    void set_consumption(int64_t bytes) { _consumption->set(bytes); }
 
 public:
     bool limit_exceeded(int64_t limit) const { return limit >= 0 && limit < consumption(); }

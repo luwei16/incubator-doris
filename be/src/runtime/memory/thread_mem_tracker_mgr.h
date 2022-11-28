@@ -47,11 +47,12 @@ public:
         // if _init == false, exec env is not initialized when init(). and never consumed mem tracker once.
         if (_init) {
             flush_untracked_mem<false>();
-            if (bthread_self() == 0) {
-                DCHECK(_consumer_tracker_stack.empty());
-                DCHECK(_limiter_tracker_stack.size() == 1)
-                        << ", limiter_tracker_stack.size(): " << _limiter_tracker_stack.size();
-            }
+            // wait pick 0b945fe3619cffb7b41333ded81aeee3b8971587
+            // if (bthread_self() == 0) {
+                // DCHECK(_consumer_tracker_stack.empty());
+                // DCHECK(_limiter_tracker_stack.size() == 1)
+                //         << ", limiter_tracker_stack.size(): " << _limiter_tracker_stack.size();
+            // }
         }
     }
 
@@ -78,10 +79,21 @@ public:
 
     // Must be fast enough! Thread update_tracker may be called very frequently.
     // So for performance, add tracker as early as possible, and then call update_tracker<Existed>.
-    void push_consumer_tracker(MemTracker* mem_tracker);
+    bool push_consumer_tracker(MemTracker* mem_tracker);
     void pop_consumer_tracker();
     std::string last_consumer_tracker() {
-        return _consumer_tracker_stack.empty() ? "" : _consumer_tracker_stack[-1]->label();
+        return ""; // wait pick 0b945fe3619cffb7b41333ded81aeee3b8971587
+    }
+
+    void start_count_scope_mem() {
+        _scope_mem = 0;
+        _count_scope_mem = true;
+    }
+
+    int64_t stop_count_scope_mem() {
+        flush_untracked_mem<false>();
+        _count_scope_mem = false;
+        return _scope_mem;
     }
 
     void set_exceed_call_back(ExceedCallBack cb_func) { _cb_func = cb_func; }
@@ -105,6 +117,7 @@ public:
         return _limiter_tracker_raw;
     }
 
+    bool check_limit() { return _check_limit; }
     void set_check_limit(bool check_limit) { _check_limit = check_limit; }
     void set_check_attach(bool check_attach) { _check_attach = check_attach; }
 
@@ -134,6 +147,10 @@ private:
     // Frequent calls to unordered_map _untracked_mems[] in consume will degrade performance.
     int64_t _untracked_mem = 0;
     int64_t old_untracked_mem = 0;
+
+    bool _count_scope_mem = false;
+    int64_t _scope_mem = 0;
+
     std::string failed_msg = std::string();
 
     // _limiter_tracker_stack[0] = orphan_mem_tracker
@@ -154,7 +171,6 @@ private:
 inline void ThreadMemTrackerMgr::init() {
     DCHECK(_limiter_tracker_stack.size() == 0);
     DCHECK(_limiter_tracker_raw == nullptr);
-    DCHECK(_consumer_tracker_stack.empty());
     init_impl();
 }
 
@@ -176,18 +192,24 @@ inline void ThreadMemTrackerMgr::clear() {
     init_impl();
 }
 
-inline void ThreadMemTrackerMgr::push_consumer_tracker(MemTracker* tracker) {
+inline bool ThreadMemTrackerMgr::push_consumer_tracker(MemTracker* tracker) {
     DCHECK(tracker) << print_debug_string();
-    DCHECK(!std::count(_consumer_tracker_stack.begin(), _consumer_tracker_stack.end(), tracker))
-            << print_debug_string();
+    // wait pick 0b945fe3619cffb7b41333ded81aeee3b8971587
+    // if (std::count(_consumer_tracker_stack.begin(), _consumer_tracker_stack.end(), tracker)) {
+    //     return false;
+    // }
     _consumer_tracker_stack.push_back(tracker);
     tracker->release(_untracked_mem);
+    return true;
 }
 
 inline void ThreadMemTrackerMgr::pop_consumer_tracker() {
     DCHECK(!_consumer_tracker_stack.empty());
-    _consumer_tracker_stack.back()->consume(_untracked_mem);
-    _consumer_tracker_stack.pop_back();
+    // wait pick 0b945fe3619cffb7b41333ded81aeee3b8971587
+    if (!_consumer_tracker_stack.empty()) {
+        _consumer_tracker_stack.back()->consume(_untracked_mem);
+        _consumer_tracker_stack.pop_back();
+    }
 }
 
 inline void ThreadMemTrackerMgr::consume(int64_t size) {
@@ -215,6 +237,7 @@ inline void ThreadMemTrackerMgr::flush_untracked_mem() {
     if (!_init) init();
     DCHECK(_limiter_tracker_raw);
     old_untracked_mem = _untracked_mem;
+    if (_count_scope_mem) _scope_mem += _untracked_mem;
     if (CheckLimit) {
 #ifndef BE_TEST
         // When all threads are started, `attach_limiter_tracker` is expected to be called to bind the limiter tracker.

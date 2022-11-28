@@ -848,7 +848,6 @@ Status HashJoinNode::prepare(RuntimeState* state) {
             "");
     _mem_tracker = std::make_unique<MemTracker>("ExecNode:" + _runtime_profile->name(),
                                                 _runtime_profile.get());
-    SCOPED_CONSUME_MEM_TRACKER(mem_tracker());
 
     if (_vconjunct_ctx_ptr) {
         RETURN_IF_ERROR((*_vconjunct_ctx_ptr)->prepare(state, _intermediate_row_desc));
@@ -857,6 +856,7 @@ Status HashJoinNode::prepare(RuntimeState* state) {
     for (int i = 0; i < _children.size(); ++i) {
         RETURN_IF_ERROR(_children[i]->prepare(state));
     }
+    SCOPED_CONSUME_MEM_TRACKER(mem_tracker());
 
     // Build phase
     auto build_phase_profile = runtime_profile()->create_child("BuildPhase", true, true);
@@ -1116,7 +1116,7 @@ Status HashJoinNode::open(RuntimeState* state) {
 void HashJoinNode::_hash_table_build_thread(RuntimeState* state, std::promise<Status>* status) {
     START_AND_SCOPE_SPAN(state->get_tracer(), span, "HashJoinNode::_hash_table_build_thread");
     SCOPED_ATTACH_TASK(state);
-    SCOPED_CONSUME_MEM_TRACKER(mem_tracker());
+    SCOPED_CONSUME_MEM_TRACKER(mem_tracker_shared());
     status->set_value(_hash_table_build(state));
 }
 
