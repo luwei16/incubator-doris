@@ -90,11 +90,13 @@ suite("test_recycler_index") {
         }
     }
 
-    // do cloud compaction
-    doCloudCompaction(tableName);
-
     String[][] tabletInfoList = sql """ show tablets from ${tableName}; """
     logger.info("tabletInfoList:${tabletInfoList}")
+    HashSet<String> tabletIdSet= new HashSet<String>()
+    for (tabletInfo : tabletInfoList) {
+        tabletIdSet.add(tabletInfo[0])
+    }
+    logger.info("tabletIdSet:${tabletIdSet}")
 
     // drop table
     sql """ DROP TABLE IF EXISTS ${tableName} FORCE"""
@@ -105,7 +107,7 @@ suite("test_recycler_index") {
     do {
         triggerRecycle(token, instanceId)
         Thread.sleep(10000) // 1min
-        if (checkRecycleTable(token, instanceId, cloudUniqueId, tableName, tabletInfoList)) {
+        if (checkRecycleTable(token, instanceId, cloudUniqueId, tableName, tabletIdSet)) {
             success = true
             break
         }
