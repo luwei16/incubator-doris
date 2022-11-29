@@ -958,7 +958,14 @@ public class SelectStmt extends QueryStmt {
              *                     (select min(k1) from table b where a.key=b.k2);
              * TODO: the a.key should be replaced by a.k1 instead of unknown column 'key' in 'a'
              */
-            havingClauseAfterAnaylzed = havingClause.substitute(aliasSMap, analyzer, false);
+            try {
+                // use col name from tableRefs first
+                havingClauseAfterAnaylzed = havingClause.clone();
+                havingClauseAfterAnaylzed.analyze(analyzer);
+            } catch (AnalysisException ex) {
+                // then consider alias name
+                havingClauseAfterAnaylzed = havingClause.substitute(aliasSMap, analyzer, false);
+            }
             havingClauseAfterAnaylzed = rewriteQueryExprByMvColumnExpr(havingClauseAfterAnaylzed, analyzer);
             havingClauseAfterAnaylzed.checkReturnsBool("HAVING clause", true);
             if (groupingInfo != null) {
@@ -1052,6 +1059,9 @@ public class SelectStmt extends QueryStmt {
         countAllMap = ExprSubstitutionMap.compose(multiCountOrSumDistinctMap, countAllMap, analyzer);
         List<Expr> substitutedAggs =
                 Expr.substituteList(aggExprs, countAllMap, analyzer, false);
+        // the resultExprs must substitute in the same way as aggExprs
+        // then resultExprs can be substitute correctly using combinedSmap
+        resultExprs = Expr.substituteList(resultExprs, countAllMap, analyzer, false);
         aggExprs.clear();
         TreeNode.collect(substitutedAggs, Expr.isAggregatePredicate(), aggExprs);
 
@@ -1063,10 +1073,15 @@ public class SelectStmt extends QueryStmt {
                 groupingInfo.buildRepeat(groupingExprs, groupByClause.getGroupingSetList());
             }
 
-            substituteOrdinalsAliases(groupingExprs, "GROUP BY", analyzer);
+            substituteOrdinalsAliases(groupingExprs, "GROUP BY", analyzer, false);
 
-            if (!groupByClause.isGroupByExtension()) {
+            if (!groupByClause.isGroupByExtension() && !groupingExprs.isEmpty()) {
+                ArrayList<Expr> tempExprs = new ArrayList<>(groupingExprs);
                 groupingExprs.removeIf(Expr::isConstant);
+                if (groupingExprs.isEmpty() && aggExprs.isEmpty()) {
+                    // should keep at least one expr to make the result correct
+                    groupingExprs.add(tempExprs.get(0));
+                }
             }
 
             if (groupingInfo != null) {
@@ -1389,12 +1404,44 @@ public class SelectStmt extends QueryStmt {
             }
             List<Expr> oriGroupingExprs = groupByClause.getOriGroupingExprs();
             if (oriGroupingExprs != null) {
+                // we must make sure the expr is analyzed before rewrite
+                try {
+                    for (Expr expr : oriGroupingExprs) {
+                        if (!(expr instanceof SlotRef)) {
+                            // if group expr is not a slotRef, it should be analyzed in the same way as result expr
+                            // otherwise, the group expr is either a simple column or an alias, no need to analyze
+                            expr.analyze(analyzer);
+                        }
+                    }
+                } catch (AnalysisException ex) {
+                    //ignore any exception
+                }
                 rewriter.rewriteList(oriGroupingExprs, analyzer);
+                // after rewrite, need reset the analyze status for later re-analyze
+                for (Expr expr : oriGroupingExprs) {
+                    if (!(expr instanceof SlotRef)) {
+                        expr.reset();
+                    }
+                }
             }
         }
         if (orderByElements != null) {
             for (OrderByElement orderByElem : orderByElements) {
+                // we must make sure the expr is analyzed before rewrite
+                try {
+                    if (!(orderByElem.getExpr() instanceof SlotRef)) {
+                        // if sort expr is not a slotRef, it should be analyzed in the same way as result expr
+                        // otherwise, the sort expr is either a simple column or an alias, no need to analyze
+                        orderByElem.getExpr().analyze(analyzer);
+                    }
+                } catch (AnalysisException ex) {
+                    //ignore any exception
+                }
                 orderByElem.setExpr(rewriter.rewrite(orderByElem.getExpr(), analyzer));
+                // after rewrite, need reset the analyze status for later re-analyze
+                if (!(orderByElem.getExpr() instanceof SlotRef)) {
+                    orderByElem.getExpr().reset();
+                }
             }
         }
     }
@@ -1896,7 +1943,7 @@ public class SelectStmt extends QueryStmt {
         }
         // substitute group by
         if (groupByClause != null) {
-            substituteOrdinalsAliases(groupByClause.getGroupingExprs(), "GROUP BY", analyzer);
+            substituteOrdinalsAliases(groupByClause.getGroupingExprs(), "GROUP BY", analyzer, false);
         }
         // substitute having
         if (havingClause != null) {
