@@ -80,7 +80,7 @@ public class CopyFromParam {
         // Analyze columns mentioned in the statement.
         if (targetColumns == null) {
             targetColumns = new ArrayList<>();
-            for (Column col : olapTable.getBaseSchema()) {
+            for (Column col : olapTable.getBaseSchema(false)) {
                 targetColumns.add(col.getName());
             }
             if (useDeleteSign) {
@@ -141,6 +141,9 @@ public class CopyFromParam {
 
     // expr use column name
     private boolean getFileColumnNames() throws AnalysisException {
+        if (exprList == null) {
+            return false;
+        }
         List<SlotRef> slotRefs = Lists.newArrayList();
         Expr.collectList(exprList, SlotRef.class, slotRefs);
         Set<String> columnSet = Sets.newTreeSet(String.CASE_INSENSITIVE_ORDER);

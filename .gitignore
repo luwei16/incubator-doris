@@ -67,6 +67,8 @@ samples/doris-demo/remote-udf-cpp-demo/*.pb.h
 samples/doris-demo/remote-udf-cpp-demo/*.pb.cc
 samples/doris-demo/remote-udf-cpp-demo/function_server_demo
 
+!regression-test/data/cloud/copy_into/test_compress_json.json.gz
+
 # FE
 fe/mocked/
 fe/fe-core/gen/

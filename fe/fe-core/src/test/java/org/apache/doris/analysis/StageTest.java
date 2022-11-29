@@ -137,11 +137,11 @@ public class StageTest extends TestWithFeService {
 
         // create stage with type and compression
         sql = CREATE_STAGE_SQL + ", 'default.file.type' = 'csv', 'default.file.compression'='gz')";
-        Assert.assertEquals(null, parseAndAnalyze(sql).getStageProperties().getFileType());
+        Assert.assertEquals("csv", parseAndAnalyze(sql).getStageProperties().getFileType());
 
         // create stage with invalid type and compression
-        sql = CREATE_STAGE_SQL + ", 'default.file.type' = 'json', 'default.file.compression'='gz')";
-        parseAndAnalyzeWithException(sql, "Compression only support CSV file type, but input type is json");
+        sql = CREATE_STAGE_SQL + ", 'default.file.type' = 'orc', 'default.file.compression'='gz')";
+        parseAndAnalyzeWithException(sql, "Compression only support CSV or JSON file type, but input type is orc");
     }
 
     @Test
