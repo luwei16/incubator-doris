@@ -350,10 +350,6 @@ public:
         if constexpr (field_is_numeric_type(field_type)) {
             auto index_path = InvertedIndexDescriptor::get_temporary_index_path(
                     _directory + "/" + _segment_file_name, _index_meta->index_id());
-            if (_row_ids_seen_for_bkd == 0) {
-                // if null data is flush, _row_ids_seen_for_bkd is empty.
-                return Status::OK();
-            }
 #ifdef CLOUD_MODE
             if (_lfs == nullptr) {
                 _lfs = std::make_unique<doris::io::LocalFileSystem>(

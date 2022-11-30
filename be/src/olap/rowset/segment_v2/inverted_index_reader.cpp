@@ -382,7 +382,7 @@ Status BkdIndexReader::try_query(const std::string& column_name, const void* que
     uint64_t start = UnixMillis();
     auto visitor = std::make_unique<InvertedIndexVisitor>(nullptr, query_type, true);
     std::shared_ptr<lucene::util::bkd::bkd_reader> r;
-    bkd_query(column_name, query_value, query_type, std::move(r), visitor.get(), additional_value);
+    RETURN_IF_ERROR(bkd_query(column_name, query_value, query_type, std::move(r), visitor.get(), additional_value));
     *count = r->estimate_point_count(visitor.get());
     //*count = v->get_num_hits();
     LOG(INFO) << "BKD index try search time taken: " << UnixMillis() - start << "ms "
@@ -397,7 +397,7 @@ Status BkdIndexReader::query(const std::string& column_name, const void* query_v
     uint64_t start = UnixMillis();
     auto visitor = std::make_unique<InvertedIndexVisitor>(bit_map, query_type);
     std::shared_ptr<lucene::util::bkd::bkd_reader> r;
-    bkd_query(column_name, query_value, query_type, std::move(r), visitor.get(), additional_value);
+    RETURN_IF_ERROR(bkd_query(column_name, query_value, query_type, std::move(r), visitor.get(), additional_value));
     r->intersect(visitor.get());
     LOG(INFO) << "BKD index search time taken: " << UnixMillis() - start << "ms "
               << " column: " << column_name << " result: " << bit_map->cardinality()
@@ -425,9 +425,10 @@ Status BkdIndexReader::get_bkd_reader(lucene::util::bkd::bkd_reader*& bkdReader)
     }
 
     bkdReader = new lucene::util::bkd::bkd_reader(data_in);
-    bkdReader->read_meta(meta_in);
+    if (0 == bkdReader->read_meta(meta_in)) {
+        return Status::EndOfFile("bkd index file is empty");
+    }
 
-    //bkdReader->read_type();
     bkdReader->read_index(index_in);
 
     _type_info = get_scalar_type_info((FieldType)bkdReader->type);
