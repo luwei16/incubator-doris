@@ -465,7 +465,7 @@ Status SegmentIterator::_get_row_ranges_from_conditions(RowRanges* condition_row
     RowRanges zone_map_row_ranges = RowRanges::create_single(num_rows());
     // second filter data by zone map
     for (auto& cid : cids) {
-	if (_inverted_index_iterators[cid] != nullptr && field_is_slice_type(_schema.column(cid)->type())) {
+	    if (_inverted_index_iterators[cid] != nullptr && field_is_slice_type(_schema.column(cid)->type())) {
             continue;
         }
         // get row ranges by zone map of this column,
@@ -521,17 +521,18 @@ Status SegmentIterator::_apply_bitmap_index() {
     for (auto pred : _col_predicates) {
         int32_t unique_id = _schema.unique_id(pred->column_id());
         if (_bitmap_index_iterators.count(unique_id) < 1 ||
-            _bitmap_index_iterators[unique_id] == nullptr) {
+            _bitmap_index_iterators[unique_id] == nullptr ||
+            pred->type() == PredicateType::BF) {
             // no bitmap index for this column
             remaining_predicates.push_back(pred);
         } else {
             RETURN_IF_ERROR(pred->evaluate(_bitmap_index_iterators[unique_id], _segment->num_rows(),
                                            &_row_bitmap));
 
-            // if (_check_column_pred_all_push_down(pred) &&
-            //         !pred->predicate_params()->marked_by_runtime_filter) {
-            //     _need_read_data_indices[unique_id] = false;
-            // }
+            if (_check_column_pred_all_push_down(pred) &&
+                    !pred->predicate_params()->marked_by_runtime_filter) {
+                _need_read_data_indices[unique_id] = false;
+            }
 
             if (_row_bitmap.isEmpty()) {
                 break; // all rows have been pruned, no need to process further predicates
@@ -592,6 +593,7 @@ Status SegmentIterator::_apply_inverted_index() {
             // 2. equal or range for fulltext index
             // 3. is_null or is_not_null predicate in OrPredicate
             // 4. in_list or not_in_list predicate produced by runtime filter
+            // 5. bloom filter predicate
             remaining_predicates.push_back(pred);
         } else {
             roaring::Roaring bitmap = _row_bitmap;
@@ -1067,6 +1069,7 @@ bool SegmentIterator::_check_apply_by_inverted_index(ColumnPredicate* pred) {
         // 1. this column without inverted index
         // 2. equal or range qeury for fulltext index
         // 3. is_null or is_not_null predicate
+        // 4. bloom filter predicate
         return false;
     }
     return true;
@@ -1128,9 +1131,10 @@ Status SegmentIterator::_apply_index_in_compound() {
     }
 
     for (auto pred : _all_compound_col_predicates) {
-        int32_t unique_id = _schema.unique_id(pred->column_id());
-        if (_check_column_pred_all_push_down(pred, true) && 
+        if (_remaining_vconjunct_root != nullptr &&
+                _check_column_pred_all_push_down(pred, true) &&
                 !pred->predicate_params()->marked_by_runtime_filter) {
+            int32_t unique_id = _schema.unique_id(pred->column_id());
             _need_read_data_indices[unique_id] = false;
         }
     }

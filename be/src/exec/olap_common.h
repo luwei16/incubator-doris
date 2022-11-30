@@ -330,6 +330,10 @@ public:
         _marked_runtime_filter_predicate = is_runtime_filter_predicate;
     }
 
+    bool get_marked_by_runtime_filter() const {
+        return _marked_runtime_filter_predicate;
+    }
+
     TCompoundType::type get_compound_type() const;
 
     int scale() const { return _scale; }

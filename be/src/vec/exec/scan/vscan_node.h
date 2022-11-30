@@ -290,6 +290,7 @@ private:
     Status _normalize_compound_predicate(vectorized::VExpr* expr, 
                     VExprContext* expr_ctx, 
                     PushDownType* pdt,
+                    bool is_runtimer_filter_predicate,
                     std::vector<ColumnValueRangeType>* column_value_rangs,
                     const std::function<bool(const std::vector<VExpr*>&, const VSlotRef**, VExpr**)>& in_predicate_checker,
                     const std::function<bool(const std::vector<VExpr*>&, const VSlotRef**, VExpr**)>& eq_predicate_checker);

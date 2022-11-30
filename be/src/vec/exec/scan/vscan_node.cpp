@@ -481,7 +481,7 @@ VExpr* VScanNode::_normalize_predicate(VExpr* conjunct_expr_root) {
             if (pdt == PushDownType::UNACCEPTABLE && is_compound_predicate) {
                 std::vector<ColumnValueRangeType> column_value_rangs;
                 _normalize_compound_predicate(cur_expr, *(_vconjunct_ctx_ptr.get()), 
-                                &pdt, &column_value_rangs,
+                                &pdt, is_runtimer_filter_predicate, &column_value_rangs,
                                 in_predicate_checker, eq_predicate_checker);
                 _compound_value_ranges.push_back(column_value_rangs);
                 return conjunct_expr_root;
@@ -891,6 +891,7 @@ Status VScanNode::_normalize_match_predicate(VExpr* expr, VExprContext* expr_ctx
 Status VScanNode::_normalize_compound_predicate(vectorized::VExpr* expr,
                     VExprContext* expr_ctx, 
                     PushDownType* pdt,
+                    bool is_runtimer_filter_predicate,
                     std::vector<ColumnValueRangeType>* column_value_rangs,
                     const std::function<bool(const std::vector<VExpr*>&, const VSlotRef**, VExpr**)>& in_predicate_checker,
                     const std::function<bool(const std::vector<VExpr*>&, const VSlotRef**, VExpr**)>& eq_predicate_checker) {
@@ -907,7 +908,10 @@ Status VScanNode::_normalize_compound_predicate(vectorized::VExpr* expr,
                     ColumnValueRangeType active_range = *range_on_slot; // copy, in order not to affect the range in the _colname_to_value_range
                     std::visit(
                         [&](auto& value_range) {
-                           _normalize_binary_in_compound_predicate(
+                            Defer mark_runtime_filter_flag {[&]() {
+                                value_range.mark_runtime_filter_predicate(is_runtimer_filter_predicate);
+                            }};
+                            _normalize_binary_in_compound_predicate(
                                     child_expr, expr_ctx, slot, value_range, pdt,
                                     _get_compound_type_by_fn_name(compound_fn_name));
                         },
@@ -923,7 +927,10 @@ Status VScanNode::_normalize_compound_predicate(vectorized::VExpr* expr,
                     ColumnValueRangeType active_range = *range_on_slot; // copy, in order not to affect the range in the _colname_to_value_range
                     std::visit(
                         [&](auto& value_range) {
-                           _normalize_match_in_compound_predicate(
+                            Defer mark_runtime_filter_flag {[&]() {
+                                value_range.mark_runtime_filter_predicate(is_runtimer_filter_predicate);
+                            }};
+                            _normalize_match_in_compound_predicate(
                                     child_expr, expr_ctx, slot, value_range, pdt,
                                     _get_compound_type_by_fn_name(compound_fn_name));
                         },
@@ -934,7 +941,7 @@ Status VScanNode::_normalize_compound_predicate(vectorized::VExpr* expr,
             } else if (TExprNodeType::COMPOUND_PRED == child_expr->node_type()) {
                 _normalize_compound_predicate(
                             child_expr, expr_ctx, 
-                            pdt, column_value_rangs, 
+                            pdt, is_runtimer_filter_predicate, column_value_rangs, 
                             in_predicate_checker, eq_predicate_checker);
             }
         }
