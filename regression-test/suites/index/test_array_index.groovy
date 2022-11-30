@@ -49,6 +49,9 @@ suite("test_array_index"){
     def var_result = sql "show variables"
     logger.info("show variales result: " + var_result )
 
-    sql "INSERT INTO $indexTblName VALUES (1, ['i','love','china']);"
+    sql "INSERT INTO $indexTblName VALUES (1, ['i','love','china']), (2, ['i','love','north korea']), (3, NULL);"
+    sql "INSERT INTO $indexTblName VALUES (4, NULL);"
     qt_sql "SELECT * FROM $indexTblName WHERE c_array MATCH 'china';"
+    qt_sql "SELECT * FROM $indexTblName WHERE c_array MATCH 'love';"
+    qt_sql "SELECT * FROM $indexTblName WHERE c_array MATCH 'north';"
 }

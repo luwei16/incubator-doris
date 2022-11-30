@@ -14,6 +14,7 @@
 #include "olap/rowset/segment_v2/inverted_index_compound_directory.h"
 #include "olap/rowset/segment_v2/inverted_index_desc.h"
 #include "olap/tablet_schema.h"
+#include "util/string_util.h"
 
 namespace doris::segment_v2 {
 const int32_t MAX_FIELD_LEN = 0x7FFFFFFFL;
@@ -273,20 +274,18 @@ public:
                 return Status::InternalError("could not find field in clucene");
             }
             for (int i = 0; i < count; ++i) {
-                std::stringstream value_stream;
+                std::vector<std::string> strings;
 
                 for (size_t j = 0; j < values->length(); ++j) {
                     auto* v = (Slice*)item_data_ptr;
 
                     if (!values->is_null_at(j)) {
-                        value_stream.write(v->get_data(), v->get_size());
-                    }
-                    if (j < values->length() - 1) {
-                        value_stream << " ";
+                        strings.emplace_back(std::string(v->get_data(), v->get_size()));
                     }
                     item_data_ptr = (uint8_t*)item_data_ptr + field_size;
                 }
-                new_fulltext_field(value_stream.str().c_str(), value_stream.str().length());
+                auto value = join(strings, " ");
+                new_fulltext_field(value.c_str(), value.length());
                 _rid++;
                 _index_writer->addDocument(_doc);
             }

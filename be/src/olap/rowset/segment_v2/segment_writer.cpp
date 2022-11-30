@@ -97,7 +97,7 @@ Status SegmentWriter::init(uint32_t write_mbytes_per_sec __attribute__((unused))
     DCHECK(_olap_data_convertor.empty());
     _column_writers.reserve(_tablet_schema->columns().size());
 
-    auto create_column_writer = [&](const auto& column) -> auto {
+    auto create_column_writer = [&](const auto& column) -> auto{
         ColumnWriterOptions opts;
         opts.meta = _footer.add_columns();
 
@@ -108,7 +108,11 @@ Status SegmentWriter::init(uint32_t write_mbytes_per_sec __attribute__((unused))
         opts.need_zone_map = column.is_key() || _tablet_schema->keys_type() != KeysType::AGG_KEYS;
         opts.need_bloom_filter = column.is_bf_column();
         opts.need_bitmap_index = column.has_bitmap_index();
-        bool skip_inverted_index = _opts.rowset_ctx->skip_inverted_index.count(column.unique_id()) > 0;
+        bool skip_inverted_index = false;
+        if (_opts.rowset_ctx != nullptr) {
+            skip_inverted_index =
+                    _opts.rowset_ctx->skip_inverted_index.count(column.unique_id()) > 0;
+        }
         // indexes for this column
         opts.indexes = _tablet_schema->get_indexes_for_column(column.unique_id());
         for (auto index : opts.indexes) {
