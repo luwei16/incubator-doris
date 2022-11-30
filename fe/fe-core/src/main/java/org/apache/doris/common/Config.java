@@ -558,7 +558,7 @@ public class Config extends ConfigBase {
      * Default broker load timeout
      */
     @ConfField(mutable = true, masterOnly = true)
-    public static int broker_load_default_timeout_second = 14400; // 4 hour
+    public static int broker_load_default_timeout_second = 3600 * 12; // 12 hours
 
     /**
      * Broker rpc timeout
