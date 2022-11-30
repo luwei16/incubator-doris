@@ -30,6 +30,8 @@
 
 namespace doris {
 
+bool MemTrackerLimiter::_oom_avoidance {true};
+
 MemTrackerLimiter::MemTrackerLimiter(int64_t byte_limit, const std::string& label,
                                      const std::shared_ptr<MemTrackerLimiter>& parent,
                                      RuntimeProfile* profile) {
