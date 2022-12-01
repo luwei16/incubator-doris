@@ -223,7 +223,7 @@ public:
         field->setValue(stream);
     }
 
-    //NOTE:be careful that using this function will doc document inside
+    //NOTE:be careful that using this function will add document inside
     void new_string_reader(const char* s, size_t len, lucene::document::Field* field) {
         auto field_value = lucene::util::Misc::_charToWide(s, len);
         // NOTE: avoid another data copy for string reader init in documentWriterThreadState
@@ -327,17 +327,6 @@ public:
         _value_key_coder->full_encode_ascending(&value, &new_value);
         _bkd_writer->add((const uint8_t*)new_value.c_str(), value_length, _rid);
 
-        /*auto it = _mem_index.find(value);
-        if (it != _mem_index.end()) {
-            // exiting value, update bitmap
-            it->second.add(_rid);
-        } else {
-            // new value, copy value and insert new key->bitmap pair
-            //CppType new_value;
-            //_typeinfo->deep_copy(&new_value, &value, &_pool);
-            _mem_index.insert({value, roaring::Roaring::bitmapOf(1, _rid)});
-            it = _mem_index.find(value);
-        }*/
         _rid++;
     }
 
@@ -347,42 +336,50 @@ public:
     }
 
     Status finish() override {
-        if constexpr (field_is_numeric_type(field_type)) {
-            auto index_path = InvertedIndexDescriptor::get_temporary_index_path(
-                    _directory + "/" + _segment_file_name, _index_meta->index_id());
+        try {
+            if constexpr (field_is_numeric_type(field_type)) {
+                auto index_path = InvertedIndexDescriptor::get_temporary_index_path(
+                        _directory + "/" + _segment_file_name, _index_meta->index_id());
 #ifdef CLOUD_MODE
-            if (_lfs == nullptr) {
-                _lfs = std::make_unique<doris::io::LocalFileSystem>(
-                        io::TmpFileMgr::instance()->get_tmp_file_dir());
-            }
-            auto lfs_index_path = InvertedIndexDescriptor::get_temporary_index_path(
-                    io::TmpFileMgr::instance()->get_tmp_file_dir() + "/" + _segment_file_name,
-                    _index_meta->index_id());
-            lucene::store::Directory* dir = DorisCompoundDirectory::getDirectory(
-                    _lfs.get(), lfs_index_path.c_str(), true, _fs, index_path.c_str());
+                if (_lfs == nullptr) {
+                    _lfs = std::make_unique<doris::io::LocalFileSystem>(
+                            io::TmpFileMgr::instance()->get_tmp_file_dir());
+                }
+                auto lfs_index_path = InvertedIndexDescriptor::get_temporary_index_path(
+                        io::TmpFileMgr::instance()->get_tmp_file_dir() + "/" + _segment_file_name,
+                        _index_meta->index_id());
+                lucene::store::Directory* dir = DorisCompoundDirectory::getDirectory(
+                        _lfs.get(), lfs_index_path.c_str(), true, _fs, index_path.c_str());
 #else
-            lucene::store::Directory* dir =
-                    DorisCompoundDirectory::getDirectory(_fs, index_path.c_str(), true);
+                lucene::store::Directory* dir =
+                        DorisCompoundDirectory::getDirectory(_fs, index_path.c_str(), true);
 #endif
-            _bkd_writer->max_doc_ = _rid;
-            _bkd_writer->docs_seen_ = _row_ids_seen_for_bkd;
-            std::unique_ptr<lucene::store::IndexOutput> data_out(dir->createOutput(
-                    InvertedIndexDescriptor::get_temporary_bkd_index_data_file_name().c_str()));
-            std::unique_ptr<lucene::store::IndexOutput> meta_out(dir->createOutput(
-                    InvertedIndexDescriptor::get_temporary_bkd_index_meta_file_name().c_str()));
-            std::unique_ptr<lucene::store::IndexOutput> index_out(dir->createOutput(
-                    InvertedIndexDescriptor::get_temporary_bkd_index_file_name().c_str()));
-            _bkd_writer->meta_finish(meta_out.get(),
-                                     _bkd_writer->finish(data_out.get(), index_out.get()),
-                                     field_type);
-            meta_out->close();
-            data_out->close();
-            index_out->close();
-            dir->close();
-            _CLDELETE(dir)
-        } else if constexpr (field_is_slice_type(field_type)) {
-            close();
+                _bkd_writer->max_doc_ = _rid;
+                _bkd_writer->docs_seen_ = _row_ids_seen_for_bkd;
+                std::unique_ptr<lucene::store::IndexOutput> data_out(dir->createOutput(
+                        InvertedIndexDescriptor::get_temporary_bkd_index_data_file_name().c_str()));
+                std::unique_ptr<lucene::store::IndexOutput> meta_out(dir->createOutput(
+                        InvertedIndexDescriptor::get_temporary_bkd_index_meta_file_name().c_str()));
+                std::unique_ptr<lucene::store::IndexOutput> index_out(dir->createOutput(
+                        InvertedIndexDescriptor::get_temporary_bkd_index_file_name().c_str()));
+                _bkd_writer->meta_finish(meta_out.get(),
+                                         _bkd_writer->finish(data_out.get(), index_out.get()),
+                                         field_type);
+                meta_out->close();
+                data_out->close();
+                index_out->close();
+                dir->close();
+                _CLDELETE(dir)
+            } else if constexpr (field_is_slice_type(field_type)) {
+                close();
+            }
+        } catch (const CLuceneError& e) {
+            LOG(WARNING) << "Inverted index writer finish error occurred: " << e.what();
+            return Status::OLAPInternalError(
+                    OLAP_ERR_INVERTED_INDEX_CLUCENE_ERROR,
+                    fmt::format("Inverted index writer finish error occurred, error msg: {}", e.what()));
         }
+
         return Status::OK();
     }
 
