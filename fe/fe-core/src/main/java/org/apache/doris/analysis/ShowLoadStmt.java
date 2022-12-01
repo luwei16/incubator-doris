@@ -160,15 +160,7 @@ public class ShowLoadStmt extends ShowStmt {
         // analyze where clause if not null
         if (whereClause != null) {
             if (whereClause instanceof CompoundPredicate) {
-                CompoundPredicate cp = (CompoundPredicate) whereClause;
-                if (cp.getOp() != org.apache.doris.analysis.CompoundPredicate.Operator.AND) {
-                    throw new AnalysisException("Only allow compound predicate with operator AND");
-                }
-
-                // check whether left.columnName equals to right.columnName
-                checkPredicateName(cp.getChild(0), cp.getChild(1));
-                analyzeSubPredicate(cp.getChild(0));
-                analyzeSubPredicate(cp.getChild(1));
+                analyzeCompoundPredicate(whereClause);
             } else {
                 analyzeSubPredicate(whereClause);
             }
@@ -187,6 +179,17 @@ public class ShowLoadStmt extends ShowStmt {
                 orderByPairs.add(orderByPair);
             }
         }
+    }
+
+    protected void analyzeCompoundPredicate(Expr whereClause) throws AnalysisException {
+        CompoundPredicate cp = (CompoundPredicate) whereClause;
+        if (cp.getOp() != org.apache.doris.analysis.CompoundPredicate.Operator.AND) {
+            throw new AnalysisException("Only allow compound predicate with operator AND");
+        }
+        // check whether left.columnName equals to right.columnName
+        checkPredicateName(cp.getChild(0), cp.getChild(1));
+        analyzeSubPredicate(cp.getChild(0));
+        analyzeSubPredicate(cp.getChild(1));
     }
 
     protected int analyzeColumn(String columnName) throws AnalysisException {

@@ -128,7 +128,6 @@ suite("test_compaction_with_delete") {
             assert (rowCount < 8)
         }
 
-        // cluster0 do base compaction
         sql """ use @${cluster0}; """
         sql """ INSERT INTO ${tableName} VALUES (1, "a", 100); """
         sql """ INSERT INTO ${tableName} VALUES (1, "a", 100); """
@@ -139,7 +138,8 @@ suite("test_compaction_with_delete") {
         doCompaction.call(backend_id0, "cumulative", true)
         sql """ INSERT INTO ${tableName} VALUES (2, "a", 100); """
         sql """ DELETE FROM ${tableName} WHERE id = 1; """
-        doCompaction.call(backend_id0, "cumulative", false) // no suitable version
+        // no suitable version but promote cumulative point to delete version + 1
+        doCompaction.call(backend_id0, "cumulative", false)
         // TODO(cyx): check cumulative point
         sql """ INSERT INTO ${tableName} VALUES (3, "a", 100); """
         sql """ INSERT INTO ${tableName} VALUES (3, "a", 100); """

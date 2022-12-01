@@ -9,6 +9,7 @@
 
 #include "common/config.h"
 #include "common/logging.h"
+#include "common/sync_point.h"
 #include "common/util.h"
 #include "meta-service/keys.h"
 #include "meta-service/mem_txn_kv.h"
@@ -918,7 +919,7 @@ TEST(RecyclerTest, recycle_copy_jobs) {
         ASSERT_EQ(0, copy_job_exists(txn_kv.get(), nonexist_external_stage_id, 7, &exist));
         ASSERT_EQ(false, exist);
         ASSERT_EQ(0, copy_job_exists(txn_kv.get(), nonexist_internal_stage_id, 8, &exist));
-        ASSERT_EQ(true, exist);
+        ASSERT_EQ(false, exist);
 
         // check copy files
         int file_num = 0;
@@ -939,7 +940,68 @@ TEST(RecyclerTest, recycle_copy_jobs) {
         ASSERT_EQ(0, get_copy_file_num(txn_kv.get(), nonexist_external_stage_id, 7, &file_num));
         ASSERT_EQ(0, file_num);
         ASSERT_EQ(0, get_copy_file_num(txn_kv.get(), nonexist_internal_stage_id, 8, &file_num));
-        ASSERT_EQ(10, file_num);
+        ASSERT_EQ(0, file_num);
     }
+}
+
+TEST(RecyclerTest, recycle_stage) {
+    [[maybe_unused]] auto sp = SyncPoint::get_instance();
+    sp->clear_all_call_backs();
+    auto txn_kv = std::dynamic_pointer_cast<TxnKv>(std::make_shared<MemTxnKv>());
+    ASSERT_NE(txn_kv.get(), nullptr);
+    ASSERT_EQ(txn_kv->init(), 0);
+
+    std::string stage_prefix = "prefix/stage/bob/bc9fff5e-5f91-4168-8eaa-0afd6667f7ef";
+    ObjectStoreInfoPB object_info;
+    object_info.set_id("obj_id");
+    object_info.set_ak("ak");
+    object_info.set_sk("sk");
+    object_info.set_bucket("bucket");
+    object_info.set_endpoint("endpoint");
+    object_info.set_region("region");
+    object_info.set_prefix(stage_prefix);
+    object_info.set_provider(ObjectStoreInfoPB::OSS);
+    InstanceInfoPB instance;
+    instance.set_instance_id(mock_instance);
+    instance.add_obj_info()->CopyFrom(object_info);
+
+    InstanceRecycler recycler(txn_kv, instance);
+    auto accessor = recycler.accessor_map_.begin()->second;
+    for (int i = 0; i < 10; ++i) {
+        accessor->put_object(std::to_string(i)+".csv", "abc");
+    }
+    sp->set_call_back("recycle_stage:get_accessor", [&recycler](void* ret) {
+        *reinterpret_cast<std::shared_ptr<ObjStoreAccessor>*>(ret) =
+                recycler.accessor_map_.begin()->second;
+    });
+    sp->enable_processing();
+
+    std::string key;
+    std::string val;
+    RecycleStageKeyInfo key_info {mock_instance, "stage_id"};
+    recycle_stage_key(key_info, &key);
+    StagePB stage;
+    stage.add_mysql_user_name("user_name");
+    stage.add_mysql_user_id("user_id");
+    stage.mutable_obj_info()->set_id("1");
+    stage.mutable_obj_info()->set_prefix(stage_prefix);
+    RecycleStagePB recycle_stage;
+    recycle_stage.set_instance_id(mock_instance);
+    recycle_stage.mutable_stage()->CopyFrom(stage);
+    val = recycle_stage.SerializeAsString();
+    std::unique_ptr<Transaction> txn;
+    ASSERT_EQ(0, txn_kv->create_txn(&txn));
+    txn->put(key, val);
+    ASSERT_EQ(0, txn->commit());
+    ASSERT_EQ(0, txn_kv->create_txn(&txn));
+    ASSERT_EQ(0, txn->get(key, &val));
+
+    // recycle stage
+    recycler.recycle_stage();
+    std::vector<std::string> files;
+    ASSERT_EQ(0, accessor->list("", &files));
+    ASSERT_EQ(0, files.size());
+    ASSERT_EQ(0, txn_kv->create_txn(&txn));
+    ASSERT_EQ(1, txn->get(key, &val));
 }
 } // namespace selectdb

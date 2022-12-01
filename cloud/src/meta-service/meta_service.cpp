@@ -21,6 +21,7 @@
 
 #include <chrono>
 #include <cstddef>
+#include <cstdlib>
 #include <iomanip>
 #include <ios>
 #include <limits>
@@ -60,6 +61,24 @@ std::string static trim(std::string& str) {
     return str.erase(0, str.find_first_not_of(drop));
 }
 
+std::vector<std::string> split(const std::string& str, const char delim){
+    std::vector<std::string> result;
+    size_t start = 0;
+    size_t pos = str.find(delim);
+    while(pos != std::string::npos){
+        if(pos > start){
+            result.push_back(str.substr(start, pos-start));
+        }
+        start = pos + 1;
+        pos = str.find(delim, start);
+    }
+
+    if(start < str.length())
+        result.push_back(str.substr(start));
+
+    return result;
+}
+
 // FIXME(gavin): should it be a member function of ResourceManager?
 std::string get_instance_id(const std::shared_ptr<ResourceManager>& rc_mgr,
                             const std::string& cloud_unique_id) {
@@ -70,9 +89,34 @@ std::string get_instance_id(const std::shared_ptr<ResourceManager>& rc_mgr,
 
     std::vector<NodeInfo> nodes;
     std::string err = rc_mgr->get_node(cloud_unique_id, &nodes);
+    {
+        TEST_SYNC_POINT_CALLBACK("get_instance_id_err", &err);
+    }
     if (!err.empty()) {
-        LOG(INFO) << "failed to check instance info, err=" << err;
-        return "";
+        // cache can't find cloud_unique_id, so degraded by parse cloud_unique_id
+        // cloud_unique_id encode: ${version}:${instance_id}:${unique_id}
+        // check it split by ':' c
+        auto vec = split(cloud_unique_id, ':');
+        std::stringstream ss;
+        for (int i=0; i<vec.size(); ++i) {
+            ss << "idx "  << i << "= [" << vec[i] << "] ";
+        }
+        LOG(INFO) << "degraded to get instance_id, cloud_unique_id: " << cloud_unique_id << "after split: " << ss.str();
+        if (vec.size() != 3) {
+            LOG(WARNING) << "cloud unique id is not degraded format, failed to check instance info, cloud_unique_id="
+                         << cloud_unique_id << " , err=" << err;
+            return "";
+        }
+        // version: vec[0], instance_id: vec[1], unique_id: vec[2]
+        switch (std::atoi(vec[0].c_str())) {
+            case 1:
+                // just return instance id;
+                return vec[1];
+            default:
+                LOG(WARNING) << "cloud unique id degraded state, but version not eq configure, cloud_unique_id="
+                             << cloud_unique_id << ", err=" << err;
+                return "";
+        }
     }
 
     std::string instance_id;
@@ -2800,6 +2844,52 @@ void static format_to_json_resp(std::string& response_body, const MetaServiceCod
     response_body = sb.GetString();
 }
 
+std::pair<MetaServiceCode, std::string> get_instance_info(const std::shared_ptr<ResourceManager>& resource,
+                                                          const std::shared_ptr<TxnKv>& txn_kv,
+                                                          std::string instance_id, const std::string& cloud_unique_id) {
+    std::pair<MetaServiceCode, std::string> ec {MetaServiceCode::OK, ""};
+    [[maybe_unused]] auto& [code, msg] = ec;
+    std::stringstream ss;
+    if (instance_id.empty()) {
+        if (cloud_unique_id.empty()) {
+            code = MetaServiceCode::INVALID_ARGUMENT;
+            msg = "empty instance_id and cloud_unique_id";
+            LOG(WARNING) << msg;
+            return ec;
+        }
+
+        // get instance_id by cloud_unique_id
+        instance_id = get_instance_id(resource, cloud_unique_id);
+        if (instance_id.empty()) {
+            code = MetaServiceCode::INVALID_ARGUMENT;
+            ss << "cannot find instance_id with cloud_unique_id="
+               << (cloud_unique_id.empty() ? "(empty)" : cloud_unique_id);
+            msg = ss.str();
+            return ec;
+        }
+    }
+    InstanceInfoPB instance;
+    std::unique_ptr<Transaction> txn0;
+    int ret_txn = txn_kv->create_txn(&txn0);
+    if (ret_txn != 0) {
+        msg = "failed to create txn";
+        code = MetaServiceCode::KV_TXN_CREATE_ERR;
+        LOG(WARNING) << msg << " ret=" << ret_txn;
+        return ec;
+    }
+    std::shared_ptr<Transaction> txn(txn0.release());
+    auto [c0, m0] = resource->get_instance(txn, instance_id, &instance);
+    if (c0 != 0) {
+        msg = "failed to get instance, info " + m0;
+        LOG(WARNING) << msg;
+        code = MetaServiceCode::KV_TXN_GET_ERR;
+        return ec;
+    }
+
+    msg = proto_to_json(instance);
+    return ec;
+}
+
 void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
                            const ::selectdb::MetaServiceHttpRequest* request,
                            ::selectdb::MetaServiceHttpResponse* response,
@@ -3183,6 +3273,15 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
         return;
     }
 
+    if (unresolved_path == "get_instance") {
+        const std::string instance_id = uri.GetQuery("instance_id") == nullptr ? "" : *uri.GetQuery("instance_id");
+        const std::string cloud_unique_id = uri.GetQuery("cloud_unique_id") == nullptr ? "" : *uri.GetQuery("cloud_unique_id");
+        auto [c0, m0] = get_instance_info(resource_mgr_, txn_kv_, instance_id, cloud_unique_id);
+        ret = c0;
+        response_body = m0;
+        return;
+    }
+
     // TODO:
     // * unresolved_path == "encode_key"
     // * unresolved_path == "set_token"
@@ -3467,6 +3566,7 @@ void MetaServiceImpl::create_instance(google::protobuf::RpcController* controlle
     instance.set_instance_id(instance_id);
     instance.set_user_id(request->has_user_id() ? request->user_id() : "");
     instance.set_name(request->has_name() ? request->name() : "");
+    instance.set_status(InstanceInfoPB::NORMAL);
     auto obj_info = instance.add_obj_info();
     obj_info->set_ak(ak);
     obj_info->set_sk(sk);
@@ -3640,6 +3740,7 @@ std::pair<MetaServiceCode, std::string> MetaServiceImpl::drop_instance(
     }
 
     instance.set_status(InstanceInfoPB::DELETED);
+    instance.set_mtime(duration_cast<seconds>(system_clock::now().time_since_epoch()).count());
 
     val = instance.SerializeAsString();
     if (val.empty()) {
@@ -4221,7 +4322,7 @@ void MetaServiceImpl::get_stage(google::protobuf::RpcController* controller,
                 found = true;
                 // get from internal stage
                 int idx = stoi(s.obj_info().id());
-                if (idx > 10 || idx < 1) {
+                if (idx > instance.obj_info().size() || idx < 1) {
                     LOG(WARNING) << "invalid idx: " << idx;
                     code = MetaServiceCode::UNDEFINED_ERR;
                     msg = "impossible, id invalid";
@@ -4326,13 +4427,13 @@ void MetaServiceImpl::drop_stage(google::protobuf::RpcController* controller,
     }
     auto type = request->type();
 
-    if (type == StagePB::EXTERNAL && !request->has_stage_name()) {
+    if (type == StagePB::EXTERNAL && request->stage_name().empty()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
-        msg = "external stage but not stage name";
+        msg = "external stage but not set stage name";
         return;
     }
 
-    if (type == StagePB::INTERNAL && !request->has_mysql_user_id()) {
+    if (type == StagePB::INTERNAL && request->mysql_user_id().empty()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
         msg = "internal stage but not set user id";
         return;
@@ -4619,6 +4720,58 @@ void MetaServiceImpl::finish_copy(google::protobuf::RpcController* controller,
         msg = fmt::format("failed to commit kv txn, ret={}", ret);
         LOG(WARNING) << msg;
     }
+}
+
+void MetaServiceImpl::get_copy_job(google::protobuf::RpcController* controller,
+                                   const ::selectdb::GetCopyJobRequest* request,
+                                   ::selectdb::GetCopyJobResponse* response,
+                                   ::google::protobuf::Closure* done) {
+    RPC_PREPROCESS(get_copy_job);
+    std::string cloud_unique_id = request->has_cloud_unique_id() ? request->cloud_unique_id() : "";
+    if (cloud_unique_id.empty()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "cloud unique id not set";
+        return;
+    }
+
+    instance_id = get_instance_id(resource_mgr_, cloud_unique_id);
+    if (instance_id.empty()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "empty instance_id";
+        LOG(INFO) << msg << ", cloud_unique_id=" << cloud_unique_id;
+        return;
+    }
+
+    std::unique_ptr<Transaction> txn;
+    ret = txn_kv_->create_txn(&txn);
+    if (ret != 0) {
+        code = MetaServiceCode::KV_TXN_CREATE_ERR;
+        msg = "failed to create txn";
+        LOG(WARNING) << msg << " ret=" << ret;
+        return;
+    }
+
+    CopyJobKeyInfo key_info {instance_id, request->stage_id(), request->table_id(),
+                             request->copy_id(), request->group_id()};
+    std::string key;
+    copy_job_key(key_info, &key);
+    std::string val;
+    ret = txn->get(key, &val);
+    if (ret == 1) { // not found key
+        return;
+    } else if (ret < 0) { // error
+        code = MetaServiceCode::KV_TXN_GET_ERR;
+        msg = "failed to get copy job";
+        LOG(WARNING) << msg << " ret=" << ret;
+        return;
+    }
+    CopyJobPB copy_job;
+    if (!copy_job.ParseFromString(val)) {
+        code = MetaServiceCode::PROTOBUF_PARSE_ERR;
+        msg = "failed to parse CopyJobPB";
+        return;
+    }
+    response->mutable_copy_job()->CopyFrom(copy_job);
 }
 
 void MetaServiceImpl::get_copy_files(google::protobuf::RpcController* controller,

@@ -29,7 +29,10 @@ import com.google.common.base.Strings;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 // SHOW COPY STATUS statement used to get status of copy job.
 //
@@ -175,6 +178,35 @@ public class ShowCopyStmt extends ShowLoadStmt {
                     + " or TableName = \"your_table_name\", or TableName LIKE \"matcher\", "
                     + " or Files = \"your_file_name\", or FILES LIKE \"matcher\", "
                     + " or compound predicate with operator AND");
+        }
+    }
+
+    @Override
+    protected void analyzeCompoundPredicate(Expr cp) throws AnalysisException {
+        ArrayList<Expr> children = new ArrayList<>();
+        analyzeCompoundPredicate(cp, children);
+        Set<String> names = new HashSet<>();
+        // check whether left.columnName equals to right.columnName
+        for (Expr child : children) {
+            String name = ((SlotRef) child.getChild(0)).getColumnName();
+            if (names.contains(name)) {
+                throw new AnalysisException("column names on both sides of operator AND should be diffrent");
+            }
+            names.add(name);
+            analyzeSubPredicate(child);
+        }
+    }
+
+    private void analyzeCompoundPredicate(Expr expr, List<Expr> exprs) throws AnalysisException {
+        if (expr instanceof CompoundPredicate) {
+            CompoundPredicate cp = (CompoundPredicate) expr;
+            if (cp.getOp() != CompoundPredicate.Operator.AND) {
+                throw new AnalysisException("Only allow compound predicate with operator AND");
+            }
+            analyzeCompoundPredicate(expr.getChild(0), exprs);
+            analyzeCompoundPredicate(expr.getChild(1), exprs);
+        } else {
+            exprs.add(expr);
         }
     }
 

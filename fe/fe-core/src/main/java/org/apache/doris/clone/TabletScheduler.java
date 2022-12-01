@@ -1103,8 +1103,13 @@ public class TabletScheduler extends MasterDaemon {
          */
         if (!force && !Config.enable_force_drop_redundant_replica && replica.getState().canLoad()
                 && replica.getWatermarkTxnId() == -1 && !FeConstants.runningUnitTest) {
-            long nextTxnId = Env.getCurrentGlobalTransactionMgr()
-                    .getNextTransactionId(tabletCtx.getDbId());
+            long nextTxnId = -1;
+            try {
+                nextTxnId = Env.getCurrentGlobalTransactionMgr()
+                        .getNextTransactionId(tabletCtx.getDbId());
+            } catch (AnalysisException e) {
+                throw new SchedException(Status.SCHEDULE_FAILED, e.getMessage());
+            }
             replica.setWatermarkTxnId(nextTxnId);
             replica.setState(ReplicaState.DECOMMISSION);
             // set priority to normal because it may wait for a long time. Remain it as VERY_HIGH may block other task.

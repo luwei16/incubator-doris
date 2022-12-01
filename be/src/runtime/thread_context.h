@@ -345,6 +345,7 @@ private:
 #define THREAD_MEM_TRACKER_TRANSFER_FROM(size, tracker) \
     tracker->transfer_to(                               \
             size, doris::thread_context()->_thread_mem_tracker_mgr->limiter_mem_tracker_raw())
+
 // Mem Hook to consume thread mem tracker
 #define MEM_MALLOC_HOOK(size)                                                \
     do {                                                                     \

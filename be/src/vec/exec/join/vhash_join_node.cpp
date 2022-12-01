@@ -171,11 +171,17 @@ struct ProcessHashTableProbe {
               _build_block_offsets(join_node->_build_block_offsets),
               _build_block_rows(join_node->_build_block_rows),
               _tuple_is_null_left_flags(
-                      reinterpret_cast<ColumnUInt8&>(*join_node->_tuple_is_null_left_flag_column)
-                              .get_data()),
+                      join_node->_is_outer_join
+                              ? &(reinterpret_cast<ColumnUInt8&>(
+                                          *join_node->_tuple_is_null_left_flag_column)
+                                          .get_data())
+                              : nullptr),
               _tuple_is_null_right_flags(
-                      reinterpret_cast<ColumnUInt8&>(*join_node->_tuple_is_null_right_flag_column)
-                              .get_data()),
+                      join_node->_is_outer_join
+                              ? &(reinterpret_cast<ColumnUInt8&>(
+                                          *join_node->_tuple_is_null_right_flag_column)
+                                          .get_data())
+                              : nullptr),
               _rows_returned_counter(join_node->_rows_returned_counter),
               _search_hashtable_timer(join_node->_search_hashtable_timer),
               _build_side_output_timer(join_node->_build_side_output_timer),
@@ -247,8 +253,8 @@ struct ProcessHashTableProbe {
 
         // Dispose right tuple is null flags columns
         if constexpr (probe_all && !have_other_join_conjunct) {
-            _tuple_is_null_right_flags.resize(size);
-            auto* __restrict null_data = _tuple_is_null_right_flags.data();
+            _tuple_is_null_right_flags->resize(size);
+            auto* __restrict null_data = _tuple_is_null_right_flags->data();
             for (int i = 0; i < size; ++i) {
                 null_data[i] = _build_block_rows[i] == -1;
             }
@@ -269,7 +275,7 @@ struct ProcessHashTableProbe {
         }
 
         if constexpr (JoinOpType::value == TJoinOp::RIGHT_OUTER_JOIN && !have_other_join_conjunct) {
-            _tuple_is_null_left_flags.resize_fill(size, 0);
+            _tuple_is_null_left_flags->resize_fill(size, 0);
         }
     }
     // Only process the join with no other join conjunt, because of no other join conjunt
@@ -547,7 +553,7 @@ struct ProcessHashTableProbe {
 
                 for (int i = 0; i < column->size(); ++i) {
                     if (filter_map[i]) {
-                        _tuple_is_null_right_flags.emplace_back(null_map_data[i]);
+                        _tuple_is_null_right_flags->emplace_back(null_map_data[i]);
                     }
                 }
                 output_block->get_by_position(result_column_id).column =
@@ -607,7 +613,7 @@ struct ProcessHashTableProbe {
                     *visited_map[i] |= result;
                     filter_size += result;
                 }
-                _tuple_is_null_left_flags.resize_fill(filter_size, 0);
+                _tuple_is_null_left_flags->resize_fill(filter_size, 0);
             } else {
                 // inner join do nothing
             }
@@ -675,7 +681,7 @@ struct ProcessHashTableProbe {
             for (int i = 0; i < right_col_idx; ++i) {
                 assert_cast<ColumnNullable*>(mcol[i].get())->insert_many_defaults(block_size);
             }
-            _tuple_is_null_left_flags.resize_fill(block_size, 1);
+            _tuple_is_null_left_flags->resize_fill(block_size, 1);
         }
         *eos = iter == hash_table_ctx.hash_table.end();
 
@@ -698,9 +704,9 @@ private:
     std::vector<int8_t>& _build_block_offsets;
     std::vector<int>& _build_block_rows;
     // only need set the tuple is null in RIGHT_OUTER_JOIN and FULL_OUTER_JOIN
-    ColumnUInt8::Container& _tuple_is_null_left_flags;
+    ColumnUInt8::Container* _tuple_is_null_left_flags;
     // only need set the tuple is null in LEFT_OUTER_JOIN and FULL_OUTER_JOIN
-    ColumnUInt8::Container& _tuple_is_null_right_flags;
+    ColumnUInt8::Container* _tuple_is_null_right_flags;
 
     ProfileCounter* _rows_returned_counter;
     ProfileCounter* _search_hashtable_timer;
@@ -946,10 +952,6 @@ Status HashJoinNode::get_next(RuntimeState* state, Block* output_block, bool* eo
         probe_rows = _probe_block.rows();
         if (probe_rows != 0) {
             COUNTER_UPDATE(_probe_rows_counter, probe_rows);
-            if (_join_op == TJoinOp::RIGHT_OUTER_JOIN || _join_op == TJoinOp::FULL_OUTER_JOIN) {
-                _probe_column_convert_to_null = _convert_block_to_null(_probe_block);
-            }
-
             int probe_expr_ctxs_sz = _probe_expr_ctxs.size();
             _probe_columns.resize(probe_expr_ctxs_sz);
             if (_null_map_column == nullptr) {
@@ -973,6 +975,9 @@ Status HashJoinNode::get_next(RuntimeState* state, Block* output_block, bool* eo
                     _hash_table_variants);
 
             RETURN_IF_ERROR(st);
+            if (_join_op == TJoinOp::RIGHT_OUTER_JOIN || _join_op == TJoinOp::FULL_OUTER_JOIN) {
+                _probe_column_convert_to_null = _convert_block_to_null(_probe_block);
+            }
         }
     }
 
@@ -1062,7 +1067,7 @@ void HashJoinNode::_prepare_probe_block() {
     // remove add nullmap of probe columns
     for (auto index : _probe_column_convert_to_null) {
         auto& column_type = _probe_block.safe_get_by_position(index);
-        DCHECK(column_type.column->is_nullable());
+        DCHECK(column_type.column->is_nullable() || is_column_const(*(column_type.column.get())));
         DCHECK(column_type.type->is_nullable());
 
         column_type.column = remove_nullable(column_type.column);
@@ -1272,9 +1277,6 @@ Status HashJoinNode::_extract_probe_join_column(Block& block, NullMap& null_map,
 
 Status HashJoinNode::_process_build_block(RuntimeState* state, Block& block, uint8_t offset) {
     SCOPED_TIMER(_build_table_timer);
-    if (_join_op == TJoinOp::LEFT_OUTER_JOIN || _join_op == TJoinOp::FULL_OUTER_JOIN) {
-        _convert_block_to_null(block);
-    }
     size_t rows = block.rows();
     if (UNLIKELY(rows == 0)) {
         return Status::OK();
@@ -1321,6 +1323,9 @@ Status HashJoinNode::_process_build_block(RuntimeState* state, Block& block, uin
             },
             _hash_table_variants);
 
+    if (_join_op == TJoinOp::LEFT_OUTER_JOIN || _join_op == TJoinOp::FULL_OUTER_JOIN) {
+        _convert_block_to_null(block);
+    }
     return st;
 }
 

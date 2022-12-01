@@ -77,6 +77,10 @@ public class CopyFromParam {
         Database db = Env.getCurrentInternalCatalog().getDbOrAnalysisException(fullDbName);
         OlapTable olapTable = db.getOlapTableOrAnalysisException(tableName.getTbl());
 
+        if (useDeleteSign && olapTable.getKeysType() != KeysType.UNIQUE_KEYS) {
+            throw new AnalysisException("copy.use_delete_sign property only support unique table");
+        }
+
         // Analyze columns mentioned in the statement.
         if (targetColumns == null) {
             targetColumns = new ArrayList<>();
@@ -84,9 +88,6 @@ public class CopyFromParam {
                 targetColumns.add(col.getName());
             }
             if (useDeleteSign) {
-                if (olapTable.getKeysType() != KeysType.UNIQUE_KEYS) {
-                    throw new AnalysisException("copy.use_delete_sign property only support unique table");
-                }
                 targetColumns.add(getDeleteSignColumn(olapTable).getName());
             }
         } else {

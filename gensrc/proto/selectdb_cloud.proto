@@ -806,6 +806,19 @@ message FinishCopyResponse {
     optional MetaServiceResponseStatus status = 1;
 }
 
+message GetCopyJobRequest {
+    optional string cloud_unique_id = 1;
+    optional string stage_id = 2;
+    optional int64 table_id = 3;
+    optional string copy_id = 4;
+    optional int32 group_id = 5;
+}
+
+message GetCopyJobResponse {
+    optional MetaServiceResponseStatus status = 1;
+    optional CopyJobPB copy_job = 2;
+}
+
 message GetCopyFilesRequest {
     optional string cloud_unique_id = 1;
     optional string stage_id = 2;
@@ -913,6 +926,7 @@ service MetaService {
     // copy into
     rpc begin_copy(BeginCopyRequest) returns (BeginCopyResponse);
     rpc finish_copy(FinishCopyRequest) returns (FinishCopyResponse);
+    rpc get_copy_job(GetCopyJobRequest) returns (GetCopyJobResponse);
     rpc get_copy_files(GetCopyFilesRequest) returns (GetCopyFilesResponse);
 };
 

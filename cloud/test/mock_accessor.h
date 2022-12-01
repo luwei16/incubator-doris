@@ -22,6 +22,10 @@ public:
     // returns 0 for success otherwise error
     int delete_objects_by_prefix(const std::string& relative_path) override {
         std::lock_guard lock(mtx_);
+        if (relative_path.empty()) {
+            objects_.clear();
+            return 0;
+        }
         auto begin = objects_.lower_bound(relative_path);
         if (begin == objects_.end()) {
             return 0;

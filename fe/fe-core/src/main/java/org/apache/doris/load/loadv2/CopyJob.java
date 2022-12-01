@@ -18,12 +18,15 @@
 package org.apache.doris.load.loadv2;
 
 import org.apache.doris.analysis.BrokerDesc;
+import org.apache.doris.analysis.CopyStmt;
 import org.apache.doris.analysis.DataDescription;
+import org.apache.doris.analysis.StatementBase;
 import org.apache.doris.analysis.UserIdentity;
 import org.apache.doris.catalog.Database;
 import org.apache.doris.catalog.Env;
 import org.apache.doris.common.DdlException;
 import org.apache.doris.common.MetaNotFoundException;
+import org.apache.doris.common.UserException;
 import org.apache.doris.common.io.Text;
 import org.apache.doris.common.util.DebugUtil;
 import org.apache.doris.load.BrokerFileGroup;
@@ -56,6 +59,7 @@ import java.util.stream.Collectors;
 public class CopyJob extends BrokerLoadJob {
     private static final Logger LOG = LogManager.getLogger(CopyJob.class);
     private static final String TABLE_NAME_KEY = "TableName";
+    private static final String USER_NAME_KEY = "UserName";
 
     @Getter
     private String stageId;
@@ -74,6 +78,7 @@ public class CopyJob extends BrokerLoadJob {
     private String loadFilePaths = "";
     private Map<String, String> properties = new HashMap<>();
     private volatile boolean abortedCopy = false;
+    private boolean isReplay = false;
 
     public CopyJob() {
         super(EtlJobType.COPY);
@@ -81,7 +86,7 @@ public class CopyJob extends BrokerLoadJob {
 
     public CopyJob(long dbId, String label, TUniqueId queryId, BrokerDesc brokerDesc, OriginStatement originStmt,
             UserIdentity userInfo, String stageId, StagePB.StageType stageType, long sizeLimit, String pattern,
-            ObjectInfo objectInfo, boolean forceCopy) throws MetaNotFoundException {
+            ObjectInfo objectInfo, boolean forceCopy, String user) throws MetaNotFoundException {
         super(EtlJobType.COPY, dbId, label, brokerDesc, originStmt, userInfo);
         this.stageId = stageId;
         this.stageType = stageType;
@@ -90,6 +95,7 @@ public class CopyJob extends BrokerLoadJob {
         this.objectInfo = objectInfo;
         this.forceCopy = forceCopy;
         this.copyId = DebugUtil.printId(queryId);
+        this.properties.put(USER_NAME_KEY, user);
     }
 
     @Override
@@ -218,6 +224,18 @@ public class CopyJob extends BrokerLoadJob {
                 }.getType()));
     }
 
+    @Override
+    protected void analyzeStmt(StatementBase stmtBase, Database db) throws UserException {
+        CopyStmt stmt = (CopyStmt) stmtBase;
+        stmt.analyzeWhenReplay(getUser(), db.getFullName());
+        // check if begin copy happened
+        checkAndSetDataSourceInfo(db, stmt.getDataDescriptions());
+        this.stageId = stmt.getStageId();
+        this.stageType = stmt.getStageType();
+        this.objectInfo = stmt.getObjectInfo();
+        this.isReplay = true;
+    }
+
     protected void setSelectedFiles(Map<FileGroupAggKey, List<List<TBrokerFileStatus>>> fileStatusMap) {
         this.loadFilePaths = selectedFilesToJson(fileStatusMap);
     }
@@ -242,5 +260,13 @@ public class CopyJob extends BrokerLoadJob {
 
     public String getFiles() {
         return loadFilePaths == null ? "" : loadFilePaths;
+    }
+
+    public String getUser() {
+        return properties.get(USER_NAME_KEY);
+    }
+
+    protected boolean isReplay() {
+        return this.isReplay;
     }
 }

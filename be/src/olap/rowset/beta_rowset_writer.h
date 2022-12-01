@@ -84,6 +84,7 @@ public:
     vectorized::object_util::LocalSchemaChangeRecorder* mutable_schema_change_recorder() {
         return _context.schema_change_recorder.get();
     }
+
     int64_t max_upload_speed() const override { return _max_upload_speed; }
     int64_t min_upload_speed() const override { return _min_upload_speed; }
 

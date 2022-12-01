@@ -76,7 +76,6 @@ Status LocalFileReader::read_at_impl(size_t offset, Slice result, size_t* bytes_
     char* to = result.data;
     bytes_req = std::min(bytes_req, _file_size - offset);
     *bytes_read = 0;
-
     while (bytes_req != 0) {
         auto res = ::pread(_fd, to, bytes_req, offset);
         if (UNLIKELY(-1 == res && errno != EINTR)) {

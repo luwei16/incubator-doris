@@ -474,7 +474,7 @@ public class CopyIntoTest extends TestWithFeService {
     @Test
     public void testDeleteOn() throws DdlException {
         List<StagePB> stages = Lists.newArrayList(externalStagePB);
-        new Expectations(connectContext.getEnv().getInternalCatalog()) {
+        new Expectations(connectContext.getEnv(), connectContext.getEnv().getInternalCatalog()) {
             {
                 Env.getCurrentInternalCatalog().getStage(StageType.EXTERNAL, anyString, "ex_stage_1", null);
                 minTimes = 0;

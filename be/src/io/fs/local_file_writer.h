@@ -33,7 +33,7 @@ public:
 
     Status open() override;
 
-    Status close() override;
+    Status close(bool sync = true) override;
 
     Status abort() override;
 
@@ -48,9 +48,6 @@ public:
     size_t bytes_appended() const override { return _bytes_appended; }
 
     FileSystem* fs() const override { return _fs; }
-
-private:
-    Status _close(bool sync);
 
 private:
     int _fd = -1; // owned

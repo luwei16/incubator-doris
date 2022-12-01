@@ -17,19 +17,15 @@
 
 suite("test_outer_join_with_order_by") {
     sql """
-        drop table if exists test_outer_join_with_order_by_outer_join_A;
+        drop table if exists outerjoin_A;
     """
 
     sql """
-        drop table if exists test_outer_join_with_order_by_outer_join_B;
+        drop table if exists outerjoin_B;
     """
 
     sql """
-        drop table if exists test_outer_join_with_order_by_outer_join_C;
-    """
-
-    sql """
-        create table test_outer_join_with_order_by_outer_join_A ( a int not null )
+        create table outerjoin_A ( a int not null )
         ENGINE=OLAP
         DISTRIBUTED BY HASH(a) BUCKETS 1
         PROPERTIES (
@@ -40,7 +36,7 @@ suite("test_outer_join_with_order_by") {
     """
 
     sql """
-        create table test_outer_join_with_order_by_outer_join_B ( a int not null )
+        create table outerjoin_B ( a int not null )
         ENGINE=OLAP
         DISTRIBUTED BY HASH(a) BUCKETS 1
         PROPERTIES (
@@ -51,61 +47,23 @@ suite("test_outer_join_with_order_by") {
     """
 
     sql """
-        create table test_outer_join_with_order_by_outer_join_C ( a int not null )
-        ENGINE=OLAP
-        DISTRIBUTED BY HASH(a) BUCKETS 1
-        PROPERTIES (
-        "replication_allocation" = "tag.location.default: 1",
-        "in_memory" = "false",
-        "storage_format" = "V2"
-        );
+        insert into outerjoin_A values( 1 );
     """
 
     sql """
-        insert into test_outer_join_with_order_by_outer_join_A values( 1 );
-    """
-
-    sql """
-        insert into test_outer_join_with_order_by_outer_join_B values( 1 );
-    """
-
-    sql """
-        insert into test_outer_join_with_order_by_outer_join_C values( 1 );
+        insert into outerjoin_B values( 1 );
     """
 
     qt_select """
-        select case when test_outer_join_with_order_by_outer_join_A.a <= test_outer_join_with_order_by_outer_join_A.a then test_outer_join_with_order_by_outer_join_A.a else test_outer_join_with_order_by_outer_join_A.a end as r
-        from test_outer_join_with_order_by_outer_join_A right join test_outer_join_with_order_by_outer_join_B on test_outer_join_with_order_by_outer_join_A.a = test_outer_join_with_order_by_outer_join_B.a order by test_outer_join_with_order_by_outer_join_A.a;
-    """
-
-    qt_select """
-        select
-        case
-            when subq_10.`c9` is not NULL then subq_10.`c9`
-            else subq_10.`c9`
-        end as c3
-        from
-        (
-            select
-            ref_420.a as c9
-            from
-            test_outer_join_with_order_by_outer_join_A as ref_420 
-            right join test_outer_join_with_order_by_outer_join_B as ref_421 on (ref_420.a = ref_421.a)
-        ) as subq_10
-        left join test_outer_join_with_order_by_outer_join_C as ref_687 on (subq_10.`c9` = ref_687.a)
-        order by
-        subq_10.`c9` desc;
+        select case when outerjoin_A.a <= outerjoin_A.a then outerjoin_A.a else outerjoin_A.a end as r
+        from outerjoin_A right join outerjoin_B on outerjoin_A.a = outerjoin_B.a order by outerjoin_A.a;
     """
 
     sql """
-        drop table if exists test_outer_join_with_order_by_outer_join_A;
+        drop table if exists outerjoin_A;
     """
 
     sql """
-        drop table if exists test_outer_join_with_order_by_outer_join_B;
-    """
-
-    sql """
-        drop table if exists test_outer_join_with_order_by_outer_join_C;
+        drop table if exists outerjoin_B;
     """
 }

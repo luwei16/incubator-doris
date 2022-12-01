@@ -37,8 +37,8 @@ public:
 
     virtual Status open() = 0;
 
-    // Normal close. Wait for all data to persist before returning.
-    virtual Status close() = 0;
+    // Normal close. If `sync` is true, wait for all data to persist before returning.
+    virtual Status close(bool sync = true) = 0;
 
     // Abnormal close and remove this file.
     virtual Status abort() = 0;

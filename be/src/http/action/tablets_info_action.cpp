@@ -19,6 +19,7 @@
 
 #include <string>
 
+#include "cloud/utils.h"
 #include "http/http_channel.h"
 #include "http/http_headers.h"
 #include "http/http_request.h"
@@ -58,8 +59,19 @@ EasyJson TabletsInfoAction::get_tablets_info(string tablet_num_to_return) {
         msg = "Parameter Error";
     }
     std::vector<TabletInfo> tablets_info;
+#ifdef CLOUD_MODE
+    auto weak_tablets = cloud::tablet_mgr()->get_weak_tablets();
+    int64_t count = 0;
+    for (auto& tablet : weak_tablets) {
+        if (++count > number) break;
+        if (auto t = tablet.lock()) {
+            tablets_info.push_back(t->get_tablet_info());
+        }
+    }
+#else
     TabletManager* tablet_manager = StorageEngine::instance()->tablet_manager();
     tablet_manager->obtain_specific_quantity_tablets(tablets_info, number);
+#endif
 
     EasyJson tablets_info_ej;
     tablets_info_ej["msg"] = msg;

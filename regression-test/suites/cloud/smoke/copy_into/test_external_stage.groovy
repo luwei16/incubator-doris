@@ -1,8 +1,8 @@
 suite("smoke_test_external_stage", "smoke") {
     def tableName = "customer_external_stage"
-    def externalStageName = "smoke_test_tpch"
+    def externalStageName = "smoke_test_tpch_external"
     def prefix = "tpch/sf0.1"
-
+    try_sql """drop stage if exists ${externalStageName}"""
     try {
         sql """ DROP TABLE IF EXISTS ${tableName}; """
         sql """
@@ -19,6 +19,7 @@ suite("smoke_test_external_stage", "smoke") {
             UNIQUE KEY(C_CUSTKEY)
             DISTRIBUTED BY HASH(C_CUSTKEY) BUCKETS 1
         """
+
         sql """
             create stage if not exists ${externalStageName}
             properties ('endpoint' = '${getS3Endpoint()}' ,
@@ -46,5 +47,7 @@ suite("smoke_test_external_stage", "smoke") {
         qt_sql " SELECT COUNT(*) FROM ${tableName}; "
     } finally {
         try_sql("DROP TABLE IF EXISTS ${tableName}")
+        try_sql """drop stage if exists ${externalStageName}"""
     }
 }
+

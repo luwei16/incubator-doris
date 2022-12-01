@@ -19,6 +19,7 @@ package org.apache.doris.httpv2.rest;
 
 import org.apache.doris.catalog.Database;
 import org.apache.doris.catalog.Env;
+import org.apache.doris.common.AnalysisException;
 import org.apache.doris.common.MetaNotFoundException;
 import org.apache.doris.httpv2.entity.ResponseEntityBuilder;
 
@@ -53,13 +54,15 @@ public class GetStreamLoadState extends RestBaseController {
         final String fullDbName = getFullDbName(dbName);
 
         Database db;
+        String state = null;
         try {
             db = Env.getCurrentInternalCatalog().getDbOrMetaException(fullDbName);
+            state = Env.getCurrentGlobalTransactionMgr().getLabelState(db.getId(), label).toString();
         } catch (MetaNotFoundException e) {
             return ResponseEntityBuilder.okWithCommonError(e.getMessage());
+        } catch (AnalysisException e) {
+            return ResponseEntityBuilder.okWithCommonError(e.getMessage());
         }
-
-        String state = Env.getCurrentGlobalTransactionMgr().getLabelState(db.getId(), label).toString();
         return ResponseEntityBuilder.ok(state);
     }
 }

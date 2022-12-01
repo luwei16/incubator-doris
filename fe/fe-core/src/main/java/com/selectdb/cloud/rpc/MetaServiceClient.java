@@ -228,6 +228,10 @@ public class MetaServiceClient {
         return blockingStub.finishCopy(request);
     }
 
+    public SelectdbCloud.GetCopyJobResponse getCopyJob(SelectdbCloud.GetCopyJobRequest request) {
+        return blockingStub.getCopyJob(request);
+    }
+
     public SelectdbCloud.GetCopyFilesResponse getCopyFiles(SelectdbCloud.GetCopyFilesRequest request) {
         return blockingStub.getCopyFiles(request);
     }

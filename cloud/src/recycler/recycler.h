@@ -93,6 +93,8 @@ public:
     // scan and recycle finished or timeout copy jobs
     void recycle_copy_jobs();
 
+    // scan and recycle dropped internal stage
+    void recycle_stage();
 private:
     /**
      * Scan key-value pairs between [`begin`, `end`), and perform `recycle_func` on each key-value pair.
@@ -109,6 +111,13 @@ private:
     int delete_rowset_data(const doris::RowsetMetaPB& rs_meta_pb);
 
     int delete_rowset_data(const std::string& rowset_id, const RecycleRowsetPB& recycl_rs_pb);
+
+    /**
+     * Get stage storage info from instance and init ObjStoreAccessor
+     * @return 0 if accessor is successfully inited, 1 if stage not found, negative for error
+     */
+    int init_copy_job_accessor(const std::string& stage_id, const StagePB::StageType& stage_type,
+                               std::shared_ptr<ObjStoreAccessor>* accessor);
 
 private:
     std::shared_ptr<TxnKv> txn_kv_;

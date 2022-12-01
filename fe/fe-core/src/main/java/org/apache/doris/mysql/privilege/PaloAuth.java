@@ -983,6 +983,8 @@ public class PaloAuth implements Writable {
     private void dropUserInternal(UserIdentity userIdent, boolean ignoreIfNonExists, boolean isReplay)
             throws DdlException {
         writeLock();
+        String mysqlUserName = ClusterNamespace.getNameFromFullName(userIdent.getUser());
+        String toDropMysqlUserId;
         try {
             // check if user exists
             if (!doesUserExist(userIdent)) {
@@ -995,6 +997,8 @@ public class PaloAuth implements Writable {
                         userIdent.getQualifiedUser(), userIdent.getHost()));
             }
 
+            // must get user id before drop user
+            toDropMysqlUserId = Env.getCurrentEnv().getAuth().getUserId(mysqlUserName);
             // we don't check if user exists
             userPrivTable.dropUser(userIdent);
             catalogPrivTable.dropUser(userIdent);
@@ -1026,8 +1030,6 @@ public class PaloAuth implements Writable {
             writeUnlock();
         }
 
-        String mysqlUserName = ClusterNamespace.getNameFromFullName(userIdent.getUser());
-        String toDropMysqlUserId = Env.getCurrentEnv().getAuth().getUserId(mysqlUserName);
         String reason = String.format("drop user notify to meta service, userName [%s], userId [%s]",
                 mysqlUserName, toDropMysqlUserId);
         LOG.info(reason);

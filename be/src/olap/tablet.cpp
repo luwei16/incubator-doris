@@ -1755,15 +1755,18 @@ Status Tablet::prepare_compaction_and_calculate_permits(CompactionType compactio
                                                         TabletSharedPtr tablet, int64_t* permits) {
     std::vector<RowsetSharedPtr> compaction_rowsets;
     if (compaction_type == CompactionType::CUMULATIVE_COMPACTION) {
-        scoped_refptr<Trace> trace(new Trace);
-        MonotonicStopWatch watch;
-        watch.start();
-        SCOPED_CLEANUP({
-            if (watch.elapsed_time() / 1e9 > config::cumulative_compaction_trace_threshold) {
-                LOG(WARNING) << "Trace:" << std::endl << trace->DumpToString(Trace::INCLUDE_ALL);
-            }
-        });
-        ADOPT_TRACE(trace.get());
+        if (!config::disable_compaction_trace_log) {
+            scoped_refptr<Trace> trace(new Trace);
+            MonotonicStopWatch watch;
+            watch.start();
+            SCOPED_CLEANUP({
+                if (watch.elapsed_time() / 1e9 > config::cumulative_compaction_trace_threshold) {
+                    LOG(WARNING) << "Trace:" << std::endl
+                                 << trace->DumpToString(Trace::INCLUDE_ALL);
+                }
+            });
+            ADOPT_TRACE(trace.get());
+        }
 
         TRACE("create cumulative compaction");
         StorageEngine::instance()->create_cumulative_compaction(tablet, _cumulative_compaction);
@@ -1775,7 +1778,7 @@ Status Tablet::prepare_compaction_and_calculate_permits(CompactionType compactio
             if (res.precise_code() != OLAP_ERR_CUMULATIVE_NO_SUITABLE_VERSION) {
                 DorisMetrics::instance()->cumulative_compaction_request_failed->increment(1);
                 return Status::InternalError("prepare cumulative compaction with err: {}",
-                                             res.get_error_msg());
+                                             res.to_string());
             }
             // return OK if OLAP_ERR_CUMULATIVE_NO_SUITABLE_VERSION, so that we don't need to
             // print too much useless logs.
@@ -1784,16 +1787,18 @@ Status Tablet::prepare_compaction_and_calculate_permits(CompactionType compactio
         }
         compaction_rowsets = _cumulative_compaction->get_input_rowsets();
     } else {
-        DCHECK_EQ(compaction_type, CompactionType::BASE_COMPACTION);
-        scoped_refptr<Trace> trace(new Trace);
-        MonotonicStopWatch watch;
-        watch.start();
-        SCOPED_CLEANUP({
-            if (watch.elapsed_time() / 1e9 > config::base_compaction_trace_threshold) {
-                LOG(WARNING) << "Trace:" << std::endl << trace->DumpToString(Trace::INCLUDE_ALL);
-            }
-        });
-        ADOPT_TRACE(trace.get());
+        if (!config::disable_compaction_trace_log) {
+            scoped_refptr<Trace> trace(new Trace);
+            MonotonicStopWatch watch;
+            watch.start();
+            SCOPED_CLEANUP({
+                if (watch.elapsed_time() / 1e9 > config::cumulative_compaction_trace_threshold) {
+                    LOG(WARNING) << "Trace:" << std::endl
+                                 << trace->DumpToString(Trace::INCLUDE_ALL);
+                }
+            });
+            ADOPT_TRACE(trace.get());
+        }
 
         TRACE("create base compaction");
         StorageEngine::instance()->create_base_compaction(tablet, _base_compaction);
@@ -1822,16 +1827,18 @@ Status Tablet::prepare_compaction_and_calculate_permits(CompactionType compactio
 
 void Tablet::execute_compaction(CompactionType compaction_type) {
     if (compaction_type == CompactionType::CUMULATIVE_COMPACTION) {
-        scoped_refptr<Trace> trace(new Trace);
-        MonotonicStopWatch watch;
-        watch.start();
-        SCOPED_CLEANUP({
-            if (!config::disable_compaction_trace_log &&
-                watch.elapsed_time() / 1e9 > config::cumulative_compaction_trace_threshold) {
-                LOG(WARNING) << "Trace:" << std::endl << trace->DumpToString(Trace::INCLUDE_ALL);
-            }
-        });
-        ADOPT_TRACE(trace.get());
+        if (!config::disable_compaction_trace_log) {
+            scoped_refptr<Trace> trace(new Trace);
+            MonotonicStopWatch watch;
+            watch.start();
+            SCOPED_CLEANUP({
+                if (watch.elapsed_time() / 1e9 > config::cumulative_compaction_trace_threshold) {
+                    trace->DumpAccumulatedTime(&LOG(WARNING));
+                    trace->Dump(&LOG(WARNING), Trace::INCLUDE_ALL);
+                }
+            });
+            ADOPT_TRACE(trace.get());
+        }
 
         TRACE("execute cumulative compaction");
         Status res = _cumulative_compaction->execute_compact();
@@ -1844,17 +1851,18 @@ void Tablet::execute_compaction(CompactionType compaction_type) {
         }
         set_last_cumu_compaction_failure_time(0);
     } else {
-        DCHECK_EQ(compaction_type, CompactionType::BASE_COMPACTION);
-        scoped_refptr<Trace> trace(new Trace);
-        MonotonicStopWatch watch;
-        watch.start();
-        SCOPED_CLEANUP({
-            if (!config::disable_compaction_trace_log &&
-                watch.elapsed_time() / 1e9 > config::base_compaction_trace_threshold) {
-                LOG(WARNING) << "Trace:" << std::endl << trace->DumpToString(Trace::INCLUDE_ALL);
-            }
-        });
-        ADOPT_TRACE(trace.get());
+        if (!config::disable_compaction_trace_log) {
+            scoped_refptr<Trace> trace(new Trace);
+            MonotonicStopWatch watch;
+            watch.start();
+            SCOPED_CLEANUP({
+                if (watch.elapsed_time() / 1e9 > config::cumulative_compaction_trace_threshold) {
+                    trace->DumpAccumulatedTime(&LOG(WARNING));
+                    trace->Dump(&LOG(WARNING), Trace::INCLUDE_ALL);
+                }
+            });
+            ADOPT_TRACE(trace.get());
+        }
 
         TRACE("create base compaction");
         Status res = _base_compaction->execute_compact();

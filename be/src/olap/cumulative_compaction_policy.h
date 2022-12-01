@@ -128,8 +128,10 @@ public:
                                  int64_t last_cumulative_point) override {
         // if rowsets have delete version, move to the last directly.
         // if rowsets have no delete version, check output_rowset total disk size satisfies promotion size.
-        return (last_delete_version.first != -1 ||
-                output_rowset->data_disk_size() >= _tablet_size_based_promotion_size)
+        return (output_rowset->start_version() == last_cumulative_point &&
+                (last_delete_version.first != -1 ||
+                 output_rowset->data_disk_size() >= _tablet_size_based_promotion_size ||
+                 config::always_promote_cumulative_point))
                        ? output_rowset->end_version() + 1
                        : last_cumulative_point;
     }

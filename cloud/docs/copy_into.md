@@ -146,7 +146,7 @@ COPY INTO [<db_name>.]<table_name> [ ( <col_name> [ , <col_name> ... ] ) ] FROM 
       非必需。如未设置，优先使用stage配置的默认值；如果stage上未设置，使用系统默认值。
 
     - `copy.use_delete_sign`
-       
+
       对于unique表，指定导入是否包含了`__DORIS_DELETE_SIGN__`列，`true`代表包含，`false`代表不包含。
 
       非必需。

@@ -85,11 +85,6 @@ public class PaloFe {
         CommandLineOptions cmdLineOpts = parseArgs(args);
 
         try {
-            // pid file
-            if (!createAndLockPidFile(pidDir + "/fe.pid")) {
-                throw new IOException("pid file is already locked.");
-            }
-
             // init config
             Config config = new Config();
             config.init(dorisHomeDir + "/conf/fe.conf");
@@ -114,6 +109,11 @@ public class PaloFe {
 
             // check command line options
             checkCommandLineOptions(cmdLineOpts);
+
+            // pid file
+            if (!createAndLockPidFile(pidDir + "/fe.pid")) {
+                throw new IOException("pid file is already locked.");
+            }
 
             LOG.info("Palo FE starting...");
 

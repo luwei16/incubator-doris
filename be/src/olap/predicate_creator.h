@@ -26,7 +26,6 @@
 #include "olap/in_list_predicate.h"
 #include "olap/null_predicate.h"
 #include "olap/tablet_schema.h"
-#include "runtime/type_limit.h"
 #include "util/date_func.h"
 #include "util/string_util.h"
 
@@ -271,10 +270,6 @@ template <PredicateType PT>
 inline ColumnPredicate* create_list_predicate(const TabletColumn& column, int index,
                                               const std::vector<std::string>& conditions,
                                               bool opposite, MemPool* pool) {
-    if (column.type() == OLAP_FIELD_TYPE_BOOL) {
-        LOG(FATAL) << "Failed to create list preacate! input column type is invalid";
-        return nullptr;
-    }
     static_assert(PredicateTypeTraits::is_list(PT));
     return create_predicate<PT, std::vector<std::string>>(column, index, conditions, opposite,
                                                           pool);

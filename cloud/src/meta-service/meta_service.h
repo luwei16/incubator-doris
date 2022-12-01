@@ -192,6 +192,11 @@ public:
                      ::selectdb::FinishCopyResponse* response,
                      ::google::protobuf::Closure* done) override;
 
+    void get_copy_job(google::protobuf::RpcController* controller,
+                      const ::selectdb::GetCopyJobRequest* request,
+                      ::selectdb::GetCopyJobResponse* response,
+                      ::google::protobuf::Closure* done) override;
+
     void get_copy_files(google::protobuf::RpcController* controller,
                         const ::selectdb::GetCopyFilesRequest* request,
                         ::selectdb::GetCopyFilesResponse* response,

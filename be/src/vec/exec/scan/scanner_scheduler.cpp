@@ -18,6 +18,7 @@
 #include "scanner_scheduler.h"
 
 #include "common/config.h"
+#include "util/async_io.h"
 #include "util/priority_thread_pool.hpp"
 #include "util/priority_work_stealing_thread_pool.hpp"
 #include "util/telemetry/telemetry.h"
@@ -110,6 +111,13 @@ void ScannerScheduler::_schedule_thread(int queue_id) {
     return;
 }
 
+[[maybe_unused]] static void* run_scanner_bthread(void* arg) {
+    auto f = reinterpret_cast<std::function<void()>*>(arg);
+    (*f)();
+    delete f;
+    return nullptr;
+}
+
 void ScannerScheduler::_schedule_scanners(ScannerContext* ctx) {
     ctx->incr_num_ctx_scheduling(1);
     if (ctx->done()) {
@@ -131,6 +139,7 @@ void ScannerScheduler::_schedule_scanners(ScannerContext* ctx) {
     }
 
     ctx->update_num_running(this_run.size(), -1);
+#if !defined(USE_BTHREAD_SCANNER)
     // Submit scanners to thread pool
     // TODO(cmy): How to handle this "nice"?
     int nice = 1;
@@ -179,17 +188,56 @@ void ScannerScheduler::_schedule_scanners(ScannerContext* ctx) {
             }
         }
     }
+#else
+    int nice = 1;
+    auto cur_span = opentelemetry::trace::Tracer::GetCurrentSpan();
+    auto iter = this_run.begin();
+    ctx->incr_num_scanner_scheduling(this_run.size());
+    while (iter != this_run.end()) {
+        (*iter)->start_wait_worker_timer();
+        AsyncIOCtx io_ctx {.nice = nice};
+
+        auto f = new std::function<void()> ([this, scanner = *iter, parent_span = cur_span, ctx, io_ctx]{
+            AsyncIOCtx* set_io_ctx =
+                    static_cast<AsyncIOCtx*>(bthread_getspecific(AsyncIO::btls_io_ctx_key));
+            if (set_io_ctx == nullptr) {
+                set_io_ctx = new AsyncIOCtx(io_ctx);
+                CHECK_EQ(0, bthread_setspecific(AsyncIO::btls_io_ctx_key, set_io_ctx));
+            } else {
+                LOG(WARNING) << "New bthread should not have io_nice_key";
+            }
+            opentelemetry::trace::Scope scope {parent_span};
+            this->_scanner_scan(this, ctx, scanner);
+        });
+        bthread_t btid;
+        int ret = bthread_start_background(&btid, nullptr, run_scanner_bthread, (void*)f);
+
+        if (ret == 0) {
+            this_run.erase(iter++);
+            ctx->_btids.push_back(btid);
+        }
+        else {
+            delete f;
+            LOG(FATAL) << "failed to submit scanner to bthread";
+            ctx->set_status_on_error(
+                    Status::InternalError("failed to submit scanner to bthread"));
+            break;
+        }
+    }
+#endif
 }
 
 void ScannerScheduler::_scanner_scan(ScannerScheduler* scheduler, ScannerContext* ctx,
                                      VScanner* scanner) {
     INIT_AND_SCOPE_REENTRANT_SPAN_IF(ctx->state()->enable_profile(), ctx->state()->get_tracer(),
                                      ctx->scan_span(), "VScanner::scan");
+#if !defined(USE_BTHREAD_SCANNER)
     SCOPED_ATTACH_TASK(scanner->runtime_state()->scanner_mem_tracker(),
                        ThreadContext::query_to_task_type(scanner->runtime_state()->query_type()),
                        print_id(scanner->runtime_state()->query_id()),
                        scanner->runtime_state()->fragment_instance_id());
     Thread::set_self_name("_scanner_scan");
+#endif
     scanner->update_wait_worker_timer();
     // Do not use ScopedTimer. There is no guarantee that, the counter
     // (_scan_cpu_timer, the class member) is not destroyed after `_running_thread==0`.

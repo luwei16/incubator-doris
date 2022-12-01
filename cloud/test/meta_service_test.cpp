@@ -9,7 +9,7 @@
 #include "gen_cpp/selectdb_cloud.pb.h"
 #include "meta-service/keys.h"
 #include "meta-service/mem_txn_kv.h"
-#include "resource-manager/resource_manager.h"
+#include "meta-service/meta_server.h"
 #include "mock_resource_manager.h"
 
 #include "brpc/controller.h"
@@ -17,10 +17,8 @@
 
 #include <atomic>
 #include <condition_variable>
-#include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <random>
 // clang-format on
 
 int main(int argc, char** argv) {
@@ -70,6 +68,43 @@ std::unique_ptr<MetaServiceImpl> get_meta_service() {
     return meta_service;
 }
 
+
+TEST(MetaServiceTest, GetInstanceIdTest) {
+    extern std::string get_instance_id(const std::shared_ptr<ResourceManager>& rc_mgr,
+                                       const std::string& cloud_unique_id);
+    auto meta_service = get_meta_service();
+    auto sp = SyncPoint::get_instance();
+
+    sp->set_call_back("get_instance_id_err", [&](void* args) {
+        std::string* err = reinterpret_cast<std::string*>(args);
+        *err = "can't find node from cache";
+    });
+    sp->enable_processing();
+
+    auto instance_id = get_instance_id(meta_service->resource_mgr_, "1:ALBJLH4Q:m-n3qdpyal27rh8iprxx");
+    ASSERT_EQ(instance_id, "ALBJLH4Q");
+
+    // version not support
+    instance_id = get_instance_id(meta_service->resource_mgr_, "2:ALBJLH4Q:m-n3qdpyal27rh8iprxx");
+    ASSERT_EQ(instance_id, "");
+
+    // degraded format err
+    instance_id = get_instance_id(meta_service->resource_mgr_, "1:ALBJLH4Q");
+    ASSERT_EQ(instance_id, "");
+
+    // std::invalid_argument
+    instance_id = get_instance_id(meta_service->resource_mgr_, "invalid_version:ALBJLH4Q:m-n3qdpyal27rh8iprxx");
+    ASSERT_EQ(instance_id, "");
+
+    // std::out_of_range
+    instance_id = get_instance_id(meta_service->resource_mgr_, "12345678901:ALBJLH4Q:m-n3qdpyal27rh8iprxx");
+    ASSERT_EQ(instance_id, "");
+
+    sp->clear_all_call_backs();
+    sp->clear_trace();
+    sp->disable_processing();
+}
+
 TEST(MetaServiceTest, CreateInstanceTest) {
     auto meta_service = get_meta_service();
 
@@ -105,6 +140,38 @@ TEST(MetaServiceTest, CreateInstanceTest) {
                                       &req, &res, nullptr);
         ASSERT_EQ(res.status().code(), MetaServiceCode::INVALID_ARGUMENT);
     }
+
+    // case: normal drop instance
+    {
+        brpc::Controller cntl;
+        AlterInstanceRequest req;
+        AlterInstanceResponse res;
+        req.set_op(AlterInstanceRequest::DROP);
+        req.set_instance_id("test_instance");
+        meta_service->alter_instance(reinterpret_cast<::google::protobuf::RpcController*>(&cntl), &req, &res, nullptr);
+        InstanceKeyInfo key_info {"test_instance"};
+        std::string key;
+        std::string val;
+        instance_key(key_info, &key);
+        std::unique_ptr<Transaction> txn;
+        meta_service->txn_kv_->create_txn(&txn);
+        txn->get(key, &val);
+        InstanceInfoPB instance;
+        instance.ParseFromString(val);
+        ASSERT_EQ(instance.status(), InstanceInfoPB::DELETED);
+        ASSERT_EQ(res.status().code(), MetaServiceCode::OK);
+    }
+
+    // case: normal refresh instance
+    {
+        brpc::Controller cntl;
+        AlterInstanceRequest req;
+        AlterInstanceResponse res;
+        req.set_op(AlterInstanceRequest::REFRESH);
+        req.set_instance_id("test_instance");
+        meta_service->alter_instance(reinterpret_cast<::google::protobuf::RpcController*>(&cntl), &req, &res, nullptr);
+        ASSERT_EQ(res.status().code(), MetaServiceCode::OK);
+    }
 }
 
 TEST(MetaServiceTest, AlterClusterTest) {
@@ -133,6 +200,56 @@ TEST(MetaServiceTest, AlterClusterTest) {
         meta_service->alter_cluster(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
                                     &req, &res, nullptr);
         ASSERT_EQ(res.status().code(), MetaServiceCode::INVALID_ARGUMENT);
+    }
+
+    // add node
+    {
+        brpc::Controller cntl;
+        AlterClusterRequest req;
+        req.set_instance_id(mock_instance);
+        req.set_op(AlterClusterRequest::ADD_NODE);
+        req.mutable_cluster()->set_cluster_name(mock_cluster_name);
+        req.mutable_cluster()->set_cluster_id(mock_cluster_id);
+        req.mutable_cluster()->set_type(ClusterPB::COMPUTE);
+        auto node = req.mutable_cluster()->add_nodes();
+        node->set_ip("127.0.0.1");
+        node->set_heartbeat_port(9999);
+        AlterClusterResponse res;
+        meta_service->alter_cluster(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
+                                    &req, &res, nullptr);
+        ASSERT_EQ(res.status().code(), MetaServiceCode::OK);
+    }
+
+    // drop node
+    {
+        brpc::Controller cntl;
+        AlterClusterRequest req;
+        req.set_instance_id(mock_instance);
+        req.set_op(AlterClusterRequest::DROP_NODE);
+        req.mutable_cluster()->set_cluster_name(mock_cluster_name);
+        req.mutable_cluster()->set_cluster_id(mock_cluster_id);
+        req.mutable_cluster()->set_type(ClusterPB::COMPUTE);
+        auto node = req.mutable_cluster()->add_nodes();
+        node->set_ip("127.0.0.1");
+        node->set_heartbeat_port(9999);
+        AlterClusterResponse res;
+        meta_service->alter_cluster(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
+                                    &req, &res, nullptr);
+        ASSERT_EQ(res.status().code(), MetaServiceCode::OK);
+    }
+
+    // rename cluster
+    {
+        brpc::Controller cntl;
+        AlterClusterRequest req;
+        req.set_instance_id(mock_instance);
+        req.mutable_cluster()->set_cluster_id(mock_cluster_id);
+        req.mutable_cluster()->set_cluster_name("rename_cluster_name");
+        req.set_op(AlterClusterRequest::RENAME_CLUSTER);
+        AlterClusterResponse res;
+        meta_service->alter_cluster(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
+                                    &req, &res, nullptr);
+        ASSERT_EQ(res.status().code(), MetaServiceCode::OK);
     }
 }
 
@@ -603,21 +720,23 @@ TEST(MetaServiceTest, BeginTxnTest) {
 
 TEST(MetaServiceTest, PreCommitTxnTest) {
     auto meta_service = get_meta_service();
-
+    int64_t txn_id;
     // begin txn first
-    brpc::Controller cntl;
-    BeginTxnRequest req;
-    req.set_cloud_unique_id("test_cloud_unique_id");
-    TxnInfoPB txn_info_pb;
-    txn_info_pb.set_db_id(666);
-    txn_info_pb.set_label("test_label");
-    txn_info_pb.add_table_ids(111);
-    req.mutable_txn_info()->CopyFrom(txn_info_pb);
-    BeginTxnResponse res;
-    meta_service->begin_txn(reinterpret_cast<::google::protobuf::RpcController*>(&cntl), &req, &res,
-                            nullptr);
-    ASSERT_EQ(res.status().code(), MetaServiceCode::OK);
-    int64_t txn_id = res.txn_id();
+    {
+        brpc::Controller cntl;
+        BeginTxnRequest req;
+        req.set_cloud_unique_id("test_cloud_unique_id");
+        TxnInfoPB txn_info_pb;
+        txn_info_pb.set_db_id(666);
+        txn_info_pb.set_label("test_label");
+        txn_info_pb.add_table_ids(111);
+        req.mutable_txn_info()->CopyFrom(txn_info_pb);
+        BeginTxnResponse res;
+        meta_service->begin_txn(reinterpret_cast<::google::protobuf::RpcController*>(&cntl), &req, &res,
+                                nullptr);
+        ASSERT_EQ(res.status().code(), MetaServiceCode::OK);
+        txn_id = res.txn_id();
+    }
 
     // case: txn's status should be TXN_STATUS_PRECOMMITTED
     {
@@ -1052,6 +1171,22 @@ TEST(MetaServiceTest, CopyJobTest) {
     get_copy_file_req.set_stage_id(stage_id);
     get_copy_file_req.set_table_id(table_id);
 
+    // generate a get copy job request
+    GetCopyJobRequest get_copy_job_request;
+    get_copy_job_request.set_cloud_unique_id(cloud_unique_id);
+    get_copy_job_request.set_stage_id(stage_id);
+    get_copy_job_request.set_table_id(table_id);
+    get_copy_job_request.set_copy_id("test_copy_id");
+    get_copy_job_request.set_group_id(0);
+
+    // get copy job
+    {
+        GetCopyJobResponse res;
+        meta_service->get_copy_job(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
+                                   &get_copy_job_request, &res, nullptr);
+        ASSERT_EQ(res.status().code(), MetaServiceCode::OK);
+        ASSERT_EQ(res.has_copy_job(), false);
+    }
     // begin copy
     {
         BeginCopyResponse res;
@@ -1067,6 +1202,14 @@ TEST(MetaServiceTest, CopyJobTest) {
                                      &get_copy_file_req, &res, nullptr);
         ASSERT_EQ(res.status().code(), MetaServiceCode::OK);
         ASSERT_EQ(res.object_files_size(), 20);
+    }
+    // get copy job
+    {
+       GetCopyJobResponse res;
+       meta_service->get_copy_job(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
+                                  &get_copy_job_request, &res, nullptr);
+       ASSERT_EQ(res.status().code(), MetaServiceCode::OK);
+       ASSERT_EQ(res.copy_job().object_files().size(), 20);
     }
     // begin copy with duplicate files
     {

@@ -66,7 +66,7 @@ Status S3FileWriter::abort() {
     return Status::OK();
 }
 
-Status S3FileWriter::close() {
+Status S3FileWriter::close(bool sync) {
     if (_closed) {
         return Status::OK();
     }
@@ -74,7 +74,7 @@ Status S3FileWriter::close() {
     DCHECK(_handle);
     _closed = true;
 
-    {
+    if (sync) {
         SCOPED_ATTACH_TASK(ExecEnv::GetInstance()->orphan_mem_tracker());
         _handle->WaitUntilFinished();
         if (_handle->GetStatus() != Aws::Transfer::TransferStatus::COMPLETED) {
@@ -111,7 +111,7 @@ Status S3FileWriter::finalize() {
     if (!client) {
         return Status::InternalError("init s3 client error");
     }
-    RETURN_IF_ERROR(_tmp_file_writer->close());
+    RETURN_IF_ERROR(_tmp_file_writer->close(false));
     {
         SCOPED_ATTACH_TASK(ExecEnv::GetInstance()->orphan_mem_tracker());
         auto tmp_file_mgr = TmpFileMgr::instance();
@@ -126,6 +126,7 @@ Status S3FileWriter::finalize() {
                  upload_start = upload_start, upload_speed = _upload_speed_bytes_s](
                         const Aws::Transfer::TransferManager*,
                         const std::shared_ptr<const Aws::Transfer::TransferHandle>& handle) {
+                    handle->WaitUntilFinished();
                     if (handle->GetStatus() != Aws::Transfer::TransferStatus::COMPLETED ||
                         !tmp_file_mgr->insert_tmp_file(path, size)) {
                         global_local_filesystem()->delete_file(path);

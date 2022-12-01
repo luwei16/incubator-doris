@@ -60,6 +60,7 @@ int S3Accessor::delete_objects_by_prefix(const std::string& relative_path) {
                     .tag("endpoint", conf_.endpoint)
                     .tag("bucket", conf_.bucket)
                     .tag("prefix", prefix)
+                    .tag("responseCode", static_cast<int>(outcome.GetError().GetResponseCode()))
                     .tag("error", outcome.GetError().GetMessage());
             return -1;
         }
@@ -69,6 +70,10 @@ int S3Accessor::delete_objects_by_prefix(const std::string& relative_path) {
         objects.reserve(result.GetContents().size());
         for (const auto& obj : result.GetContents()) {
             objects.emplace_back().SetKey(obj.GetKey());
+            LOG_INFO("delete object")
+                    .tag("endpoint", conf_.endpoint)
+                    .tag("bucket", conf_.bucket)
+                    .tag("key", obj.GetKey());
         }
         if (!objects.empty()) {
             Aws::S3::Model::Delete del;
@@ -80,6 +85,7 @@ int S3Accessor::delete_objects_by_prefix(const std::string& relative_path) {
                         .tag("endpoint", conf_.endpoint)
                         .tag("bucket", conf_.bucket)
                         .tag("prefix", prefix)
+                        .tag("responseCode", static_cast<int>(outcome.GetError().GetResponseCode()))
                         .tag("error", outcome.GetError().GetMessage());
                 return -2;
             }
@@ -89,6 +95,7 @@ int S3Accessor::delete_objects_by_prefix(const std::string& relative_path) {
                         .tag("endpoint", conf_.endpoint)
                         .tag("bucket", conf_.bucket)
                         .tag("key", e.GetKey())
+                        .tag("responseCode", static_cast<int>(outcome.GetError().GetResponseCode()))
                         .tag("error", e.GetMessage());
                 return -3;
             }
@@ -129,6 +136,7 @@ int S3Accessor::delete_objects(const std::vector<std::string>& relative_paths) {
                     .tag("endpoint", conf_.endpoint)
                     .tag("bucket", conf_.bucket)
                     .tag("key[0]", keys[0])
+                    .tag("responseCode", static_cast<int>(delete_outcome.GetError().GetResponseCode()))
                     .tag("error", delete_outcome.GetError().GetMessage());
             return -1;
         }
@@ -138,6 +146,7 @@ int S3Accessor::delete_objects(const std::vector<std::string>& relative_paths) {
                     .tag("endpoint", conf_.endpoint)
                     .tag("bucket", conf_.bucket)
                     .tag("key", e.GetKey())
+                    .tag("responseCode", static_cast<int>(delete_outcome.GetError().GetResponseCode()))
                     .tag("error", e.GetMessage());
             return -2;
         }
@@ -164,6 +173,7 @@ int S3Accessor::put_object(const std::string& relative_path, const std::string& 
                 .tag("endpoint", conf_.endpoint)
                 .tag("bucket", conf_.bucket)
                 .tag("key", key)
+                .tag("responseCode", static_cast<int>(outcome.GetError().GetResponseCode()))
                 .tag("error", outcome.GetError().GetMessage());
         return -1;
     }
@@ -183,6 +193,7 @@ int S3Accessor::list(const std::string& relative_path, std::vector<std::string>*
                     .tag("endpoint", conf_.endpoint)
                     .tag("bucket", conf_.bucket)
                     .tag("prefix", prefix)
+                    .tag("responseCode", static_cast<int>(outcome.GetError().GetResponseCode()))
                     .tag("error", outcome.GetError().GetMessage());
             return -1;
         }
@@ -213,6 +224,7 @@ int S3Accessor::exists( const std::string& relative_path, const std::string& eta
                 .tag("endpoint", conf_.endpoint)
                 .tag("bucket", conf_.bucket)
                 .tag("key", key)
+                .tag("responseCode", static_cast<int>(outcome.GetError().GetResponseCode()))
                 .tag("error", outcome.GetError().GetMessage());
         return -1;
     }
@@ -231,6 +243,7 @@ int S3Accessor::get_etag(const std::string& relative_path, std::string* etag) {
                 .tag("endpoint", conf_.endpoint)
                 .tag("bucket", conf_.bucket)
                 .tag("key", key)
+                .tag("responseCode", static_cast<int>(outcome.GetError().GetResponseCode()))
                 .tag("error", outcome.GetError().GetMessage());
         return -1;
     }

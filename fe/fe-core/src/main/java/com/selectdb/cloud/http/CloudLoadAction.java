@@ -95,7 +95,7 @@ public class CloudLoadAction extends RestBaseController {
             executeCheckPassword(request, response);
             String fileName = request.getHeader("fileName");
             if (Strings.isNullOrEmpty(fileName)) {
-                return ResponseEntityBuilder.badRequest("http header must have fileName entry");
+                return ResponseEntityBuilder.badRequest("http header must have filename entry");
             }
             String eh = request.getHeader(endpointHeader);
             // default use endpoint

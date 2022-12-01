@@ -22,6 +22,7 @@ import org.apache.doris.analysis.DataDescription;
 import org.apache.doris.analysis.LoadStmt;
 import org.apache.doris.analysis.SqlParser;
 import org.apache.doris.analysis.SqlScanner;
+import org.apache.doris.analysis.StatementBase;
 import org.apache.doris.analysis.UserIdentity;
 import org.apache.doris.catalog.AuthorizationInfo;
 import org.apache.doris.catalog.Database;
@@ -31,6 +32,7 @@ import org.apache.doris.catalog.TableIf;
 import org.apache.doris.common.Config;
 import org.apache.doris.common.DdlException;
 import org.apache.doris.common.MetaNotFoundException;
+import org.apache.doris.common.UserException;
 import org.apache.doris.common.io.Text;
 import org.apache.doris.common.util.LogBuilder;
 import org.apache.doris.common.util.LogKey;
@@ -267,14 +269,9 @@ public abstract class BulkLoadJob extends LoadJob {
         fileGroupAggInfo = new BrokerFileGroupAggInfo();
         SqlParser parser = new SqlParser(new SqlScanner(new StringReader(originStmt.originStmt),
                 Long.valueOf(sessionVariables.get(SessionVariable.SQL_MODE))));
-        LoadStmt stmt;
         try {
             Database db = Env.getCurrentInternalCatalog().getDbOrDdlException(dbId);
-            stmt = (LoadStmt) SqlParserUtils.getStmt(parser, originStmt.idx);
-            for (DataDescription dataDescription : stmt.getDataDescriptions()) {
-                dataDescription.analyzeWithoutCheckPriv(db.getFullName());
-            }
-            checkAndSetDataSourceInfo(db, stmt.getDataDescriptions());
+            analyzeStmt(SqlParserUtils.getStmt(parser, originStmt.idx), db);
         } catch (Exception e) {
             LOG.info(new LogBuilder(LogKey.LOAD_JOB, id)
                     .add("origin_stmt", originStmt)
@@ -283,6 +280,14 @@ public abstract class BulkLoadJob extends LoadJob {
                     .build(), e);
             cancelJobWithoutCheck(new FailMsg(FailMsg.CancelType.LOAD_RUN_FAIL, e.getMessage()), false, true);
         }
+    }
+
+    protected void analyzeStmt(StatementBase stmtBase, Database db) throws UserException {
+        LoadStmt stmt = (LoadStmt) stmtBase;
+        for (DataDescription dataDescription : stmt.getDataDescriptions()) {
+            dataDescription.analyzeWithoutCheckPriv(db.getFullName());
+        }
+        checkAndSetDataSourceInfo(db, stmt.getDataDescriptions());
     }
 
     @Override

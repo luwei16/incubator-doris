@@ -37,6 +37,7 @@ import com.selectdb.cloud.proto.SelectdbCloud.StagePB;
 import com.selectdb.cloud.proto.SelectdbCloud.StagePB.StageType;
 import com.selectdb.cloud.storage.RemoteBase.ObjectInfo;
 import lombok.Getter;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -86,6 +87,8 @@ public class CopyStmt extends DdlStmt {
     @Getter
     private ObjectInfo objectInfo;
 
+    private String userName;
+
     /**
      * Use for cup.
      */
@@ -107,11 +110,18 @@ public class CopyStmt extends DdlStmt {
         label.analyze(analyzer);
         // analyze stage
         analyzeStageName();
+        this.userName = ClusterNamespace.getNameFromFullName(
+            ConnectContext.get().getCurrentUserIdentity().getQualifiedUser());
+        analyze(userName, label.getDbName(), true);
+    }
+
+    private void analyze(String user, String db, boolean checkAuth) throws AnalysisException, DdlException {
         // get stage from meta service
         StagePB stagePB;
-        String user = ClusterNamespace.getNameFromFullName(
-                ConnectContext.get().getCurrentUserIdentity().getQualifiedUser());
         if (stage.equals("~")) {
+            if (StringUtils.isEmpty(user)) {
+                throw new AnalysisException("User name can not be empty");
+            }
             String userId = Env.getCurrentEnv().getAuth().getUserId(user);
             List<StagePB> stagePBs = Env.getCurrentInternalCatalog().getStage(StageType.INTERNAL, user, null, userId);
             if (stagePBs == null || stagePBs.isEmpty()) {
@@ -120,11 +130,14 @@ public class CopyStmt extends DdlStmt {
             stagePB = stagePBs.get(0);
         } else {
             // check stage permission
-            if (!Env.getCurrentEnv().getAuth()
-                    .checkCloudPriv(ConnectContext.get().getCurrentUserIdentity(), stage, PrivPredicate.USAGE,
-                            ResourceTypeEnum.STAGE)) {
-                throw new AnalysisException("USAGE denied to user '" + ConnectContext.get().getQualifiedUser() + "'@'"
-                        + ConnectContext.get().getRemoteIP() + "' for cloud stage '" + stage + "'");
+            if (checkAuth) {
+                if (!Env.getCurrentEnv().getAuth()
+                        .checkCloudPriv(ConnectContext.get().getCurrentUserIdentity(), stage, PrivPredicate.USAGE,
+                                ResourceTypeEnum.STAGE)) {
+                    throw new AnalysisException(
+                            "USAGE denied to user '" + ConnectContext.get().getQualifiedUser() + "'@'"
+                                    + ConnectContext.get().getRemoteIP() + "' for cloud stage '" + stage + "'");
+                }
             }
             List<StagePB> stagePBs = Env.getCurrentInternalCatalog().getStage(StageType.EXTERNAL, null, stage, null);
             if (stagePBs.isEmpty()) {
@@ -153,7 +166,11 @@ public class CopyStmt extends DdlStmt {
                 copyFromParam.getColumnMappingList(), copyFromParam.getFileFilterExpr(), null, MergeType.APPEND, null,
                 null, dataDescProperties);
         // analyze data description
-        dataDescription.analyze(label.getDbName());
+        if (checkAuth) {
+            dataDescription.analyze(db);
+        } else {
+            dataDescription.analyzeWithoutCheckPriv(db);
+        }
         for (int i = 0; i < dataDescription.getFilePaths().size(); i++) {
             dataDescription.getFilePaths().set(i, brokerDesc.convertPathToS3(dataDescription.getFilePaths().get(i)));
             dataDescription.getFilePaths()
@@ -167,6 +184,10 @@ public class CopyStmt extends DdlStmt {
         } catch (DdlException e) {
             throw new AnalysisException(e.getMessage());
         }
+    }
+
+    public void analyzeWhenReplay(String user, String db) throws UserException {
+        analyze(user, db, false);
     }
 
     private void analyzeStageName() throws AnalysisException {
@@ -223,6 +244,10 @@ public class CopyStmt extends DdlStmt {
 
     public boolean isForce() {
         return this.copyIntoProperties.isForce();
+    }
+
+    public String getUserName() {
+        return userName;
     }
 
     @Override

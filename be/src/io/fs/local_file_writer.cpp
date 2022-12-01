@@ -77,12 +77,8 @@ Status LocalFileWriter::open() {
     return Status::OK();
 }
 
-Status LocalFileWriter::close() {
-    return _close(true);
-}
-
 Status LocalFileWriter::abort() {
-    auto st = _close(false);
+    auto st = close(false);
     io::global_local_filesystem()->delete_file(_path);
     return st;
 }
@@ -160,7 +156,7 @@ Status LocalFileWriter::finalize() {
     return Status::OK();
 }
 
-Status LocalFileWriter::_close(bool sync) {
+Status LocalFileWriter::close(bool sync) {
     if (_closed) {
         return Status::OK();
     }

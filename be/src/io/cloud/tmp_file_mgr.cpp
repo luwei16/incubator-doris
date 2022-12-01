@@ -111,7 +111,7 @@ bool TmpFileMgr::check_if_has_enough_space_to_async_upload(const Path& path,
     do {
         cur_upload_bytes = tmp_file_dir.cur_upload_bytes;
         new_cur_upload_bytes = cur_upload_bytes + upload_file_size;
-        if (!(new_cur_upload_bytes < tmp_file_dir.max_upload_bytes)) {
+        if (new_cur_upload_bytes > tmp_file_dir.max_upload_bytes) {
             return false;
         }
     } while (!tmp_file_dir.cur_upload_bytes.compare_exchange_strong(cur_upload_bytes,

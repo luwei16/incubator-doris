@@ -41,7 +41,13 @@ class ServiceRegistryPB;
 class MetaServerRegister {
 public:
     MetaServerRegister(std::shared_ptr<TxnKv> txn_kv);
-    ~MetaServerRegister() = default;
+    ~MetaServerRegister() {
+        bool expect = true;
+        if (running_.compare_exchange_strong(expect, false)) {
+            cv_.notify_all();
+            if (register_thread_ != nullptr) register_thread_->join();
+        }
+    };
 
     /**
      * Starts registering

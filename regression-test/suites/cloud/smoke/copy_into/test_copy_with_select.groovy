@@ -1,8 +1,8 @@
 suite("smoke_test_copy_with_select","smoke") {
     def tableName = "customer_copy_with_select"
-    def externalStageName = "smoke_test_tpch"
+    def externalStageName = "smoke_test_tpch_with_select"
     def prefix = "tpch/sf0.1"
-
+    try_sql """drop stage if exists ${externalStageName}"""
     sql """
         create stage if not exists ${externalStageName}
         properties ('endpoint' = '${getS3Endpoint()}' ,
@@ -62,4 +62,5 @@ suite("smoke_test_copy_with_select","smoke") {
             try_sql("DROP TABLE IF EXISTS ${tableName}")
         }
     }
+    try_sql """drop stage if exists ${externalStageName}"""
 }

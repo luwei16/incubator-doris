@@ -45,7 +45,7 @@ public:
 
     Status open() override;
 
-    Status close() override;
+    Status close(bool sync = true) override;
 
     Status abort() override;
 
@@ -59,7 +59,9 @@ public:
 
     size_t bytes_appended() const override { return _tmp_file_writer->bytes_appended(); }
 
+
     FileSystem* fs() const override { return _fs; }
+
     int64_t upload_speed_bytes_s() const { return *_upload_speed_bytes_s; }
 
 private:

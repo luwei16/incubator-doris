@@ -47,7 +47,7 @@ Status LocalFileSystem::open_file(const Path& path, FileReaderSPtr* reader) {
         return open_file_impl(path, reader);
     }
     Status s;
-    auto task = [&] {s = open_file_impl(path, reader);};
+    auto task = [&] { s = open_file_impl(path, reader); };
     AsyncIO::run_task(task, io::FileSystemType::LOCAL);
     return s;
 }
@@ -128,14 +128,14 @@ Status LocalFileSystem::file_size(const Path& path, size_t* file_size) const {
     if (bthread_self() == 0) {
         return file_size_impl(path, file_size);
     }
- 
+
     Status s;
-    auto task = [&] {s = file_size_impl(path, file_size);};
+    auto task = [&] { s = file_size_impl(path, file_size); };
     AsyncIO::run_task(task, io::FileSystemType::LOCAL);
     return s;
 }
 
-Status LocalFileSystem::file_size_impl(const Path &path, size_t *file_size) const {
+Status LocalFileSystem::file_size_impl(const Path& path, size_t* file_size) const {
     auto fs_path = absolute_path(path);
     std::error_code ec;
     *file_size = std::filesystem::file_size(fs_path, ec);

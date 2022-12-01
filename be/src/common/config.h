@@ -828,9 +828,9 @@ CONF_Bool(enable_time_lut, "true");
 CONF_Bool(enable_simdjson_reader, "false");
 
 // number of s3 scanner thread pool size
-CONF_Int32(doris_remote_scanner_thread_pool_thread_num, "16");
+CONF_Int32(doris_remote_scanner_thread_pool_thread_num, "48");
 // number of s3 scanner thread pool queue size
-CONF_Int32(doris_remote_scanner_thread_pool_queue_size, "10240");
+CONF_Int32(doris_remote_scanner_thread_pool_queue_size, "102400");
 
 // If set to true, the new scan node framework will be used.
 // This config should be removed when the new scan node is ready.
@@ -923,6 +923,15 @@ CONF_Int32(query_bkd_inverted_index_limit_percent, "5"); // 5%
 CONF_Int32(max_depth_in_bkd_tree, "32");
 
 CONF_Bool(enable_index_compaction, "false");
+
+// http scheme in S3Client to use. E.g. http or https
+CONF_String(s3_client_http_scheme, "http");
+CONF_Validator(s3_client_http_scheme, [](const std::string& config) -> bool {
+    return config == "http" || config == "https";
+});
+
+// temporary config for regression-test
+CONF_Bool(always_promote_cumulative_point, "false");
 
 } // namespace config
 

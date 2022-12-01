@@ -27,6 +27,7 @@
 #include <map>
 #include <mutex>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -74,6 +75,8 @@ struct TraceEntry {
     uint32_t message_len;
     TraceEntry* next;
 
+    int type = 0; // 0 for normal, -1 for starting point, 1 for finishing point
+
     // The actual trace message follows the entry header.
     char* message() { return reinterpret_cast<char*>(this) + sizeof(*this); }
 };
@@ -97,7 +100,7 @@ static const char* const_basename(const char* filepath) {
     return base ? (base + 1) : filepath;
 }
 
-void Trace::SubstituteAndTrace(const char* file_path, int line_number, StringPiece format,
+void Trace::SubstituteAndTrace(int type, const char* file_path, int line_number, StringPiece format,
                                const SubstituteArg& arg0, const SubstituteArg& arg1,
                                const SubstituteArg& arg2, const SubstituteArg& arg3,
                                const SubstituteArg& arg4, const SubstituteArg& arg5,
@@ -107,12 +110,12 @@ void Trace::SubstituteAndTrace(const char* file_path, int line_number, StringPie
                                                &arg6, &arg7, &arg8, &arg9, nullptr};
 
     int msg_len = strings::internal::SubstitutedSize(format, args_array);
-    TraceEntry* entry = NewEntry(msg_len, file_path, line_number);
+    TraceEntry* entry = NewEntry(msg_len, file_path, line_number, type);
     SubstituteToBuffer(format, args_array, entry->message());
     AddEntry(entry);
 }
 
-TraceEntry* Trace::NewEntry(int msg_len, const char* file_path, int line_number) {
+TraceEntry* Trace::NewEntry(int msg_len, const char* file_path, int line_number, int type) {
     int size = sizeof(TraceEntry) + msg_len;
     //uint8_t* dst = reinterpret_cast<uint8_t*>(arena_->AllocateBytes(size));
     uint8_t* dst = reinterpret_cast<uint8_t*>(malloc(size));
@@ -121,6 +124,7 @@ TraceEntry* Trace::NewEntry(int msg_len, const char* file_path, int line_number)
     entry->message_len = msg_len;
     entry->file_path = file_path;
     entry->line_number = line_number;
+    entry->type = type;
     return entry;
 }
 
@@ -173,6 +177,7 @@ void Trace::Dump(std::ostream* out, int flags) const {
             *out << "(+" << setw(6) << usecs_since_prev << "us) ";
         }
         *out << const_basename(e->file_path) << ':' << e->line_number << "] ";
+        *out << (e->type == -1 ? "start " : e->type == 1 ? "finish " : "");
         out->write(reinterpret_cast<char*>(e) + sizeof(TraceEntry), e->message_len);
         *out << std::endl;
     }
@@ -184,11 +189,40 @@ void Trace::Dump(std::ostream* out, int flags) const {
     }
 
     if (flags & INCLUDE_METRICS) {
-        *out << "Metrics: " << MetricsAsJSON();
+        *out << "Metrics: " << MetricsAsJSON() << "\n";
     }
 
     // Restore stream flags.
     out->flags(save_flags);
+}
+
+void Trace::DumpAccumulatedTime(std::ostream* out) const {
+    std::vector<TraceEntry*> entries;
+    {
+        std::lock_guard<SpinLock> l(lock_);
+        for (TraceEntry* cur = entries_head_; cur != nullptr; cur = cur->next) {
+            entries.push_back(cur);
+        }
+    }
+    std::map<std::string_view, int64_t> accumulated_time;
+    std::map<std::string_view, int64_t> last_start_time;
+    for (TraceEntry* e : entries) {
+        std::string_view key(e->message(), e->message_len);
+        if (e->type == -1) { // starting trace entry
+            last_start_time[key] = e->timestamp_micros;
+        } else if (e->type == 1) { // finishing trace entry
+            if (auto it = last_start_time.find(key); it != last_start_time.end()) {
+                if (auto it1 = accumulated_time.find(key); it1 != accumulated_time.end()) {
+                    it1->second += e->timestamp_micros - it->second;
+                } else {
+                    accumulated_time[key] = e->timestamp_micros - it->second;
+                }
+            }
+        }
+    }
+    for (auto& [k, v] : accumulated_time) {
+        *out << k << " accumulated time=" << v << "us\n";
+    }
 }
 
 std::string Trace::DumpToString(int flags) const {

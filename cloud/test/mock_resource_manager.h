@@ -31,6 +31,10 @@ public:
         return std::make_pair(MetaServiceCode::OK, "");
     }
 
+    std::pair<MetaServiceCode, std::string> refresh_instance(const std::string& instance_id) override {
+        return std::make_pair(MetaServiceCode::OK, "");
+    }
+
     std::string update_cluster(
             const std::string& instance_id, const ClusterInfo& cluster,
             std::function<bool(const ::selectdb::ClusterPB&)> filter,
@@ -43,5 +47,10 @@ public:
                                              const std::string& instance_id,
                                              InstanceInfoPB* inst_pb) override {
         return {1, ""};
+    }
+
+    std::string modify_nodes(const std::string& instance_id, const std::vector<NodeInfo>& to_add,
+                             const std::vector<NodeInfo>& to_del) override {
+        return "";
     }
 };

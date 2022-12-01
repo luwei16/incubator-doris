@@ -167,6 +167,9 @@ std::shared_ptr<Aws::S3::S3Client> ClientFactory::create(const S3Conf& s3_conf) 
     if (s3_conf.connect_timeout_ms > 0) {
         aws_config.connectTimeoutMs = s3_conf.connect_timeout_ms;
     }
+    if (config::s3_client_http_scheme == "http") {
+        aws_config.scheme = Aws::Http::Scheme::HTTP;
+    }
     return std::make_shared<Aws::S3::S3Client>(
             std::move(aws_cred), std::move(aws_config),
             Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never);

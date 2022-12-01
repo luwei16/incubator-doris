@@ -240,7 +240,8 @@ public class ConnectProcessor {
                 if (!Config.cloud_unique_id.isEmpty() && ctx.cloudCluster != null) {
                     MetricRepo.CLOUD_CLUSTER_COUNTER_QUERY_ERR.get(ctx.cloudCluster).increase(1L);
                 }
-            } else if (ctx.getState().getStateType() == MysqlStateType.OK) {
+            } else if (ctx.getState().getStateType() == MysqlStateType.OK
+                    || ctx.getState().getStateType() == MysqlStateType.EOF) {
                 // ok query
                 MetricRepo.HISTO_QUERY_LATENCY.update(elapseMs);
                 if (!Config.cloud_unique_id.isEmpty() && ctx.cloudCluster != null) {

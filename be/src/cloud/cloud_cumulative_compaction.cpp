@@ -80,7 +80,6 @@ Status CloudCumulativeCompaction::prepare_compact() {
         return st;
     }
     TRACE("rowsets picked");
-    TRACE_COUNTER_INCREMENT("input_rowsets_count", _input_rowsets.size());
 
     for (auto& rs : _input_rowsets) {
         _input_rows += rs->num_rows();
@@ -95,7 +94,9 @@ Status CloudCumulativeCompaction::prepare_compact() {
             .tag("input_segments", _input_segments)
             .tag("input_data_size", _input_data_size)
             .tag("tablet_max_version", _tablet->local_max_version())
-            .tag("cumulative_point", _tablet->cumulative_layer_point());
+            .tag("cumulative_point", _tablet->cumulative_layer_point())
+            .tag("num_rowsets", _tablet->fetch_add_approximate_num_rowsets(0))
+            .tag("cumu_num_rowsets", _tablet->fetch_add_approximate_cumu_num_rowsets(0));
 
     // prepare compaction job
     selectdb::TabletJobInfoPB job;
@@ -112,9 +113,10 @@ Status CloudCumulativeCompaction::prepare_compact() {
     compaction_job->set_base_compaction_cnt(base_compaction_cnt);
     compaction_job->set_cumulative_compaction_cnt(cumulative_compaction_cnt);
     using namespace std::chrono;
-    _expiration = duration_cast<seconds>(system_clock::now().time_since_epoch()).count() +
-                  config::compaction_timeout_seconds;
+    int64_t now = duration_cast<seconds>(system_clock::now().time_since_epoch()).count();
+    _expiration = now + config::compaction_timeout_seconds;
     compaction_job->set_expiration(_expiration);
+    compaction_job->set_lease(now + config::lease_compaction_interval_seconds * 4);
     st = cloud::meta_mgr()->prepare_tablet_job(job);
     if (st.precise_code() == STALE_TABLET_CACHE) {
         // set last_sync_time to 0 to force sync tablet next time
@@ -147,7 +149,9 @@ Status CloudCumulativeCompaction::execute_compact_impl() {
             .tag("output_segments", _output_rowset->num_segments())
             .tag("output_data_size", _output_rowset->data_disk_size())
             .tag("tablet_max_version", _tablet->local_max_version())
-            .tag("cumulative_point", _tablet->cumulative_layer_point());
+            .tag("cumulative_point", _tablet->cumulative_layer_point())
+            .tag("num_rowsets", _tablet->fetch_add_approximate_num_rowsets(0))
+            .tag("cumu_num_rowsets", _tablet->fetch_add_approximate_cumu_num_rowsets(0));
     TRACE("compaction finished");
 
     _state = CompactionState::SUCCESS;
@@ -195,7 +199,7 @@ Status CloudCumulativeCompaction::update_tablet_meta() {
     int64_t cumulative_compaction_cnt = _tablet->cumulative_compaction_cnt();
     selectdb::TabletStatsPB stats;
     RETURN_IF_ERROR(cloud::meta_mgr()->commit_tablet_job(job, &stats));
-
+    LOG(INFO) << "tablet stats=" << stats.ShortDebugString();
     {
         std::lock_guard wrlock(_tablet->get_header_lock());
         if (_tablet->cumulative_compaction_cnt() > cumulative_compaction_cnt) {

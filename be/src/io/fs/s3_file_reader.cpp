@@ -26,6 +26,7 @@
 #include "io/fs/s3_file_writer.h"
 #include "util/async_io.h"
 #include "util/doris_metrics.h"
+#include "util/trace.h"
 
 namespace doris {
 namespace io {
@@ -96,7 +97,9 @@ Status S3FileReader::read_at_impl(size_t offset, Slice result, size_t* bytes_rea
     if (!client) {
         return Status::InternalError("init s3 client error");
     }
+    TRACE_START("read s3");
     auto outcome = client->GetObject(request);
+    TRACE_FINISH("read s3");
     if (!outcome.IsSuccess()) {
         return Status::IOError("failed to read from {}: {}", _path.native(),
                                outcome.GetError().GetMessage());

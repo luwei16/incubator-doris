@@ -47,12 +47,28 @@ class Trace;
 // See Trace::SubstituteAndTrace for arguments.
 // Example:
 //  TRACE("Acquired timestamp $0", timestamp);
-#define TRACE(format, substitutions...)                                                \
-    do {                                                                               \
-        doris::Trace* _trace = doris::Trace::CurrentTrace();                           \
-        if (_trace) {                                                                  \
-            _trace->SubstituteAndTrace(__FILE__, __LINE__, (format), ##substitutions); \
-        }                                                                              \
+#define TRACE(format, substitutions...)                                                   \
+    do {                                                                                  \
+        doris::Trace* _trace = doris::Trace::CurrentTrace();                              \
+        if (_trace) {                                                                     \
+            _trace->SubstituteAndTrace(0, __FILE__, __LINE__, (format), ##substitutions); \
+        }                                                                                 \
+    } while (0)
+
+#define TRACE_START(format, substitutions...)                                              \
+    do {                                                                                   \
+        doris::Trace* _trace = doris::Trace::CurrentTrace();                               \
+        if (_trace) {                                                                      \
+            _trace->SubstituteAndTrace(-1, __FILE__, __LINE__, (format), ##substitutions); \
+        }                                                                                  \
+    } while (0)
+
+#define TRACE_FINISH(format, substitutions...)                                            \
+    do {                                                                                  \
+        doris::Trace* _trace = doris::Trace::CurrentTrace();                              \
+        if (_trace) {                                                                     \
+            _trace->SubstituteAndTrace(1, __FILE__, __LINE__, (format), ##substitutions); \
+        }                                                                                 \
     } while (0)
 
 // Like the above, but takes the trace pointer as an explicit argument.
@@ -135,7 +151,7 @@ public:
     // N.B.: the file path passed here is not copied, so should be a static
     // constant (eg __FILE__).
     void SubstituteAndTrace(
-            const char* filepath, int line_number, StringPiece format,
+            int type, const char* filepath, int line_number, StringPiece format,
             const strings::internal::SubstituteArg& arg0 = strings::internal::SubstituteArg::NoArg,
             const strings::internal::SubstituteArg& arg1 = strings::internal::SubstituteArg::NoArg,
             const strings::internal::SubstituteArg& arg2 = strings::internal::SubstituteArg::NoArg,
@@ -160,6 +176,8 @@ public:
         INCLUDE_ALL = INCLUDE_TIME_DELTAS | INCLUDE_METRICS
     };
     void Dump(std::ostream* out, int flags) const;
+
+    void DumpAccumulatedTime(std::ostream* out) const;
 
     // Dump the trace buffer as a string.
     std::string DumpToString(int flags = INCLUDE_ALL) const;
@@ -199,7 +217,7 @@ private:
 
     // Allocate a new entry from the arena, with enough space to hold a
     // message of length 'len'.
-    TraceEntry* NewEntry(int len, const char* file_path, int line_number);
+    TraceEntry* NewEntry(int len, const char* file_path, int line_number, int type = 0);
 
     // Add the entry to the linked list of entries.
     void AddEntry(TraceEntry* entry);

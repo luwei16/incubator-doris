@@ -69,7 +69,6 @@ Status CloudBaseCompaction::prepare_compact() {
 
     RETURN_IF_ERROR(pick_rowsets_to_compact());
     TRACE("rowsets picked");
-    TRACE_COUNTER_INCREMENT("input_rowsets_count", _input_rowsets.size());
 
     for (auto& rs : _input_rowsets) {
         _input_rows += rs->num_rows();
@@ -183,6 +182,7 @@ Status CloudBaseCompaction::update_tablet_meta() {
     int64_t base_compaction_cnt = _tablet->base_compaction_cnt();
     selectdb::TabletStatsPB stats;
     RETURN_IF_ERROR(cloud::meta_mgr()->commit_tablet_job(job, &stats));
+    LOG(INFO) << "tablet stats=" << stats.ShortDebugString();
 
     {
         std::lock_guard wrlock(_tablet->get_header_lock());

@@ -440,6 +440,9 @@ public class CloudGlobalTransactionMgr implements GlobalTransactionMgrInterface 
         LOG.info("isPreviousTransactionsFinished(), endTransactionId:{}, dbId:{}, tableIdList:{}",
                 endTransactionId, dbId, tableIdList);
 
+        if (endTransactionId <= 0) {
+            throw new AnalysisException("Invaid endTransactionId:" + endTransactionId);
+        }
         CheckTxnConflictRequest.Builder builder = CheckTxnConflictRequest.newBuilder();
         builder.setDbId(dbId);
         builder.setEndTxnId(endTransactionId);
@@ -500,33 +503,33 @@ public class CloudGlobalTransactionMgr implements GlobalTransactionMgrInterface 
         //do nothing
     }
 
-    public List<List<Comparable>> getDbInfo() {
-        return null;
+    public List<List<Comparable>> getDbInfo() throws AnalysisException {
+        throw new AnalysisException("Not suppoted");
     }
 
-    public List<List<String>> getDbTransStateInfo(long dbId) {
-        return null;
+    public List<List<String>> getDbTransStateInfo(long dbId) throws AnalysisException {
+        throw new AnalysisException("Not suppoted");
     }
 
     public List<List<String>> getDbTransInfo(long dbId, boolean running, int limit) throws AnalysisException {
-        return null;
+        throw new AnalysisException("Not suppoted");
     }
 
     public List<List<String>> getDbTransInfoByStatus(long dbId, TransactionStatus status) throws AnalysisException {
-        return null;
+        throw new AnalysisException("Not suppoted");
     }
 
     public List<List<String>> getSingleTranInfo(long dbId, long txnId) throws AnalysisException {
-        return null;
+        throw new AnalysisException("Not suppoted");
     }
 
     public List<List<Comparable>> getTableTransInfo(long dbId, long txnId) throws AnalysisException {
-        return null;
+        throw new AnalysisException("Not suppoted");
     }
 
     public List<List<Comparable>> getPartitionTransInfo(long dbId, long tid, long tableId)
             throws AnalysisException {
-        return null;
+        throw new AnalysisException("Not suppoted");
     }
 
     @Override
@@ -536,7 +539,7 @@ public class CloudGlobalTransactionMgr implements GlobalTransactionMgrInterface 
     }
 
     @Override
-    public long getNextTransactionId(long dbId) {
+    public long getNextTransactionId(long dbId) throws AnalysisException {
         LOG.info("try to getNextTransactionId() dbId:{}", dbId);
         GetCurrentMaxTxnRequest.Builder builder = GetCurrentMaxTxnRequest.newBuilder();
         builder.setCloudUniqueId(Config.cloud_unique_id);
@@ -549,27 +552,27 @@ public class CloudGlobalTransactionMgr implements GlobalTransactionMgrInterface 
                     .getInstance().getCurrentMaxTxnId(getCurrentMaxTxnRequest);
             LOG.info("GetCurrentMaxTxnResponse: {}", getCurrentMaxTxnResponse);
         } catch (RpcException e) {
-            LOG.info("getNextTransactionId() exception: {}", e.getMessage());
-            //TODO(zhanglei) to throw exception here
-            return -1;
+            LOG.warn("getNextTransactionId() RpcException: {}", e.getMessage());
+            throw new AnalysisException("getNextTransactionId() RpcException: " + e.getMessage());
         }
 
         if (getCurrentMaxTxnResponse.getStatus().getCode() != MetaServiceCode.OK) {
-            LOG.info("getNextTransactionId() exception: {}, {}", getCurrentMaxTxnResponse.getStatus().getCode(),
-                    getCurrentMaxTxnResponse.getStatus().getMsg());
-            return -1;
+            LOG.info("getNextTransactionId() failed, code: {}, msg: {}",
+                    getCurrentMaxTxnResponse.getStatus().getCode(), getCurrentMaxTxnResponse.getStatus().getMsg());
+            throw new AnalysisException("getNextTransactionId() failed, msg:"
+                    + getCurrentMaxTxnResponse.getStatus().getMsg());
         }
         return getCurrentMaxTxnResponse.getCurrentMaxTxnId();
     }
 
     @Override
-    public TransactionStatus getLabelState(long dbId, String label) {
-        return null;
+    public TransactionStatus getLabelState(long dbId, String label) throws AnalysisException {
+        throw new AnalysisException("Not suppoted");
     }
 
     @Override
-    public Long getTransactionId(long dbId, String label) {
-        return null;
+    public Long getTransactionId(long dbId, String label) throws AnalysisException {
+        throw new AnalysisException("Not suppoted");
     }
 
     @Override

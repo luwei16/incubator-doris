@@ -102,9 +102,9 @@ public interface GlobalTransactionMgrInterface extends Writable {
 
     public void removeExpiredAndTimeoutTxns();
 
-    public TransactionStatus getLabelState(long dbId, String label);
+    public TransactionStatus getLabelState(long dbId, String label) throws AnalysisException;
 
-    public Long getTransactionId(long dbId, String label);
+    public Long getTransactionId(long dbId, String label) throws AnalysisException;
 
     public TransactionState getTransactionState(long dbId, long transactionId);
 
@@ -112,9 +112,9 @@ public interface GlobalTransactionMgrInterface extends Writable {
 
     public void addTableIndexes(long dbId, long transactionId, OlapTable table) throws UserException;
 
-    public List<List<Comparable>> getDbInfo();
+    public List<List<Comparable>> getDbInfo() throws AnalysisException;
 
-    public List<List<String>> getDbTransStateInfo(long dbId);
+    public List<List<String>> getDbTransStateInfo(long dbId) throws AnalysisException;
 
     public List<List<String>> getDbTransInfo(long dbId, boolean running, int limit) throws AnalysisException;
 
@@ -133,7 +133,7 @@ public interface GlobalTransactionMgrInterface extends Writable {
 
     public List<TransactionState> getPreCommittedTxnList(long dbId);
 
-    public long getNextTransactionId(long dbId);
+    public long getNextTransactionId(long dbId) throws AnalysisException;
 
     public void abortTxnWhenCoordinateBeDown(String coordinateHost, int limit);
 

@@ -17,7 +17,7 @@
 上传文件:
 
 ```
-curl -u {user}:{password} -H "fileName: {file_name_in_storage}" -T {local_file_path} -L '{selectdb_host}:{selectdb_copy_port}/copy/upload'
+curl -u {user}:{password} -H "filename: {file_name_in_storage}" -T {local_file_path} -L '{selectdb_host}:{selectdb_copy_port}/copy/upload'
 ```
 
 将文件导入到SelectDB的表中（注意：请求body的内容为`json`格式，需要对sql中的部分字符进行转义）：
@@ -30,10 +30,10 @@ curl -X POST -u {user}:{password} '{selectdb_host}:{selectdb_copy_port}/copy/que
 
 ## 举例
  
-1. 用户`root`把本地文件`data/2022-10-20/1.csv`上传到internal stage中，上传后的文件命名为`2020/1.csv`:
+1. 用户`bob`(密码为`123456`)把本地文件`data/2022-10-20/1.csv`上传到internal stage中，上传后的文件命名为`2020-10-20/1.csv`:
 
 ```
-curl -u root: -H "fileName: 2022-10-20/1.csv" -T data/2022-10-20/1.csv -L '172.21.21.12:8035/copy/upload'
+curl -u bob:123456 -H "filename: 2022-10-20/1.csv" -T data/2022-10-20/1.csv -L '172.21.21.12:8035/copy/upload'
   % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
                                  Dload  Upload   Total   Spent    Left  Speed
   0    14    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0
@@ -43,6 +43,6 @@ curl -u root: -H "fileName: 2022-10-20/1.csv" -T data/2022-10-20/1.csv -L '172.2
 执行导入：
 
 ```
-curl -X POST -u root: '172.21.21.12:8035/copy/query'  -H "Content-Type: application/json" -d '{"sql": "copy into db1.t5 from @~ files=(\"2022-10-20/1.csv\")"}'
+curl -X POST -u bob:123456 '172.21.21.12:8035/copy/query'  -H "Content-Type: application/json" -d '{"sql": "copy into db1.t5 from @~(\"2022-10-20/1.csv\") properties(\"file.type\"=\"csv\",\"file.column_separator\"=\",\",\"copy.async\"=\"false\")"}'
 ```
 

@@ -377,8 +377,12 @@ public class RollupJobV2 extends AlterJobV2 implements GsonPostProcessable {
             createCloudRollupReplica();
         }
 
-        this.watershedTxnId = Env.getCurrentGlobalTransactionMgr()
-                .getNextTransactionId(dbId);
+        try {
+            this.watershedTxnId = Env.getCurrentGlobalTransactionMgr()
+                    .getNextTransactionId(dbId);
+        } catch (AnalysisException e) {
+            throw new AlterCancelException(e.getMessage());
+        }
         this.jobState = JobState.WAITING_TXN;
 
         // write edit log

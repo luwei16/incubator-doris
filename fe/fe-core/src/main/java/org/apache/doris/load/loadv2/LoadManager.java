@@ -148,7 +148,8 @@ public class LoadManager implements Writable {
             }
             loadJob = new CopyJob(dbId, stmt.getLabel().getLabelName(), ConnectContext.get().queryId(),
                     stmt.getBrokerDesc(), stmt.getOrigStmt(), stmt.getUserInfo(), stmt.getStageId(),
-                    stmt.getStageType(), stmt.getSizeLimit(), stmt.getPattern(), stmt.getObjectInfo(), stmt.isForce());
+                    stmt.getStageType(), stmt.getSizeLimit(), stmt.getPattern(), stmt.getObjectInfo(), stmt.isForce(),
+                    stmt.getUserName());
             loadJob.setJobProperties(stmt.getProperties());
             loadJob.checkAndSetDataSourceInfo(database, stmt.getDataDescriptions());
             createLoadJob(loadJob);
@@ -543,20 +544,22 @@ public class LoadManager implements Writable {
                 }
             }
 
-            List<LoadJob> loadJobList2 = filterCopyJob(loadJobList, copyIdValue, copyIdAccurateMatch,
-                    c -> c.getCopyId());
+            List<LoadJob> loadJobList2 = new ArrayList<>();
+            // check state
+            for (LoadJob loadJob : loadJobList) {
+                if (!states.contains(loadJob.getState())) {
+                    continue;
+                }
+                if (!jobTypes.contains(loadJob.jobType)) {
+                    continue;
+                }
+                loadJobList2.add(loadJob);
+            }
+            loadJobList2 = filterCopyJob(loadJobList2, copyIdValue, copyIdAccurateMatch, c -> c.getCopyId());
             loadJobList2 = filterCopyJob(loadJobList2, tableNameValue, tableNameAccurateMatch, c -> c.getTableName());
             loadJobList2 = filterCopyJob(loadJobList2, fileValue, fileAccurateMatch, c -> c.getFiles());
-
-            // check state
             for (LoadJob loadJob : loadJobList2) {
                 try {
-                    if (!states.contains(loadJob.getState())) {
-                        continue;
-                    }
-                    if (!jobTypes.contains(loadJob.jobType)) {
-                        continue;
-                    }
                     // add load job info
                     loadJobInfos.add(loadJob.getShowInfo());
                 } catch (DdlException e) {

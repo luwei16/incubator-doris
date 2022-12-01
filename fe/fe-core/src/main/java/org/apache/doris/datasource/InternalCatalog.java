@@ -186,6 +186,7 @@ import com.selectdb.cloud.catalog.CloudPartition;
 import com.selectdb.cloud.catalog.CloudReplica;
 import com.selectdb.cloud.proto.SelectdbCloud;
 import com.selectdb.cloud.proto.SelectdbCloud.AlterClusterRequest.Operation;
+import com.selectdb.cloud.proto.SelectdbCloud.CopyJobPB;
 import com.selectdb.cloud.proto.SelectdbCloud.FinishCopyRequest.Action;
 import com.selectdb.cloud.proto.SelectdbCloud.MetaServiceCode;
 import com.selectdb.cloud.proto.SelectdbCloud.MetaServiceResponseStatus;
@@ -4080,8 +4081,9 @@ public class InternalCatalog implements CatalogIf<Database> {
         while (retryTime++ < 3) {
             try {
                 response = MetaServiceProxy.getInstance().dropStage(builder.build());
-                LOG.info("drop stage, stageType:{}, userName:{}, stageName:{}, retry:{}, response: {}", stageType,
-                        userName, stageName, retryTime, response);
+                LOG.info("drop stage, stageType:{}, userName:{}, userId:{}, stageName:{}, reason:{}, "
+                                + "retry:{}, response: {}", stageType, userName, userId, stageName, reason, retryTime,
+                        response);
                 // just retry kv conflict
                 if (response.getStatus().getCode() != MetaServiceCode.KV_TXN_CONFLICT) {
                     break;
@@ -4173,6 +4175,24 @@ public class InternalCatalog implements CatalogIf<Database> {
             }
         } catch (RpcException e) {
             LOG.warn("finishCopy response: {} ", response);
+            throw new DdlException(e.getMessage());
+        }
+    }
+
+    public CopyJobPB getCopyJob(String stageId, long tableId, String copyJobId, int groupId) throws DdlException {
+        SelectdbCloud.GetCopyJobRequest request = SelectdbCloud.GetCopyJobRequest.newBuilder()
+                .setCloudUniqueId(Config.cloud_unique_id).setStageId(stageId).setTableId(tableId).setCopyId(copyJobId)
+                .setGroupId(groupId).build();
+        SelectdbCloud.GetCopyJobResponse response = null;
+        try {
+            response = MetaServiceProxy.getInstance().getCopyJob(request);
+            if (response.getStatus().getCode() != SelectdbCloud.MetaServiceCode.OK) {
+                LOG.warn("getCopyJob response: {} ", response);
+                throw new DdlException(response.getStatus().getMsg());
+            }
+            return response.hasCopyJob() ? response.getCopyJob() : null;
+        } catch (RpcException e) {
+            LOG.warn("getCopyJob response: {} ", response);
             throw new DdlException(e.getMessage());
         }
     }
