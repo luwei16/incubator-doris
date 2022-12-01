@@ -685,6 +685,25 @@ Status VOlapTableSink::_validate_column(RuntimeState* state, const TypeDescripto
         }
         break;
     }
+    case TYPE_JSONB: {
+        const auto column_string =
+                assert_cast<const vectorized::ColumnString*>(real_column_ptr.get());
+        for (size_t j = 0; j < column->size(); ++j) {
+            if (!filter_bitmap->Get(j)) {
+                if (is_nullable && column_ptr && column_ptr->is_null_at(j)) {
+                    continue;
+                }
+                auto str_val = column_string->get_data_at(j);
+                bool invalid = str_val.size == 0;
+                if (invalid) {
+                    error_msg.clear();
+                    fmt::format_to(error_msg, "{}", "jsonb with size 0 is invalid");
+                    RETURN_IF_ERROR(set_invalid_and_append_error_msg(j));
+                }
+            }
+        }
+        break;
+    }
     case TYPE_DECIMALV2: {
         auto column_decimal = const_cast<vectorized::ColumnDecimal<vectorized::Decimal128>*>(
                 assert_cast<const vectorized::ColumnDecimal<vectorized::Decimal128>*>(

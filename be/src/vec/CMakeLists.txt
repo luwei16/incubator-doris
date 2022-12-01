@@ -48,7 +48,6 @@ set(VEC_FILES
   columns/column_decimal.cpp
   columns/column_nullable.cpp
   columns/column_string.cpp
-  columns/column_jsonb.cpp
   columns/column_vector.cpp
   columns/columns_common.cpp
   columns/column_object.cpp
@@ -182,6 +181,7 @@ set(VEC_FILES
   functions/function_utility.cpp
   functions/comparison_equal_for_null.cpp
   functions/function_json.cpp
+  functions/function_jsonb.cpp
   functions/function_datetime_floor_ceil.cpp
   functions/functions_geo.cpp
   functions/hll_cardinality.cpp

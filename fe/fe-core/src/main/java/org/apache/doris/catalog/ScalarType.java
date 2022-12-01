@@ -527,7 +527,7 @@ public class ScalarType extends Type {
         } else if (type == PrimitiveType.STRING) {
             return "TEXT";
         } else if (type == PrimitiveType.JSONB) {
-            return "JSON";
+            return "JSONB";
         }
         return type.toString();
     }
@@ -600,7 +600,7 @@ public class ScalarType extends Type {
                 stringBuilder.append("text");
                 break;
             case JSONB:
-                stringBuilder.append("json");
+                stringBuilder.append("jsonb");
                 break;
             case ARRAY:
                 stringBuilder.append(type.toString().toLowerCase());

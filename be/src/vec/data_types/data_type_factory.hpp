@@ -76,7 +76,7 @@ public:
                                           BeConsts::MAX_DECIMAL64_PRECISION, 0)},
                     {"Decimal128", std::make_shared<DataTypeDecimal<Decimal128>>(
                                            BeConsts::MAX_DECIMAL128_PRECISION, 0)},
-                    {"Json", std::make_shared<DataTypeJsonb>()},
+                    {"Jsonb", std::make_shared<DataTypeJsonb>()},
             };
             for (auto const& [key, val] : base_type_map) {
                 instance.register_data_type(key, val);
