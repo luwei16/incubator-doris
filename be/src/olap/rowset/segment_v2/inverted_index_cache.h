@@ -53,6 +53,7 @@ public:
         std::atomic<int64_t> last_visit_time = 0;
         std::atomic<int64_t> first_start_time = 0;
         IndexSearcherPtr index_searcher;
+        size_t size = 0;
     };
 
     // Create global instance of this class.
@@ -91,6 +92,9 @@ private:
     // This function is thread-safe.
     void _insert(const InvertedIndexSearcherCache::CacheKey& key, CacheValue& value, InvertedIndexCacheHandle* handle);
 
+    IndexSearcherPtr _build_index_searcher(io::FileSystem* fs, 
+                                        const std::string& index_dir,
+                                        const std::string& file_name);
 private:
     static InvertedIndexSearcherCache* _s_instance;
     // A LRU cache to cache all opened index_searcher
@@ -143,7 +147,7 @@ public:
     }
 
 public:
-    // If set to true, the loaded index_searcher will be saved in _index_searcher, not in lru cache;
+    // If set to true, the loaded index_searcher will be saved in index_searcher, not in lru cache;
     bool owned = false;
     IndexSearcherPtr index_searcher;
 

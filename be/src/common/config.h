@@ -917,6 +917,8 @@ CONF_mInt32(index_searcher_cache_stale_sweep_time_sec, "1800");
 CONF_Int32(inverted_index_searcher_cache_capacity, "1000000");
 // Cache for inverted index cache size
 CONF_String(inverted_index_searcher_cache_limit, "10%");
+// set `true` to enable insert searcher into cache when write inverted index data
+CONF_Bool(enable_write_index_searcher_cache, "true");
 // inverted index
 CONF_Int32(query_bkd_inverted_index_limit_percent, "5"); // 5%
 // tree depth for bkd
