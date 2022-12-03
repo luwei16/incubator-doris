@@ -69,8 +69,8 @@ public class IndexDef {
             if (Strings.isNullOrEmpty(indexName)) {
                 throw new AnalysisException("index name cannot be blank.");
             }
-            if (indexName.length() > 64) {
-                throw new AnalysisException("index name too long, the index name length at most is 64.");
+            if (indexName.length() > 128) {
+                throw new AnalysisException("index name too long, the index name length at most is 128.");
             }
             TreeSet<String> distinct = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
             distinct.addAll(columns);
@@ -166,11 +166,11 @@ public class IndexDef {
         if (indexType == IndexType.BITMAP || indexType == IndexType.INVERTED || indexType == IndexType.BLOOMFILTER) {
             String indexColName = column.getName();
             PrimitiveType colType = column.getDataType();
-            if (indexType == IndexType.INVERTED) {
-                InvertedIndexUtil.checkInvertedIndexParser(column, indexColName, colType, properties);
-            }
             if (colType.isArrayType()) {
                 colType = ((ArrayType) column.getType()).getItemType().getPrimitiveType();
+            }
+            if (indexType == IndexType.INVERTED) {
+                InvertedIndexUtil.checkInvertedIndexParser(column, indexColName, colType, properties);
             }
 
             if (!(colType.isDateType() || colType.isDecimalV2Type() || colType.isDecimalV3Type()

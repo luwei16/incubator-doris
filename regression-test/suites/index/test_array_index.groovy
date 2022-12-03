@@ -32,8 +32,10 @@ suite("test_array_index"){
     sql """
 	CREATE TABLE IF NOT EXISTS ${indexTblName}(
 		`id`int(11)NULL,
+		`int_array` array<int(20)> NULL,
 		`c_array` array<varchar(20)> NULL,
-		INDEX c_array_idx(`c_array`) USING INVERTED PROPERTIES("parser"="english") COMMENT 'c_array index'
+		INDEX c_array_idx(`c_array`) USING INVERTED PROPERTIES("parser"="english") COMMENT 'c_array index',
+		INDEX int_array_idx(`int_array`) USING INVERTED COMMENT 'int_array index'
 	) ENGINE=OLAP
 	DUPLICATE KEY(`id`)
 	COMMENT 'OLAP'
@@ -49,9 +51,20 @@ suite("test_array_index"){
     def var_result = sql "show variables"
     logger.info("show variales result: " + var_result )
 
-    sql "INSERT INTO $indexTblName VALUES (1, ['i','love','china']), (2, ['i','love','north korea']), (3, NULL);"
-    sql "INSERT INTO $indexTblName VALUES (4, NULL);"
+    sql "INSERT INTO $indexTblName VALUES (1, [10,20,30], ['i','love','china']), (2, [20,30,40], ['i','love','north korea']), (3, [30,40,50], NULL);"
+    sql "INSERT INTO $indexTblName VALUES (4, [40,50,60], NULL);"
     qt_sql "SELECT * FROM $indexTblName WHERE c_array MATCH 'china';"
     qt_sql "SELECT * FROM $indexTblName WHERE c_array MATCH 'love';"
     qt_sql "SELECT * FROM $indexTblName WHERE c_array MATCH 'north';"
+    qt_sql "SELECT * FROM $indexTblName WHERE c_array MATCH 'korea';"
+    qt_sql "SELECT * FROM $indexTblName WHERE int_array element_ge 40;"
+    qt_sql "SELECT * FROM $indexTblName WHERE int_array element_le 40;"
+    qt_sql "SELECT * FROM $indexTblName WHERE int_array element_gt 40;"
+    qt_sql "SELECT * FROM $indexTblName WHERE int_array element_lt 40;"
+    qt_sql "SELECT * FROM $indexTblName WHERE int_array element_eq 10;"
+    qt_sql "SELECT * FROM $indexTblName WHERE int_array element_eq 20;"
+    qt_sql "SELECT * FROM $indexTblName WHERE int_array element_eq 30;"
+    qt_sql "SELECT * FROM $indexTblName WHERE int_array element_eq 40;"
+    qt_sql "SELECT * FROM $indexTblName WHERE int_array element_eq 50;"
+    qt_sql "SELECT * FROM $indexTblName WHERE int_array element_eq 60;"
 }

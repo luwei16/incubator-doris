@@ -1893,9 +1893,7 @@ Status VOlapScanNode::_normalize_match_predicate(VExpr* expr, VExprContext* expr
         // Normalize match conjuncts like 'where col match value'
 
         auto match_checker = [](const std::string& fn_name) {
-            return fn_name == "match_any" || 
-                    fn_name == "match_all" ||
-                    fn_name == "match_phrase";
+	    return is_match_condition(fn_name);
         };
         StringRef value;
         int slot_ref_child = -1;

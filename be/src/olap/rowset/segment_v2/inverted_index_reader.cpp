@@ -689,8 +689,9 @@ lucene::util::bkd::relation InvertedIndexVisitor::compare(std::vector<uint8_t>& 
 
 Status InvertedIndexIterator::read_from_inverted_index(
         const std::string& column_name, const void* query_value, InvertedIndexQueryType query_type,
-        uint32_t segment_num_rows, roaring::Roaring* bit_map, const void* additional_value) {
-    if (_reader->type() == InvertedIndexReaderType::BKD) {
+        uint32_t segment_num_rows, roaring::Roaring* bit_map, const void* additional_value,
+        bool skip_try) {
+    if (!skip_try && _reader->type() == InvertedIndexReaderType::BKD) {
         auto query_bkd_limit_percent = config::query_bkd_inverted_index_limit_percent;
         uint32_t hit_count = 0;
         RETURN_IF_ERROR(try_read_from_inverted_index(column_name, query_value, query_type,

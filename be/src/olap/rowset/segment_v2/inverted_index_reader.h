@@ -28,8 +28,8 @@
 #include "gen_cpp/segment_v2.pb.h"
 #include "gutil/macros.h"
 #include "io/fs/file_system.h"
-#include "olap/olap_common.h"
 #include "olap/inverted_index_parser.h"
+#include "olap/olap_common.h"
 #include "olap/rowset/segment_v2/common.h"
 #include "olap/rowset/segment_v2/inverted_index_compound_reader.h"
 #include "olap/tablet_schema.h"
@@ -59,9 +59,9 @@ enum class InvertedIndexQueryType {
     MATCH_ANY_QUERY = 5,
     MATCH_ALL_QUERY = 6,
     MATCH_PHRASE_QUERY = 7,
-    RANGE_QUERY = 8, // (100, 200)
-    RANGE_LESS_EQUAL_QUERY = 9, // (100, 200]
-    RANGE_GREATER_EQUAL_QUERY = 10, // [100, 200)
+    RANGE_QUERY = 8,                     // (100, 200)
+    RANGE_LESS_EQUAL_QUERY = 9,          // (100, 200]
+    RANGE_GREATER_EQUAL_QUERY = 10,      // [100, 200)
     RANGE_LESS_GREATER_EQUAL_QUERY = 11, // [100, 200]
 };
 
@@ -79,10 +79,11 @@ public:
                          InvertedIndexQueryType query_type, InvertedIndexParserType analyser_type,
                          roaring::Roaring* bit_map, const void* additional_value = nullptr) = 0;
     virtual Status try_query(const std::string& column_name, const void* query_value,
-                         InvertedIndexQueryType query_type, InvertedIndexParserType analyser_type,
-                         uint32_t* count, const void* additional_value = nullptr) = 0;
+                             InvertedIndexQueryType query_type,
+                             InvertedIndexParserType analyser_type, uint32_t* count,
+                             const void* additional_value = nullptr) = 0;
 
-    virtual InvertedIndexReaderType type() = 0; 
+    virtual InvertedIndexReaderType type() = 0;
     bool indexExists(io::Path& index_file_path);
 
     uint32_t get_index_id() { return _index_id; }
@@ -102,8 +103,7 @@ public:
             : InvertedIndexReader(fs, path, uniq_id) {};
     ~FullTextIndexReader() override = default;
 
-    Status new_iterator(const TabletIndex* index_meta,
-                        InvertedIndexIterator** iterator) override;
+    Status new_iterator(const TabletIndex* index_meta, InvertedIndexIterator** iterator) override;
     Status query(const std::string& column_name, const void* query_value,
                  InvertedIndexQueryType query_type, InvertedIndexParserType analyser_type,
                  roaring::Roaring* bit_map, const void* additional_value = nullptr) override;
@@ -127,14 +127,13 @@ public:
             : InvertedIndexReader(fs, path, uniq_id) {};
     ~StringTypeInvertedIndexReader() override = default;
 
-    Status new_iterator(const TabletIndex* index_meta,
-                        InvertedIndexIterator** iterator) override;
+    Status new_iterator(const TabletIndex* index_meta, InvertedIndexIterator** iterator) override;
     Status query(const std::string& column_name, const void* query_value,
                  InvertedIndexQueryType query_type, InvertedIndexParserType analyser_type,
                  roaring::Roaring* bit_map, const void* additional_value = nullptr) override;
     Status try_query(const std::string& column_name, const void* query_value,
-                 InvertedIndexQueryType query_type, InvertedIndexParserType analyser_type,
-                 uint32_t* count, const void* additional_value = nullptr) override {
+                     InvertedIndexQueryType query_type, InvertedIndexParserType analyser_type,
+                     uint32_t* count, const void* additional_value = nullptr) override {
         return Status::OLAPInternalError(OLAP_ERR_FUNC_NOT_IMPLEMENTED);
     }
     InvertedIndexReaderType type() override;
@@ -150,30 +149,31 @@ private:
     //std::shared_ptr<lucene::util::BitSet> hits;
     lucene::util::bkd::bkd_reader* reader;
     InvertedIndexQueryType query_type;
+
 public:
     std::string queryMin;
     std::string queryMax;
+
 public:
-    InvertedIndexVisitor(roaring::Roaring* hits,
-                         InvertedIndexQueryType query_type, bool only_count = false);
+    InvertedIndexVisitor(roaring::Roaring* hits, InvertedIndexQueryType query_type,
+                         bool only_count = false);
     virtual ~InvertedIndexVisitor() = default;
 
     void set_reader(lucene::util::bkd::bkd_reader* r) { reader = r; };
     lucene::util::bkd::bkd_reader* get_reader() { return reader; };
 
     void visit(int rowID) override;
-    void visit(roaring::Roaring &r) override;
-    void visit(roaring::Roaring &&r) override;
-    void visit(roaring::Roaring *docID, std::vector<uint8_t> &packedValue) override;
-    void visit(std::vector<char>& docID, std::vector<uint8_t> &packedValue) override;
+    void visit(roaring::Roaring& r) override;
+    void visit(roaring::Roaring&& r) override;
+    void visit(roaring::Roaring* docID, std::vector<uint8_t>& packedValue) override;
+    void visit(std::vector<char>& docID, std::vector<uint8_t>& packedValue) override;
     void visit(int rowID, std::vector<uint8_t>& packedValue) override;
-    void visit(lucene::util::bkd::bkd_docID_set_iterator *iter, std::vector<uint8_t> &packedValue) override;
+    void visit(lucene::util::bkd::bkd_docID_set_iterator* iter,
+               std::vector<uint8_t>& packedValue) override;
     bool matches(uint8_t* packedValue);
     lucene::util::bkd::relation compare(std::vector<uint8_t>& minPacked,
                                         std::vector<uint8_t>& maxPacked) override;
-    uint32_t get_num_hits() const {
-        return num_hits;
-    }
+    uint32_t get_num_hits() const { return num_hits; }
 };
 
 class BkdIndexReader : public InvertedIndexReader {
@@ -187,20 +187,18 @@ public:
         }
     }
 
-    Status new_iterator(const TabletIndex* index_meta,
-                        InvertedIndexIterator** iterator) override;
+    Status new_iterator(const TabletIndex* index_meta, InvertedIndexIterator** iterator) override;
 
     Status query(const std::string& column_name, const void* query_value,
                  InvertedIndexQueryType query_type, InvertedIndexParserType analyser_type,
                  roaring::Roaring* bit_map, const void* additional_value = nullptr) override;
     Status try_query(const std::string& column_name, const void* query_value,
-                 InvertedIndexQueryType query_type, InvertedIndexParserType analyser_type,
-                 uint32_t* count, const void* additional_value = nullptr) override;
+                     InvertedIndexQueryType query_type, InvertedIndexParserType analyser_type,
+                     uint32_t* count, const void* additional_value = nullptr) override;
     Status bkd_query(const std::string& column_name, const void* query_value,
-                                     InvertedIndexQueryType query_type,
-				     std::shared_ptr<lucene::util::bkd::bkd_reader>&& r,
-                                     InvertedIndexVisitor* visitor,
-                                     const void* additional_value = nullptr);
+                     InvertedIndexQueryType query_type,
+                     std::shared_ptr<lucene::util::bkd::bkd_reader>&& r,
+                     InvertedIndexVisitor* visitor, const void* additional_value = nullptr);
 
     InvertedIndexReaderType type() override;
     Status get_bkd_reader(lucene::util::bkd::bkd_reader*& reader);
@@ -217,14 +215,15 @@ public:
             : _index_meta(index_meta), _reader(reader) {
         // TODO xk maybe change interface to use index
         _analyser_type = get_inverted_index_parser_type_from_string(
-            get_parser_string_from_properties(_index_meta->properties()));
+                get_parser_string_from_properties(_index_meta->properties()));
     }
 
     Status read_from_inverted_index(const std::string& column_name, const void* query_value,
                                     InvertedIndexQueryType query_type, uint32_t segment_num_rows,
-                                    roaring::Roaring* bit_map, const void* additional_value = nullptr);
+                                    roaring::Roaring* bit_map,
+                                    const void* additional_value = nullptr, bool skip_try = false);
     Status try_read_from_inverted_index(const std::string& column_name, const void* query_value,
-                                    InvertedIndexQueryType query_type, uint32_t* count,
+                                        InvertedIndexQueryType query_type, uint32_t* count,
                                         const void* additional_value = nullptr);
 
     InvertedIndexParserType get_inverted_index_analyser_type() const;
