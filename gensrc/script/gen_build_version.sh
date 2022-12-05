@@ -29,8 +29,8 @@ set -eo pipefail
 
 build_version_prefix="selectdb"
 build_version_major=2
-build_version_minor=0
-build_version_patch=0
+build_version_minor=1
+build_version_patch=5
 build_version_rc_version="trunk"
 
 build_version="${build_version_major}.${build_version_minor}.${build_version_patch}"
