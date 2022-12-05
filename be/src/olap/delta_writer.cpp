@@ -191,6 +191,11 @@ Status DeltaWriter::write(Tuple* tuple) {
         return _cancel_status;
     }
 
+    if (_is_closed) {
+        LOG(WARNING) << "write tuple after closed";
+        return Status::OLAPInternalError(OLAP_ERR_ALREADY_CANCELLED);
+    }
+
     _mem_table->insert(tuple);
 
     // if memtable is full, push it to the flush executor,
@@ -216,6 +221,11 @@ Status DeltaWriter::write(const RowBatch* row_batch, const std::vector<int>& row
         return _cancel_status;
     }
 
+    if (_is_closed) {
+        LOG(WARNING) << "write row_batch after closed";
+        return Status::OLAPInternalError(OLAP_ERR_ALREADY_CANCELLED);
+    }
+
     for (const auto& row_idx : row_idxs) {
         _mem_table->insert(row_batch->get_row(row_idx)->get_tuple(0));
     }
@@ -239,6 +249,11 @@ Status DeltaWriter::write(const vectorized::Block* block, const std::vector<int>
 
     if (_is_cancelled) {
         return _cancel_status;
+    }
+
+    if (_is_closed) {
+        LOG(WARNING) << "write block after closed";
+        return Status::OLAPInternalError(OLAP_ERR_ALREADY_CANCELLED);
     }
 
     _mem_table->insert(block, row_idxs);
@@ -340,6 +355,9 @@ Status DeltaWriter::close() {
 
     RETURN_NOT_OK(_flush_memtable_async());
     _mem_table.reset();
+
+    _is_closed = true;
+
     return Status::OK();
 }
 
