@@ -121,7 +121,7 @@ StorageEngine::StorageEngine(const EngineOptions& options)
           _is_all_cluster_id_exist(true),
           _compaction_mem_tracker(
                   std::make_shared<MemTrackerLimiter>(-1, "StorageEngine::AutoCompaction")),
-          _segment_meta_mem_tracker(std::make_unique<MemTracker>("StorageEngine::SegmentMeta")),
+          _segment_meta_mem_tracker(std::make_shared<MemTracker>("SegmentMeta")),
           _schema_change_mem_tracker(
                   std::make_shared<MemTrackerLimiter>(-1, "StorageEngine::SchemaChange")),
           _clone_mem_tracker(std::make_shared<MemTrackerLimiter>(-1, "StorageEngine::Clone")),

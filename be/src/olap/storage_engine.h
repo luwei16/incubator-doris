@@ -193,7 +193,7 @@ public:
     Status get_compaction_status_json(std::string* result);
 
     std::shared_ptr<MemTrackerLimiter> compaction_mem_tracker() { return _compaction_mem_tracker; }
-    MemTracker* segment_meta_mem_tracker() { return _segment_meta_mem_tracker.get(); }
+    std::shared_ptr<MemTracker> segment_meta_mem_tracker() { return _segment_meta_mem_tracker; }
     std::shared_ptr<MemTrackerLimiter> schema_change_mem_tracker() {
         return _schema_change_mem_tracker;
     }
@@ -365,7 +365,7 @@ private:
     std::shared_ptr<MemTrackerLimiter> _compaction_mem_tracker;
     // This mem tracker is only for tracking memory use by segment meta data such as footer or index page.
     // The memory consumed by querying is tracked in segment iterator.
-    std::unique_ptr<MemTracker> _segment_meta_mem_tracker;
+    std::shared_ptr<MemTracker> _segment_meta_mem_tracker;
     // Count the memory consumption of all SchemaChange tasks.
     std::shared_ptr<MemTrackerLimiter> _schema_change_mem_tracker;
     // Count the memory consumption of all EngineCloneTask.
