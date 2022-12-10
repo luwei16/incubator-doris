@@ -101,7 +101,7 @@ public:
     virtual std::string name() = 0;
 };
 
-/// SizeBased cumulative compaction policy implemention. SizeBased policy which derives CumulativeCompactionPolicy is a optimized
+/// SizeBased cumulative compaction policy implementation. SizeBased policy which derives CumulativeCompactionPolicy is a optimized
 /// version of num based cumulative compaction policy. This policy also uses linear structure to compact rowsets. The cumulative rowsets
 /// can do compaction when they are in same level size. And when output rowset exceeds the promotion radio of base size or min promotion
 /// size, it will do base compaction. This policy is targeting the use cases requiring lower write amplification, trading off read

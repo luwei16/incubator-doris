@@ -19,8 +19,8 @@
 
 #include <fcntl.h>
 
-#include "io/fs/file_reader.h"
-#include "io/fs/file_writer.h"
+#include "cloud/io/file_reader.h"
+#include "cloud/io/file_writer.h"
 #include "util/md5.h"
 
 // #include <CLucene/_ApiHeader.h>
@@ -273,7 +273,7 @@ protected:
     void flushBuffer(const uint8_t* b, const int32_t size) override;
 
 public:
-    FSIndexOutput(io::FileSystem* fs, const char* path, int filemode);
+    FSIndexOutput(const io::FileSystemSPtr& fs, const char* path, int filemode);
     ~FSIndexOutput() override;
 
     // output methods:
@@ -284,7 +284,7 @@ public:
     int64_t length() const override;
 };
 
-bool DorisCompoundDirectory::FSIndexInput::open(io::FileSystem* fs, const char* path,
+bool DorisCompoundDirectory::FSIndexInput::open(const io::FileSystemSPtr& fs, const char* path,
                                                 IndexInput*& ret, CLuceneError& error,
                                                 int32_t __bufferSize) {
     //Func - Constructor.
@@ -444,7 +444,7 @@ void DorisCompoundDirectory::FSIndexInput::readInternal(uint8_t* b, const int32_
     handle->_fpos = _pos;
 }
 
-DorisCompoundDirectory::FSIndexOutput::FSIndexOutput(io::FileSystem* fs, const char* path,
+DorisCompoundDirectory::FSIndexOutput::FSIndexOutput(const io::FileSystemSPtr& fs, const char* path,
                                                      int filemode) {
     //O_BINARY - Opens file in binary (untranslated) mode
     //O_CREAT - Creates and opens new file for writing. Has no effect if file specified by filename exists
@@ -564,8 +564,8 @@ DorisCompoundDirectory::DorisCompoundDirectory() : Directory(), useMMap(LUCENE_U
     this->lockFactory = NULL;
 }
 
-void DorisCompoundDirectory::init(io::FileSystem* _fs, const char* _path,
-                                  lucene::store::LockFactory* lockFactory, io::FileSystem* cfs,
+void DorisCompoundDirectory::init(const io::FileSystemSPtr& _fs, const char* _path,
+                                  lucene::store::LockFactory* lockFactory, const io::FileSystemSPtr& cfs,
                                   const char* cfs_path) {
     fs = _fs;
     directory = _path;
@@ -696,7 +696,7 @@ const char* DorisCompoundDirectory::getCfsDirName() const {
 }
 
 DorisCompoundDirectory* DorisCompoundDirectory::getDirectory(
-        io::FileSystem* fileSystem, const char* file, bool create,
+        const io::FileSystemSPtr& fileSystem, const char* file, bool create,
         lucene::store::LockFactory* lockFactory) {
     DorisCompoundDirectory* dir = getDirectory(fileSystem, file, (lucene::store::LockFactory*)NULL);
 
@@ -709,9 +709,9 @@ DorisCompoundDirectory* DorisCompoundDirectory::getDirectory(
     return dir;
 }
 
-DorisCompoundDirectory* DorisCompoundDirectory::getDirectory(io::FileSystem* fs, const char* file,
+DorisCompoundDirectory* DorisCompoundDirectory::getDirectory(const io::FileSystemSPtr& fs, const char* file,
                                                              bool useCompoundFileWriter,
-                                                             io::FileSystem* cfs_fs,
+                                                             const io::FileSystemSPtr& cfs_fs,
                                                              const char* cfs_file) {
     DorisCompoundDirectory* dir =
             getDirectory(fs, file, (lucene::store::LockFactory*)nullptr, cfs_fs, cfs_file);
@@ -721,8 +721,8 @@ DorisCompoundDirectory* DorisCompoundDirectory::getDirectory(io::FileSystem* fs,
 
 //static
 DorisCompoundDirectory* DorisCompoundDirectory::getDirectory(
-        io::FileSystem* fs, const char* _file, lucene::store::LockFactory* lockFactory,
-        io::FileSystem* cfs, const char* _cfs_file) {
+        const io::FileSystemSPtr& fs, const char* _file, lucene::store::LockFactory* lockFactory,
+        const io::FileSystemSPtr& cfs, const char* _cfs_file) {
     const char* cfs_file = _cfs_file;
     if (cfs_file == nullptr) {
         cfs_file = _file;

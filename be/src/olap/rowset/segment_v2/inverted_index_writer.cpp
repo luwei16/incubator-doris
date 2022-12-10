@@ -5,8 +5,8 @@
 
 #include <memory>
 
-#include "io/cloud/tmp_file_mgr.h"
-#include "io/fs/local_file_system.h"
+#include "cloud/io/local_file_system.h"
+#include "cloud/io/tmp_file_mgr.h"
 #include "olap/field.h"
 #include "olap/olap_common.h"
 #include "olap/rowset/segment_v2/common.h"
@@ -30,11 +30,11 @@ public:
 public:
     explicit InvertedIndexColumnWriterImpl(const std::string& field_name, uint32_t uuid,
                                            const std::string& segment_file_name,
-                                           const std::string& dir, io::FileSystem* fs,
+                                           const std::string& dir, io::FileSystemSPtr fs,
                                            const TabletIndex* index_meta)
             : _segment_file_name(segment_file_name),
               _directory(dir),
-              _fs(fs),
+              _fs(std::move(fs)),
               _index_meta(index_meta) {
         _parser_type = get_inverted_index_parser_type_from_string(
                 get_parser_string_from_properties(_index_meta->properties()));
@@ -139,13 +139,14 @@ public:
         _default_char_analyzer = _CLNEW lucene::analysis::SimpleAnalyzer<char>();
         _standard_analyzer = _CLNEW lucene::analysis::standard::StandardAnalyzer();
 #ifdef CLOUD_MODE
-        _lfs = std::make_unique<doris::io::LocalFileSystem>(
-                io::TmpFileMgr::instance()->get_tmp_file_dir());
+        _lfs = std::make_shared<doris::io::LocalFileSystem>(
+                io::TmpFileMgr::instance()->get_tmp_file_dir(), "");
         auto lfs_index_path = InvertedIndexDescriptor::get_temporary_index_path(
                 io::TmpFileMgr::instance()->get_tmp_file_dir() + "/" + _segment_file_name,
                 _index_meta->index_id());
-        _dir.reset(DorisCompoundDirectory::getDirectory(_lfs.get(), lfs_index_path.c_str(), true,
-                                                        _fs, index_path.c_str()));
+        _dir.reset(DorisCompoundDirectory::getDirectory(_lfs, lfs_index_path.c_str(),
+                                                        true, _fs, index_path.c_str()));
+
 #else
         _dir.reset(DorisCompoundDirectory::getDirectory(_fs, index_path.c_str(), true));
 #endif
@@ -344,14 +345,13 @@ public:
                         _directory + "/" + _segment_file_name, _index_meta->index_id());
 #ifdef CLOUD_MODE
                 if (_lfs == nullptr) {
-                    _lfs = std::make_unique<doris::io::LocalFileSystem>(
-                            io::TmpFileMgr::instance()->get_tmp_file_dir());
+                    _lfs = io::LocalFileSystem::create(io::TmpFileMgr::instance()->get_tmp_file_dir());
                 }
                 auto lfs_index_path = InvertedIndexDescriptor::get_temporary_index_path(
                         io::TmpFileMgr::instance()->get_tmp_file_dir() + "/" + _segment_file_name,
                         _index_meta->index_id());
                 lucene::store::Directory* dir = DorisCompoundDirectory::getDirectory(
-                        _lfs.get(), lfs_index_path.c_str(), true, _fs, index_path.c_str());
+                        _lfs, lfs_index_path.c_str(), true, _fs, index_path.c_str());
 #else
                 lucene::store::Directory* dir =
                         DorisCompoundDirectory::getDirectory(_fs, index_path.c_str(), true);
@@ -404,9 +404,9 @@ private:
     std::shared_ptr<lucene::util::bkd::bkd_writer> _bkd_writer;
     std::string _segment_file_name;
     std::string _directory;
-    io::FileSystem* _fs;
+    io::FileSystemSPtr _fs;
 #ifdef CLOUD_MODE
-    std::unique_ptr<io::FileSystem> _lfs;
+    io::FileSystemSPtr _lfs;
 #endif
     const KeyCoder* _value_key_coder;
     const TabletIndex* _index_meta;
@@ -419,7 +419,7 @@ Status InvertedIndexColumnWriter::create(const Field* field,
                                          std::unique_ptr<InvertedIndexColumnWriter>* res,
                                          uint32_t uuid, const std::string& segment_file_name,
                                          const std::string& dir, const TabletIndex* index_meta,
-                                         io::FileSystem* fs) {
+                                         io::FileSystemSPtr fs) {
     //RETURN_IF_ERROR(InvertedIndexDescriptor::init_index_directory(path));
 
     auto typeinfo = field->type_info();

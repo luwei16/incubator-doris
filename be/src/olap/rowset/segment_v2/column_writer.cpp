@@ -19,20 +19,20 @@
 
 #include <cstddef>
 
+#include "cloud/io/file_writer.h"
 #include "common/logging.h"
 #include "env/env.h"
 #include "gutil/strings/substitute.h"
 #include "olap/rowset/segment_v2/bitmap_index_writer.h"
-#include "olap/rowset/segment_v2/inverted_index_writer.h"
 #include "olap/rowset/segment_v2/bloom_filter.h"
 #include "olap/rowset/segment_v2/bloom_filter_index_writer.h"
 #include "olap/rowset/segment_v2/encoding_info.h"
+#include "olap/rowset/segment_v2/inverted_index_writer.h"
 #include "olap/rowset/segment_v2/options.h"
 #include "olap/rowset/segment_v2/ordinal_page_index.h"
 #include "olap/rowset/segment_v2/page_builder.h"
 #include "olap/rowset/segment_v2/page_io.h"
 #include "olap/rowset/segment_v2/zone_map_index.h"
-#include "io/fs/file_writer.h"
 #include "util/block_compression.h"
 #include "util/faststring.h"
 #include "util/rle_encoding.h"
@@ -561,8 +561,8 @@ Status ArrayColumnWriter::init() {
             RETURN_IF_ERROR(InvertedIndexColumnWriter::create(
                     get_field(), &_inverted_index_builder, _opts.meta->unique_id(),
                     writer->_file_writer->path().filename().native(),
-                    writer->_file_writer->path().parent_path().native(),
-                    _opts.inverted_index, writer->_file_writer->fs()));
+                    writer->_file_writer->path().parent_path().native(), _opts.inverted_index,
+                    writer->_file_writer->fs()));
         }
     }
     return Status::OK();
@@ -610,7 +610,8 @@ Status ArrayColumnWriter::append_data(const uint8_t** ptr, size_t num_rows) {
                 auto writer = dynamic_cast<ScalarColumnWriter*>(_item_writer.get());
                 if (writer != nullptr) {
                     //NOTE: use array field name as index field, but item_writer size should be used when moving item_data_ptr
-                    _inverted_index_builder->add_array_values(_item_writer->get_field()->size(), col_cursor, 1);
+                    _inverted_index_builder->add_array_values(_item_writer->get_field()->size(),
+                                                              col_cursor, 1);
                 }
             }
         }

@@ -73,6 +73,11 @@ public:
                     uint32_t num_rows, roaring::Roaring* bitmap) const override;
 private:
     std::shared_ptr<RangePredicateParams<T>> _predicate_params;
+ 
+    std::string _debug_string() override {
+        std::string info = "RangePredicate(" + type_to_string(type()) + ")";
+        return info;
+    }
 };
 } // namespace doris
 

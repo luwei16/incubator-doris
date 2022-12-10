@@ -17,15 +17,16 @@
 
 #include "olap/rowset/segment_v2/segment_iterator.h"
 
+#include <charconv>
 #include <cstdint>
 #include <memory>
 #include <set>
 #include <utility>
 
+#include "cloud/io/file_system.h"
 #include "common/config.h"
 #include "common/status.h"
 #include "exprs/range_predicate.h"
-#include "io/fs/file_system.h"
 #include "olap/column_predicate.h"
 #include "olap/olap_common.h"
 #include "olap/row_block2.h"
@@ -33,6 +34,7 @@
 #include "olap/rowset/segment_v2/column_reader.h"
 #include "olap/rowset/segment_v2/segment.h"
 #include "olap/short_key_index.h"
+#include "util/date_func.h"
 #include "util/doris_metrics.h"
 #include "util/key_util.h"
 #include "util/simd/bits.h"
@@ -391,10 +393,12 @@ Status SegmentIterator::_prepare_seek(const StorageReadOptions::KeyRange& key_ra
             ColumnIteratorOptions iter_opts;
             iter_opts.stats = _opts.stats;
             iter_opts.file_reader = _file_reader.get();
+
             iter_opts.query_id = _opts.query_id;
             iter_opts.kept_in_memory = _opts.kept_in_memory;
             iter_opts.is_persistent = _opts.is_persistent;
             iter_opts.use_disposable_cache = _opts.use_disposable_cache;
+
             RETURN_IF_ERROR(_column_iterators[unique_id]->init(iter_opts));
         }
     }
@@ -465,7 +469,8 @@ Status SegmentIterator::_get_row_ranges_from_conditions(RowRanges* condition_row
     RowRanges zone_map_row_ranges = RowRanges::create_single(num_rows());
     // second filter data by zone map
     for (auto& cid : cids) {
-	    if (_inverted_index_iterators[cid] != nullptr && field_is_slice_type(_schema.column(cid)->type())) {
+        if (_inverted_index_iterators[cid] != nullptr &&
+            field_is_slice_type(_schema.column(cid)->type())) {
             continue;
         }
         // get row ranges by zone map of this column,
@@ -487,19 +492,18 @@ Status SegmentIterator::_get_row_ranges_from_conditions(RowRanges* condition_row
         auto query_ctx = _opts.runtime_state->get_query_fragments_ctx();
         runtime_predicate = query_ctx->get_runtime_predicate().get_predictate();
         if (runtime_predicate) {
-            int32_t cid = _opts.tablet_schema->column(
-                            runtime_predicate->column_id()).unique_id();
+            int32_t cid = _opts.tablet_schema->column(runtime_predicate->column_id()).unique_id();
             AndBlockColumnPredicate and_predicate;
             auto single_predicate = new SingleColumnBlockPredicate(runtime_predicate.get());
             and_predicate.add_column_predicate(single_predicate);
 
             RowRanges column_rp_row_ranges = RowRanges::create_single(num_rows());
             RETURN_IF_ERROR(_column_iterators[_schema.unique_id(cid)]->get_row_ranges_by_zone_map(
-                &and_predicate, nullptr, &column_rp_row_ranges));
+                    &and_predicate, nullptr, &column_rp_row_ranges));
 
             // intersect different columns's row ranges to get final row ranges by zone map
             RowRanges::ranges_intersection(zone_map_row_ranges, column_rp_row_ranges,
-                                        &zone_map_row_ranges);
+                                           &zone_map_row_ranges);
         }
     }
 
@@ -560,11 +564,10 @@ bool SegmentIterator::_is_handle_predicate_by_fulltext(ColumnPredicate* predicat
 
 bool SegmentIterator::_need_read_data(ColumnId cid) {
     int32_t unique_id = _schema.unique_id(cid);
-    if (_need_read_data_indices.count(unique_id) > 0
-            && !_need_read_data_indices[unique_id]
-            && _output_columns.count(unique_id) < 1) {
+    if (_need_read_data_indices.count(unique_id) > 0 && !_need_read_data_indices[unique_id] &&
+        _output_columns.count(unique_id) < 1) {
         VLOG_DEBUG << "SegmentIterator no need read data for column: "
-                << _opts.tablet_schema->column_by_uid(unique_id).name();
+                   << _opts.tablet_schema->column_by_uid(unique_id).name();
         return false;
     }
     return true;
@@ -584,11 +587,11 @@ Status SegmentIterator::_apply_inverted_index() {
         if (_inverted_index_iterators.count(unique_id) < 1 ||
             _inverted_index_iterators[unique_id] == nullptr ||
             (pred->type() != PredicateType::MATCH && handle_by_fulltext) ||
-            pred->type() == PredicateType::IS_NULL || 
-            pred->type() == PredicateType::IS_NOT_NULL ||
+            pred->type() == PredicateType::IS_NULL || pred->type() == PredicateType::IS_NOT_NULL ||
             pred->type() == PredicateType::BF ||
-            ((pred->type() == PredicateType::IN_LIST || pred->type() == PredicateType::NOT_IN_LIST)
-             && pred->predicate_params()->marked_by_runtime_filter)) {
+            ((pred->type() == PredicateType::IN_LIST ||
+              pred->type() == PredicateType::NOT_IN_LIST) &&
+             pred->predicate_params()->marked_by_runtime_filter)) {
             // 1. this column no inverted index
             // 2. equal or range for fulltext index
             // 3. is_null or is_not_null predicate in OrPredicate
@@ -597,10 +600,12 @@ Status SegmentIterator::_apply_inverted_index() {
             remaining_predicates.push_back(pred);
         } else {
             roaring::Roaring bitmap = _row_bitmap;
-            Status res = pred->evaluate(_schema, _inverted_index_iterators[unique_id], num_rows(), &bitmap);
-           if (!res.ok()) {
-                if ((res.precise_code() == OLAP_ERR_INVERTED_INDEX_FILE_NOT_FOUND && pred->type() != PredicateType::MATCH)
-                       || res.precise_code() == OLAP_ERR_INVERTED_INDEX_HIT_LIMIT) {
+            Status res = pred->evaluate(_schema, _inverted_index_iterators[unique_id], num_rows(),
+                                        &bitmap);
+            if (!res.ok()) {
+                if ((res.precise_code() == OLAP_ERR_INVERTED_INDEX_FILE_NOT_FOUND &&
+                     pred->type() != PredicateType::MATCH) ||
+                    res.precise_code() == OLAP_ERR_INVERTED_INDEX_HIT_LIMIT) {
                     remaining_predicates.push_back(pred);
                     continue;
                 }
@@ -610,8 +615,8 @@ Status SegmentIterator::_apply_inverted_index() {
                 return res;
             }
 
-            if (_check_column_pred_all_push_down(pred) && 
-                    !pred->predicate_params()->marked_by_runtime_filter) {
+            if (_check_column_pred_all_push_down(pred) &&
+                !pred->predicate_params()->marked_by_runtime_filter) {
                 _need_read_data_indices[unique_id] = false;
             }
 
@@ -672,17 +677,16 @@ Status SegmentIterator::_extract_range_predicate() {
         _col_predicates.push_back(r);
         // remove duplicate predicates
         for (auto p : dup.second) {
-            _col_predicates.erase(
-                    std::remove(_col_predicates.begin(), _col_predicates.end(), p),
-                    _col_predicates.end());
+            _col_predicates.erase(std::remove(_col_predicates.begin(), _col_predicates.end(), p),
+                                  _col_predicates.end());
         }
     }
 
     return Status::OK();
 }
 
-ColumnPredicate* SegmentIterator::_format_range_predicate(doris::ColumnId column_id,
-                                                          std::unordered_set<ColumnPredicate*> predicates) {
+ColumnPredicate* SegmentIterator::_format_range_predicate(
+        doris::ColumnId column_id, std::unordered_set<ColumnPredicate*> predicates) {
     ColumnPredicate* predicate = nullptr;
     auto field = _schema.column(column_id);
     switch (field->type()) {
@@ -692,7 +696,7 @@ ColumnPredicate* SegmentIterator::_format_range_predicate(doris::ColumnId column
             int8_t value = 0;
             auto str_value = p->predicate_params()->value;
             std::from_chars(str_value.data(), str_value.data() + str_value.size(), value);
-            ((RangePredicate<int8_t>*) predicate)->set_range_params(p, value);
+            ((RangePredicate<int8_t>*)predicate)->set_range_params(p, value);
         }
         break;
     case OLAP_FIELD_TYPE_SMALLINT:
@@ -701,7 +705,7 @@ ColumnPredicate* SegmentIterator::_format_range_predicate(doris::ColumnId column
             int16_t value = 0;
             auto str_value = p->predicate_params()->value;
             std::from_chars(str_value.data(), str_value.data() + str_value.size(), value);
-            ((RangePredicate<int16_t>*) predicate)->set_range_params(p, value);
+            ((RangePredicate<int16_t>*)predicate)->set_range_params(p, value);
         }
         break;
     case OLAP_FIELD_TYPE_INT:
@@ -710,7 +714,7 @@ ColumnPredicate* SegmentIterator::_format_range_predicate(doris::ColumnId column
             int32_t value = 0;
             auto str_value = p->predicate_params()->value;
             std::from_chars(str_value.data(), str_value.data() + str_value.size(), value);
-            ((RangePredicate<int32_t>*) predicate)->set_range_params(p, value);
+            ((RangePredicate<int32_t>*)predicate)->set_range_params(p, value);
         }
         break;
     case OLAP_FIELD_TYPE_UNSIGNED_INT:
@@ -719,7 +723,7 @@ ColumnPredicate* SegmentIterator::_format_range_predicate(doris::ColumnId column
             uint32_t value = 0;
             auto str_value = p->predicate_params()->value;
             std::from_chars(str_value.data(), str_value.data() + str_value.size(), value);
-            ((RangePredicate<uint32_t>*) predicate)->set_range_params(p, value);
+            ((RangePredicate<uint32_t>*)predicate)->set_range_params(p, value);
         }
         break;
     case OLAP_FIELD_TYPE_BIGINT:
@@ -728,7 +732,7 @@ ColumnPredicate* SegmentIterator::_format_range_predicate(doris::ColumnId column
             int64_t value = 0;
             auto str_value = p->predicate_params()->value;
             std::from_chars(str_value.data(), str_value.data() + str_value.size(), value);
-            ((RangePredicate<int64_t>*) predicate)->set_range_params(p, value);
+            ((RangePredicate<int64_t>*)predicate)->set_range_params(p, value);
         }
         break;
     case OLAP_FIELD_TYPE_LARGEINT:
@@ -737,7 +741,7 @@ ColumnPredicate* SegmentIterator::_format_range_predicate(doris::ColumnId column
             int128_t value = 0;
             auto str_value = p->predicate_params()->value;
             std::from_chars(str_value.data(), str_value.data() + str_value.size(), value);
-            ((RangePredicate<int128_t>*) predicate)->set_range_params(p, value);
+            ((RangePredicate<int128_t>*)predicate)->set_range_params(p, value);
         }
         break;
     case OLAP_FIELD_TYPE_FLOAT:
@@ -746,8 +750,9 @@ ColumnPredicate* SegmentIterator::_format_range_predicate(doris::ColumnId column
             float value = 0.0;
             StringParser::ParseResult result;
             auto str_value = p->predicate_params()->value;
-            value = StringParser::string_to_float<float>(str_value.data(), str_value.size(), &result);
-            ((RangePredicate<float>*) predicate)->set_range_params(p, value);
+            value = StringParser::string_to_float<float>(str_value.data(), str_value.size(),
+                                                         &result);
+            ((RangePredicate<float>*)predicate)->set_range_params(p, value);
         }
         break;
     case OLAP_FIELD_TYPE_DOUBLE:
@@ -756,8 +761,9 @@ ColumnPredicate* SegmentIterator::_format_range_predicate(doris::ColumnId column
             double value = 0.0;
             StringParser::ParseResult result;
             auto str_value = p->predicate_params()->value;
-            value = StringParser::string_to_float<double>(str_value.data(), str_value.size(), &result);
-            ((RangePredicate<double>*) predicate)->set_range_params(p, value);
+            value = StringParser::string_to_float<double>(str_value.data(), str_value.size(),
+                                                          &result);
+            ((RangePredicate<double>*)predicate)->set_range_params(p, value);
         }
         break;
     case OLAP_FIELD_TYPE_DECIMAL:
@@ -766,7 +772,7 @@ ColumnPredicate* SegmentIterator::_format_range_predicate(doris::ColumnId column
             decimal12_t value = {0, 0};
             auto str_value = p->predicate_params()->value;
             value.from_string(str_value);
-            ((RangePredicate<decimal12_t>*) predicate)->set_range_params(p, value);
+            ((RangePredicate<decimal12_t>*)predicate)->set_range_params(p, value);
         }
         break;
     case OLAP_FIELD_TYPE_DATE:
@@ -774,7 +780,7 @@ ColumnPredicate* SegmentIterator::_format_range_predicate(doris::ColumnId column
         for (auto p : predicates) {
             auto str_value = p->predicate_params()->value;
             uint24_t value = timestamp_from_date(str_value);
-            ((RangePredicate<uint24_t>*) predicate)->set_range_params(p, value);
+            ((RangePredicate<uint24_t>*)predicate)->set_range_params(p, value);
         }
         break;
     case OLAP_FIELD_TYPE_DATETIME:
@@ -782,7 +788,7 @@ ColumnPredicate* SegmentIterator::_format_range_predicate(doris::ColumnId column
         for (auto p : predicates) {
             auto str_value = p->predicate_params()->value;
             uint64_t value = timestamp_from_datetime(str_value);
-            ((RangePredicate<uint64_t>*) predicate)->set_range_params(p, value);
+            ((RangePredicate<uint64_t>*)predicate)->set_range_params(p, value);
         }
         break;
     case OLAP_FIELD_TYPE_BOOL:
@@ -791,7 +797,8 @@ ColumnPredicate* SegmentIterator::_format_range_predicate(doris::ColumnId column
             bool value = false;
             auto str_value = p->predicate_params()->value;
             int32_t ivalue = 0;
-            auto result = std::from_chars(str_value.data(), str_value.data() + str_value.size(), ivalue);
+            auto result =
+                    std::from_chars(str_value.data(), str_value.data() + str_value.size(), ivalue);
             if (result.ec == std::errc()) {
                 if (ivalue == 0) {
                     value = false;
@@ -800,9 +807,10 @@ ColumnPredicate* SegmentIterator::_format_range_predicate(doris::ColumnId column
                 }
             } else {
                 StringParser::ParseResult parse_result;
-                value = StringParser::string_to_bool(str_value.data(), str_value.size(), &parse_result);
+                value = StringParser::string_to_bool(str_value.data(), str_value.size(),
+                                                     &parse_result);
             }
-            ((RangePredicate<bool>*) predicate)->set_range_params(p, value);
+            ((RangePredicate<bool>*)predicate)->set_range_params(p, value);
         }
         break;
     default:
@@ -838,100 +846,100 @@ std::vector<ColumnPredicate*> SegmentIterator::_get_origin_predicate(ColumnPredi
     auto field = _schema.column(col_pred->column_id());
     switch (field->type()) {
     case OLAP_FIELD_TYPE_TINYINT:
-        predicates.push_back(
-                static_cast<RangePredicate<int8_t>*>(col_pred)
-                        ->range_predicate_params()->_upper_value._ori_pred);
-        predicates.push_back(
-                static_cast<RangePredicate<int8_t>*>(col_pred)
-                        ->range_predicate_params()->_lower_value._ori_pred);
+        predicates.push_back(static_cast<RangePredicate<int8_t>*>(col_pred)
+                                     ->range_predicate_params()
+                                     ->_upper_value._ori_pred);
+        predicates.push_back(static_cast<RangePredicate<int8_t>*>(col_pred)
+                                     ->range_predicate_params()
+                                     ->_lower_value._ori_pred);
         break;
     case OLAP_FIELD_TYPE_SMALLINT:
-        predicates.push_back(
-                static_cast<RangePredicate<int16_t>*>(col_pred)
-                        ->range_predicate_params()->_upper_value._ori_pred);
-        predicates.push_back(
-                static_cast<RangePredicate<int16_t>*>(col_pred)
-                        ->range_predicate_params()->_lower_value._ori_pred);
+        predicates.push_back(static_cast<RangePredicate<int16_t>*>(col_pred)
+                                     ->range_predicate_params()
+                                     ->_upper_value._ori_pred);
+        predicates.push_back(static_cast<RangePredicate<int16_t>*>(col_pred)
+                                     ->range_predicate_params()
+                                     ->_lower_value._ori_pred);
         break;
     case OLAP_FIELD_TYPE_INT:
-        predicates.push_back(
-                static_cast<RangePredicate<int32_t>*>(col_pred)
-                        ->range_predicate_params()->_upper_value._ori_pred);
-        predicates.push_back(
-                static_cast<RangePredicate<int32_t>*>(col_pred)
-                        ->range_predicate_params()->_lower_value._ori_pred);
+        predicates.push_back(static_cast<RangePredicate<int32_t>*>(col_pred)
+                                     ->range_predicate_params()
+                                     ->_upper_value._ori_pred);
+        predicates.push_back(static_cast<RangePredicate<int32_t>*>(col_pred)
+                                     ->range_predicate_params()
+                                     ->_lower_value._ori_pred);
         break;
     case OLAP_FIELD_TYPE_UNSIGNED_INT:
-        predicates.push_back(
-                static_cast<RangePredicate<uint32_t>*>(col_pred)
-                        ->range_predicate_params()->_upper_value._ori_pred);
-        predicates.push_back(
-                static_cast<RangePredicate<uint32_t>*>(col_pred)
-                        ->range_predicate_params()->_lower_value._ori_pred);
+        predicates.push_back(static_cast<RangePredicate<uint32_t>*>(col_pred)
+                                     ->range_predicate_params()
+                                     ->_upper_value._ori_pred);
+        predicates.push_back(static_cast<RangePredicate<uint32_t>*>(col_pred)
+                                     ->range_predicate_params()
+                                     ->_lower_value._ori_pred);
         break;
     case OLAP_FIELD_TYPE_BIGINT:
-        predicates.push_back(
-                static_cast<RangePredicate<int64_t>*>(col_pred)
-                        ->range_predicate_params()->_upper_value._ori_pred);
-        predicates.push_back(
-                static_cast<RangePredicate<int64_t>*>(col_pred)
-                        ->range_predicate_params()->_lower_value._ori_pred);
+        predicates.push_back(static_cast<RangePredicate<int64_t>*>(col_pred)
+                                     ->range_predicate_params()
+                                     ->_upper_value._ori_pred);
+        predicates.push_back(static_cast<RangePredicate<int64_t>*>(col_pred)
+                                     ->range_predicate_params()
+                                     ->_lower_value._ori_pred);
         break;
     case OLAP_FIELD_TYPE_LARGEINT:
-        predicates.push_back(
-                static_cast<RangePredicate<int128_t>*>(col_pred)
-                        ->range_predicate_params()->_upper_value._ori_pred);
-        predicates.push_back(
-                static_cast<RangePredicate<int128_t>*>(col_pred)
-                        ->range_predicate_params()->_lower_value._ori_pred);
+        predicates.push_back(static_cast<RangePredicate<int128_t>*>(col_pred)
+                                     ->range_predicate_params()
+                                     ->_upper_value._ori_pred);
+        predicates.push_back(static_cast<RangePredicate<int128_t>*>(col_pred)
+                                     ->range_predicate_params()
+                                     ->_lower_value._ori_pred);
         break;
     case OLAP_FIELD_TYPE_FLOAT:
-        predicates.push_back(
-                static_cast<RangePredicate<float>*>(col_pred)
-                        ->range_predicate_params()->_upper_value._ori_pred);
-        predicates.push_back(
-                static_cast<RangePredicate<float>*>(col_pred)
-                        ->range_predicate_params()->_lower_value._ori_pred);
+        predicates.push_back(static_cast<RangePredicate<float>*>(col_pred)
+                                     ->range_predicate_params()
+                                     ->_upper_value._ori_pred);
+        predicates.push_back(static_cast<RangePredicate<float>*>(col_pred)
+                                     ->range_predicate_params()
+                                     ->_lower_value._ori_pred);
         break;
     case OLAP_FIELD_TYPE_DOUBLE:
-        predicates.push_back(
-                static_cast<RangePredicate<double>*>(col_pred)
-                        ->range_predicate_params()->_upper_value._ori_pred);
-        predicates.push_back(
-                static_cast<RangePredicate<double>*>(col_pred)
-                        ->range_predicate_params()->_lower_value._ori_pred);
+        predicates.push_back(static_cast<RangePredicate<double>*>(col_pred)
+                                     ->range_predicate_params()
+                                     ->_upper_value._ori_pred);
+        predicates.push_back(static_cast<RangePredicate<double>*>(col_pred)
+                                     ->range_predicate_params()
+                                     ->_lower_value._ori_pred);
         break;
     case OLAP_FIELD_TYPE_DECIMAL:
-        predicates.push_back(
-                static_cast<RangePredicate<decimal12_t>*>(col_pred)
-                        ->range_predicate_params()->_upper_value._ori_pred);
-        predicates.push_back(
-                static_cast<RangePredicate<decimal12_t>*>(col_pred)
-                        ->range_predicate_params()->_lower_value._ori_pred);
+        predicates.push_back(static_cast<RangePredicate<decimal12_t>*>(col_pred)
+                                     ->range_predicate_params()
+                                     ->_upper_value._ori_pred);
+        predicates.push_back(static_cast<RangePredicate<decimal12_t>*>(col_pred)
+                                     ->range_predicate_params()
+                                     ->_lower_value._ori_pred);
         break;
     case OLAP_FIELD_TYPE_DATE:
-        predicates.push_back(
-                static_cast<RangePredicate<uint24_t>*>(col_pred)
-                        ->range_predicate_params()->_upper_value._ori_pred);
-        predicates.push_back(
-                static_cast<RangePredicate<uint24_t>*>(col_pred)
-                        ->range_predicate_params()->_lower_value._ori_pred);
+        predicates.push_back(static_cast<RangePredicate<uint24_t>*>(col_pred)
+                                     ->range_predicate_params()
+                                     ->_upper_value._ori_pred);
+        predicates.push_back(static_cast<RangePredicate<uint24_t>*>(col_pred)
+                                     ->range_predicate_params()
+                                     ->_lower_value._ori_pred);
         break;
     case OLAP_FIELD_TYPE_DATETIME:
-        predicates.push_back(
-                static_cast<RangePredicate<uint64_t>*>(col_pred)
-                        ->range_predicate_params()->_upper_value._ori_pred);
-        predicates.push_back(
-                static_cast<RangePredicate<uint64_t>*>(col_pred)
-                        ->range_predicate_params()->_lower_value._ori_pred);
+        predicates.push_back(static_cast<RangePredicate<uint64_t>*>(col_pred)
+                                     ->range_predicate_params()
+                                     ->_upper_value._ori_pred);
+        predicates.push_back(static_cast<RangePredicate<uint64_t>*>(col_pred)
+                                     ->range_predicate_params()
+                                     ->_lower_value._ori_pred);
         break;
     case OLAP_FIELD_TYPE_BOOL:
-        predicates.push_back(
-                static_cast<RangePredicate<bool>*>(col_pred)
-                        ->range_predicate_params()->_upper_value._ori_pred);
-        predicates.push_back(
-                static_cast<RangePredicate<bool>*>(col_pred)
-                        ->range_predicate_params()->_lower_value._ori_pred);
+        predicates.push_back(static_cast<RangePredicate<bool>*>(col_pred)
+                                     ->range_predicate_params()
+                                     ->_upper_value._ori_pred);
+        predicates.push_back(static_cast<RangePredicate<bool>*>(col_pred)
+                                     ->range_predicate_params()
+                                     ->_lower_value._ori_pred);
         break;
     default:
         break;
@@ -972,16 +980,16 @@ Status SegmentIterator::_execute_all_compound_predicates(const vectorized::VExpr
         auto v_literal_expr = static_cast<const doris::vectorized::VLiteral*>(expr);
         _column_predicate_info->query_value = v_literal_expr->value();
     } else if (node_type == TExprNodeType::BINARY_PRED || node_type == TExprNodeType::MATCH_PRED) {
-         if (node_type == TExprNodeType::MATCH_PRED) {
-             _column_predicate_info->query_op = "match";
-         } else {
+        if (node_type == TExprNodeType::MATCH_PRED) {
+            _column_predicate_info->query_op = "match";
+        } else {
             _column_predicate_info->query_op = expr->fn().name.function_name;
-         }
+        }
         // get child condition result in compound condtions
         auto column_sign = _gen_predicate_sign(_column_predicate_info.get());
         _column_predicate_info.reset(new ColumnPredicateInfo());
-        if (_rowid_result_for_index.count(column_sign) > 0 
-                && _rowid_result_for_index[column_sign].first) {
+        if (_rowid_result_for_index.count(column_sign) > 0 &&
+            _rowid_result_for_index[column_sign].first) {
             auto apply_reuslt = _rowid_result_for_index[column_sign].second;
             _compound_predicate_execute_result.push_back(apply_reuslt);
         }
@@ -1000,7 +1008,8 @@ Status SegmentIterator::_execute_compound_fn(const std::string& function_name) {
         if (size < 2) {
             return Status::InternalError("execute and logic compute error.");
         }
-        _compound_predicate_execute_result.at(size - 2) &= _compound_predicate_execute_result.at(size - 1);
+        _compound_predicate_execute_result.at(size - 2) &=
+                _compound_predicate_execute_result.at(size - 1);
         _compound_predicate_execute_result.pop_back();
         return Status::OK();
     };
@@ -1010,7 +1019,8 @@ Status SegmentIterator::_execute_compound_fn(const std::string& function_name) {
         if (size < 2) {
             return Status::InternalError("execute or logic compute error.");
         }
-        _compound_predicate_execute_result.at(size - 2) |= _compound_predicate_execute_result.at(size - 1);
+        _compound_predicate_execute_result.at(size - 2) |=
+                _compound_predicate_execute_result.at(size - 1);
         _compound_predicate_execute_result.pop_back();
         return Status::OK();
     };
@@ -1039,8 +1049,7 @@ Status SegmentIterator::_execute_compound_fn(const std::string& function_name) {
 bool SegmentIterator::_is_index_for_compound_predicate() {
     for (auto pred : _all_compound_col_predicates) {
         if (_not_apply_index_pred.count(pred->column_id()) ||
-            (!_check_apply_by_bitmap_index(pred) && 
-            !_check_apply_by_inverted_index(pred))) {
+            (!_check_apply_by_bitmap_index(pred) && !_check_apply_by_inverted_index(pred))) {
             return false;
         }
     }
@@ -1063,8 +1072,7 @@ bool SegmentIterator::_check_apply_by_inverted_index(ColumnPredicate* pred) {
     if (_inverted_index_iterators.count(unique_id) < 1 ||
         _inverted_index_iterators[unique_id] == nullptr ||
         (pred->type() != PredicateType::MATCH && handle_by_fulltext) ||
-        pred->type() == PredicateType::IS_NULL || 
-        pred->type() == PredicateType::IS_NOT_NULL ||
+        pred->type() == PredicateType::IS_NULL || pred->type() == PredicateType::IS_NOT_NULL ||
         pred->type() == PredicateType::BF) {
         // 1. this column without inverted index
         // 2. equal or range qeury for fulltext index
@@ -1075,24 +1083,26 @@ bool SegmentIterator::_check_apply_by_inverted_index(ColumnPredicate* pred) {
     return true;
 }
 
-Status SegmentIterator::_apply_bitmap_index_in_compound(ColumnPredicate* pred, roaring::Roaring* output_result) {
+Status SegmentIterator::_apply_bitmap_index_in_compound(ColumnPredicate* pred,
+                                                        roaring::Roaring* output_result) {
     int32_t unique_id = _schema.unique_id(pred->column_id());
     RETURN_IF_ERROR(pred->evaluate(_bitmap_index_iterators[unique_id], _segment->num_rows(),
-                                       output_result));
+                                   output_result));
     return Status::OK();
 }
 
-
-Status SegmentIterator::_apply_inverted_index_in_compound(ColumnPredicate* pred, roaring::Roaring* output_result) {
+Status SegmentIterator::_apply_inverted_index_in_compound(ColumnPredicate* pred,
+                                                          roaring::Roaring* output_result) {
     int32_t unique_id = _schema.unique_id(pred->column_id());
-    RETURN_IF_ERROR(pred->evaluate(_schema, _inverted_index_iterators[unique_id], num_rows(), output_result));
+    RETURN_IF_ERROR(pred->evaluate(_schema, _inverted_index_iterators[unique_id], num_rows(),
+                                   output_result));
     return Status::OK();
 }
 
 Status SegmentIterator::_apply_index_in_compound() {
     for (auto pred : _all_compound_col_predicates) {
         auto pred_type = pred->type();
-        bool is_support_in_compound = 
+        bool is_support_in_compound =
                 pred_type == PredicateType::EQ || pred_type == PredicateType::NE ||
                 pred_type == PredicateType::LT || pred_type == PredicateType::LE ||
                 pred_type == PredicateType::GT || pred_type == PredicateType::GE ||
@@ -1114,8 +1124,9 @@ Status SegmentIterator::_apply_index_in_compound() {
         }
 
         if (!res.ok()) {
-            if ((res.precise_code() == OLAP_ERR_INVERTED_INDEX_FILE_NOT_FOUND && pred->type() != PredicateType::MATCH)
-                    || res.precise_code() == OLAP_ERR_INVERTED_INDEX_HIT_LIMIT) {
+            if ((res.precise_code() == OLAP_ERR_INVERTED_INDEX_FILE_NOT_FOUND &&
+                 pred->type() != PredicateType::MATCH) ||
+                res.precise_code() == OLAP_ERR_INVERTED_INDEX_HIT_LIMIT) {
                 _not_apply_index_pred.insert(pred->column_id());
                 continue;
             }
@@ -1126,8 +1137,7 @@ Status SegmentIterator::_apply_index_in_compound() {
         }
 
         std::string pred_sign = _gen_predicate_sign(pred);
-        _rowid_result_for_index.emplace(
-                std::make_pair(pred_sign, std::make_pair(true, bitmap)));
+        _rowid_result_for_index.emplace(std::make_pair(pred_sign, std::make_pair(true, bitmap)));
     }
 
     for (auto pred : _all_compound_col_predicates) {
@@ -1148,18 +1158,16 @@ std::string SegmentIterator::_gen_predicate_sign(ColumnPredicate* predicate) {
     auto column_desc = _schema.column(predicate->column_id());
     auto pred_type = predicate->type();
     auto predicate_params = predicate->predicate_params();
-    pred_sign = BeConsts::BLOCK_TEMP_COLUMN_PREFIX + column_desc->name() + "_"
-                + predicate->pred_type_string(pred_type) + "_"
-                + predicate_params->value;
+    pred_sign = BeConsts::BLOCK_TEMP_COLUMN_PREFIX + column_desc->name() + "_" +
+                predicate->pred_type_string(pred_type) + "_" + predicate_params->value;
 
     return pred_sign;
 }
 
 std::string SegmentIterator::_gen_predicate_sign(ColumnPredicateInfo* predicate_info) {
     std::string pred_sign;
-    pred_sign = BeConsts::BLOCK_TEMP_COLUMN_PREFIX + predicate_info->column_name + "_" 
-                + predicate_info->query_op + "_"
-                + predicate_info->query_value;
+    pred_sign = BeConsts::BLOCK_TEMP_COLUMN_PREFIX + predicate_info->column_name + "_" +
+                predicate_info->query_op + "_" + predicate_info->query_value;
     return pred_sign;
 }
 
@@ -1171,8 +1179,8 @@ Status SegmentIterator::_init_return_column_iterators() {
         int32_t unique_id = _opts.tablet_schema->column(cid).unique_id();
         if (_opts.tablet_schema->column_by_uid(unique_id).name() == BeConsts::ROWID_COL) {
             VLOG_DEBUG << "SegmentIterator using RowIdColumnIterator to get rowids";
-            _column_iterators[unique_id] = new RowIdColumnIterator(
-                        _opts.tablet_id, _opts.rowset_id, _segment->id());
+            _column_iterators[unique_id] =
+                    new RowIdColumnIterator(_opts.tablet_id, _opts.rowset_id, _segment->id());
             continue;
         }
 
@@ -1183,10 +1191,12 @@ Status SegmentIterator::_init_return_column_iterators() {
             iter_opts.stats = _opts.stats;
             iter_opts.use_page_cache = _opts.use_page_cache;
             iter_opts.file_reader = _file_reader.get();
+
             iter_opts.query_id = _opts.query_id;
             iter_opts.kept_in_memory = _opts.kept_in_memory;
             iter_opts.is_persistent = _opts.is_persistent;
             iter_opts.use_disposable_cache = _opts.use_disposable_cache;
+
             RETURN_IF_ERROR(_column_iterators[unique_id]->init(iter_opts));
         }
     }
@@ -1347,7 +1357,7 @@ Status SegmentIterator::_lookup_ordinal_from_pk_index(const RowCursor& key, bool
         *rowid += 1;
     }
     return Status::OK();
-}   
+}
 
 // seek to the row and load that row to _key_cursor
 Status SegmentIterator::_seek_and_peek(rowid_t rowid) {
@@ -1522,7 +1532,7 @@ Status SegmentIterator::next_batch(RowBlockV2* block) {
     return Status::OK();
 }
 
-/* ---------------------- for vecterization implementation  ---------------------- */
+/* ---------------------- for vectorization implementation  ---------------------- */
 
 /**
  *  For storage layer data type, can be measured from two perspectives:
@@ -1532,10 +1542,10 @@ Status SegmentIterator::next_batch(RowBlockV2* block) {
  *   If a type can be read fast, we can try to eliminate Lazy Materialization, because we think for this type, seek cost > read cost.
  *   This is an estimate, if we want more precise cost, statistics collection is necessary(this is a todo).
  *   In short, when returned non-pred columns contains string/hll/bitmap, we using Lazy Materialization.
- *   Otherwish, we disable it.
+ *   Otherwise, we disable it.
  *    
  *   When Lazy Materialization enable, we need to read column at least two times.
- *   Firt time to read Pred col, second time to read non-pred.
+ *   First time to read Pred col, second time to read non-pred.
  *   Here's an interesting question to research, whether read Pred col once is the best plan.
  *   (why not read Pred col twice or more?)
  *
@@ -1545,7 +1555,7 @@ Status SegmentIterator::next_batch(RowBlockV2* block) {
  *  2 Whether the predicate type can be evaluate in a fast way(using SIMD to eval pred)
  *    Such as integer type and float type, they can be eval fast.
  *    But for BloomFilter/string/date, they eval slow.
- *    If a type can be eval fast, we use vectorizaion to eval it.
+ *    If a type can be eval fast, we use vectorization to eval it.
  *    Otherwise, we use short-circuit to eval it.
  * 
  *  
@@ -1580,8 +1590,8 @@ void SegmentIterator::_vec_init_lazy_materialization() {
     //  all rows should be read, so runtime predicate will reduce rows for topn node
     if (_opts.use_topn_opt &&
         !(_opts.read_orderby_key_columns != nullptr && !_opts.read_orderby_key_columns->empty())) {
-        auto & runtime_predicate =
-            _opts.runtime_state->get_query_fragments_ctx()->get_runtime_predicate();
+        auto& runtime_predicate =
+                _opts.runtime_state->get_query_fragments_ctx()->get_runtime_predicate();
         _runtime_predicate = runtime_predicate.get_predictate();
         if (_runtime_predicate) {
             _col_predicates.push_back(_runtime_predicate.get());
@@ -1726,7 +1736,7 @@ void SegmentIterator::_vec_init_char_column_id() {
 }
 
 bool SegmentIterator::_prune_column(ColumnId cid, vectorized::MutableColumnPtr& column,
-                 bool fill_defaults, size_t num_of_defaults) {
+                                    bool fill_defaults, size_t num_of_defaults) {
     if (_need_read_data(cid)) {
         return false;
     }
@@ -1734,8 +1744,7 @@ bool SegmentIterator::_prune_column(ColumnId cid, vectorized::MutableColumnPtr& 
         return true;
     }
     if (column->is_nullable()) {
-        auto nullable_col_ptr =
-                reinterpret_cast<vectorized::ColumnNullable*>(column.get());
+        auto nullable_col_ptr = reinterpret_cast<vectorized::ColumnNullable*>(column.get());
         nullable_col_ptr->get_null_map_column().insert_many_defaults(num_of_defaults);
         nullable_col_ptr->get_nested_column_ptr()->insert_many_defaults(num_of_defaults);
     } else {
@@ -1828,7 +1837,7 @@ Status SegmentIterator::_read_columns_by_index(uint32_t nrows_read_limit, uint32
             nrows_read += rows_to_read;
         }
 
-        _split_row_ranges.emplace_back(std::pair{range_from, range_to});
+        _split_row_ranges.emplace_back(std::pair {range_from, range_to});
         // if _opts.read_orderby_key_reverse is true, only read one range for fast reverse purpose
     } while (nrows_read < nrows_read_limit && !_opts.read_orderby_key_reverse);
     return Status::OK();
@@ -2007,7 +2016,7 @@ Status SegmentIterator::next_batch(vectorized::Block* block) {
         // step 1: evaluate vectorization predicate
         selected_size = _evaluate_vectorization_predicate(sel_rowid_idx, selected_size);
 
-        // step 2: evaluate short ciruit predicate
+        // step 2: evaluate short circuit predicate
         // todo(wb) research whether need to read short predicate after vectorization evaluation
         //          to reduce cost of read short circuit columns.
         //          In SSB test, it make no difference; So need more scenarios to test
@@ -2081,12 +2090,13 @@ Status SegmentIterator::next_batch(vectorized::Block* block) {
     return Status::OK();
 }
 
-void SegmentIterator::_output_index_return_column(uint16_t* sel_rowid_idx, uint16_t select_size, vectorized::Block* block) {
+void SegmentIterator::_output_index_return_column(uint16_t* sel_rowid_idx, uint16_t select_size,
+                                                  vectorized::Block* block) {
     SCOPED_RAW_TIMER(&_opts.stats->output_index_return_column_timer);
     if (block->rows() == 0) {
         return;
     }
-    
+
     for (auto column_sign : _rowid_result_for_index) {
         block->insert({vectorized::ColumnUInt8::create(),
                        std::make_shared<vectorized::DataTypeUInt8>(), column_sign.first});
@@ -2096,14 +2106,15 @@ void SegmentIterator::_output_index_return_column(uint16_t* sel_rowid_idx, uint1
                     vectorized::DataTypeUInt8().create_column_const(block->rows(), 1u);
             continue;
         }
-        _build_index_return_column(sel_rowid_idx, select_size, block, column_sign.first, column_sign.second.second);
+        _build_index_return_column(sel_rowid_idx, select_size, block, column_sign.first,
+                                   column_sign.second.second);
     }
 }
 
 void SegmentIterator::_build_index_return_column(uint16_t* sel_rowid_idx, uint16_t select_size,
-                                    vectorized::Block* block, 
-                                    const std::string& index_result_column_sign,
-                                    const roaring::Roaring& index_result) {
+                                                 vectorized::Block* block,
+                                                 const std::string& index_result_column_sign,
+                                                 const roaring::Roaring& index_result) {
     auto index_result_column = vectorized::ColumnUInt8::create();
     vectorized::ColumnUInt8::Container& vec_match_pred = index_result_column->get_data();
     vec_match_pred.resize(block->rows());
@@ -2112,8 +2123,8 @@ void SegmentIterator::_build_index_return_column(uint16_t* sel_rowid_idx, uint16
     size_t idx_in_selected = 0;
     for (auto origin_row_range : _split_row_ranges) {
         for (size_t rowid = origin_row_range.first; rowid < origin_row_range.second; ++rowid) {
-            if (sel_rowid_idx == nullptr ||
-                    (idx_in_selected < select_size && idx_in_row_range == sel_rowid_idx[idx_in_selected])) {
+            if (sel_rowid_idx == nullptr || (idx_in_selected < select_size &&
+                                             idx_in_row_range == sel_rowid_idx[idx_in_selected])) {
                 if (index_result.contains(rowid)) {
                     vec_match_pred[idx_in_block++] = true;
                 } else {
@@ -2151,6 +2162,8 @@ void SegmentIterator::_convert_dict_code_for_predicate_if_necessary_impl(
         ColumnPredicate* predicate) {
     auto& column = _current_return_columns[predicate->column_id()];
     auto* col_ptr = column.get();
+    column->set_rowset_segment_id({_segment->rowset_id(), _segment->id()});
+
     if (PredicateTypeTraits::is_range(predicate->type())) {
         col_ptr->convert_dict_codes_if_necessary();
     } else if (PredicateTypeTraits::is_bloom_filter(predicate->type())) {
@@ -2203,14 +2216,17 @@ Status SegmentIterator::current_block_row_locations(std::vector<RowLocation>* bl
  *      column C : `C like '%ye%'` not pushed down, `C > 'aa'` pushed down, only `C > 'aa'` applyed by index,
  *                  call _check_column_pred_all_push_down will return false.
 */
-bool SegmentIterator::_check_column_pred_all_push_down(ColumnPredicate* predicate, bool in_compound) {
+bool SegmentIterator::_check_column_pred_all_push_down(ColumnPredicate* predicate,
+                                                       bool in_compound) {
     if (_remaining_vconjunct_root == nullptr) {
         return true;
     }
-    std::unordered_map<std::string, std::vector<ColumnPredicateInfo>> column_pred_in_remaining_vconjunct;
-    auto column_name =  _schema.column(predicate->column_id())->name();
+    std::unordered_map<std::string, std::vector<ColumnPredicateInfo>>
+            column_pred_in_remaining_vconjunct;
+    auto column_name = _schema.column(predicate->column_id())->name();
     _column_predicate_info.reset(new ColumnPredicateInfo());
-    _find_pred_in_remaining_vconjunct_root(_remaining_vconjunct_root, &column_pred_in_remaining_vconjunct[column_name]);
+    _find_pred_in_remaining_vconjunct_root(_remaining_vconjunct_root,
+                                           &column_pred_in_remaining_vconjunct[column_name]);
 
     if (in_compound) {
         auto preds_in_remaining_vconjuct = column_pred_in_remaining_vconjunct[column_name];
@@ -2229,7 +2245,7 @@ bool SegmentIterator::_check_column_pred_all_push_down(ColumnPredicate* predicat
 }
 
 void SegmentIterator::_find_pred_in_remaining_vconjunct_root(
-                    const vectorized::VExpr* expr, std::vector<ColumnPredicateInfo>* pred_infos) {
+        const vectorized::VExpr* expr, std::vector<ColumnPredicateInfo>* pred_infos) {
     if (expr == nullptr) {
         return;
     }

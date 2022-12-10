@@ -35,8 +35,9 @@ public:
 
     Status close() override { return _remote_file_reader->close(); }
 
-    Status read_at(size_t offset, Slice result, size_t* bytes_read,
-                   IOState* state = nullptr) override;
+
+    Status read_at(size_t offset, Slice result, const IOContext& io_ctx,
+                   size_t* bytes_read) override;
 
     const Path& path() const override { return _remote_file_reader->path(); }
 
@@ -45,8 +46,6 @@ public:
     bool closed() const override { return _remote_file_reader->closed(); }
 
     const Path& cache_dir() const override { return _cache_dir; }
-
-    size_t cache_file_size() const override { return _cache_file_size; }
 
     io::FileReaderSPtr remote_file_reader() const override { return _remote_file_reader; }
 
@@ -61,12 +60,10 @@ private:
 
 private:
     Path _cache_dir;
-    size_t _cache_file_size;
     int64_t _alive_time_sec;
     io::FileReaderSPtr _remote_file_reader;
 
     std::shared_mutex _cache_lock;
-    int64_t _last_match_time;
     io::FileReaderSPtr _cache_file_reader;
 };
 

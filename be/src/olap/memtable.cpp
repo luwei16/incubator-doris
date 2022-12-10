@@ -140,7 +140,7 @@ MemTable::~MemTable() {
     if (_vec_skip_list != nullptr && keys_type() != KeysType::DUP_KEYS) {
         VecTable::Iterator it(_vec_skip_list.get());
         for (it.SeekToFirst(); it.Valid(); it.Next()) {
-            // We should release agg_places here, because they are not relesed when a
+            // We should release agg_places here, because they are not released when a
             // load is canceled.
             for (size_t i = _schema->num_key_columns(); i < _schema->num_columns(); ++i) {
                 auto function = _agg_functions[i];
@@ -157,7 +157,7 @@ MemTable::~MemTable() {
     _flush_mem_tracker->set_consumption(0);
     DCHECK_EQ(_insert_mem_tracker->consumption(), 0)
             << std::endl
-            << MemTracker::log_usage(_insert_mem_tracker->make_snapshot(0));
+            << MemTracker::log_usage(_insert_mem_tracker->make_snapshot());
     DCHECK_EQ(_flush_mem_tracker->consumption(), 0);
 }
 
@@ -436,7 +436,7 @@ Status MemTable::_generate_delete_bitmap() {
 }
 
 Status MemTable::flush() {
-    SCOPED_CONSUME_MEM_TRACKER(_flush_mem_tracker.get());
+    SCOPED_CONSUME_MEM_TRACKER(_flush_mem_tracker);
     VLOG_CRITICAL << "begin to flush memtable for tablet: " << tablet_id()
                   << ", memsize: " << memory_usage() << ", rows: " << _rows;
     int64_t duration_ns = 0;

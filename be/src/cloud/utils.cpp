@@ -25,7 +25,7 @@ CloudTabletMgr* tablet_mgr() {
     return &tablet_mgr;
 }
 
-io::FileSystemPtr latest_fs() {
+io::FileSystemSPtr latest_fs() {
     return StorageEngine::instance()->latest_fs();
 }
 

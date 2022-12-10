@@ -42,7 +42,6 @@ add_library(Olap STATIC
     generic_iterators.cpp
     hll.cpp
     inverted_index_parser.cpp
-    bloom_filter_predicate.cpp
     like_column_predicate.cpp
     key_coder.cpp
     lru_cache.cpp
@@ -51,7 +50,8 @@ add_library(Olap STATIC
     merger.cpp
     null_predicate.cpp
     olap_meta.cpp
-    olap_server.cpp
+    # TODO(liuchangliang)
+    # olap_server.cpp
     options.cpp
     page_cache.cpp
     push_handler.cpp
@@ -97,7 +97,8 @@ add_library(Olap STATIC
     rowset/segment_v2/page_io.cpp
     rowset/segment_v2/binary_dict_page.cpp
     rowset/segment_v2/binary_prefix_page.cpp
-    rowset/segment_v2/segment.cpp
+    # TODO(liuchangliang)
+    # rowset/segment_v2/segment.cpp
     rowset/segment_v2/segment_iterator.cpp
     rowset/segment_v2/empty_segment_iterator.cpp
     rowset/segment_v2/segment_writer.cpp
@@ -122,3 +123,7 @@ add_library(Olap STATIC
     segment_loader.cpp
     storage_policy_mgr.cpp
 )
+
+if (NOT USE_MEM_TRACKER)
+    target_compile_options(Olap PRIVATE -Wno-unused-lambda-capture)
+endif()

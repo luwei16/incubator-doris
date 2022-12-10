@@ -69,6 +69,10 @@ public:
 
     bool need_materialize_tuple() const { return _materialize_tuple; }
 
+    const std::vector<bool>& get_convert_nullable_flags() const {
+        return _need_convert_to_nullable_flags;
+    }
+
 private:
     // Create two VExprContexts for evaluating over the TupleRows.
     std::vector<VExprContext*> _lhs_ordering_expr_ctxs;
@@ -82,6 +86,10 @@ private:
     // One expr per slot in the materialized tuple. Valid only if
     // _materialize_tuple is true.
     std::vector<VExprContext*> _sort_tuple_slot_expr_ctxs;
+
+    // for some reason, _sort_tuple_slot_expr_ctxs is not-null but _lhs_ordering_expr_ctxs is nullable
+    // this flag list would be used to convert column to nullable.
+    std::vector<bool> _need_convert_to_nullable_flags;
 
     // Initialize directly from already-created VExprContexts. Callers should manually call
     // Prepare(), Open(), and Close() on input VExprContexts (instead of calling the

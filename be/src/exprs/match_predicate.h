@@ -77,6 +77,12 @@ public:
 private:
     InvertedIndexQueryType _to_inverted_index_query_type(MatchType match_type) const;
 
+    std::string _debug_string() override {
+        std::string info =
+                "MatchPredicate(" + type_to_string(type()) + ")";
+        return info;
+    }
+
 private:
     std::string _value;
     MatchType _match_type;

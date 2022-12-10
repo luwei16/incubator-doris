@@ -23,12 +23,13 @@
 namespace doris {
 
 class DorisNodesInfo;
+class RuntimeState;
     
 // fetch rows by global rowid
 // tablet_id/rowset_name/segment_id/ordinal_id
 class RowIDFetcher {
 public:
-    RowIDFetcher(const TupleDescriptor* desc): _tuple_desc(desc)  {}
+    RowIDFetcher(const TupleDescriptor* desc, RuntimeState* st): _tuple_desc(desc), _st(st) {}
     Status init(DorisNodesInfo* nodes_info);
     Status fetch(const vectorized::ColumnPtr& row_ids, vectorized::MutableBlock* block);
 private:
@@ -36,6 +37,7 @@ private:
 
     std::vector<std::shared_ptr<PBackendService_Stub>> _stubs;
     const TupleDescriptor* _tuple_desc;
+    RuntimeState* _st;
 };
 
 } // namesapce doris

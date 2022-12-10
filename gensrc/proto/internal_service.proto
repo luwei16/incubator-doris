@@ -540,11 +540,24 @@ message PMultiGetRequest {
     repeated RowId rowids = 1;
     optional PTupleDescriptor desc = 2;
     repeated PSlotDescriptor slots = 3;
+    // for compability
+    optional int32 be_exec_version = 4;
 };
 
 message PMultiGetResponse {
     optional PBlock block = 1;
     optional PStatus status = 2;
+}
+
+message PFetchTableSchemaRequest {
+  optional bytes file_scan_range = 1;
+};
+
+message PFetchTableSchemaResult {
+  optional PStatus status = 1;
+  optional int32 column_nums = 2;
+  repeated string column_names = 3;
+  repeated PTypeDesc column_types = 4;
 };
 
 service PBackendService {
@@ -581,5 +594,6 @@ service PBackendService {
     rpc request_slave_tablet_pull_rowset(PTabletWriteSlaveRequest) returns (PTabletWriteSlaveResult);
     rpc response_slave_tablet_pull_rowset(PTabletWriteSlaveDoneRequest) returns (PTabletWriteSlaveDoneResult);
     rpc multiget_data(PMultiGetRequest) returns (PMultiGetResponse);
+    rpc fetch_table_schema(PFetchTableSchemaRequest) returns (PFetchTableSchemaResult);
 };
 

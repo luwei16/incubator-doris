@@ -17,19 +17,24 @@
 
 #pragma once
 
+#ifdef CLOUD_MODE
+#include "cloud/olap/storage_engine.h"
+
+#else
 #include <cstdint>
 #include <functional>
 #include <memory> // for unique_ptr
 #include <string>
 #include <vector>
 
+#include "cloud/io/file_system.h"
 #include "common/status.h" // Status
 #include "gen_cpp/segment_v2.pb.h"
 #include "gutil/macros.h"
-#include "io/fs/file_system.h"
 #include "olap/iterators.h"
 #include "olap/olap_common.h"
 #include "olap/primary_key_index.h"
+#include "olap/rowset/segment_v2/column_reader.h" // ColumnReader
 #include "olap/rowset/segment_v2/page_handle.h"
 #include "olap/short_key_index.h"
 #include "olap/tablet_meta.h"
@@ -65,8 +70,8 @@ using SegmentSharedPtr = std::shared_ptr<Segment>;
 class Segment : public std::enable_shared_from_this<Segment> {
 public:
     static Status open(io::FileSystem* fs, const std::string& path, const std::string& cache_path,
-                       uint32_t segment_id, TabletSchemaSPtr tablet_schema,
-                       std::shared_ptr<Segment>* output, metrics_hook = nullptr);
+                       uint32_t segment_id, RowsetId rowset_id, TabletSchemaSPtr tablet_schema,
+                       std::shared_ptr<Segment>* output, metrics_hook metrics = nullptr);
 
     ~Segment();
 
@@ -75,6 +80,8 @@ public:
 
     uint64_t id() const { return _segment_id; }
 
+    RowsetId rowset_id() const { return _rowset_id; }
+
     uint32_t num_rows() const { return _footer.num_rows(); }
 
     Status new_column_iterator(const TabletColumn& tablet_column, ColumnIterator** iter);
@@ -82,8 +89,7 @@ public:
     Status new_bitmap_index_iterator(const TabletColumn& tablet_column, BitmapIndexIterator** iter);
 
     Status new_inverted_index_iterator(const TabletColumn& tablet_column,
-                                       const TabletIndex* index_meta,
-                                            InvertedIndexIterator** iter);
+                                       const TabletIndex* index_meta, InvertedIndexIterator** iter);
 
     const ShortKeyIndexDecoder* get_short_key_index() const {
         DCHECK(_load_index_once.has_called() && _load_index_once.stored_result().ok());
@@ -117,7 +123,7 @@ public:
 
 private:
     DISALLOW_COPY_AND_ASSIGN(Segment);
-    Segment(uint32_t segment_id, TabletSchemaSPtr tablet_schema);
+    Segment(uint32_t segment_id, RowsetId rowset_id, TabletSchemaSPtr tablet_schema);
     // open segment file and read the minimum amount of necessary information (footer)
     Status _open();
     Status _parse_footer();
@@ -129,6 +135,7 @@ private:
     io::FileReaderSPtr _file_reader;
 
     uint32_t _segment_id;
+    RowsetId _rowset_id;
     TabletSchemaSPtr _tablet_schema;
 
     int64_t _meta_mem_usage;
@@ -159,3 +166,4 @@ private:
 
 } // namespace segment_v2
 } // namespace doris
+#endif

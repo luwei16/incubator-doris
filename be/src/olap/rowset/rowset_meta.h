@@ -22,12 +22,12 @@
 #include <string>
 #include <vector>
 
+#include "cloud/io/file_system.h"
+#include "cloud/io/file_system_map.h"
+#include "cloud/io/local_file_system.h"
 #include "common/logging.h"
 #include "gen_cpp/olap_file.pb.h"
 #include "google/protobuf/util/message_differencer.h"
-#include "io/fs/file_system.h"
-#include "io/fs/file_system_map.h"
-#include "io/fs/local_file_system.h"
 #include "json2pb/json_to_pb.h"
 #include "json2pb/pb_to_json.h"
 #include "olap/olap_common.h"
@@ -61,6 +61,9 @@ public:
             _schema = TabletSchemaCache::instance()->insert(
                     rowset_meta_pb.tablet_schema().SerializeAsString());
         }
+        // Release ownership of TabletSchemaPB from `rowset_meta_pb` and then set it back to `rowset_meta_pb`,
+        // this won't break const semantics of `rowset_meta_pb`, because `rowset_meta_pb` is not changed
+        // before and after call this method.
         auto& mut_rowset_meta_pb = const_cast<RowsetMetaPB&>(rowset_meta_pb);
         auto schema = mut_rowset_meta_pb.release_tablet_schema();
         _rowset_meta_pb = mut_rowset_meta_pb;
@@ -88,19 +91,19 @@ public:
     }
 
     // This method may return nullptr.
-    io::FileSystem* fs() {
+    const io::FileSystemSPtr& fs() {
         if (!_fs) {
             if (is_local()) {
-                return io::global_local_filesystem();
+                _fs = io::global_local_filesystem();
             } else {
                 _fs = io::FileSystemMap::instance()->get(resource_id());
                 LOG_IF(WARNING, !_fs) << "Cannot get file system: " << resource_id();
             }
         }
-        return _fs.get();
+        return _fs;
     }
 
-    void set_fs(io::FileSystemPtr fs) {
+    void set_fs(io::FileSystemSPtr fs) {
         if (fs && fs->type() != io::FileSystemType::LOCAL) {
             _rowset_meta_pb.set_resource_id(fs->resource_id());
         }
@@ -137,6 +140,7 @@ public:
     int64_t txn_id() const { return _rowset_meta_pb.txn_id(); }
 
     void set_txn_id(int64_t txn_id) { _rowset_meta_pb.set_txn_id(txn_id); }
+
     void set_txn_expiration(int64_t expiration) { _rowset_meta_pb.set_txn_expiration(expiration); }
 
     int32_t tablet_schema_hash() const { return _rowset_meta_pb.tablet_schema_hash(); }
@@ -407,12 +411,12 @@ private:
     RowsetMetaPB _rowset_meta_pb;
     TabletSchemaSPtr _schema = nullptr;
     RowsetId _rowset_id;
-    io::FileSystemPtr _fs;
 
     // these fields will be used in some statistics
     int64_t _table_id = 0;
     int64_t _index_id = 0;
 
+    io::FileSystemSPtr _fs;
     bool _is_removed_from_rowset_meta = false;
 };
 

@@ -38,6 +38,7 @@ import org.apache.doris.common.DdlException;
 import org.apache.doris.common.FeConstants;
 import org.apache.doris.common.UserException;
 import org.apache.doris.common.util.BrokerUtil;
+import org.apache.doris.common.util.Util;
 import org.apache.doris.common.util.VectorizedUtil;
 import org.apache.doris.load.BrokerFileGroup;
 import org.apache.doris.load.Load;
@@ -95,6 +96,8 @@ public class BrokerScanNode extends LoadScanNode {
     private static final TBrokerFileStatusComparator T_BROKER_FILE_STATUS_COMPARATOR
             = new TBrokerFileStatusComparator();
 
+    private final Random random = new Random(System.currentTimeMillis());
+
     public static class TBrokerFileStatusComparator implements Comparator<TBrokerFileStatus> {
         @Override
         public int compare(TBrokerFileStatus o1, TBrokerFileStatus o2) {
@@ -106,8 +109,6 @@ public class BrokerScanNode extends LoadScanNode {
             return 0;
         }
     }
-
-    private final Random random = new Random(System.currentTimeMillis());
 
     // File groups need to
     private List<TScanRangeLocations> locationsList;
@@ -483,15 +484,10 @@ public class BrokerScanNode extends LoadScanNode {
         // broker scan node is used for query or load
         BeSelectionPolicy policy = new BeSelectionPolicy.Builder().needQueryAvailable().needLoadAvailable()
                 .addTags(tags).build();
-        for (Backend be : Env.getCurrentSystemInfo().getIdToBackend().values()) {
-            if (policy.isMatch(be)) {
-                backends.add(be);
-            }
-        }
+        backends.addAll(policy.getCandidateBackends(Env.getCurrentSystemInfo().getIdToBackend().values()));
         if (backends.isEmpty()) {
             throw new UserException("No available backends");
         }
-        Collections.shuffle(backends, random);
     }
 
     private void assignCloudBackends() throws UserException {
@@ -550,32 +546,12 @@ public class BrokerScanNode extends LoadScanNode {
                     || fileFormat.toLowerCase().equals(FeConstants.csv_with_names_and_types)
                     // TODO: Add TEXTFILE to TFileFormatType to Support hive text file format.
                     || fileFormat.toLowerCase().equals(FeConstants.text)) {
-                return getCsvFormatType(path);
+                return Util.getFileFormatType(path);
             } else {
                 throw new UserException("Not supported file format: " + fileFormat);
             }
         }
-
-        return getCsvFormatType(path);
-    }
-
-    private TFileFormatType getCsvFormatType(String path) {
-        String lowerCasePath = path.toLowerCase();
-        if (lowerCasePath.endsWith(".parquet") || lowerCasePath.endsWith(".parq")) {
-            return TFileFormatType.FORMAT_PARQUET;
-        } else if (lowerCasePath.endsWith(".gz")) {
-            return TFileFormatType.FORMAT_CSV_GZ;
-        } else if (lowerCasePath.endsWith(".bz2")) {
-            return TFileFormatType.FORMAT_CSV_BZ2;
-        } else if (lowerCasePath.endsWith(".lz4")) {
-            return TFileFormatType.FORMAT_CSV_LZ4FRAME;
-        } else if (lowerCasePath.endsWith(".lzo")) {
-            return TFileFormatType.FORMAT_CSV_LZOP;
-        } else if (lowerCasePath.endsWith(".deflate")) {
-            return TFileFormatType.FORMAT_CSV_DEFLATE;
-        } else {
-            return TFileFormatType.FORMAT_CSV_PLAIN;
-        }
+        return Util.getFileFormatType(path);
     }
 
     public String getHostUri() throws UserException {

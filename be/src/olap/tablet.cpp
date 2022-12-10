@@ -37,12 +37,12 @@
 #include <shared_mutex>
 #include <string>
 
+#include "cloud/io/path.h"
+#include "cloud/io/remote_file_system.h"
 #include "cloud/utils.h"
 #include "common/config.h"
 #include "common/logging.h"
 #include "common/status.h"
-#include "io/fs/path.h"
-#include "io/fs/remote_file_system.h"
 #include "olap/base_compaction.h"
 #include "olap/base_tablet.h"
 #include "olap/cumulative_compaction.h"
@@ -269,7 +269,7 @@ RowsetSharedPtr Tablet::get_rowset(const RowsetId& rowset_id) {
         if (stale_version_rowset.second->rowset_id() == rowset_id) {
             return stale_version_rowset.second;
         }
-    }   
+    }
     return nullptr;
 }
 
@@ -453,11 +453,16 @@ const RowsetSharedPtr Tablet::rowset_with_max_version() const {
 
 RowsetMetaSharedPtr Tablet::rowset_meta_with_max_schema_version(
         const std::vector<RowsetMetaSharedPtr>& rowset_metas) {
-    return *std::max_element(rowset_metas.begin(), rowset_metas.end(),
-                             [](const RowsetMetaSharedPtr& a, const RowsetMetaSharedPtr& b) {
-                                 return a->tablet_schema()->schema_version() <
-                                        b->tablet_schema()->schema_version();
-                             });
+    return *std::max_element(
+            rowset_metas.begin(), rowset_metas.end(),
+            [](const RowsetMetaSharedPtr& a, const RowsetMetaSharedPtr& b) {
+                return !a->tablet_schema()
+                               ? true
+                               : (!b->tablet_schema()
+                                          ? false
+                                          : a->tablet_schema()->schema_version() <
+                                                    b->tablet_schema()->schema_version());
+            });
 }
 
 RowsetSharedPtr Tablet::_rowset_with_largest_size() {
@@ -1502,13 +1507,13 @@ void Tablet::get_compaction_status(std::string* json_result) {
         if (ver.first != last_version + 1) {
             rapidjson::Value miss_value;
             miss_value.SetString(
-                    strings::Substitute("[$0-$1]", last_version + 1, ver.first).c_str(),
+                    strings::Substitute("[$0-$1]", last_version + 1, ver.first - 1).c_str(),
                     missing_versions_arr.GetAllocator());
             missing_versions_arr.PushBack(miss_value, missing_versions_arr.GetAllocator());
         }
         rapidjson::Value value;
-        std::string disk_size =
-                PrettyPrinter::print(rowsets[i]->rowset_meta()->total_disk_size(), TUnit::BYTES);
+        std::string disk_size = PrettyPrinter::print(
+                static_cast<uint64_t>(rowsets[i]->rowset_meta()->total_disk_size()), TUnit::BYTES);
         std::string version_str = strings::Substitute(
                 "[$0-$1] $2 $3 $4 $5 $6", ver.first, ver.second, rowsets[i]->num_segments(),
                 (delete_flags[i] ? "DELETE" : "DATA"),
@@ -1528,7 +1533,8 @@ void Tablet::get_compaction_status(std::string* json_result) {
         const Version& ver = stale_rowsets[i]->version();
         rapidjson::Value value;
         std::string disk_size = PrettyPrinter::print(
-                stale_rowsets[i]->rowset_meta()->total_disk_size(), TUnit::BYTES);
+                static_cast<uint64_t>(stale_rowsets[i]->rowset_meta()->total_disk_size()),
+                TUnit::BYTES);
         std::string version_str = strings::Substitute(
                 "[$0-$1] $2 $3 $4", ver.first, ver.second, stale_rowsets[i]->num_segments(),
                 stale_rowsets[i]->rowset_id().to_string(), disk_size);
@@ -1896,8 +1902,12 @@ Status Tablet::create_initial_rowset(const int64_t req_version) {
     do {
         // there is no data in init rowset, so overlapping info is unknown.
         std::unique_ptr<RowsetWriter> rs_writer;
-        res = create_rowset_writer(version, VISIBLE, OVERLAP_UNKNOWN, tablet_schema(), -1, -1,
-                                   &rs_writer);
+        RowsetWriterContext context;
+        context.version = version;
+        context.rowset_state = VISIBLE;
+        context.segments_overlap = OVERLAP_UNKNOWN;
+        context.tablet_schema = tablet_schema();
+        res = create_rowset_writer(context, &rs_writer);
 
         if (!res.ok()) {
             LOG(WARNING) << "failed to init rowset writer for tablet " << full_name();
@@ -1927,43 +1937,10 @@ Status Tablet::create_initial_rowset(const int64_t req_version) {
     return res;
 }
 
-Status Tablet::create_rowset_writer(const Version& version, const RowsetStatePB& rowset_state,
-                                    const SegmentsOverlapPB& overlap,
-                                    TabletSchemaSPtr tablet_schema, int64_t oldest_write_timestamp,
-                                    int64_t newest_write_timestamp,
+Status Tablet::create_rowset_writer(RowsetWriterContext& context,
                                     std::unique_ptr<RowsetWriter>* rowset_writer) {
-    RowsetWriterContext context;
-    context.version = version;
-    context.rowset_state = rowset_state;
-    context.segments_overlap = overlap;
-    context.oldest_write_timestamp = oldest_write_timestamp;
-    context.newest_write_timestamp = newest_write_timestamp;
-    context.tablet_schema = tablet_schema;
     _init_context_common_fields(context);
     return RowsetFactory::create_rowset_writer(context, rowset_writer);
-}
-
-Status Tablet::create_rowset_writer(const int64_t& txn_id, const PUniqueId& load_id,
-                                    const RowsetStatePB& rowset_state,
-                                    const SegmentsOverlapPB& overlap,
-                                    TabletSchemaSPtr tablet_schema,
-                                    std::unique_ptr<RowsetWriter>* rowset_writer) {
-    RowsetWriterContext context;
-    context.txn_id = txn_id;
-    context.load_id = load_id;
-    context.rowset_state = rowset_state;
-    context.segments_overlap = overlap;
-    context.oldest_write_timestamp = -1;
-    context.newest_write_timestamp = -1;
-    context.tablet_schema = tablet_schema;
-    _init_context_common_fields(context);
-    return RowsetFactory::create_rowset_writer(context, rowset_writer);
-}
-
-Status Tablet::create_rowset_writer(RowsetWriterContext* context,
-                                    std::unique_ptr<RowsetWriter>* rowset_writer) {
-    _init_context_common_fields(*context);
-    return RowsetFactory::create_rowset_writer(*context, rowset_writer);
 }
 
 void Tablet::_init_context_common_fields(RowsetWriterContext& context) {
@@ -1981,7 +1958,11 @@ void Tablet::_init_context_common_fields(RowsetWriterContext& context) {
     if (context.rowset_type == ALPHA_ROWSET) {
         context.rowset_type = StorageEngine::instance()->default_rowset_type();
     }
-    context.tablet_path = tablet_path();
+    if (context.fs != nullptr && context.fs->type() != io::FileSystemType::LOCAL) {
+        context.rowset_dir = BetaRowset::remote_tablet_path(tablet_id());
+    } else {
+        context.rowset_dir = tablet_path();
+    }
     context.data_dir = data_dir();
     context.enable_unique_key_merge_on_write = enable_unique_key_merge_on_write();
 }

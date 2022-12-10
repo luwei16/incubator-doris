@@ -40,12 +40,12 @@
 #include "cloud/cloud_base_compaction.h"
 #include "cloud/cloud_cumulative_compaction.h"
 #include "cloud/cloud_meta_mgr.h"
+#include "cloud/io/file_system_map.h"
+#include "cloud/io/s3_file_system.h"
 #include "cloud/utils.h"
 #include "common/config.h"
 #include "env/env.h"
 #include "env/env_util.h"
-#include "io/fs/file_system_map.h"
-#include "io/fs/s3_file_system.h"
 #include "olap/base_compaction.h"
 #include "olap/cumulative_compaction.h"
 #include "olap/data_dir.h"
@@ -54,8 +54,8 @@
 #include "olap/push_handler.h"
 #include "olap/reader.h"
 #include "olap/rowset/rowset_meta_manager.h"
-#include "olap/rowset/unique_rowset_id_generator.h"
 #include "olap/rowset/segment_v2/inverted_index_cache.h"
+#include "olap/rowset/unique_rowset_id_generator.h"
 #include "olap/schema_change.h"
 #include "olap/segment_loader.h"
 #include "olap/tablet_meta.h"
@@ -90,10 +90,6 @@ using strings::Substitute;
 namespace doris {
 
 DEFINE_GAUGE_METRIC_PROTOTYPE_2ARG(unused_rowsets_count, MetricUnit::ROWSETS);
-DEFINE_GAUGE_METRIC_PROTOTYPE_5ARG(compaction_mem_consumption, MetricUnit::BYTES, "",
-                                   mem_consumption, Labels({{"type", "compaction"}}));
-DEFINE_GAUGE_METRIC_PROTOTYPE_5ARG(schema_change_mem_consumption, MetricUnit::BYTES, "",
-                                   mem_consumption, Labels({{"type", "schema_change"}}));
 
 StorageEngine* StorageEngine::_s_instance = nullptr;
 
@@ -119,17 +115,9 @@ StorageEngine::StorageEngine(const EngineOptions& options)
           _available_storage_medium_type_count(0),
           _effective_cluster_id(-1),
           _is_all_cluster_id_exist(true),
-          _compaction_mem_tracker(
-                  std::make_shared<MemTrackerLimiter>(-1, "StorageEngine::AutoCompaction")),
+          _mem_tracker(std::make_shared<MemTracker>("StorageEngine")),
+          _segcompaction_mem_tracker(std::make_shared<MemTracker>("SegCompaction")),
           _segment_meta_mem_tracker(std::make_shared<MemTracker>("SegmentMeta")),
-          _schema_change_mem_tracker(
-                  std::make_shared<MemTrackerLimiter>(-1, "StorageEngine::SchemaChange")),
-          _clone_mem_tracker(std::make_shared<MemTrackerLimiter>(-1, "StorageEngine::Clone")),
-          _batch_load_mem_tracker(
-                  std::make_shared<MemTrackerLimiter>(-1, "StorageEngine::BatchLoad")),
-          _consistency_mem_tracker(
-                  std::make_shared<MemTrackerLimiter>(-1, "StorageEngine::Consistency")),
-          _mem_tracker(std::make_shared<MemTrackerLimiter>(-1, "StorageEngine::Self")),
           _stop_background_threads_latch(1),
 #ifndef CLOUD_MODE
           _tablet_manager(new TabletManager(config::tablet_map_shard_size)),
@@ -145,16 +133,10 @@ StorageEngine::StorageEngine(const EngineOptions& options)
         // std::lock_guard<std::mutex> lock(_gc_mutex);
         return _unused_rowsets.size();
     });
-    REGISTER_HOOK_METRIC(compaction_mem_consumption,
-                         [this]() { return _compaction_mem_tracker->consumption(); });
-    REGISTER_HOOK_METRIC(schema_change_mem_consumption,
-                         [this]() { return _schema_change_mem_tracker->consumption(); });
 }
 
 StorageEngine::~StorageEngine() {
     DEREGISTER_HOOK_METRIC(unused_rowsets_count);
-    DEREGISTER_HOOK_METRIC(compaction_mem_consumption);
-    DEREGISTER_HOOK_METRIC(schema_change_mem_consumption);
     _clear();
 
     if (_base_compaction_thread_pool) {
@@ -168,16 +150,21 @@ StorageEngine::~StorageEngine() {
         _quick_compaction_thread_pool->shutdown();
     }
 
+    if (_seg_compaction_thread_pool) {
+        _seg_compaction_thread_pool->shutdown();
+    }
+
     if (_tablet_meta_checkpoint_thread_pool) {
         _tablet_meta_checkpoint_thread_pool->shutdown();
     }
+    _s_instance = nullptr;
 }
 
 void StorageEngine::load_data_dirs(const std::vector<DataDir*>& data_dirs) {
     std::vector<std::thread> threads;
     for (auto data_dir : data_dirs) {
         threads.emplace_back([this, data_dir] {
-            SCOPED_ATTACH_TASK(_mem_tracker, ThreadContext::TaskType::STORAGE);
+            SCOPED_CONSUME_MEM_TRACKER(_mem_tracker);
             auto res = data_dir->load();
             if (!res.ok()) {
                 LOG(WARNING) << "io error when init load tables. res=" << res
@@ -220,7 +207,7 @@ Status StorageEngine::_open() {
 
     CHECK(!s3_infos.empty()) << "no s3 infos";
     for (auto& [id, s3_conf] : s3_infos) {
-        auto s3_fs = std::make_shared<io::S3FileSystem>(std::move(s3_conf), id);
+        auto s3_fs = io::S3FileSystem::create(std::move(s3_conf), id);
         RETURN_IF_ERROR(s3_fs->connect());
         io::FileSystemMap::instance()->insert(id, std::move(s3_fs));
     }
@@ -247,7 +234,7 @@ Status StorageEngine::_init_store_map() {
                                      _tablet_manager.get(), _txn_manager.get());
         tmp_stores.emplace_back(store);
         threads.emplace_back([this, store, &error_msg_lock, &error_msg]() {
-            SCOPED_ATTACH_TASK(_mem_tracker, ThreadContext::TaskType::STORAGE);
+            SCOPED_CONSUME_MEM_TRACKER(_mem_tracker);
             auto st = store->init();
             if (!st.ok()) {
                 {
@@ -1066,38 +1053,8 @@ void StorageEngine::notify_listeners() {
 }
 
 Status StorageEngine::execute_task(EngineTask* task) {
-    auto lock_related_tablets = [&]() -> std::vector<std::unique_lock<std::shared_mutex>> {
-        // add write lock to all related tablets
-        std::vector<TabletInfo> tablet_infos;
-        task->get_related_tablets(&tablet_infos);
-        sort(tablet_infos.begin(), tablet_infos.end());
-        std::vector<TabletSharedPtr> related_tablets;
-        std::vector<std::unique_lock<std::shared_mutex>> wrlocks;
-        for (TabletInfo& tablet_info : tablet_infos) {
-            TabletSharedPtr tablet = _tablet_manager->get_tablet(tablet_info.tablet_id);
-            if (tablet != nullptr) {
-                related_tablets.push_back(tablet);
-                wrlocks.push_back(std::unique_lock<std::shared_mutex>(tablet->get_header_lock()));
-            } else {
-                LOG(WARNING) << "could not get tablet before prepare tabletid: "
-                             << tablet_info.tablet_id;
-            }
-        }
-        return wrlocks;
-    };
-
-    {
-        auto wrlocks = lock_related_tablets();
-        RETURN_IF_ERROR(task->prepare());
-    }
-
-    // do execute work without lock
     RETURN_IF_ERROR(task->execute());
-
-    {
-        auto wrlocks = lock_related_tablets();
-        return task->finish();
-    }
+    return task->finish();
 }
 
 // check whether any unused rowsets's id equal to rowset_id

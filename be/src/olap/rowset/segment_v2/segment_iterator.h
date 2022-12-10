@@ -22,9 +22,9 @@
 #include <sstream>
 #include <vector>
 
+#include "cloud/io/file_reader.h"
+#include "cloud/io/file_system.h"
 #include "common/status.h"
-#include "io/fs/file_reader.h"
-#include "io/fs/file_system.h"
 #include "olap/olap_common.h"
 #include "olap/rowset/segment_v2/common.h"
 #include "olap/rowset/segment_v2/inverted_index_reader.h"
@@ -54,15 +54,12 @@ struct ColumnPredicateInfo {
     ColumnPredicateInfo() {};
     std::string debug_string() {
         std::stringstream ss;
-        ss << "column_name=" << column_name
-                << ", query_op=" << query_op
-                << ", query_value=" << query_value;
+        ss << "column_name=" << column_name << ", query_op=" << query_op
+           << ", query_value=" << query_value;
         return ss.str();
     }
 
-    bool is_empty() {
-        return column_name.empty() && query_value.empty() && query_op.empty();
-    }
+    bool is_empty() { return column_name.empty() && query_value.empty() && query_op.empty(); }
 
     bool is_equal(const ColumnPredicateInfo& column_pred_info) {
         if (column_pred_info.column_name != column_name) {
@@ -103,6 +100,37 @@ public:
     bool is_lazy_materialization_read() const override { return _lazy_materialization_read; }
     uint64_t data_id() const override { return _segment->id(); }
 
+    bool update_profile(RuntimeProfile* profile) override {
+        if (_short_cir_eval_predicate.empty() && _pre_eval_block_predicate.empty()) {
+            if (_col_predicates.empty()) {
+                return false;
+            }
+
+            std::string info;
+            for (auto pred : _col_predicates) {
+                info += "\n" + pred->debug_string();
+            }
+            profile->add_info_string("ColumnPredicates", info);
+        } else {
+            if (!_short_cir_eval_predicate.empty()) {
+                std::string info;
+                for (auto pred : _short_cir_eval_predicate) {
+                    info += "\n" + pred->debug_string();
+                }
+                profile->add_info_string("Short Circuit ColumnPredicates", info);
+            }
+            if (!_pre_eval_block_predicate.empty()) {
+                std::string info;
+                for (auto pred : _pre_eval_block_predicate) {
+                    info += "\n" + pred->debug_string();
+                }
+                profile->add_info_string("Pre Evaluate Block ColumnPredicates", info);
+            }
+        }
+
+        return true;
+    }
+
 private:
     Status _init(bool is_vec = false);
 
@@ -130,12 +158,14 @@ private:
     Status _extract_range_predicate();
     ColumnPredicate* _format_range_predicate(ColumnId column_id,
                                              std::unordered_set<ColumnPredicate*> predicates);
-    std::vector<ColumnPredicate*> _parse_range_predicate(std::vector<ColumnPredicate*> remaining_predicates);
+    std::vector<ColumnPredicate*> _parse_range_predicate(
+            std::vector<ColumnPredicate*> remaining_predicates);
     std::vector<ColumnPredicate*> _get_origin_predicate(ColumnPredicate* col_pred);
 
     Status _apply_index_in_compound();
     Status _apply_bitmap_index_in_compound(ColumnPredicate* pred, roaring::Roaring* output_result);
-    Status _apply_inverted_index_in_compound(ColumnPredicate* pred, roaring::Roaring* output_result);
+    Status _apply_inverted_index_in_compound(ColumnPredicate* pred,
+                                             roaring::Roaring* output_result);
 
     bool _is_index_for_compound_predicate();
     Status _execute_all_compound_predicates(const vectorized::VExpr* expr);
@@ -145,7 +175,7 @@ private:
     void _init_lazy_materialization();
     void _vec_init_lazy_materialization();
     // TODO: Fix Me
-    // CHAR type in storge layer padding the 0 in length. But query engine need ignore the padding 0.
+    // CHAR type in storage layer padding the 0 in length. But query engine need ignore the padding 0.
     // so segment iterator need to shrink char column before output it. only use in vec query engine.
     void _vec_init_char_column_id();
 
@@ -234,22 +264,24 @@ private:
     std::string _gen_predicate_sign(ColumnPredicateInfo* predicate_info);
 
     void _build_index_return_column(uint16_t* sel_rowid_idx, uint16_t select_size,
-                                    vectorized::Block* block, 
+                                    vectorized::Block* block,
                                     const std::string& index_result_column_sign,
                                     const roaring::Roaring& index_result);
 
-    void _output_index_return_column(uint16_t* sel_rowid_idx, uint16_t select_size, vectorized::Block* block);
+    void _output_index_return_column(uint16_t* sel_rowid_idx, uint16_t select_size,
+                                     vectorized::Block* block);
 
     bool _check_apply_by_bitmap_index(ColumnPredicate* pred);
     bool _check_apply_by_inverted_index(ColumnPredicate* pred);
 
     bool _need_read_data(ColumnId cid);
-    bool _prune_column(ColumnId cid, vectorized::MutableColumnPtr& column,
-                    bool fill_defaults, size_t num_of_defaults);
+    bool _prune_column(ColumnId cid, vectorized::MutableColumnPtr& column, bool fill_defaults,
+                       size_t num_of_defaults);
 
     // return true means one column's predicates all pushed down
     bool _check_column_pred_all_push_down(ColumnPredicate* predicate, bool in_compound = false);
-    void _find_pred_in_remaining_vconjunct_root(const vectorized::VExpr* expr, std::vector<ColumnPredicateInfo>* pred_infos);
+    void _find_pred_in_remaining_vconjunct_root(const vectorized::VExpr* expr,
+                                                std::vector<ColumnPredicateInfo>* pred_infos);
 
 private:
     class BitmapRangeIterator;
@@ -266,7 +298,7 @@ private:
     // after init(), `_row_bitmap` contains all rowid to scan
     roaring::Roaring _row_bitmap;
     // "column_name+operator+value-> <in_compound_query, rowid_result>
-    std::unordered_map<std::string, std::pair<bool, roaring::Roaring> > _rowid_result_for_index;
+    std::unordered_map<std::string, std::pair<bool, roaring::Roaring>> _rowid_result_for_index;
     std::vector<std::pair<uint32_t, uint32_t>> _split_row_ranges;
     std::vector<std::pair<uint32_t, uint32_t>> _ranges;
     size_t _range_idx = 0;
@@ -299,7 +331,7 @@ private:
     std::vector<ColumnPredicate*> _short_cir_eval_predicate;
     std::vector<uint32_t> _delete_range_column_ids;
     std::vector<uint32_t> _delete_bloom_filter_column_ids;
-    // when lazy materialization is enable, segmentIter need to read data at least twice
+    // when lazy materialization is enabled, segmentIter need to read data at least twice
     // first, read predicate columns by various index
     // second, read non-predicate columns
     // so we need a field to stand for columns first time to read

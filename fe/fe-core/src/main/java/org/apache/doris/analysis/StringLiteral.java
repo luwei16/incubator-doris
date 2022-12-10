@@ -152,13 +152,18 @@ public class StringLiteral extends LiteralExpr {
     }
 
     @Override
+    public String getStringValueForArray() {
+        return "\"" + getStringValue() + "\"";
+    }
+
+    @Override
     public long getLongValue() {
         return Long.valueOf(value);
     }
 
     @Override
     public double getDoubleValue() {
-        return Double.valueOf(value);
+        return Double.parseDouble(value);
     }
 
     @Override
@@ -189,6 +194,16 @@ public class StringLiteral extends LiteralExpr {
             }
         }
         return newLiteral;
+    }
+
+    public boolean canConvertToDateV2(Type targetType) {
+        try {
+            Preconditions.checkArgument(targetType.isDateV2());
+            new DateLiteral(value, targetType);
+            return true;
+        } catch (AnalysisException e) {
+            return false;
+        }
     }
 
     @Override

@@ -17,11 +17,11 @@
 
 #include "olap/rowset/segment_v2/ordinal_page_index.h"
 
+#include "cloud/io/file_system_map.h"
+#include "cloud/io/file_writer.h"
+#include "cloud/io/local_file_system.h"
 #include "common/logging.h"
 #include "env/env.h"
-#include "io/fs/file_system_map.h"
-#include "io/fs/file_writer.h"
-#include "io/fs/local_file_system.h"
 #include "olap/key_coder.h"
 #include "olap/rowset/segment_v2/page_handle.h"
 #include "olap/rowset/segment_v2/page_io.h"

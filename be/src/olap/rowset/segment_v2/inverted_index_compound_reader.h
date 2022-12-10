@@ -25,7 +25,7 @@
 #include <mutex>
 #include <vector>
 
-#include "io/fs/file_system.h"
+#include "cloud/io/file_system.h"
 #include "util/lock.h"
 
 namespace doris {

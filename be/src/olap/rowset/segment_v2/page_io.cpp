@@ -22,10 +22,10 @@
 #include <cstring>
 #include <string>
 
+#include "cloud/io/file_reader.h"
+#include "cloud/io/file_writer.h"
 #include "common/logging.h"
 #include "gutil/strings/substitute.h"
-#include "io/fs/file_reader.h"
-#include "io/fs/file_writer.h"
 #include "olap/page_cache.h"
 #include "util/block_compression.h"
 #include "util/coding.h"
@@ -311,6 +311,7 @@ Status PageIO::read_and_decompress_page(const PageReadOptions& opts, PageHandle*
         io::IOState state(opts.query_id, opts.stats, opts.is_persistent, opts.use_disposable_cache);
         RETURN_IF_ERROR(opts.file_reader->read_at(opts.page_pointer.offset, page_slice, &bytes_read,
                                                   &state));
+
         DCHECK_EQ(bytes_read, page_size);
         opts.stats->compressed_bytes_read += page_size;
     }

@@ -35,12 +35,9 @@
 
 #include "exec/olap_common.h"
 #include "olap/tablet_schema.h"
-#include "olap/column_predicate.h"
-#include "olap/predicate_creator.h"
-
 
 namespace doris {
-
+class ColumnPredicate;
 namespace vectorized {
 
 class RuntimePredicate {
@@ -52,10 +49,7 @@ public:
         _tablet_schema = tablet_schema;
     }
 
-    std::shared_ptr<ColumnPredicate> get_predictate() {
-        std::shared_lock<std::shared_mutex> rlock(_rwlock);
-        return _predictate;
-    }
+    std::shared_ptr<ColumnPredicate> get_predictate();
 
     Status update(std::vector<Field>& values, const String& col_name,
                   const TypeIndex type, bool is_reverse);

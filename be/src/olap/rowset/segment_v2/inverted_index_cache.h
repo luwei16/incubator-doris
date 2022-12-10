@@ -25,9 +25,9 @@
 #include <mutex>
 #include <vector>
 
-#include "runtime/memory/mem_tracker.h"
-#include "io/fs/file_system.h"
+#include "cloud/io/file_system.h"
 #include "olap/lru_cache.h"
+#include "runtime/memory/mem_tracker.h"
 #include "util/time.h"
 
 namespace doris {
@@ -66,7 +66,7 @@ public:
 
     InvertedIndexSearcherCache(size_t capacity);
 
-    Status get_index_searcher(io::FileSystem* fs, const std::string& index_dir,
+    Status get_index_searcher(const io::FileSystemSPtr& fs, const std::string& index_dir,
                               const std::string& file_name, InvertedIndexCacheHandle* cache_handle,
                               bool use_cache = true);
 
@@ -74,7 +74,7 @@ public:
     Status prune();
 
     // function `insert` called after inverted index writer close
-    Status insert(io::FileSystem* fs, const std::string& index_dir, const std::string& file_name);
+    Status insert(const io::FileSystemSPtr& fs, const std::string& index_dir, const std::string& file_name);
 
     // function `erase` called after compaction remove segment
     Status erase(const std::string& index_file_path);
@@ -90,11 +90,9 @@ private:
     // Insert a cache entry by key.
     // And the cache entry will be returned in handle.
     // This function is thread-safe.
-    void _insert(const InvertedIndexSearcherCache::CacheKey& key, CacheValue& value, InvertedIndexCacheHandle* handle);
+    void _insert(const InvertedIndexSearcherCache::CacheKey& key, CacheValue& value,
+                 InvertedIndexCacheHandle* handle);
 
-    IndexSearcherPtr _build_index_searcher(io::FileSystem* fs, 
-                                        const std::string& index_dir,
-                                        const std::string& file_name);
 private:
     static InvertedIndexSearcherCache* _s_instance;
     // A LRU cache to cache all opened index_searcher
@@ -110,7 +108,8 @@ private:
 class InvertedIndexCacheHandle {
 public:
     InvertedIndexCacheHandle() {}
-    InvertedIndexCacheHandle(Cache* cache, Cache::Handle* handle) : _cache(cache), _handle(handle) {}
+    InvertedIndexCacheHandle(Cache* cache, Cache::Handle* handle)
+            : _cache(cache), _handle(handle) {}
 
     ~InvertedIndexCacheHandle() {
         if (_handle != nullptr) {
@@ -118,7 +117,8 @@ public:
             CHECK(!owned);
             // last_visit_time is set when release.
             // because it only be needed when pruning.
-            ((InvertedIndexSearcherCache::CacheValue*)_cache->value(_handle))->last_visit_time = UnixMillis();
+            ((InvertedIndexSearcherCache::CacheValue*)_cache->value(_handle))->last_visit_time =
+                    UnixMillis();
             _cache->release(_handle);
         }
     }
@@ -142,7 +142,8 @@ public:
         if (owned) {
             return index_searcher;
         } else {
-            return ((InvertedIndexSearcherCache::CacheValue*)_cache->value(_handle))->index_searcher;
+            return ((InvertedIndexSearcherCache::CacheValue*)_cache->value(_handle))
+                    ->index_searcher;
         }
     }
 

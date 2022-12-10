@@ -17,139 +17,226 @@
 
 #include "io/fs/s3_file_writer.h"
 
-#include <aws/transfer/TransferManager.h>
+#include <aws/core/Aws.h>
+#include <aws/core/utils/HashingUtils.h>
+#include <aws/s3/S3Client.h>
+#include <aws/s3/model/AbortMultipartUploadRequest.h>
+#include <aws/s3/model/CompleteMultipartUploadRequest.h>
+#include <aws/s3/model/CreateMultipartUploadRequest.h>
+#include <aws/s3/model/DeleteObjectRequest.h>
+#include <aws/s3/model/DeleteObjectsRequest.h>
+#include <aws/s3/model/GetObjectRequest.h>
+#include <aws/s3/model/UploadPartRequest.h>
+#include <fmt/core.h>
+#include <sys/uio.h>
 
-#include <mutex>
-#include <utility>
+#include <cerrno>
 
-#include "common/config.h"
+#include "common/compiler_util.h"
 #include "common/status.h"
-#include "io/cloud/tmp_file_mgr.h"
-#include "io/fs/local_file_system.h"
+#include "gutil/macros.h"
+#include "io/fs/file_writer.h"
+#include "io/fs/path.h"
 #include "io/fs/s3_file_system.h"
+#include "util/doris_metrics.h"
+
+using Aws::S3::Model::AbortMultipartUploadRequest;
+using Aws::S3::Model::CompletedPart;
+using Aws::S3::Model::CompletedMultipartUpload;
+using Aws::S3::Model::CompleteMultipartUploadRequest;
+using Aws::S3::Model::CreateMultipartUploadRequest;
+using Aws::S3::Model::DeleteObjectRequest;
+using Aws::S3::Model::UploadPartRequest;
+using Aws::S3::Model::UploadPartOutcome;
 
 namespace doris {
 namespace io {
 
-S3FileWriter::S3FileWriter(Path path, std::string key, std::string bucket, S3FileSystem* fs)
-        : FileWriter(std::move(path)), _fs(fs), _bucket(std::move(bucket)), _key(std::move(key)) {}
+// max size of each part when uploading: 5MB
+static const int MAX_SIZE_EACH_PART = 5 * 1024 * 1024;
+static const char* STREAM_TAG = "S3FileWriter";
+
+S3FileWriter::S3FileWriter(Path path, std::shared_ptr<Aws::S3::S3Client> client,
+                           const S3Conf& s3_conf)
+        : FileWriter(std::move(path)), _client(client), _s3_conf(s3_conf) {
+    DorisMetrics::instance()->s3_file_open_writing->increment(1);
+    DorisMetrics::instance()->s3_file_writer_total->increment(1);
+}
 
 S3FileWriter::~S3FileWriter() {
     if (!_closed) {
-        abort();
+        WARN_IF_ERROR(abort(), fmt::format("Cannot abort {}", _path.native()));
     }
 }
 
-Status S3FileWriter::open() {
-    VLOG_DEBUG << "S3FileWriter::open, path: " << _path.native();
-    auto tmp_file_name = _key;
-    std::replace(tmp_file_name.begin(), tmp_file_name.end(), '/', '_');
-    auto st = io::global_local_filesystem()->create_file(
-            TmpFileMgr::instance()->get_tmp_file_dir(tmp_file_name) / tmp_file_name,
-            &_tmp_file_writer);
-    if (!st.ok()) {
-        return Status::IOError("failed to create tmp file: {}", st.to_string());
-    }
-    _closed = false;
-    return Status::OK();
+Status S3FileWriter::close() {
+    return _close();
 }
 
 Status S3FileWriter::abort() {
-    if (_closed) {
+    AbortMultipartUploadRequest request;
+    request.WithBucket(_s3_conf.bucket).WithKey(_path.native()).WithUploadId(_upload_id);
+    auto outcome = _client->AbortMultipartUpload(request);
+    if (outcome.IsSuccess() ||
+        outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_UPLOAD ||
+        outcome.GetError().GetResponseCode() == Aws::Http::HttpResponseCode::NOT_FOUND) {
+        LOG(INFO) << "Abort multipart upload successfully. endpoint=" << _s3_conf.endpoint
+                  << ", bucket=" << _s3_conf.bucket << ", key=" << _path.native()
+                  << ", upload_id=" << _upload_id;
         return Status::OK();
     }
-    VLOG_DEBUG << "S3FileWriter::abort, path: " << _path.native();
-    _closed = true;
-    if (_handle) {
-        _handle->Cancel();
-    }
-    return Status::OK();
+    return Status::IOError(
+            "failed to abort multipart upload(endpoint={}, bucket={}, key={}, upload_id={}): {}",
+            _s3_conf.endpoint, _s3_conf.bucket, _path.native(), _upload_id,
+            outcome.GetError().GetMessage());
 }
 
-Status S3FileWriter::close(bool sync) {
-    if (_closed) {
+Status S3FileWriter::_open() {
+    CreateMultipartUploadRequest create_request;
+    create_request.WithBucket(_s3_conf.bucket).WithKey(_path.native());
+    create_request.SetContentType("text/plain");
+
+    _reset_stream();
+    auto outcome = _client->CreateMultipartUpload(create_request);
+
+    if (outcome.IsSuccess()) {
+        _upload_id = outcome.GetResult().GetUploadId();
+        LOG(INFO) << "create multi part upload successfully (endpoint=" << _s3_conf.endpoint
+                  << ", bucket=" << _s3_conf.bucket << ", key=" << _path.native()
+                  << ") upload_id: " << _upload_id;
         return Status::OK();
     }
-    VLOG_DEBUG << "S3FileWriter::close, path: " << _path.native();
-    DCHECK(_handle);
-    _closed = true;
-
-    if (sync) {
-        SCOPED_ATTACH_TASK(ExecEnv::GetInstance()->orphan_mem_tracker());
-        _handle->WaitUntilFinished();
-        if (_handle->GetStatus() != Aws::Transfer::TransferStatus::COMPLETED) {
-            return Status::IOError("failed to upload {}: {}", _path.native(),
-                                   _handle->GetLastError().GetMessage());
-        }
-    }
-    // TODO(cyx): check data correctness
-    return Status::OK();
+    return Status::IOError(
+            "failed to create multi part upload (endpoint={}, bucket={}, key={}): {}",
+            _s3_conf.endpoint, _s3_conf.bucket, _path.native(), outcome.GetError().GetMessage());
 }
 
 Status S3FileWriter::append(const Slice& data) {
-    DCHECK(!_closed);
-    DCHECK(_handle == nullptr);
-    return _tmp_file_writer->append(data);
+    Status st = appendv(&data, 1);
+    if (st.ok()) {
+        DorisMetrics::instance()->s3_bytes_written_total->increment(data.size);
+    }
+    return st;
 }
 
 Status S3FileWriter::appendv(const Slice* data, size_t data_cnt) {
     DCHECK(!_closed);
-    DCHECK(_handle == nullptr);
-    return _tmp_file_writer->appendv(data, data_cnt);
+    if (!_is_open) {
+        RETURN_IF_ERROR(_open());
+        _is_open = true;
+    }
+
+    for (size_t i = 0; i < data_cnt; i++) {
+        const Slice& result = data[i];
+        _stream_ptr->write(result.data, result.size);
+        _bytes_appended += result.size;
+        auto start_pos = _stream_ptr->tellg();
+        _stream_ptr->seekg(0LL, _stream_ptr->end);
+        _stream_ptr->seekg(start_pos);
+    }
+    if (_stream_ptr->str().size() >= MAX_SIZE_EACH_PART) {
+        RETURN_IF_ERROR(_upload_part());
+    }
+    return Status::OK();
 }
 
-Status S3FileWriter::write_at(size_t offset, const Slice& data) {
-    DCHECK(!_closed);
-    DCHECK(_handle == nullptr);
-    return _tmp_file_writer->write_at(offset, data);
+Status S3FileWriter::_upload_part() {
+    if (_stream_ptr->str().size() == 0) {
+        return Status::OK();
+    }
+    ++_cur_part_num;
+
+    UploadPartRequest upload_request;
+    upload_request.WithBucket(_s3_conf.bucket)
+            .WithKey(_path.native())
+            .WithPartNumber(_cur_part_num)
+            .WithUploadId(_upload_id);
+
+    upload_request.SetBody(_stream_ptr);
+
+    Aws::Utils::ByteBuffer part_md5(Aws::Utils::HashingUtils::CalculateMD5(*_stream_ptr));
+    upload_request.SetContentMD5(Aws::Utils::HashingUtils::Base64Encode(part_md5));
+
+    auto start_pos = _stream_ptr->tellg();
+    _stream_ptr->seekg(0LL, _stream_ptr->end);
+    upload_request.SetContentLength(static_cast<long>(_stream_ptr->tellg()));
+    _stream_ptr->seekg(start_pos);
+
+    auto upload_part_callable = _client->UploadPartCallable(upload_request);
+
+    UploadPartOutcome upload_part_outcome = upload_part_callable.get();
+    _reset_stream();
+    if (!upload_part_outcome.IsSuccess()) {
+        return Status::IOError(
+                "failed to upload part (endpoint={}, bucket={}, key={}, part_num = {}): {}",
+                _s3_conf.endpoint, _s3_conf.bucket, _path.native(), _cur_part_num,
+                upload_part_outcome.GetError().GetMessage());
+    }
+
+    std::shared_ptr<CompletedPart> completed_part = std::make_shared<CompletedPart>();
+    completed_part->SetPartNumber(_cur_part_num);
+    auto etag = upload_part_outcome.GetResult().GetETag();
+    DCHECK(etag.empty());
+    completed_part->SetETag(etag);
+    _completed_parts.emplace_back(completed_part);
+    return Status::OK();
+}
+
+void S3FileWriter::_reset_stream() {
+    _stream_ptr = Aws::MakeShared<Aws::StringStream>(STREAM_TAG, "");
 }
 
 Status S3FileWriter::finalize() {
     DCHECK(!_closed);
-    DCHECK(_handle == nullptr);
-    auto client = _fs->get_client();
-    if (!client) {
-        return Status::InternalError("init s3 client error");
-    }
-    RETURN_IF_ERROR(_tmp_file_writer->close(false));
-    {
-        SCOPED_ATTACH_TASK(ExecEnv::GetInstance()->orphan_mem_tracker());
-        auto tmp_file_mgr = TmpFileMgr::instance();
-        bool is_async_upload = tmp_file_mgr->check_if_has_enough_space_to_async_upload(
-                _tmp_file_writer->path(), _tmp_file_writer->bytes_appended());
-
-        auto upload_start = std::chrono::steady_clock::now();
-
-        auto upload_callback =
-                [tmp_file_mgr, path = _tmp_file_writer->path(),
-                 size = _tmp_file_writer->bytes_appended(), is_async_upload = is_async_upload,
-                 upload_start = upload_start, upload_speed = _upload_speed_bytes_s](
-                        const Aws::Transfer::TransferManager*,
-                        const std::shared_ptr<const Aws::Transfer::TransferHandle>& handle) {
-                    handle->WaitUntilFinished();
-                    if (handle->GetStatus() != Aws::Transfer::TransferStatus::COMPLETED ||
-                        !tmp_file_mgr->insert_tmp_file(path, size)) {
-                        global_local_filesystem()->delete_file(path);
-                    }
-                    tmp_file_mgr->upload_complete(path, size, is_async_upload);
-                    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
-                                            std::chrono::steady_clock::now() - upload_start)
-                                            .count();
-                    *upload_speed = static_cast<double>(size) /
-                                    (static_cast<double>(duration) / 1000 / 1000);
-                };
-        Aws::Transfer::TransferManagerConfiguration transfer_config(_fs->_executor.get());
-        transfer_config.s3Client = client;
-        auto transfer_manager = Aws::Transfer::TransferManager::Create(transfer_config);
-        _handle = transfer_manager->UploadFile(_tmp_file_writer->path().native(), _bucket, _key,
-                                               "text/plain", Aws::Map<Aws::String, Aws::String>(),
-                                               nullptr, std::move(upload_callback));
-        if (!is_async_upload) {
-            LOG(INFO) << "The current upload files size is too larger, change to sync upload";
-            return close();
-        }
+    if (_is_open) {
+        _close();
     }
     return Status::OK();
+}
+
+Status S3FileWriter::_close() {
+    if (_closed) {
+        return Status::OK();
+    }
+    if (_is_open) {
+        RETURN_IF_ERROR(_upload_part());
+
+        CompleteMultipartUploadRequest complete_request;
+        complete_request.WithBucket(_s3_conf.bucket)
+                .WithKey(_path.native())
+                .WithUploadId(_upload_id);
+
+        CompletedMultipartUpload completed_upload;
+        for (std::shared_ptr<CompletedPart> part : _completed_parts) {
+            completed_upload.AddParts(*part);
+        }
+
+        complete_request.WithMultipartUpload(completed_upload);
+
+        auto compute_outcome = _client->CompleteMultipartUpload(complete_request);
+
+        if (!compute_outcome.IsSuccess()) {
+            return Status::IOError(
+                    "failed to create multi part upload (endpoint={}, bucket={}, key={}): {}",
+                    _s3_conf.endpoint, _s3_conf.bucket, _path.native(),
+                    compute_outcome.GetError().GetMessage());
+        }
+        _is_open = false;
+    }
+    _closed = true;
+
+    DorisMetrics::instance()->s3_file_open_writing->increment(-1);
+    DorisMetrics::instance()->s3_file_created_total->increment(1);
+    DorisMetrics::instance()->s3_bytes_written_total->increment(_bytes_appended);
+
+    LOG(INFO) << "complete multi part upload successfully (endpoint=" << _s3_conf.endpoint
+              << ", bucket=" << _s3_conf.bucket << ", key=" << _path.native()
+              << ") upload_id: " << _upload_id;
+    return Status::OK();
+}
+
+Status S3FileWriter::write_at(size_t offset, const Slice& data) {
+    return Status::NotSupported("not support");
 }
 
 } // namespace io

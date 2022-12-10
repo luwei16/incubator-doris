@@ -544,6 +544,7 @@ struct TStreamLoadPutRequest {
     37: optional bool load_to_single_tablet
     38: optional string header_type
     39: optional string hidden_columns
+    40: optional PlanNodes.TFileCompressType compress_type
 }
 
 struct TStreamLoadPutResult {
@@ -695,6 +696,31 @@ struct TAddColumnsResult {
     4: required i32 schema_version
 }
 
+struct TInitExternalCtlMetaRequest {
+    1: optional i64 catalogId
+    2: optional i64 dbId
+    3: optional i64 tableId
+}
+
+struct TInitExternalCtlMetaResult {
+    1: optional i64 maxJournalId;
+    2: optional string status;
+}
+
+enum TSchemaTableName{
+  BACKENDS = 0,
+}
+
+struct TFetchSchemaTableDataRequest {
+  1: optional string cluster_name
+  2: optional TSchemaTableName schema_table_name
+}
+
+struct TFetchSchemaTableDataResult {
+  1: required Status.TStatus status
+  2: optional list<Data.TRow> data_batch;
+}
+
 service FrontendService {
     TGetDbsResult getDbNames(1: TGetDbsParams params)
     TGetTablesResult getTableNames(1: TGetTablesParams params)
@@ -732,4 +758,7 @@ service FrontendService {
     TAddColumnsResult addColumns(1: TAddColumnsRequest request)
 
     AgentService.TGetStoragePolicyResult refreshStoragePolicy()
+    TInitExternalCtlMetaResult initExternalCtlMeta(1: TInitExternalCtlMetaRequest request)
+
+    TFetchSchemaTableDataResult fetchSchemaTableData(1: TFetchSchemaTableDataRequest request)
 }

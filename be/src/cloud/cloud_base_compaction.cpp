@@ -123,7 +123,7 @@ Status CloudBaseCompaction::execute_compact_impl() {
     push_base_compaction(std::static_pointer_cast<CloudBaseCompaction>(shared_from_this()));
     Defer defer {[&] { pop_base_compaction(this); }};
 
-    SCOPED_ATTACH_TASK(_mem_tracker, ThreadContext::TaskType::COMPACTION);
+    SCOPED_ATTACH_TASK(_mem_tracker);
 
     int64_t permits = get_compaction_permits();
     using namespace std::chrono;

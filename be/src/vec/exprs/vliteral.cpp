@@ -21,7 +21,6 @@
 
 #include "runtime/jsonb_value.h"
 #include "runtime/large_int_value.h"
-#include "util/jsonb_document.h"
 #include "util/string_parser.hpp"
 #include "vec/core/field.h"
 #include "vec/data_types/data_type_decimal.h"
@@ -187,95 +186,111 @@ void VLiteral::init(const TExprNode& node) {
 
 Status VLiteral::execute(VExprContext* context, vectorized::Block* block, int* result_column_id) {
     // Literal expr should return least one row.
-    size_t row_size = std::max(block->rows(), size_t(1));
+    size_t row_size = std::max(block->rows(), _column_ptr->size());
     *result_column_id = VExpr::insert_param(block, {_column_ptr, _data_type, _expr_name}, row_size);
     return Status::OK();
 }
 
 std::string VLiteral::value() const {
-    std::stringstream out_value;
-    if (_column_ptr->size() > 0) {
-        StringRef ref = _column_ptr->get_data_at(0);
+    std::stringstream out;
+    for (size_t i = 0; i < _column_ptr->size(); i++) {
+        if (i != 0) {
+            out << ", ";
+        }
+        StringRef ref = _column_ptr->get_data_at(i);
         if (ref.data == nullptr) {
-            out_value << "null";
+            out << "null";
         } else {
             switch (_type.type) {
             case TYPE_BOOLEAN:
             case TYPE_TINYINT:
+                out << *(reinterpret_cast<const int8_t*>(ref.data));
             case TYPE_SMALLINT:
+                out << *(reinterpret_cast<const int16_t*>(ref.data));
             case TYPE_INT: {
-                out_value << *(reinterpret_cast<const int32_t*>(ref.data));
+                out << *(reinterpret_cast<const int32_t*>(ref.data));
                 break;
             }
             case TYPE_BIGINT: {
-                out_value << *(reinterpret_cast<const int64_t*>(ref.data));
+                out << *(reinterpret_cast<const int64_t*>(ref.data));
                 break;
             }
             case TYPE_LARGEINT: {
-                out_value << fmt::format("{}", *(reinterpret_cast<const __int128_t*>(ref.data)));
+                out << fmt::format("{}", *(reinterpret_cast<const __int128_t*>(ref.data)));
                 break;
             }
             case TYPE_FLOAT: {
-                out_value << *(reinterpret_cast<const float*>(ref.data));
+                out << *(reinterpret_cast<const float*>(ref.data));
                 break;
             }
             case TYPE_TIME:
             case TYPE_TIMEV2:
             case TYPE_DOUBLE: {
-                out_value << *(reinterpret_cast<const double_t*>(ref.data));
+                out << *(reinterpret_cast<const double_t*>(ref.data));
                 break;
             }
             case TYPE_DATE:
             case TYPE_DATETIME: {
                 auto value = *(reinterpret_cast<const int64_t*>(ref.data));
                 auto date_value = (VecDateTimeValue*)&value;
-                out_value << date_value;
+                out << *date_value;
+                break;
+            }
+            case TYPE_DATEV2: {
+                auto* value = (DateV2Value<DateV2ValueType>*)ref.data;
+                out << *value;
+                break;
+            }
+            case TYPE_DATETIMEV2: {
+                auto* value = (DateV2Value<DateTimeV2ValueType>*)ref.data;
+                out << *value;
                 break;
             }
             case TYPE_STRING:
             case TYPE_CHAR:
             case TYPE_VARCHAR:
             case TYPE_JSONB: {
-                out_value << ref;
+                out << ref;
                 break;
             }
             case TYPE_DECIMALV2: {
                 DecimalV2Value value(*(reinterpret_cast<const int128_t*>(ref.data)));
-                out_value << value;
+                out << value;
                 break;
             }
             case TYPE_DECIMAL32: {
                 write_text<int32_t>(*(reinterpret_cast<const int32_t*>(ref.data)), _type.scale,
-                                    out_value);
+                                    out);
                 break;
             }
             case TYPE_DECIMAL64: {
                 write_text<int64_t>(*(reinterpret_cast<const int64_t*>(ref.data)), _type.scale,
-                                    out_value);
+                                    out);
                 break;
             }
             case TYPE_DECIMAL128: {
                 write_text<int128_t>(*(reinterpret_cast<const int128_t*>(ref.data)), _type.scale,
-                                     out_value);
+                                     out);
                 break;
             }
             default: {
-                out_value << "UNKNOWN TYPE: " << int(_type.type);
+                out << "UNKNOWN TYPE: " << int(_type.type);
                 break;
             }
             }
         }
     }
-    return out_value.str();
+    return out.str();
 }
 
 std::string VLiteral::debug_string() const {
     std::stringstream out;
     out << "VLiteral (name = " << _expr_name;
     out << ", type = " << _data_type->get_name();
-    out << ", value = " << value();
-    out << ")";
+    out << ", value = (" << value();
+    out << "))";
     return out.str();
 }
+
 } // namespace vectorized
 } // namespace doris

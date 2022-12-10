@@ -32,7 +32,8 @@ namespace doris {
 
 FieldType TabletColumn::get_field_type_by_string(const std::string& type_str) {
     std::string upper_type_str = type_str;
-    std::transform(type_str.begin(), type_str.end(), upper_type_str.begin(), toupper);
+    std::transform(type_str.begin(), type_str.end(), upper_type_str.begin(),
+                   [](auto c) { return std::toupper(c); });
     FieldType type;
 
     if (0 == upper_type_str.compare("TINYINT")) {
@@ -112,7 +113,8 @@ FieldType TabletColumn::get_field_type_by_string(const std::string& type_str) {
 
 FieldAggregationMethod TabletColumn::get_aggregation_type_by_string(const std::string& str) {
     std::string upper_str = str;
-    std::transform(str.begin(), str.end(), upper_str.begin(), toupper);
+    std::transform(str.begin(), str.end(), upper_str.begin(),
+                   [](auto c) { return std::toupper(c); });
     FieldAggregationMethod aggregation_type;
 
     if (0 == upper_str.compare("NONE")) {
@@ -470,7 +472,8 @@ vectorized::AggregateFunctionPtr TabletColumn::get_aggregate_function(
             agg_name, argument_types, {}, argument_types.back()->is_nullable());
 }
 
-void TabletIndex::init_from_thrift(const TOlapTableIndex& index, const TabletSchema& tablet_schema) {
+void TabletIndex::init_from_thrift(const TOlapTableIndex& index,
+                                   const TabletSchema& tablet_schema) {
     _index_id = index.index_id;
     _index_name = index.index_name;
     // init col_unique_id in index at be side, since col_unique_id may be -1 at fe side

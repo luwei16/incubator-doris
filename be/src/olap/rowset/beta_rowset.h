@@ -26,7 +26,11 @@
 #include "olap/rowset/rowset.h"
 #include "olap/rowset/rowset_meta.h"
 #include "olap/rowset/rowset_reader.h"
+#ifdef CLOUD_MODE
+#include "cloud/olap/segment.h"
+#else
 #include "olap/rowset/segment_v2/segment.h"
+#endif
 
 namespace doris {
 
@@ -46,8 +50,15 @@ public:
 
     std::string segment_cache_path(int segment_id);
 
-    static std::string local_segment_path(const std::string& tablet_path, const RowsetId& rowset_id,
+    static std::string segment_cache_path(const std::string& rowset_dir, const RowsetId& rowset_id,
                                           int segment_id);
+
+    static std::string segment_file_path(const std::string& rowset_dir, const RowsetId& rowset_id,
+                                         int segment_id);
+
+    static std::string local_segment_path_segcompacted(const std::string& tablet_path,
+                                                       const RowsetId& rowset_id, int64_t begin,
+                                                       int64_t end);
 
     static std::string remote_segment_path(int64_t tablet_id, const RowsetId& rowset_id,
                                            int segment_id);
@@ -55,8 +66,7 @@ public:
     static std::string remote_segment_path(int64_t tablet_id, const std::string& rowset_id,
                                            int segment_id);
 
-    static std::string local_cache_path(const std::string& tablet_path, const RowsetId& rowset_id,
-                                        int segment_id);
+    static std::string remote_tablet_path(int64_t tablet_id);
 
     Status split_range(const RowCursor& start_key, const RowCursor& end_key,
                        uint64_t request_block_row_count, size_t key_num,

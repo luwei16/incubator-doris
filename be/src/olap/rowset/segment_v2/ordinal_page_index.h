@@ -21,10 +21,10 @@
 #include <memory>
 #include <string>
 
+#include "cloud/io/file_reader.h"
 #include "common/status.h"
 #include "env/env.h"
 #include "gutil/macros.h"
-#include "io/fs/file_reader.h"
 #include "olap/rowset/segment_v2/common.h"
 #include "olap/rowset/segment_v2/index_page.h"
 #include "olap/rowset/segment_v2/page_pointer.h"

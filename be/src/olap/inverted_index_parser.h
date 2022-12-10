@@ -22,7 +22,7 @@
 
 namespace doris {
 
-enum InvertedIndexParserType {
+enum class InvertedIndexParserType {
     PARSER_UNKNOWN = 0,
     PARSER_NONE = 1,
     PARSER_STANDARD = 2,
@@ -41,7 +41,6 @@ std::string inverted_index_parser_type_to_string(InvertedIndexParserType parser_
 
 InvertedIndexParserType get_inverted_index_parser_type_from_string(const std::string& parser_str);
 
-std::string get_parser_string_from_properties(
-        const std::map<std::string, std::string>& properties);
+std::string get_parser_string_from_properties(const std::map<std::string, std::string>& properties);
 
 } // namespace doris

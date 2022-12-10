@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "cloud/io/file_system.h"
 #include "olap/rowset/segment_v2/inverted_index_cache.h"
 #include "olap/rowset/segment_v2/inverted_index_compound_directory.h"
 #include "olap/rowset/segment_v2/inverted_index_compound_reader.h"
@@ -23,6 +24,20 @@ namespace doris {
 namespace segment_v2 {
 
 InvertedIndexSearcherCache* InvertedIndexSearcherCache::_s_instance = nullptr;
+
+static IndexSearcherPtr build_index_searcher(const io::FileSystemSPtr& fs,
+                                              const std::string& index_dir,
+                                              const std::string& file_name) {
+    DorisCompoundReader* directory = new DorisCompoundReader(
+            DorisCompoundDirectory::getDirectory(fs, index_dir.c_str()), file_name.c_str());
+    auto closeDirectory = true;
+    auto index_searcher = std::make_shared<lucene::search::IndexSearcher>(directory, closeDirectory);
+    // NOTE: need to cl_refcount-- here, so that directory will be deleted when
+    // index_searcher is destroyed
+    _CLDECDELETE(directory)
+    return index_searcher;
+}
+
 
 void InvertedIndexSearcherCache::create_global_instance(size_t capacity) {
     DCHECK(_s_instance == nullptr);
@@ -37,7 +52,7 @@ InvertedIndexSearcherCache::InvertedIndexSearcherCache(size_t capacity) :
             new_lru_cache("InvertedIndexSearcher:InvertedIndexSearcherCache", capacity));
 }
 
-Status InvertedIndexSearcherCache::get_index_searcher(io::FileSystem* fs, const std::string& index_dir,
+Status InvertedIndexSearcherCache::get_index_searcher(const io::FileSystemSPtr& fs, const std::string& index_dir,
                                                       const std::string& file_name, InvertedIndexCacheHandle* cache_handle,
                                                       bool use_cache) {
     auto file_path = index_dir + "/" + file_name;
@@ -51,7 +66,7 @@ Status InvertedIndexSearcherCache::get_index_searcher(io::FileSystem* fs, const 
     auto mem_tracker = std::unique_ptr<MemTracker>(new MemTracker("InvertedIndexSearcherCacheWithRead"));
     {
         SCOPED_CONSUME_MEM_TRACKER(mem_tracker.get());
-        index_searcher = _build_index_searcher(fs, index_dir, file_name);
+        index_searcher = build_index_searcher(fs, index_dir, file_name);
     }
 
     if (use_cache) {
@@ -65,7 +80,7 @@ Status InvertedIndexSearcherCache::get_index_searcher(io::FileSystem* fs, const 
     return Status::OK();
 }
 
-Status InvertedIndexSearcherCache::insert(io::FileSystem* fs, const std::string& index_dir, const std::string& file_name) {
+Status InvertedIndexSearcherCache::insert(const io::FileSystemSPtr& fs, const std::string& index_dir, const std::string& file_name) {
     auto file_path = index_dir + "/" + file_name;
     InvertedIndexSearcherCache::CacheKey cache_key(file_path);
     InvertedIndexSearcherCache::CacheValue* cache_value = new InvertedIndexSearcherCache::CacheValue();
@@ -73,7 +88,7 @@ Status InvertedIndexSearcherCache::insert(io::FileSystem* fs, const std::string&
     auto mem_tracker = std::unique_ptr<MemTracker>(new MemTracker("InvertedIndexSearcherCacheWithInsert"));
     {
         SCOPED_CONSUME_MEM_TRACKER(mem_tracker.get());
-        index_searcher = _build_index_searcher(fs, index_dir, file_name);
+        index_searcher = build_index_searcher(fs, index_dir, file_name);
     }
 
     cache_value->index_searcher = std::move(index_searcher);
@@ -142,17 +157,6 @@ void InvertedIndexSearcherCache::_insert(const InvertedIndexSearcherCache::Cache
     auto lru_handle = _cache->insert(key.index_file_path, &value, value.size,
                                      deleter, CachePriority::NORMAL);
     *handle = InvertedIndexCacheHandle(_cache.get(), lru_handle);
-}
-
-IndexSearcherPtr InvertedIndexSearcherCache::_build_index_searcher(io::FileSystem* fs, 
-                                                                const std::string& index_dir,
-                                                                const std::string& file_name) {
-    DorisCompoundReader* directory = new DorisCompoundReader(DorisCompoundDirectory::getDirectory(fs, index_dir.c_str()), file_name.c_str());
-    auto closeDirectory = true;
-    auto index_searcher = std::make_shared<lucene::search::IndexSearcher>(directory, closeDirectory);
-    // NOTE: need to cl_refcount-- here, so that directory will be deleted when index_searcher is destroyed
-    _CLDECDELETE(directory)
-    return index_searcher;
 }
 
 } // namespace segment_v2

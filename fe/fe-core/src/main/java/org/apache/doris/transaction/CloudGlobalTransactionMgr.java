@@ -677,4 +677,15 @@ public class CloudGlobalTransactionMgr implements GlobalTransactionMgrInterface 
         // TODO Auto-generated method stub
         return 0;
     }
+
+    @Override
+    public long getAllRunningTxnNum() {
+        return 0;
+    }
+
+    @Override
+    public long getAllRunningTxnReplicaNum() {
+        return 0;
+    }
+
 }

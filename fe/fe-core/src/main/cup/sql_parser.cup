@@ -266,6 +266,7 @@ terminal String
     KW_BEGIN,
     KW_BETWEEN,
     KW_BIGINT,
+    KW_BIN,
     KW_BINLOG,
     KW_BITMAP,
     KW_BITMAP_UNION,
@@ -492,6 +493,8 @@ terminal String
     KW_PLUGINS,
     KW_POLICY,
     KW_PRECEDING,
+    KW_PERCENT,
+    KW_RECYCLE,
     KW_PROC,
     KW_PROCEDURE,
     KW_PROCESSLIST,
@@ -567,6 +570,7 @@ terminal String
     KW_SYSTEM,
     KW_TABLE,
     KW_TABLES,
+    KW_TABLESAMPLE,
     KW_TABLET,
     KW_TABLETS,
     KW_TASK,
@@ -688,9 +692,11 @@ nonterminal Expr set_expr_or_default;
 nonterminal ArrayList<Expr> expr_list, values, row_value, opt_values;
 nonterminal ArrayList<Expr> func_arg_list;
 nonterminal ArrayList<Expr> expr_pipe_list;
-nonterminal String select_alias, opt_table_alias, lock_alias;
+nonterminal String select_alias, opt_table_alias, lock_alias, opt_alias;
 nonterminal ArrayList<String> ident_list;
 nonterminal PartitionNames opt_partition_names, partition_names;
+nonterminal ArrayList<Long> opt_tablet_list, tablet_list;
+nonterminal TableSample opt_table_sample, table_sample;
 nonterminal ClusterName cluster_name;
 nonterminal ClusterName des_cluster_name;
 nonterminal TableName table_name, opt_table_name;
@@ -780,6 +786,7 @@ nonterminal Integer opt_distribution_number;
 nonterminal Long opt_field_length;
 nonterminal KeysDesc opt_keys;
 nonterminal KeysDesc opt_mv_keys;
+nonterminal Long opt_id;
 
 nonterminal PartitionKeyDesc partition_key_desc;
 nonterminal PartitionKeyDesc list_partition_key_desc;
@@ -789,8 +796,10 @@ nonterminal List<PartitionValue> partition_value_list;
 nonterminal List<PartitionValue> partition_key_item_list;
 nonterminal List<List<PartitionValue>> list_partition_values_list;
 nonterminal SinglePartitionDesc single_partition_desc;
-nonterminal List<SinglePartitionDesc> opt_single_partition_desc_list;
-nonterminal List<SinglePartitionDesc> single_partition_desc_list;
+nonterminal List<AllPartitionDesc> opt_all_partition_desc_list;
+nonterminal List<AllPartitionDesc> all_partition_desc_list;
+nonterminal PartitionKeyDesc fixed_multi_partition_key_desc;
+nonterminal MultiPartitionDesc multi_partition_desc;
 
 nonterminal List<AccessPrivilege> privilege_list;
 nonterminal List<String> string_list;
@@ -907,6 +916,7 @@ precedence left KW_MATCH_ANY, KW_MATCH_ALL, KW_MATCH_PHRASE, KW_MATCH, KW_MATCH_
 precedence left EQUAL, LESSTHAN, GREATERTHAN;
 precedence left ADD, SUBTRACT;
 precedence left AT, STAR, DIVIDE, MOD, KW_DIV;
+precedence left KW_EXCEPT;
 precedence left BITAND, BITOR, BITXOR;
 precedence left KW_PIPE;
 precedence left BITNOT;
@@ -1153,6 +1163,10 @@ refresh_stmt ::=
     | KW_REFRESH KW_DATABASE ident:db
     {:
         RESULT = new RefreshDbStmt(db);
+    :}
+    | KW_REFRESH KW_DATABASE ident:ctl DOT ident:db
+    {:
+        RESULT = new RefreshDbStmt(ctl, db);
     :}
     | KW_REFRESH KW_MATERIALIZED KW_VIEW table_name:mv
     {:
@@ -1876,14 +1890,14 @@ create_stmt ::=
         RESULT = new AlterTableStmt(tableName, Lists.newArrayList(new CreateIndexClause(tableName, new IndexDef(indexName, ifNotExists, cols, indexType, properties, comment), false)));
     :}
     /* resource */
-    | KW_CREATE opt_external:isExternal KW_RESOURCE ident_or_text:resourceName opt_properties:properties
+    | KW_CREATE opt_external:isExternal KW_RESOURCE opt_if_not_exists:ifNotExists ident_or_text:resourceName opt_properties:properties
     {:
-        RESULT = new CreateResourceStmt(isExternal, resourceName, properties);
+        RESULT = new CreateResourceStmt(isExternal, ifNotExists, resourceName, properties);
     :}
     /* encryptkey */
-    | KW_CREATE KW_ENCRYPTKEY encryptkey_name:keyName KW_AS STRING_LITERAL:keyString
+    | KW_CREATE KW_ENCRYPTKEY opt_if_not_exists:ifNotExists encryptkey_name:keyName KW_AS STRING_LITERAL:keyString
     {:
-        RESULT = new CreateEncryptKeyStmt(keyName, keyString);
+        RESULT = new CreateEncryptKeyStmt(ifNotExists, keyName, keyString);
     :}
     /* sync job */
     | KW_CREATE KW_SYNC ident:db DOT ident_or_text:jobName LPAREN channel_desc_list:channelDescList RPAREN binlog_desc:binlog opt_properties:properties
@@ -2836,13 +2850,13 @@ drop_stmt ::=
     {:
         RESULT = new DropMaterializedViewStmt(ifExists, mvName, tableName);
     :}
-    | KW_DROP KW_RESOURCE ident_or_text:resourceName
+    | KW_DROP KW_RESOURCE opt_if_exists:ifExists ident_or_text:resourceName
     {:
-        RESULT = new DropResourceStmt(resourceName);
+        RESULT = new DropResourceStmt(ifExists, resourceName);
     :}
-    | KW_DROP KW_ENCRYPTKEY encryptkey_name:keyName
+    | KW_DROP KW_ENCRYPTKEY opt_if_exists:ifExists encryptkey_name:keyName
     {:
-        RESULT = new DropEncryptKeyStmt(keyName);
+        RESULT = new DropEncryptKeyStmt(ifExists, keyName);
     :}
     | KW_DROP KW_SQL_BLOCK_RULE opt_if_exists:ifExists ident_list:ruleNames
     {:
@@ -2864,21 +2878,26 @@ drop_stmt ::=
     {:
         RESULT = new DropStageStmt(ifExists, stageName);
     :}
+    /* statistics */
+    | KW_DROP KW_STATS opt_table_name:tbl opt_partition_names:partitionNames
+    {:
+        RESULT = new DropTableStatsStmt(tbl, partitionNames);
+    :}
     ;
 
 // Recover statement
 recover_stmt ::=
-    KW_RECOVER KW_DATABASE ident:dbName
+    KW_RECOVER KW_DATABASE ident:dbName opt_id:dbId opt_alias:alias
     {:
-        RESULT = new RecoverDbStmt(dbName);
+        RESULT = new RecoverDbStmt(dbName, dbId, alias);
     :}
-    | KW_RECOVER KW_TABLE table_name:dbTblName
+    | KW_RECOVER KW_TABLE table_name:dbTblName opt_id:tableId opt_alias:alias
     {:
-        RESULT = new RecoverTableStmt(dbTblName);
+        RESULT = new RecoverTableStmt(dbTblName, tableId, alias);
     :}
-    | KW_RECOVER KW_PARTITION ident:partitionName KW_FROM table_name:dbTblName
+    | KW_RECOVER KW_PARTITION ident:partitionName opt_id:partitionId opt_alias:alias KW_FROM table_name:dbTblName
     {:
-        RESULT = new RecoverPartitionStmt(dbTblName, partitionName);
+        RESULT = new RecoverPartitionStmt(dbTblName, partitionName, partitionId, alias);
     :}
     ;
 
@@ -2928,13 +2947,13 @@ opt_partition ::=
     :}
     /* Range partition */
     | KW_PARTITION KW_BY KW_RANGE LPAREN ident_list:columns RPAREN
-            LPAREN opt_single_partition_desc_list:list RPAREN
+            LPAREN opt_all_partition_desc_list:list RPAREN
     {:
         RESULT = new RangePartitionDesc(columns, list);
     :}
     /* List partition */
     | KW_PARTITION KW_BY KW_LIST LPAREN ident_list:columns RPAREN
-            LPAREN opt_single_partition_desc_list:list RPAREN
+            LPAREN opt_all_partition_desc_list:list RPAREN
     {:
         RESULT = new ListPartitionDesc(columns, list);
     :}
@@ -3002,24 +3021,33 @@ opt_keys ::=
     :}
     ;
 
-opt_single_partition_desc_list ::=
+opt_all_partition_desc_list ::=
     /* Empty */
     {:
         RESULT = null;
     :}
-    | single_partition_desc_list:list
+    | all_partition_desc_list:list
     {:
         RESULT = list;
     :}
     ;
 
-single_partition_desc_list ::=
-    single_partition_desc_list:list COMMA single_partition_desc:desc
+all_partition_desc_list ::=
+    all_partition_desc_list:list COMMA single_partition_desc:desc
     {:
         list.add(desc);
         RESULT = list;
     :}
     | single_partition_desc:desc
+    {:
+        RESULT = Lists.newArrayList(desc);
+    :}
+    | all_partition_desc_list:list COMMA multi_partition_desc:desc
+    {:
+        list.add(desc);
+        RESULT = list;
+    :}
+    | multi_partition_desc:desc
     {:
         RESULT = Lists.newArrayList(desc);
     :}
@@ -3041,6 +3069,22 @@ single_partition_desc ::=
         opt_key_value_map:properties
     {:
         RESULT = new SinglePartitionDesc(ifNotExists, partName, desc, properties);
+    :}
+    ;
+
+multi_partition_desc ::=
+    fixed_multi_partition_key_desc:desc
+        opt_key_value_map:properties
+    {:
+        RESULT = new MultiPartitionDesc(desc, properties);
+    :}
+    ;
+
+fixed_multi_partition_key_desc ::=
+    // FROM (lower) TO (upper) INTERVAL time_interval time_type
+    KW_FROM LPAREN partition_key_list:lower RPAREN KW_TO LPAREN partition_key_list:upper RPAREN KW_INTERVAL INTEGER_LITERAL:time_interval ident:time_unit
+    {:
+        RESULT = PartitionKeyDesc.createMultiFixed(lower, upper, time_interval, time_unit);
     :}
     ;
 
@@ -3758,6 +3802,10 @@ show_param ::=
     {:
         RESULT = new ShowAnalyzeStmt(tbl, parser.where, orderByClause, limitClause);
     :}
+    | KW_CATALOG KW_RECYCLE KW_BIN opt_wild_where
+    {:
+        RESULT = new ShowCatalogRecycleBinStmt(parser.where);
+    :}
     ;
 
 opt_tmp ::=
@@ -3884,6 +3932,17 @@ opt_where ::=
     :}
     ;
 
+opt_id ::=
+    /* empty */
+    {:
+        RESULT = (long)-1;
+    :}
+    | INTEGER_LITERAL:id
+    {:
+        RESULT = id;
+    :}
+    ;
+
 opt_alter_type ::=
     KW_ROLLUP
     {:
@@ -3936,6 +3995,10 @@ describe_stmt ::=
     | KW_SHOW KW_COLUMNS KW_FROM table_name:table
     {:
         RESULT = new DescribeStmt(table, false);
+    :}
+    | describe_command KW_FUNCTION table_valued_function_ref:tvf
+    {:
+        RESULT = new DescribeStmt(tvf);
     :}
     | describe_command table_name:table KW_ALL
     {:
@@ -4900,6 +4963,12 @@ select_list ::=
         list.addItem(SelectListItem.createStarItem(null));
         RESULT = list;
     :}
+    | STAR KW_EXCEPT LPAREN select_sublist: list RPAREN
+    {:
+        SelectList res = new SelectList(list);
+        list.setIsExcept(true);
+        RESULT = list;
+    :}
     ;
 
 select_sublist ::=
@@ -5091,9 +5160,9 @@ table_ref ::=
   ;
 
 table_valued_function_ref ::=
-  ident:func_name LPAREN string_list:param_list RPAREN opt_table_alias:alias
+  ident:func_name LPAREN key_value_map:properties RPAREN opt_table_alias:alias
   {:
-    RESULT = new TableValuedFunctionRef(func_name, alias, param_list);
+    RESULT = new TableValuedFunctionRef(func_name, alias, properties);
   :}
   ;
 
@@ -5119,9 +5188,9 @@ base_table_ref_list ::=
   ;
 
 base_table_ref ::=
-    table_name:name opt_partition_names:partitionNames opt_table_alias:alias opt_common_hints:commonHints
+    table_name:name opt_partition_names:partitionNames opt_tablet_list:tabletIds opt_table_alias:alias opt_table_sample:tableSample opt_common_hints:commonHints
     {:
-        RESULT = new TableRef(name, alias, partitionNames, commonHints);
+        RESULT = new TableRef(name, alias, partitionNames, tabletIds, tableSample, commonHints);
     :}
     ;
 
@@ -5137,6 +5206,17 @@ opt_common_hints ::=
     |
     {:
         RESULT = null;
+    :}
+    ;
+
+opt_alias ::=
+    /* empty */
+    {:
+        RESULT = null;
+    :}
+    | KW_AS ident:alias
+    {:
+        RESULT = alias;
     :}
     ;
 
@@ -5170,6 +5250,24 @@ opt_partition_names ::=
     :}
     ;
 
+opt_tablet_list ::=
+    /* empty */
+    {:
+        RESULT = null;
+    :}
+    | tablet_list:tabletList
+    {:
+        RESULT = tabletList;
+    :}
+    ;
+
+tablet_list ::=
+    KW_TABLET LPAREN integer_list:tabletIds RPAREN
+    {:
+        RESULT = Lists.newArrayList(tabletIds);
+    :}
+    ;
+
 partition_names ::=
     KW_PARTITION LPAREN ident_list:partitions RPAREN
     {:
@@ -5194,6 +5292,36 @@ partition_names ::=
     | KW_TEMPORARY KW_PARTITION ident:partName
     {:
         RESULT = new PartitionNames(true, Lists.newArrayList(partName));
+    :}
+    ;
+
+opt_table_sample ::=
+    /* empty */
+    {:
+        RESULT = null;
+    :}
+    | table_sample:tableSample
+    {:
+        RESULT = tableSample;
+    :}
+    ;
+
+table_sample ::=
+    KW_TABLESAMPLE LPAREN INTEGER_LITERAL:sampleValue KW_PERCENT RPAREN
+    {:
+        RESULT = new TableSample(true, sampleValue);
+    :}
+    | KW_TABLESAMPLE LPAREN INTEGER_LITERAL:sampleValue KW_ROWS RPAREN
+    {:
+        RESULT = new TableSample(false, sampleValue);
+    :}
+    | KW_TABLESAMPLE LPAREN INTEGER_LITERAL:sampleValue KW_PERCENT RPAREN KW_REPEATABLE INTEGER_LITERAL:seek
+    {:
+        RESULT = new TableSample(true, sampleValue, seek);
+    :}
+    | KW_TABLESAMPLE LPAREN INTEGER_LITERAL:sampleValue KW_ROWS RPAREN KW_REPEATABLE INTEGER_LITERAL:seek
+    {:
+        RESULT = new TableSample(false, sampleValue, seek);
     :}
     ;
 
@@ -6465,6 +6593,8 @@ keyword ::=
     {: RESULT = id; :}
     | KW_INVERTED:id
     {: RESULT = id; :}
+    | KW_BIN:id
+    {: RESULT = id; :}
     | KW_BITMAP:id
     {: RESULT = id; :}
     | KW_QUANTILE_STATE:id
@@ -6832,6 +6962,8 @@ keyword ::=
     | KW_CATALOG:id
     {: RESULT = id; :}
     | KW_CATALOGS:id
+    {: RESULT = id; :}
+    | KW_RECYCLE:id
     {: RESULT = id; :}
     ;
 

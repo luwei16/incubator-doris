@@ -36,6 +36,10 @@ class RowBlockV2;
 class Schema;
 class ColumnPredicate;
 
+struct IOContext {
+    ReaderType reader_type;
+};
+
 class StorageReadOptions {
 public:
     struct KeyRange {
@@ -87,7 +91,7 @@ public:
     OlapReaderStatistics* stats = nullptr;
     const TUniqueId* query_id = nullptr;
     bool use_page_cache = false;
-    int block_row_max = 4096;
+    int block_row_max = 4096 - 32; // see https://github.com/apache/doris/pull/11816
 
     TabletSchemaSPtr tablet_schema = nullptr;
     bool record_rowids = false;
@@ -106,7 +110,7 @@ public:
 
     RowsetId rowset_id;
     int32_t tablet_id = 0;
-    
+
     vectorized::VExpr* remaining_vconjunct_root = nullptr;
     const std::set<int32_t>* output_columns = nullptr;
 };
@@ -158,6 +162,8 @@ public:
 
     // return if it's an empty iterator
     virtual bool empty() const { return false; }
+
+    virtual bool update_profile(RuntimeProfile* profile) { return false; }
 };
 
 } // namespace doris

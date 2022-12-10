@@ -36,6 +36,13 @@ curdir="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 export DORIS_HOME="${curdir}/.."
 export TP_DIR="${curdir}"
 
+# include custom environment variables
+if [[ -f "${DORIS_HOME}/env.sh" ]]; then
+    export BUILD_THIRDPARTY_WIP=1
+    . "${DORIS_HOME}/env.sh"
+    export BUILD_THIRDPARTY_WIP=
+fi
+
 # Check args
 usage() {
     echo "
@@ -108,13 +115,6 @@ echo "Get params:
     BUILDCLUCENE        -- $BUILDCLUCENE
 "
 
-# include custom environment variables
-if [[ -f "${DORIS_HOME}/env.sh" ]]; then
-    export BUILD_THIRDPARTY_WIP=1
-    . "${DORIS_HOME}/env.sh"
-    export BUILD_THIRDPARTY_WIP=
-fi
-
 if [[ ! -f "${TP_DIR}/download-thirdparty.sh" ]]; then
     echo "Download thirdparty script is missing".
     exit 1
@@ -156,6 +156,10 @@ elif [[ "${CC}" == *clang ]]; then
     warning_option_ignored='-Wno-option-ignored'
     boost_toolset='clang'
     libhdfs_cxx17='-std=c++1z'
+
+    if "${CC}" -xc++ "${warning_unused_but_set_variable}" /dev/null 2>&1 | grep 'unknown warning option'; then
+        warning_unused_but_set_variable=''
+    fi
 fi
 
 # prepare installed prefix
@@ -167,7 +171,7 @@ popd
 check_prerequest() {
     local CMD="$1"
     local NAME="$2"
-    if ! ${CMD}; then
+    if ! eval "${CMD}"; then
         echo "${NAME} is missing"
         exit 1
     else
@@ -257,7 +261,11 @@ remove_all_dylib() {
 }
 
 if [[ -z "${STRIP_TP_LIB}" ]]; then
-    STRIP_TP_LIB='ON'
+    if [[ "${KERNEL}" != 'Darwin' ]]; then
+        STRIP_TP_LIB='ON'
+    else
+        STRIP_TP_LIB='OFF'
+    fi
 fi
 
 if [[ "${STRIP_TP_LIB}" = "ON" ]]; then
@@ -386,11 +394,11 @@ build_thrift() {
 
     if [[ "${KERNEL}" != 'Darwin' ]]; then
         cflags="-I${TP_INCLUDE_DIR}"
-        cxxflags="-I${TP_INCLUDE_DIR} -Wno-unused-but-set-variable"
+        cxxflags="-I${TP_INCLUDE_DIR} ${warning_unused_but_set_variable}"
         ldflags="-L${TP_LIB_DIR} --static"
     else
         cflags="-I${TP_INCLUDE_DIR} -Wno-implicit-function-declaration"
-        cxxflags="-I${TP_INCLUDE_DIR} -Wno-unused-but-set-variable"
+        cxxflags="-I${TP_INCLUDE_DIR} ${warning_unused_but_set_variable}"
         ldflags="-L${TP_LIB_DIR}"
     fi
 
@@ -825,7 +833,11 @@ build_rocksdb() {
     if [[ "${KERNEL}" != 'Darwin' ]]; then
         ldflags='-static-libstdc++ -static-libgcc'
     else
-        ldflags=''
+        if [[ "$(uname -m)" != 'x86_64' ]]; then
+            ldflags=''
+        else
+            ldflags="-L${TP_LIB_DIR} -ljemalloc_doris"
+        fi
     fi
 
     # -Wno-range-loop-construct gcc-11
@@ -869,7 +881,7 @@ build_librdkafka() {
     # PKG_CONFIG="pkg-config --static"
 
     CPPFLAGS="-I${TP_INCLUDE_DIR}" \
-        LDFLAGS="-L${TP_LIB_DIR}" \
+        LDFLAGS="-L${TP_LIB_DIR} -lssl -lcrypto -lzstd -lz -lsasl2" \
         ./configure --prefix="${TP_INSTALL_DIR}" --enable-static --enable-sasl --disable-c11threads
 
     make -j "${PARALLEL}"
@@ -918,7 +930,7 @@ build_flatbuffers() {
 
     LDFLAGS="${ldflags}" \
         "${CMAKE_CMD}" -G "${GENERATOR}" \
-        -DFLATBUFFERS_CXX_FLAGS="${warning_class_memaccess} -Wno-unused-but-set-variable" \
+        -DFLATBUFFERS_CXX_FLAGS="${warning_class_memaccess} ${warning_unused_but_set_variable}" \
         -DFLATBUFFERS_BUILD_TESTS=OFF \
         ..
 
@@ -1070,7 +1082,11 @@ build_bitshuffle() {
             local objcopy="${DORIS_BIN_UTILS}/objcopy"
 
             if [[ ! -f "${nm}" ]]; then nm="$(command -v nm)"; fi
-            if [[ ! -f "${objcopy}" ]]; then objcopy="$(command -v objcopy)"; fi
+            if [[ ! -f "${objcopy}" ]]; then
+                if ! objcopy="$(command -v objcopy)"; then
+                    objcopy="${TP_INSTALL_DIR}/bin/objcopy"
+                fi
+            fi
 
             # Create a mapping file with '<old_sym> <suffixed_sym>' on each line.
             "${nm}" --defined-only --extern-only "${tmp_obj}" | while read -r addr type sym; do
@@ -1206,13 +1222,13 @@ build_cctz() {
 build_js_and_css() {
     check_if_source_exist "${DATATABLES_SOURCE}"
     check_if_source_exist 'Bootstrap-3.3.7'
-    check_if_source_exist 'jQuery-3.3.1'
+    check_if_source_exist 'jQuery-3.6.0'
 
     mkdir -p "${TP_INSTALL_DIR}/webroot"
     cd "${TP_SOURCE_DIR}"
     cp -r "${DATATABLES_SOURCE}" "${TP_INSTALL_DIR}/webroot/"
     cp -r Bootstrap-3.3.7 "${TP_INSTALL_DIR}/webroot/"
-    cp -r jQuery-3.3.1 "${TP_INSTALL_DIR}/webroot/"
+    cp -r jQuery-3.6.0 "${TP_INSTALL_DIR}/webroot/"
     cp bootstrap-table.min.js "${TP_INSTALL_DIR}/webroot/Bootstrap-3.3.7/js"
     cp bootstrap-table.min.css "${TP_INSTALL_DIR}/webroot/Bootstrap-3.3.7/css"
 }
@@ -1239,7 +1255,7 @@ build_aws_sdk() {
     "${CMAKE_CMD}" -G "${GENERATOR}" -B"${BUILD_DIR}" -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_INSTALL_PREFIX="${TP_INSTALL_DIR}" \
         -DCMAKE_PREFIX_PATH="${TP_INSTALL_DIR}" -DBUILD_SHARED_LIBS=OFF -DENABLE_TESTING=OFF \
         -DCURL_LIBRARY_RELEASE="${TP_INSTALL_DIR}/lib/libcurl.a" -DZLIB_LIBRARY_RELEASE="${TP_INSTALL_DIR}/lib/libz.a" \
-        -DBUILD_ONLY="core;s3;s3-crt;transfer" -DCMAKE_CXX_FLAGS="-Wno-nonnull" -DCPP_STANDARD=17
+        -DBUILD_ONLY="core;s3;s3-crt;transfer" -DCMAKE_CXX_FLAGS="-Wno-nonnull -Wno-deprecated-declarations" -DCPP_STANDARD=17
 
     cd "${BUILD_DIR}"
 
@@ -1299,7 +1315,7 @@ build_xml2() {
 
     export ACLOCAL_PATH='/usr/share/aclocal'
 
-    sh autogen.sh
+    sed '/(libtoolize/,/}/d' autogen.sh | bash
     make distclean
 
     mkdir -p "${BUILD_DIR}"
@@ -1376,10 +1392,21 @@ build_hdfs3() {
     cd "${BUILD_DIR}"
     rm -rf ./*
 
-    # build libhdfs3 with kerberos support
-    CPPLAGS="-I${TP_INCLUDE_DIR}" \
-        LDFLAGS="-L${TP_LIB_DIR}" \
-        ../bootstrap --dependency="${TP_INSTALL_DIR}" --prefix="${TP_INSTALL_DIR}" --disable-shared --enable-static
+    if [[ "$(uname -m)" == "x86_64" ]]; then
+        SSE_OPTION='-DENABLE_SSE=ON'
+    else
+        SSE_OPTION='-DENABLE_SSE=OFF'
+    fi
+    cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_INSTALL_PREFIX="${TP_INSTALL_DIR}" \
+        -DBUILD_STATIC_LIBS=ON -DBUILD_SHARED_LIBS=OFF -DBUILD_TEST=OFF "${SSE_OPTION}" \
+        -DProtobuf_PROTOC_EXECUTABLE="${TP_INSTALL_DIR}/bin/protoc" \
+        -DProtobuf_INCLUDE_DIR="${TP_INSTALL_DIR}/include" \
+        -DProtobuf_LIBRARIES="${TP_INSTALL_DIR}/lib/libprotoc.a" \
+        -DKERBEROS_INCLUDE_DIRS="${TP_INSTALL_DIR}/include" \
+        -DKERBEROS_LIBRARIES="${TP_INSTALL_DIR}/lib/libkrb5.a" \
+        -DGSASL_INCLUDE_DIR="${TP_INSTALL_DIR}/include" \
+        -DGSASL_LIBRARIES="${TP_INSTALL_DIR}/lib/libgsasl.a" \
+        ..
 
     make CXXFLAGS="${libhdfs_cxx17}" -j "${PARALLEL}"
     make install
@@ -1497,62 +1524,106 @@ build_xxhash() {
     cp libxxhash.a "${TP_INSTALL_DIR}/lib64"
 }
 
+build_binutils() {
+    check_if_source_exist "${BINUTILS_SOURCE}"
+    cd "${TP_SOURCE_DIR}/${BINUTILS_SOURCE}"
+
+    rm -rf "${BUILD_DIR}"
+    mkdir -p "${BUILD_DIR}"
+    cd "${BUILD_DIR}"
+
+    ../configure --prefix="${TP_INSTALL_DIR}" --enable-install-libiberty
+    make -j "${PARALLEL}"
+    make install
+}
+
+build_gettext() {
+    check_if_source_exist "${GETTEXT_SOURCE}"
+    cd "${TP_SOURCE_DIR}/${GETTEXT_SOURCE}"
+
+    rm -rf "${BUILD_DIR}"
+    mkdir -p "${BUILD_DIR}"
+    cd "${BUILD_DIR}"
+
+    ../configure --prefix="${TP_INSTALL_DIR}" --disable-java
+    make -j "${PARALLEL}"
+    make install
+
+    remove_all_dylib
+}
+
+# concurrentqueue
+build_concurrentqueue() {
+    check_if_source_exist "${CONCURRENTQUEUE_SOURCE}"
+    cd "${TP_SOURCE_DIR}/${CONCURRENTQUEUE_SOURCE}"
+    cp ./*.h "${TP_INSTALL_DIR}/include/"
+}
+
+if [[ "$(uname -s)" == 'Darwin' ]]; then
+    echo 'build for Darwin'
+    build_binutils
+    build_gettext
+fi
+
 if [ $BUILDCLUCENE -gt 0 ];then
     build_clucene
-else
-    build_libunixodbc
-    build_openssl
-    build_libevent
-    build_zlib
-    build_lz4
-    build_bzip
-    build_lzo2
-    build_zstd
-    build_boost # must before thrift
-    build_protobuf
-    build_gflags
-    build_gtest
-    build_glog
-    build_rapidjson
-    build_snappy
-    build_gperftools
-    build_curl
-    build_re2
-    build_hyperscan
-    build_thrift
-    build_leveldb
-    build_brpc
-    build_rocksdb
-    build_krb5 # before cyrus_sasl
-    build_cyrus_sasl
-    build_librdkafka
-    build_flatbuffers
-    build_orc
-    build_jemalloc
-    build_arrow
-    build_s2
-    build_bitshuffle
-    build_croaringbitmap
-    build_fmt
-    build_parallel_hashmap
-    build_pdqsort
-    build_libdivide
-    build_cctz
-    build_tsan_header
-    build_mysql
-    build_aws_sdk
-    build_js_and_css
-    build_lzma
-    build_xml2
-    build_idn
-    build_gsasl
-    build_hdfs3
-    build_benchmark
-    build_simdjson
-    build_nlohmann_json
-    build_opentelemetry
-    build_libbacktrace
-    build_sse2neon
-    build_xxhash
+    exit 0
 fi
+
+build_libunixodbc
+build_openssl
+build_libevent
+build_zlib
+build_lz4
+build_bzip
+build_lzo2
+build_zstd
+build_boost # must before thrift
+build_protobuf
+build_gflags
+build_gtest
+build_glog
+build_rapidjson
+build_snappy
+build_gperftools
+build_curl
+build_re2
+build_hyperscan
+build_thrift
+build_leveldb
+build_brpc
+build_jemalloc
+build_rocksdb
+build_cyrus_sasl
+build_librdkafka
+build_flatbuffers
+build_orc
+build_arrow
+build_s2
+build_bitshuffle
+build_croaringbitmap
+build_fmt
+build_parallel_hashmap
+build_pdqsort
+build_libdivide
+build_cctz
+build_tsan_header
+build_mysql
+build_aws_sdk
+build_js_and_css
+build_lzma
+build_xml2
+build_idn
+build_krb5
+build_gsasl
+build_hdfs3
+build_benchmark
+build_simdjson
+build_nlohmann_json
+build_opentelemetry
+build_libbacktrace
+build_sse2neon
+build_xxhash
+build_concurrentqueue
+
 echo "Finished to build all thirdparties"

@@ -38,13 +38,7 @@ Compaction::Compaction(TabletSharedPtr tablet, const std::string& label)
           _input_rowsets_size(0),
           _input_row_num(0),
           _state(CompactionState::INITED) {
-#ifndef BE_TEST
-    _mem_tracker = std::make_shared<MemTrackerLimiter>(
-            -1, label, StorageEngine::instance()->compaction_mem_tracker());
-    _mem_tracker->enable_reset_zero();
-#else
-    _mem_tracker = std::make_shared<MemTrackerLimiter>(-1, label);
-#endif
+    _mem_tracker = std::make_shared<MemTrackerLimiter>(MemTrackerLimiter::Type::COMPACTION, label);
 }
 
 Compaction::~Compaction() {}
@@ -182,7 +176,7 @@ Status Compaction::do_compaction_impl(int64_t permits) {
             }
         }
     }
-    RETURN_IF_ERROR(_tablet->create_rowset_writer(&context, &_output_rs_writer));
+    RETURN_IF_ERROR(_tablet->create_rowset_writer(context, &_output_rs_writer));
 #ifdef CLOUD_MODE
     RETURN_IF_ERROR(cloud::meta_mgr()->prepare_rowset(_output_rs_writer->rowset_meta(), true));
 #endif
@@ -222,7 +216,7 @@ Status Compaction::do_compaction_impl(int64_t permits) {
     if (_output_rowset == nullptr) {
         LOG(WARNING) << "rowset writer build failed. writer version:"
                      << ", output_version=" << _output_version;
-        return Status::OLAPInternalError(OLAP_ERR_MALLOC_ERROR);
+        return Status::OLAPInternalError(OLAP_ERR_ROWSET_BUILDER_INIT);
     }
 #ifdef CLOUD_MODE
     RETURN_IF_ERROR(cloud::meta_mgr()->commit_rowset(_output_rowset->rowset_meta(), true));
@@ -272,7 +266,7 @@ Status Compaction::do_compaction_impl(int64_t permits) {
         }
 
         // create index_writer to compaction indexes
-        auto fs = _output_rowset->rowset_meta()->fs();
+        auto& fs = _output_rowset->rowset_meta()->fs();
         auto tablet_path = _output_rowset->tablet_path();
 
         DCHECK(dest_index_files.size() > 0);

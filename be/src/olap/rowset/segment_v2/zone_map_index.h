@@ -21,10 +21,10 @@
 #include <string>
 #include <vector>
 
+#include "cloud/io/file_reader.h"
 #include "common/status.h"
 #include "env/env.h"
 #include "gen_cpp/segment_v2.pb.h"
-#include "io/fs/file_reader.h"
 #include "olap/field.h"
 #include "olap/rowset/segment_v2/binary_plain_page.h"
 #include "runtime/mem_pool.h"

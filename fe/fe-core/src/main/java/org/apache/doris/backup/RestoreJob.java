@@ -50,6 +50,7 @@ import org.apache.doris.catalog.TableIf.TableType;
 import org.apache.doris.catalog.Tablet;
 import org.apache.doris.catalog.TabletMeta;
 import org.apache.doris.catalog.View;
+import org.apache.doris.clone.DynamicPartitionScheduler;
 import org.apache.doris.common.Config;
 import org.apache.doris.common.DdlException;
 import org.apache.doris.common.FeMetaVersion;
@@ -57,6 +58,7 @@ import org.apache.doris.common.MarkedCountDownLatch;
 import org.apache.doris.common.MetaNotFoundException;
 import org.apache.doris.common.Pair;
 import org.apache.doris.common.io.Text;
+import org.apache.doris.common.util.DynamicPartitionUtil;
 import org.apache.doris.common.util.TimeUtils;
 import org.apache.doris.resource.Tag;
 import org.apache.doris.task.AgentBatchTask;
@@ -99,6 +101,7 @@ import java.util.stream.Collectors;
 
 public class RestoreJob extends AbstractJob {
     private static final String PROP_RESERVE_REPLICA = "reserve_replica";
+    private static final String PROP_RESERVE_DYNAMIC_PARTITION_ENABLE = "reserve_dynamic_partition_enable";
 
     private static final Logger LOG = LogManager.getLogger(RestoreJob.class);
 
@@ -136,6 +139,7 @@ public class RestoreJob extends AbstractJob {
     private ReplicaAllocation replicaAlloc;
 
     private boolean reserveReplica = false;
+    private boolean reserveDynamicPartitionEnable = false;
 
     // this 2 members is to save all newly restored objs
     // tbl name -> part
@@ -167,8 +171,8 @@ public class RestoreJob extends AbstractJob {
     }
 
     public RestoreJob(String label, String backupTs, long dbId, String dbName, BackupJobInfo jobInfo, boolean allowLoad,
-            ReplicaAllocation replicaAlloc, long timeoutMs, int metaVersion, boolean reserveReplica, Env env,
-            long repoId) {
+            ReplicaAllocation replicaAlloc, long timeoutMs, int metaVersion, boolean reserveReplica,
+            boolean reserveDynamicPartitionEnable, Env env, long repoId) {
         super(JobType.RESTORE, label, dbId, dbName, timeoutMs, env, repoId);
         this.backupTimestamp = backupTs;
         this.jobInfo = jobInfo;
@@ -177,7 +181,9 @@ public class RestoreJob extends AbstractJob {
         this.state = RestoreJobState.PENDING;
         this.metaVersion = metaVersion;
         this.reserveReplica = reserveReplica;
+        this.reserveDynamicPartitionEnable = reserveDynamicPartitionEnable;
         properties.put(PROP_RESERVE_REPLICA, String.valueOf(reserveReplica));
+        properties.put(PROP_RESERVE_DYNAMIC_PARTITION_ENABLE, String.valueOf(reserveDynamicPartitionEnable));
     }
 
     public RestoreJobState getState() {
@@ -667,7 +673,7 @@ public class RestoreJob extends AbstractJob {
                     }
 
                     // Reset properties to correct values.
-                    remoteOlapTbl.resetPropertiesForRestore();
+                    remoteOlapTbl.resetPropertiesForRestore(reserveDynamicPartitionEnable, replicaAlloc);
 
                     // DO NOT set remote table's new name here, cause we will still need the origin name later
                     // remoteOlapTbl.setName(jobInfo.getAliasByOriginNameIfSet(tblInfo.name));
@@ -938,7 +944,7 @@ public class RestoreJob extends AbstractJob {
             } else {
                 try {
                     // restore resource
-                    resourceMgr.createResource(remoteOdbcResource);
+                    resourceMgr.createResource(remoteOdbcResource, false);
                 } catch (DdlException e) {
                     status = new Status(ErrCode.COMMON_ERROR, e.getMessage());
                     return;
@@ -1455,7 +1461,7 @@ public class RestoreJob extends AbstractJob {
 
         // set all restored partition version and version hash
         // set all tables' state to NORMAL
-        setTableStateToNormal(db);
+        setTableStateToNormal(db, true);
         for (long tblId : restoredVersionInfo.rowKeySet()) {
             Table tbl = db.getTableNullable(tblId);
             if (tbl == null) {
@@ -1548,6 +1554,7 @@ public class RestoreJob extends AbstractJob {
         info.add(String.valueOf(replicaAlloc.getTotalReplicaNum()));
         info.add(replicaAlloc.toCreateStmt());
         info.add(String.valueOf(reserveReplica));
+        info.add(String.valueOf(reserveDynamicPartitionEnable));
         info.add(getRestoreObjs());
         info.add(TimeUtils.longToTimeString(createTime));
         info.add(TimeUtils.longToTimeString(metaPreparedTime));
@@ -1622,7 +1629,7 @@ public class RestoreJob extends AbstractJob {
         Database db = env.getInternalCatalog().getDbNullable(dbId);
         if (db != null) {
             // rollback table's state to NORMAL
-            setTableStateToNormal(db);
+            setTableStateToNormal(db, false);
 
             // remove restored tbls
             for (Table restoreTbl : restoredTbls) {
@@ -1699,7 +1706,7 @@ public class RestoreJob extends AbstractJob {
         LOG.info("finished to cancel restore job. is replay: {}. {}", isReplay, this);
     }
 
-    private void setTableStateToNormal(Database db) {
+    private void setTableStateToNormal(Database db, boolean committed) {
         for (String tableName : jobInfo.backupOlapTableObjects.keySet()) {
             Table tbl = db.getTableNullable(jobInfo.getAliasByOriginNameIfSet(tableName));
             if (tbl == null) {
@@ -1729,6 +1736,13 @@ public class RestoreJob extends AbstractJob {
                     }
                     if (partition.getState() == PartitionState.RESTORE) {
                         partition.setState(PartitionState.NORMAL);
+                    }
+                }
+                if (committed && reserveDynamicPartitionEnable) {
+                    if (DynamicPartitionUtil.isDynamicPartitionTable(tbl)) {
+                        DynamicPartitionUtil.registerOrRemoveDynamicPartitionTable(db.getId(), olapTbl, false);
+                        Env.getCurrentEnv().getDynamicPartitionScheduler().createOrUpdateRuntimeInfo(tbl.getId(),
+                                DynamicPartitionScheduler.LAST_UPDATE_TIME, TimeUtils.getCurrentFormatTime());
                     }
                 }
             } finally {
@@ -1898,6 +1912,7 @@ public class RestoreJob extends AbstractJob {
             properties.put(key, value);
         }
         reserveReplica = Boolean.parseBoolean(properties.get(PROP_RESERVE_REPLICA));
+        reserveDynamicPartitionEnable = Boolean.parseBoolean(properties.get(PROP_RESERVE_DYNAMIC_PARTITION_ENABLE));
     }
 
     @Override

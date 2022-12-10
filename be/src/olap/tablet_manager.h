@@ -42,6 +42,7 @@ namespace doris {
 class Tablet;
 class DataDir;
 
+using TabletSharedPtr = std::shared_ptr<Tablet>;
 // TabletManager provides get, add, delete tablet method for storage engine
 // NOTE: If you want to add a method that needs to hold meta-lock before you can call it,
 // please uniformly name the method in "xxx_unlocked()" mode
@@ -201,7 +202,7 @@ private:
     };
 
     // trace the memory use by meta of tablet
-    std::unique_ptr<MemTracker> _mem_tracker;
+    std::shared_ptr<MemTracker> _mem_tracker;
 
     const int32_t _tablets_shards_size;
     const int32_t _tablets_shards_mask;

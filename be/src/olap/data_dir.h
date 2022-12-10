@@ -24,11 +24,11 @@
 #include <shared_mutex>
 #include <string>
 
+#include "cloud/io/file_system.h"
 #include "common/status.h"
 #include "env/env.h"
 #include "gen_cpp/Types_types.h"
 #include "gen_cpp/olap_file.pb.h"
-#include "io/fs/file_system.h"
 #include "olap/olap_common.h"
 #include "olap/rowset/rowset_id_generator.h"
 #include "util/metrics.h"
@@ -55,8 +55,9 @@ public:
     const std::string& path() const { return _path; }
     size_t path_hash() const { return _path_hash; }
 
-    const io::FileSystemPtr& fs() const { return _fs; }
-    void set_fs(io::FileSystemPtr fs) { _fs = std::move(fs); }
+    const io::FileSystemSPtr& fs() const { return _fs; }
+
+    void set_fs(io::FileSystemSPtr fs) { _fs = std::move(fs); }
 
     bool is_used() const { return _is_used; }
     void set_is_used(bool is_used) { _is_used = is_used; }
@@ -170,7 +171,7 @@ private:
     std::string _path;
     size_t _path_hash;
 
-    io::FileSystemPtr _fs;
+    io::FileSystemSPtr _fs;
     // user specified capacity
     int64_t _capacity_bytes;
     // the actual available capacity of the disk of this data dir

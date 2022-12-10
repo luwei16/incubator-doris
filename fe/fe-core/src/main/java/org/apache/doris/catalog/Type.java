@@ -46,12 +46,8 @@ import java.util.List;
  * as abstract methods that subclasses must implement.
  */
 public abstract class Type {
-    // Maximum nesting depth of a type. This limit was determined experimentally by
-    // org.apache.doris.rewrite.FoldConstantsRule.apply generating and scanning
-    // deeply nested Parquet and Avro files. In those experiments, we exceeded
-    // the stack space in the scanner (which uses recursion for dealing with
-    // nested types) at a nesting depth between 200 and 300 (200 worked, 300 crashed).
-    public static int MAX_NESTING_DEPTH = 2;
+    // Currently only support Array type with max 9 depths.
+    public static int MAX_NESTING_DEPTH = 9;
 
     // Static constant types for scalar types that don't require additional information.
     public static final ScalarType INVALID = new ScalarType(PrimitiveType.INVALID_TYPE);
@@ -175,6 +171,8 @@ public abstract class Type {
         arraySubTypes.add(DECIMALV2);
         arraySubTypes.add(DATE);
         arraySubTypes.add(DATETIME);
+        arraySubTypes.add(DATEV2);
+        arraySubTypes.add(DATETIMEV2);
         arraySubTypes.add(CHAR);
         arraySubTypes.add(VARCHAR);
         arraySubTypes.add(STRING);
@@ -510,13 +508,17 @@ public abstract class Type {
         return false;
     }
 
-    public static boolean canCastTo(Type t1, Type t2) {
-        if (t1.isScalarType() && t2.isScalarType()) {
-            return ScalarType.canCastTo((ScalarType) t1, (ScalarType) t2);
-        } else if (t1.isArrayType() && t2.isArrayType()) {
-            return ArrayType.canCastTo((ArrayType) t1, (ArrayType) t2);
+    public static boolean canCastTo(Type sourceType, Type targetType) {
+        if (sourceType.isScalarType() && targetType.isScalarType()) {
+            return ScalarType.canCastTo((ScalarType) sourceType, (ScalarType) targetType);
+        } else if (sourceType.isArrayType() && targetType.isArrayType()) {
+            return ArrayType.canCastTo((ArrayType) sourceType, (ArrayType) targetType);
+        } else if (targetType.isArrayType() && !((ArrayType) targetType).getItemType().isScalarType()
+                && !sourceType.isNull()) {
+            // TODO: current not support cast any non-array type(except for null) to nested array type.
+            return false;
         }
-        return t1.isNull() || t1.getPrimitiveType() == PrimitiveType.VARCHAR;
+        return sourceType.isNull() || sourceType.getPrimitiveType().isCharFamily();
     }
 
     /**
@@ -640,7 +642,7 @@ public abstract class Type {
      * MAP<STRING,STRUCT<f1:INT>> --> 3
      */
     private boolean exceedsMaxNestingDepth(int d) {
-        if (d >= MAX_NESTING_DEPTH) {
+        if (d > MAX_NESTING_DEPTH) {
             return true;
         }
         if (isStructType()) {
@@ -651,7 +653,9 @@ public abstract class Type {
                 }
             }
         } else if (isArrayType()) {
-            return false;
+            ArrayType arrayType = (ArrayType) this;
+            Type itemType = arrayType.getItemType();
+            return itemType.exceedsMaxNestingDepth(d + 1);
         } else if (isMultiRowType()) {
             MultiRowType multiRowType = (MultiRowType) this;
             return multiRowType.getItemType().exceedsMaxNestingDepth(d + 1);
@@ -1746,3 +1750,4 @@ public abstract class Type {
         return false;
     }
 }
+

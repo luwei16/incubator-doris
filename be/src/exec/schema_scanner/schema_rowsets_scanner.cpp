@@ -23,7 +23,6 @@
 #include "gutil/integral_types.h"
 #include "olap/rowset/beta_rowset.h"
 #include "olap/rowset/rowset.h"
-#include "olap/rowset/segment_v2/segment.h"
 #include "olap/segment_loader.h"
 #include "olap/storage_engine.h"
 #include "olap/tablet.h"

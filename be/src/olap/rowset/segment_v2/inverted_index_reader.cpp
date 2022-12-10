@@ -8,10 +8,10 @@
 #include <filesystem>
 #include <regex>
 
+#include "cloud/io/file_system.h"
 #include "common/config.h"
 #include "exprs/range_predicate.h"
 #include "gutil/strings/strip.h"
-#include "io/fs/file_system.h"
 #include "olap/key_coder.h"
 #include "olap/rowset/segment_v2/inverted_index_cache.h"
 #include "olap/rowset/segment_v2/inverted_index_compound_directory.h"
@@ -296,7 +296,8 @@ InvertedIndexReaderType StringTypeInvertedIndexReader::type() {
     return InvertedIndexReaderType::STRING_TYPE;
 }
 
-BkdIndexReader::BkdIndexReader(io::FileSystem* fs, const std::string& path, const uint32_t uniq_id)
+BkdIndexReader::BkdIndexReader(io::FileSystemSPtr fs, const std::string& path,
+                               const uint32_t uniq_id)
         : InvertedIndexReader(fs, path, uniq_id), compoundReader(nullptr) {
     io::Path io_path(_path);
     auto index_dir = io_path.parent_path();
@@ -310,7 +311,8 @@ BkdIndexReader::BkdIndexReader(io::FileSystem* fs, const std::string& path, cons
         return;
     }
     compoundReader = new DorisCompoundReader(
-            DorisCompoundDirectory::getDirectory(fs, index_dir.c_str()), index_file_name.c_str());
+            DorisCompoundDirectory::getDirectory(fs, index_dir.c_str()),
+            index_file_name.c_str());
 }
 
 Status BkdIndexReader::new_iterator(const TabletIndex* index_meta,

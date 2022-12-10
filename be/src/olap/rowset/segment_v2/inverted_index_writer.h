@@ -21,6 +21,7 @@
 #include "olap/olap_common.h"
 #include "olap/inverted_index_parser.h"
 #include "olap/tablet_schema.h"
+#include "cloud/io/file_system.h"
 
 namespace doris {
 class CollectionValue;
@@ -32,7 +33,7 @@ public:
     static Status create(const Field* field, std::unique_ptr<InvertedIndexColumnWriter>* res,
                          uint32_t uuid, const std::string& segment_file_name,
                          const std::string& dir, const TabletIndex* inverted_index,
-                         io::FileSystem* fs);
+                         io::FileSystemSPtr fs);
     virtual Status init() = 0;
 
     InvertedIndexColumnWriter() = default;

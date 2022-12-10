@@ -21,12 +21,12 @@
 
 #include "exprs/bloomfilter_predicate.h"
 #include "exprs/function_filter.h"
+#include "exprs/hybrid_set.h"
 #include "olap/delete_handler.h"
 #include "olap/row_cursor.h"
 #include "olap/rowset/rowset_reader.h"
 #include "olap/tablet.h"
 #include "olap/tablet_schema.h"
-#include "util/date_func.h"
 #include "util/runtime_profile.h"
 #include "vec/exprs/vexpr_context.h"
 
@@ -79,7 +79,11 @@ public:
 
         std::vector<TCondition> conditions;
         std::vector<std::pair<string, std::shared_ptr<BloomFilterFuncBase>>> bloom_filters;
+
         std::vector<std::vector<TCondition>> compound_conditions;
+
+        std::vector<std::pair<string, std::shared_ptr<HybridSetBase>>> in_filters;
+
         std::vector<FunctionFilter> function_filters;
         std::vector<RowsetMetaSharedPtr> delete_predicates;
 
@@ -98,7 +102,7 @@ public:
         TPushAggOp::type push_down_agg_type_opt = TPushAggOp::NONE;
         vectorized::VExpr* remaining_vconjunct_root = nullptr;
 
-        // used for comapction to record row ids
+        // used for compaction to record row ids
         bool record_rowids = false;
         // flag for enable topn opt
         bool use_topn_opt = false;
@@ -158,6 +162,8 @@ public:
     const OlapReaderStatistics& stats() const { return _stats; }
     OlapReaderStatistics* mutable_stats() { return &_stats; }
 
+    virtual bool update_profile(RuntimeProfile* profile) { return false; }
+
 protected:
     friend class CollectIterator;
     friend class vectorized::VCollectIterator;
@@ -180,6 +186,9 @@ protected:
 
     ColumnPredicate* _parse_to_predicate(
             const std::pair<std::string, std::shared_ptr<BloomFilterFuncBase>>& bloom_filter);
+
+    ColumnPredicate* _parse_to_predicate(
+            const std::pair<std::string, std::shared_ptr<HybridSetBase>>& in_filter);
 
     virtual ColumnPredicate* _parse_to_predicate(const FunctionFilter& function_filter);
 

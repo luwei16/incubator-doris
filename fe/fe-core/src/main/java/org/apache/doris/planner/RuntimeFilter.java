@@ -269,6 +269,7 @@ public final class RuntimeFilter {
             return null;
         }
 
+        targetExpr = targetExpr.getRealSlotRef();
         Map<TupleId, List<SlotId>> targetSlots = getTargetSlots(analyzer, targetExpr);
         Preconditions.checkNotNull(targetSlots);
         if (targetSlots.isEmpty()) {
@@ -278,7 +279,7 @@ public final class RuntimeFilter {
         if (LOG.isTraceEnabled()) {
             LOG.trace("Generating runtime filter from predicate " + joinPredicate);
         }
-        if (ConnectContext.get().getSessionVariable().enableRemoveNoConjunctsRuntimeFilterPolicy) {
+        if (ConnectContext.get().getSessionVariable().isEnableRuntimeFilterPrune()) {
             if (srcExpr instanceof SlotRef) {
                 if (!tupleHasConjuncts.contains(((SlotRef) srcExpr).getDesc().getParent().getId())) {
                     // src tuple has no conjunct, don't create runtime filter

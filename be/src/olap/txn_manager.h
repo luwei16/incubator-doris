@@ -42,7 +42,6 @@
 #include "olap/options.h"
 #include "olap/rowset/rowset.h"
 #include "olap/rowset/rowset_meta.h"
-#include "olap/rowset/segment_v2/segment.h"
 #include "olap/tablet.h"
 #include "olap/tablet_meta.h"
 #include "util/time.h"

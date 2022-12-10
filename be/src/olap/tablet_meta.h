@@ -111,7 +111,7 @@ public:
     Status deserialize(const std::string& meta_binary);
     void init_from_pb(const TabletMetaPB& tablet_meta_pb);
     // Init `RowsetMeta._fs` if rowset is local.
-    void init_rs_metas_fs(const io::FileSystemPtr& fs);
+    void init_rs_metas_fs(const io::FileSystemSPtr& fs);
 
     // CLOUD_MODE
     // `to_add` MUST NOT have overlapped version with `_rs_metas` in tablet meta.

@@ -1,7 +1,5 @@
 #pragma once
 
-#include "service/brpc_conflict.h"
-
 #include <atomic>
 #include <cassert>
 #include <cstdint>

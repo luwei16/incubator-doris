@@ -144,7 +144,6 @@ class Config {
             config = Config.fromConfigObject(configObj)
         }
 
-        // TODO(dx): copy from https://github.com/apache/doris/pull/13783/files, when merge code delete it.
         String customConfFilePath = confFile.getParentFile().getPath() + "/regression-conf-custom.groovy"
         File custFile = new File(customConfFilePath)
         if (custFile.exists() && custFile.isFile()) {
@@ -155,7 +154,6 @@ class Config {
             ConfigObject configObj = configSlurper.parse(new File(customConfFilePath).toURI().toURL())
             config = Config.fromConfigObject(configObj)
         }
-
         fillDefaultConfig(config)
 
         config.suitePath = FileUtils.getCanonicalPath(cmd.getOptionValue(pathOpt, config.suitePath))

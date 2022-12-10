@@ -31,7 +31,6 @@
 #include "util/lock.h"
 #include "util/progress_updater.h"
 #include "util/spinlock.h"
-#include "vec/exec/volap_scanner.h"
 
 namespace doris {
 class IRuntimeFilter;

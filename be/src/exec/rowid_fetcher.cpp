@@ -19,6 +19,7 @@
 #include "exec/tablet_info.h"           // DorisNodesInfo
 #include "vec/core/block.h"             // Block
 #include "runtime/exec_env.h"           // ExecEnv
+#include "runtime/runtime_state.h"      // RuntimeState
 #include "util/brpc_client_cache.h"     // BrpcClientCache
 
 #include "gen_cpp/Types_types.h"
@@ -62,6 +63,7 @@ PMultiGetRequest RowIDFetcher::init_fetch_request(const vectorized::ColumnString
         row_id.set_ordinal_id(location->row_location.row_id);
         *mget_req.add_rowids() = std::move(row_id);
     }
+    mget_req.set_be_exec_version(_st->be_exec_version());
     return mget_req;
 }
 

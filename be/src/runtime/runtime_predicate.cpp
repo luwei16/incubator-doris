@@ -16,11 +16,17 @@
 // under the License.
 
 #include "runtime/runtime_predicate.h"
-
+#include "olap/predicate_creator.h"
+#include "olap/column_predicate.h"
 
 namespace doris {
 
 namespace vectorized {
+
+std::shared_ptr<ColumnPredicate> RuntimePredicate::get_predictate() {
+     std::shared_lock<std::shared_mutex> rlock(_rwlock);
+    return _predictate;
+}
 
 Status RuntimePredicate::update(std::vector<Field>& values, const String& col_name,
                 const TypeIndex type, bool is_reverse) {

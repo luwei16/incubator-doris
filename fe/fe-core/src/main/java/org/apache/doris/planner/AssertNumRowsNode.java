@@ -64,7 +64,7 @@ public class AssertNumRowsNode extends PlanNode {
         super.computeStats(analyzer);
         if (analyzer.safeIsEnableJoinReorderBasedCost()) {
             StatsRecursiveDerive.getStatsRecursiveDerive().statsRecursiveDerive(this);
-            cardinality = statsDeriveResult.getRowCount();
+            cardinality = (long) statsDeriveResult.getRowCount();
         }
         if (LOG.isDebugEnabled()) {
             LOG.debug("stats AssertNumRows: cardinality={}", cardinality);
@@ -77,7 +77,7 @@ public class AssertNumRowsNode extends PlanNode {
             return "";
         }
         StringBuilder output = new StringBuilder()
-                .append(prefix + "assert number of rows: ")
+                .append(prefix).append("assert number of rows: ")
                 .append(assertion).append(" ").append(desiredNumOfRows).append("\n");
         return output.toString();
     }

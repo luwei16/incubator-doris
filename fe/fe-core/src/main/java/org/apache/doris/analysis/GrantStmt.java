@@ -21,7 +21,6 @@ import org.apache.doris.catalog.AccessPrivilege;
 import org.apache.doris.catalog.Env;
 import org.apache.doris.cluster.ClusterNamespace;
 import org.apache.doris.common.AnalysisException;
-import org.apache.doris.common.Config;
 import org.apache.doris.common.ErrorCode;
 import org.apache.doris.common.ErrorReport;
 import org.apache.doris.common.FeNameFormat;
@@ -110,10 +109,6 @@ public class GrantStmt extends DdlStmt {
         if (tblPattern != null) {
             tblPattern.analyze(analyzer);
         } else {
-            // TODO(wyb): spark-load
-            if (resourcePattern.isGeneralResource() && !Config.enable_spark_load) {
-                throw new AnalysisException("GRANT ON RESOURCE is coming soon");
-            }
             resourcePattern.analyze();
         }
 

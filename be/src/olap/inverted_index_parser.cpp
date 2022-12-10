@@ -16,6 +16,7 @@
 // under the License.
 
 #include "olap/inverted_index_parser.h"
+
 #include "util/string_util.h"
 
 namespace doris {
@@ -31,10 +32,10 @@ std::string inverted_index_parser_type_to_string(InvertedIndexParserType parser_
     case InvertedIndexParserType::PARSER_CHINESE:
         return INVERTED_INDEX_PARSER_CHINESE;
     default:
-        return "unknown";
+        return INVERTED_INDEX_PARSER_UNKNOWN;
     }
 
-    return "unknown";
+    return INVERTED_INDEX_PARSER_UNKNOWN;
 }
 
 InvertedIndexParserType get_inverted_index_parser_type_from_string(const std::string& parser_str) {

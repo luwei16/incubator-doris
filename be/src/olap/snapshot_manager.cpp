@@ -65,7 +65,7 @@ SnapshotManager* SnapshotManager::instance() {
 
 Status SnapshotManager::make_snapshot(const TSnapshotRequest& request, string* snapshot_path,
                                       bool* allow_incremental_clone) {
-    SCOPED_CONSUME_MEM_TRACKER(_mem_tracker.get());
+    SCOPED_CONSUME_MEM_TRACKER(_mem_tracker);
     Status res = Status::OK();
     if (snapshot_path == nullptr) {
         LOG(WARNING) << "output parameter cannot be null";
@@ -93,7 +93,7 @@ Status SnapshotManager::make_snapshot(const TSnapshotRequest& request, string* s
 Status SnapshotManager::release_snapshot(const string& snapshot_path) {
     // 如果请求的snapshot_path位于root/snapshot文件夹下，则认为是合法的，可以删除
     // 否则认为是非法请求，返回错误结果
-    SCOPED_CONSUME_MEM_TRACKER(_mem_tracker.get());
+    SCOPED_CONSUME_MEM_TRACKER(_mem_tracker);
     auto stores = StorageEngine::instance()->get_stores();
     for (auto store : stores) {
         std::string abs_path;
@@ -117,7 +117,7 @@ Status SnapshotManager::release_snapshot(const string& snapshot_path) {
 
 Status SnapshotManager::convert_rowset_ids(const std::string& clone_dir, int64_t tablet_id,
                                            int64_t replica_id, const int32_t& schema_hash) {
-    SCOPED_CONSUME_MEM_TRACKER(_mem_tracker.get());
+    SCOPED_CONSUME_MEM_TRACKER(_mem_tracker);
     Status res = Status::OK();
     // check clone dir existed
     if (!FileUtils::check_exist(clone_dir)) {
@@ -255,7 +255,7 @@ Status SnapshotManager::_rename_rowset_id(const RowsetMetaPB& rs_meta_pb,
     context.partition_id = org_rowset_meta->partition_id();
     context.tablet_schema_hash = org_rowset_meta->tablet_schema_hash();
     context.rowset_type = org_rowset_meta->rowset_type();
-    context.tablet_path = new_tablet_path;
+    context.rowset_dir = new_tablet_path;
     context.tablet_schema =
             org_rowset_meta->tablet_schema() ? org_rowset_meta->tablet_schema() : tablet_schema;
     context.rowset_state = org_rowset_meta->rowset_state();
@@ -413,11 +413,10 @@ Status SnapshotManager::_create_snapshot_files(const TabletSharedPtr& ref_tablet
                     if (rowset != nullptr) {
                         consistent_rowsets.push_back(rowset);
                     } else {
-                        LOG(WARNING)
-                                << "failed to find missed version when snapshot. "
-                                << " tablet=" << request.tablet_id
-                                << " schema_hash=" << request.schema_hash << " version=" << version;
-                        res = Status::OLAPInternalError(OLAP_ERR_WRITE_PROTOBUF_ERROR);
+                        res = Status::InternalError(
+                                "failed to find missed version when snapshot. tablet={}, "
+                                "schema_hash={}, version={}",
+                                request.tablet_id, request.schema_hash, version.to_string());
                         break;
                     }
                 }
@@ -439,9 +438,8 @@ Status SnapshotManager::_create_snapshot_files(const TabletSharedPtr& ref_tablet
                 // get latest version
                 const RowsetSharedPtr last_version = ref_tablet->rowset_with_max_version();
                 if (last_version == nullptr) {
-                    LOG(WARNING) << "tablet has not any version. path="
-                                 << ref_tablet->full_name().c_str();
-                    res = Status::OLAPInternalError(OLAP_ERR_WRITE_PROTOBUF_ERROR);
+                    res = Status::InternalError("tablet has not any version. path={}",
+                                                ref_tablet->full_name());
                     break;
                 }
                 // get snapshot version, use request.version if specified

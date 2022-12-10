@@ -27,15 +27,15 @@ namespace doris {
 EngineAlterTabletTask::EngineAlterTabletTask(const TAlterTabletReqV2& request)
         : _alter_tablet_req(request) {
     _mem_tracker = std::make_shared<MemTrackerLimiter>(
-            config::memory_limitation_per_thread_for_schema_change_bytes,
+            MemTrackerLimiter::Type::SCHEMA_CHANGE,
             fmt::format("EngineAlterTabletTask#baseTabletId={}:newTabletId={}",
                         std::to_string(_alter_tablet_req.base_tablet_id),
                         std::to_string(_alter_tablet_req.new_tablet_id)),
-            StorageEngine::instance()->schema_change_mem_tracker());
+            config::memory_limitation_per_thread_for_schema_change_bytes);
 }
 
 Status EngineAlterTabletTask::execute() {
-    SCOPED_ATTACH_TASK(_mem_tracker, ThreadContext::TaskType::STORAGE);
+    SCOPED_ATTACH_TASK(_mem_tracker);
     DorisMetrics::instance()->create_rollup_requests_total->increment(1);
 
     Status res;
@@ -57,11 +57,12 @@ Status EngineAlterTabletTask::execute() {
 
 EngineAlterInvertedIndexTask::EngineAlterInvertedIndexTask(const TAlterInvertedIndexReq& alter_inverted_index_request)
         : _alter_inverted_index_req(alter_inverted_index_request) {
-    _mem_tracker = std::make_shared<MemTrackerLimiter>(
-            config::memory_limitation_per_thread_for_schema_change_bytes,
-            fmt::format("EngineAlterInvertedIndexTask#tabletId={}",
-                        std::to_string(_alter_inverted_index_req.tablet_id)),
-            StorageEngine::instance()->schema_change_mem_tracker());
+
+    auto type = MemTrackerLimiter::SCHEMA_CHANGE;
+    std::string label = fmt::format("EngineAlterInvertedIndexTask#tabletId={}",
+                                    std::to_string(_alter_inverted_index_req.tablet_id));
+    auto limit = config::memory_limitation_per_thread_for_schema_change_bytes;
+    _mem_tracker = std::make_shared<MemTrackerLimiter>(type, label, limit);
 }
 
 Status EngineAlterInvertedIndexTask::execute() {

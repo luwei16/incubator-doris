@@ -60,8 +60,13 @@ Status PushHandler::cloud_process_streaming_ingestion(const TabletSharedPtr& tab
     load_id.set_hi(0);
     load_id.set_lo(0);
     std::unique_ptr<RowsetWriter> rowset_writer;
-    RETURN_IF_ERROR(tablet->create_rowset_writer(request.transaction_id, load_id, PREPARED,
-                                                 OVERLAP_UNKNOWN, tablet_schema, &rowset_writer));
+    RowsetWriterContext context;
+    context.txn_id = request.transaction_id;
+    context.load_id = load_id;
+    context.rowset_state = PREPARED;
+    context.segments_overlap = OVERLAP_UNKNOWN;
+    context.tablet_schema = tablet_schema;
+    RETURN_IF_ERROR(tablet->create_rowset_writer(context, &rowset_writer));
     auto rowset = rowset_writer->build();
     if (!rowset) {
         return Status::InternalError("failed to build rowset");
@@ -227,8 +232,13 @@ Status PushHandler::_convert_v2(TabletSharedPtr cur_tablet, RowsetSharedPtr* cur
         // but it depends on thirparty implementation, so we conservatively
         // set this value to OVERLAP_UNKNOWN
         std::unique_ptr<RowsetWriter> rowset_writer;
-        res = cur_tablet->create_rowset_writer(_request.transaction_id, load_id, PREPARED,
-                                               OVERLAP_UNKNOWN, tablet_schema, &rowset_writer);
+        RowsetWriterContext context;
+        context.txn_id = _request.transaction_id;
+        context.load_id = load_id;
+        context.rowset_state = PREPARED;
+        context.segments_overlap = OVERLAP_UNKNOWN;
+        context.tablet_schema = tablet_schema;
+        res = cur_tablet->create_rowset_writer(context, &rowset_writer);
         if (!res.ok()) {
             LOG(WARNING) << "failed to init rowset writer, tablet=" << cur_tablet->full_name()
                          << ", txn_id=" << _request.transaction_id << ", res=" << res;
@@ -380,8 +390,13 @@ Status PushHandler::_convert(TabletSharedPtr cur_tablet, RowsetSharedPtr* cur_ro
 
         // 2. init RowsetBuilder of cur_tablet for current push
         std::unique_ptr<RowsetWriter> rowset_writer;
-        res = cur_tablet->create_rowset_writer(_request.transaction_id, load_id, PREPARED,
-                                               OVERLAP_UNKNOWN, tablet_schema, &rowset_writer);
+        RowsetWriterContext context;
+        context.txn_id = _request.transaction_id;
+        context.load_id = load_id;
+        context.rowset_state = PREPARED;
+        context.segments_overlap = OVERLAP_UNKNOWN;
+        context.tablet_schema = tablet_schema;        
+        res = cur_tablet->create_rowset_writer(context, &rowset_writer);
         if (!res.ok()) {
             LOG(WARNING) << "failed to init rowset writer, tablet=" << cur_tablet->full_name()
                          << ", txn_id=" << _request.transaction_id << ", res=" << res;

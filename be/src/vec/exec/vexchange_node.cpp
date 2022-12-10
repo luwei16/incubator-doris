@@ -94,7 +94,7 @@ Status VExchangeNode::second_phase_fetch_data(RuntimeState* state, Block* final_
     if (row_id_col != nullptr && final_block->rows() > 0) {
         MonotonicStopWatch watch;
         watch.start();
-        RowIDFetcher id_fetcher(_scan_node_tuple_desc);
+        RowIDFetcher id_fetcher(_scan_node_tuple_desc, state);
         RETURN_IF_ERROR(id_fetcher.init(_nodes_info));
         vectorized::Block materialized_block(_scan_node_tuple_desc->slots(), final_block->rows());
         auto tmp_block = MutableBlock::build_mutable_block(&materialized_block);

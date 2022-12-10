@@ -21,12 +21,11 @@
 #include <memory>
 #include <utility>
 
+#include "cloud/io/file_reader.h"
+#include "cloud/io/file_system.h"
 #include "common/config.h"
 #include "common/logging.h" // LOG
-#include "io/cache/file_cache_manager.h"
-#include "io/fs/file_reader.h"
-#include "io/fs/file_system.h"
-#include "olap/rowset/segment_v2/column_reader.h" // ColumnReader
+#include "olap/iterators.h"
 #include "olap/rowset/segment_v2/empty_segment_iterator.h"
 #include "olap/rowset/segment_v2/page_io.h"
 #include "olap/rowset/segment_v2/segment_iterator.h"
@@ -39,14 +38,26 @@
 
 namespace doris {
 namespace segment_v2 {
+#if 0
 using io::FileCacheManager;
-
+#endif
 Status Segment::open(io::FileSystem* fs, const std::string& path, const std::string& cache_path,
-                     uint32_t segment_id, TabletSchemaSPtr tablet_schema,
+                     uint32_t segment_id, RowsetId rowset_id, TabletSchemaSPtr tablet_schema,
                      std::shared_ptr<Segment>* output, metrics_hook metrics) {
-    std::shared_ptr<Segment> segment(new Segment(segment_id, tablet_schema));
+    std::shared_ptr<Segment> segment(new Segment(segment_id, rowset_id, tablet_schema, metrics));
     io::FileReaderSPtr file_reader;
+
+#ifndef BE_TEST
     RETURN_IF_ERROR(fs->open_file(path, metrics, &file_reader));
+#else
+    // be ut use local file reader instead of remote file reader while use remote cache
+    if (!config::file_cache_type.empty()) {
+        RETURN_IF_ERROR(io::global_local_filesystem()->open_file(path, &file_reader));
+    } else {
+        RETURN_IF_ERROR(fs->open_file(path, &file_reader));
+    }
+#endif
+
     if (fs->type() != io::FileSystemType::LOCAL && !config::file_cache_type.empty()) {
         io::FileCachePtr cache_reader = FileCacheManager::instance()->new_file_cache(
                 cache_path, config::file_cache_alive_time_sec, file_reader,
@@ -56,17 +67,23 @@ Status Segment::open(io::FileSystem* fs, const std::string& path, const std::str
     } else {
         segment->_file_reader = std::move(file_reader);
     }
+
+    RETURN_IF_ERROR(fs->open_file(path, metrics, &file_reader));
     RETURN_IF_ERROR(segment->_open());
     *output = std::move(segment);
     return Status::OK();
 }
 
-Segment::Segment(uint32_t segment_id, TabletSchemaSPtr tablet_schema)
-        : _segment_id(segment_id), _tablet_schema(tablet_schema), _meta_mem_usage(0) {}
+Segment::Segment(uint32_t segment_id, RowsetId rowset_id, TabletSchemaSPtr tablet_schema)
+        : _segment_id(segment_id),
+          _rowset_id(rowset_id),
+          _tablet_schema(tablet_schema),
+          _meta_mem_usage(0) {}
 
 Segment::~Segment() {
 #ifndef BE_TEST
-    StorageEngine::instance()->segment_meta_mem_tracker()->release(_meta_mem_usage);
+    if (StorageEngine::instance())
+        StorageEngine::instance()->segment_meta_mem_tracker()->release(_meta_mem_usage);
 #endif
 }
 
@@ -96,9 +113,8 @@ Status Segment::new_iterator(const Schema& schema, const StorageReadOptions& rea
             continue;
         }
         int32_t uid = read_options.tablet_schema->column(column_id).unique_id();
-        if (_column_readers.count(uid) < 1 || 
-                !_column_readers.at(uid)->has_zone_map() ||
-                cond_in_compound_query(column_id)) {
+        if (_column_readers.count(uid) < 1 || !_column_readers.at(uid)->has_zone_map() ||
+            cond_in_compound_query(column_id)) {
             continue;
         }
         if (read_options.col_id_to_predicates.count(column_id) > 0 &&
@@ -116,8 +132,8 @@ Status Segment::new_iterator(const Schema& schema, const StorageReadOptions& rea
         auto query_ctx = read_options.runtime_state->get_query_fragments_ctx();
         auto runtime_predicate = query_ctx->get_runtime_predicate().get_predictate();
         if (runtime_predicate) {
-            int32_t uid = read_options.tablet_schema->column(
-                            runtime_predicate->column_id()).unique_id();
+            int32_t uid =
+                    read_options.tablet_schema->column(runtime_predicate->column_id()).unique_id();
             AndBlockColumnPredicate and_predicate;
             auto single_predicate = new SingleColumnBlockPredicate(runtime_predicate.get());
             and_predicate.add_column_predicate(single_predicate);
@@ -152,7 +168,9 @@ Status Segment::_parse_footer() {
 
     uint8_t fixed_buf[12];
     size_t bytes_read = 0;
-    RETURN_IF_ERROR(_file_reader->read_at(file_size - 12, Slice(fixed_buf, 12), &bytes_read));
+    IOContext io_ctx;
+    RETURN_IF_ERROR(
+            _file_reader->read_at(file_size - 12, Slice(fixed_buf, 12), io_ctx, &bytes_read));
     DCHECK_EQ(bytes_read, 12);
 
     // validate magic number
@@ -168,11 +186,13 @@ Status Segment::_parse_footer() {
                                   _file_reader->path().native(), file_size, 12 + footer_length);
     }
     _meta_mem_usage += footer_length;
-    StorageEngine::instance()->segment_meta_mem_tracker()->consume(footer_length);
+    if (StorageEngine::instance())
+        StorageEngine::instance()->segment_meta_mem_tracker()->consume(footer_length);
 
     std::string footer_buf;
     footer_buf.resize(footer_length);
-    RETURN_IF_ERROR(_file_reader->read_at(file_size - 12 - footer_length, footer_buf, &bytes_read));
+    RETURN_IF_ERROR(
+            _file_reader->read_at(file_size - 12 - footer_length, footer_buf, io_ctx, &bytes_read));
     DCHECK_EQ(bytes_read, footer_length);
 
     // validate footer PB's checksum
@@ -234,7 +254,8 @@ Status Segment::load_index() {
             DCHECK(footer.has_short_key_page_footer());
 
             _meta_mem_usage += body.get_size();
-            StorageEngine::instance()->segment_meta_mem_tracker()->consume(body.get_size());
+            if (StorageEngine::instance())
+                StorageEngine::instance()->segment_meta_mem_tracker()->consume(body.get_size());
             _sk_index_decoder.reset(new ShortKeyIndexDecoder);
             return _sk_index_decoder->parse(body, footer.short_key_page_footer());
         }
@@ -301,7 +322,7 @@ Status Segment::new_bitmap_index_iterator(const TabletColumn& tablet_column,
 }
 
 Status Segment::new_inverted_index_iterator(const TabletColumn& tablet_column,
-                                            const TabletIndex *index_meta,
+                                            const TabletIndex* index_meta,
                                             InvertedIndexIterator** iter) {
     auto col_unique_id = tablet_column.unique_id();
     if (_column_readers.count(col_unique_id) > 0 && index_meta) {

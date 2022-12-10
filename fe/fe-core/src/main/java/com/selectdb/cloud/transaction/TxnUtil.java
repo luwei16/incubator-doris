@@ -263,6 +263,11 @@ public class TxnUtil {
                     TxnUtil.loadJobFinalOperationFromPb(txnInfo.getCommitAttachment());
         }
 
+        long prepareTime = txnInfo.hasPrepareTime() ? txnInfo.getPrepareTime() : -1;
+        long preCommitTime = txnInfo.hasPrecommitTime() ? txnInfo.getPrecommitTime() : -1;
+        long commitTime = txnInfo.hasCommitTime() ? txnInfo.getCommitTime() : -1;
+        long finishTime = txnInfo.hasFinishTime() ? txnInfo.getFinishTime() : -1;
+
         TransactionState transactionState = new TransactionState(
                 dbId,
                 tableIdList,
@@ -275,7 +280,11 @@ public class TxnUtil {
                 reason,
                 callbackId,
                 timeoutMs,
-                commitAttachment
+                commitAttachment,
+                prepareTime,
+                preCommitTime,
+                commitTime,
+                finishTime
         );
         LOG.debug("transactionState={}", transactionState);
         return transactionState;

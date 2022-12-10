@@ -128,10 +128,14 @@ Status AggregationNode::init(const TPlanNode& tnode, RuntimeState* state) {
 
     // init aggregate functions
     _aggregate_evaluators.reserve(tnode.agg_node.aggregate_functions.size());
+
+    TSortInfo dummy;
     for (int i = 0; i < tnode.agg_node.aggregate_functions.size(); ++i) {
         AggFnEvaluator* evaluator = nullptr;
-        RETURN_IF_ERROR(AggFnEvaluator::create(_pool, tnode.agg_node.aggregate_functions[i],
-                                               tnode.agg_node.agg_sort_infos[i], &evaluator));
+        RETURN_IF_ERROR(AggFnEvaluator::create(
+                _pool, tnode.agg_node.aggregate_functions[i],
+                tnode.agg_node.__isset.agg_sort_infos ? tnode.agg_node.agg_sort_infos[i] : dummy,
+                &evaluator));
         _aggregate_evaluators.push_back(evaluator);
     }
 
@@ -474,6 +478,7 @@ Status AggregationNode::open(RuntimeState* state) {
         RETURN_IF_ERROR(_executor.execute(&block));
         _executor.update_memusage();
     }
+    _children[0]->close(state);
 
     return Status::OK();
 }
@@ -1050,7 +1055,7 @@ Status AggregationNode::_pre_agg_with_serialized_key(doris::vectorized::Block* i
             _agg_data._aggregated_method_variant);
 
     if (!ret_flag) {
-        _emplace_into_hash_table(_places.data(), key_columns, rows);
+        RETURN_IF_CATCH_BAD_ALLOC(_emplace_into_hash_table(_places.data(), key_columns, rows));
 
         for (int i = 0; i < _aggregate_evaluators.size(); ++i) {
             _aggregate_evaluators[i]->execute_batch_add(in_block, _offsets_of_aggregate_states[i],

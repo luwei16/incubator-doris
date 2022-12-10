@@ -23,11 +23,11 @@
 
 #include <roaring/roaring.hh>
 
+#include "cloud/io/file_system.h"
 #include "common/status.h"
 #include "env/env.h"
 #include "gen_cpp/segment_v2.pb.h"
 #include "gutil/macros.h"
-#include "io/fs/file_system.h"
 #include "olap/inverted_index_parser.h"
 #include "olap/olap_common.h"
 #include "olap/rowset/segment_v2/common.h"
@@ -67,9 +67,9 @@ enum class InvertedIndexQueryType {
 
 class InvertedIndexReader {
 public:
-    explicit InvertedIndexReader(io::FileSystem* fs, const std::string& path,
+    explicit InvertedIndexReader(io::FileSystemSPtr fs, const std::string& path,
                                  const uint32_t index_id)
-            : _fs(fs), _path(path), _index_id(index_id) {};
+            : _fs(std::move(fs)), _path(path), _index_id(index_id) {};
     virtual ~InvertedIndexReader() = default;
 
     // create a new column iterator. Client should delete returned iterator
@@ -91,16 +91,16 @@ public:
 protected:
     bool _is_match_query(InvertedIndexQueryType query_type);
     friend class InvertedIndexIterator;
-    io::FileSystem* _fs;
+    io::FileSystemSPtr _fs;
     std::string _path;
     uint32_t _index_id;
 };
 
 class FullTextIndexReader : public InvertedIndexReader {
 public:
-    explicit FullTextIndexReader(io::FileSystem* fs, const std::string& path,
+    explicit FullTextIndexReader(io::FileSystemSPtr fs, const std::string& path,
                                  const uint32_t uniq_id)
-            : InvertedIndexReader(fs, path, uniq_id) {};
+            : InvertedIndexReader(std::move(fs), path, uniq_id) {};
     ~FullTextIndexReader() override = default;
 
     Status new_iterator(const TabletIndex* index_meta, InvertedIndexIterator** iterator) override;
@@ -122,9 +122,9 @@ public:
 
 class StringTypeInvertedIndexReader : public InvertedIndexReader {
 public:
-    explicit StringTypeInvertedIndexReader(io::FileSystem* fs, const std::string& path,
+    explicit StringTypeInvertedIndexReader(io::FileSystemSPtr fs, const std::string& path,
                                            const uint32_t uniq_id)
-            : InvertedIndexReader(fs, path, uniq_id) {};
+            : InvertedIndexReader(std::move(fs), path, uniq_id) {};
     ~StringTypeInvertedIndexReader() override = default;
 
     Status new_iterator(const TabletIndex* index_meta, InvertedIndexIterator** iterator) override;
@@ -178,7 +178,7 @@ public:
 
 class BkdIndexReader : public InvertedIndexReader {
 public:
-    explicit BkdIndexReader(io::FileSystem* fs, const std::string& path, const uint32_t uniq_id);
+    explicit BkdIndexReader(io::FileSystemSPtr fs, const std::string& path, const uint32_t uniq_id);
     ~BkdIndexReader() override {
         if (compoundReader != nullptr) {
             compoundReader->close();

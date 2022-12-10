@@ -70,7 +70,7 @@ public:
                            uint32_t max_row_per_segment, const SegmentWriterOptions& opts);
     ~SegmentWriter();
 
-    Status init(uint32_t write_mbytes_per_sec, const vectorized::Block* block = nullptr);
+    Status init(const vectorized::Block* block = nullptr);
 
     template <typename RowType>
     Status append_row(const RowType& row);
@@ -87,15 +87,20 @@ public:
 
     static void init_column_meta(ColumnMetaPB* meta, uint32_t* column_id,
                                  const TabletColumn& column, TabletSchemaSPtr tablet_schema);
-    uint32_t get_segment_id() { return _segment_id; }
+
+    uint32_t get_segment_id() const { return _segment_id; }
+
     Slice min_encoded_key();
     Slice max_encoded_key();
 
+    DataDir* get_data_dir() { return _data_dir; }
+    bool is_unique_key() { return _tablet_schema->keys_type() == UNIQUE_KEYS; }
+
 private:
-    Status _create_dynamic_table_columns_writer(
+    Status _create_writers_with_block(
             const vectorized::Block* block,
             std::function<Status(const TabletColumn&)> writer_creator);
-    Status _create_static_table_columns_writer(
+    Status _create_writers(
             std::function<Status(const TabletColumn&)> writer_creator);
     DISALLOW_COPY_AND_ASSIGN(SegmentWriter);
     Status _write_data();

@@ -23,7 +23,6 @@
 #include "common/status.h"
 #include "exec/schema_scanner.h"
 #include "olap/rowset/rowset.h"
-#include "olap/rowset/segment_v2/segment.h"
 #include "runtime/mem_pool.h"
 #include "runtime/runtime_state.h"
 namespace doris {

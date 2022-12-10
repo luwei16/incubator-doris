@@ -34,24 +34,6 @@ set(IO_FILES
     local_file_writer.cpp
     s3_reader.cpp
     s3_writer.cpp
-    fs/file_system_map.cpp
-    fs/local_file_reader.cpp
-    fs/local_file_system.cpp
-    fs/local_file_writer.cpp
-    fs/s3_file_reader.cpp
-    fs/s3_file_system.cpp
-    cache/file_cache.cpp
-    cache/file_cache_manager.cpp
-    cache/sub_file_cache.cpp
-    cache/whole_file_cache.cpp
-    fs/s3_file_writer.cpp
-    cloud/cloud_file_segment.cpp
-    cloud/cloud_lru_file_cache.cpp
-    cloud/cloud_file_cache.cpp
-    cloud/cloud_file_cache_factory.cpp
-    cloud/cached_remote_file_reader.cpp
-    cloud/cloud_file_cache_profile.cpp
-    cloud/tmp_file_mgr.cpp
 )
 
 add_library(IO STATIC

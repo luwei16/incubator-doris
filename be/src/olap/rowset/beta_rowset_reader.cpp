@@ -169,6 +169,7 @@ Status BetaRowsetReader::init(RowsetReaderContext* read_context) {
     read_options.use_topn_opt = read_context->use_topn_opt;
     read_options.read_orderby_key_reverse = read_context->read_orderby_key_reverse;
     read_options.read_orderby_key_columns = read_context->read_orderby_key_columns;
+
     read_options.kept_in_memory = read_context->kept_in_memory;
     read_options.is_persistent = read_context->is_persistent;
     read_options.runtime_state = read_context->runtime_state;

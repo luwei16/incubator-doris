@@ -17,9 +17,9 @@
 
 #include "olap/rowset/segment_v2/column_reader.h"
 
+#include "cloud/io/file_reader.h"
 #include "common/config.h"
 #include "common/status.h"
-#include "io/fs/file_reader.h"
 #include "olap/column_block.h"                       // for ColumnBlockView
 #include "olap/rowset/segment_v2/binary_dict_page.h" // for BinaryDictPageDecoder
 #include "olap/rowset/segment_v2/bloom_filter_index_reader.h"
@@ -146,8 +146,8 @@ Status ColumnReader::new_bitmap_index_iterator(BitmapIndexIterator** iterator) {
     return Status::OK();
 }
 
-Status ColumnReader::new_inverted_index_iterator(
-        const TabletIndex* index_meta, InvertedIndexIterator** iterator) {
+Status ColumnReader::new_inverted_index_iterator(const TabletIndex* index_meta,
+                                                 InvertedIndexIterator** iterator) {
     RETURN_IF_ERROR(_ensure_inverted_index_loaded(index_meta));
     if (_inverted_index) {
         RETURN_IF_ERROR(_inverted_index->new_iterator(index_meta, iterator));
@@ -313,8 +313,10 @@ Status ColumnReader::_get_filtered_pages(const AndBlockColumnPredicate* col_pred
                 bool should_read = true;
                 if (delete_predicates != nullptr) {
                     for (auto del_pred : *delete_predicates) {
-                        if (min_value.get() == nullptr || max_value.get() == nullptr ||
-                            del_pred->evaluate_and({min_value.get(), max_value.get()})) {
+                        // TODO: Both `min_value` and `max_value` should be 0 or neither should be 0.
+                        //  So nullable only need to judge once.
+                        if (min_value.get() != nullptr && max_value.get() != nullptr &&
+                            del_pred->evaluate_del({min_value.get(), max_value.get()})) {
                             should_read = false;
                             break;
                         }
@@ -397,8 +399,7 @@ Status ColumnReader::_load_bitmap_index(bool use_page_cache, bool kept_in_memory
     return Status::OK();
 }
 
-Status ColumnReader::_load_inverted_index_index(
-        const TabletIndex* index_meta) {
+Status ColumnReader::_load_inverted_index_index(const TabletIndex* index_meta) {
     std::lock_guard<doris::Mutex> wlock(_load_index_lock);
 
     if (_inverted_index && index_meta &&
@@ -406,8 +407,7 @@ Status ColumnReader::_load_inverted_index_index(
         return Status::OK();
     }
 
-    InvertedIndexParserType parser_type =
-        get_inverted_index_parser_type_from_string(
+    InvertedIndexParserType parser_type = get_inverted_index_parser_type_from_string(
             get_parser_string_from_properties(index_meta->properties()));
     FieldType type;
     if ((FieldType)_meta.type() == FieldType::OLAP_FIELD_TYPE_ARRAY) {
@@ -1074,8 +1074,7 @@ Status FileColumnIterator::_read_data_pages(uint32_t start, uint32_t size) {
     for (uint32_t i = 0; i < size; i++) {
         pps[i] = _page_iters[start + i].page();
     }
-    RETURN_IF_ERROR(
-            _reader->read_pages(_opts, pps, handles, page_bodys, footers, _compress_codec));
+    RETURN_IF_ERROR(_reader->read_pages(_opts, pps, handles, page_bodys, footers, _compress_codec));
     for (uint32_t i = 0; i < size; i++) {
         RETURN_IF_ERROR(ParsedPage::create(
                 std::move(handles[i]), page_bodys[i], footers[i].data_page_footer(),

@@ -110,10 +110,7 @@ public class ColumnDef {
     private boolean visible;
 
     public ColumnDef(String name, TypeDef typeDef) {
-        this.name = name;
-        this.typeDef = typeDef;
-        this.comment = "";
-        this.defaultValue = DefaultValue.NOT_SET;
+        this(name, typeDef, false, null, false, DefaultValue.NOT_SET, "");
     }
 
     public ColumnDef(String name, TypeDef typeDef, boolean isKey, AggregateType aggregateType,
@@ -204,11 +201,16 @@ public class ColumnDef {
         }
         FeNameFormat.checkColumnName(name);
 
-        // When string type length is not assigned, it need to be assigned to 1.
+        // When string type length is not assigned, it needs to be assigned to 1.
         if (typeDef.getType().isScalarType()) {
             final ScalarType targetType = (ScalarType) typeDef.getType();
             if (targetType.getPrimitiveType().isStringType() && !targetType.isLengthSet()) {
-                targetType.setLength(1);
+                if (targetType.getPrimitiveType() != PrimitiveType.STRING) {
+                    targetType.setLength(1);
+                } else {
+                    // always set text length MAX_STRING_LENGTH
+                    targetType.setLength(ScalarType.MAX_STRING_LENGTH);
+                }
             }
         }
 
@@ -269,7 +271,7 @@ public class ColumnDef {
         if (type.getPrimitiveType() == PrimitiveType.ARRAY) {
             if (isKey()) {
                 throw new AnalysisException("Array can only be used in the non-key column of"
-                    + " the duplicate table at present.");
+                        + " the duplicate table at present.");
             }
             if (defaultValue.isSet && defaultValue != DefaultValue.NULL_DEFAULT_VALUE
                             && !defaultValue.value.equals(DefaultValue.ARRAY_EMPTY_DEFAULT_VALUE.value)) {
@@ -347,6 +349,9 @@ public class ColumnDef {
                 new FloatLiteral(defaultValue);
                 break;
             case DECIMALV2:
+                //no need to check precision and scale, since V2 is fixed point
+                new DecimalLiteral(defaultValue);
+                break;
             case DECIMAL32:
             case DECIMAL64:
             case DECIMAL128:
@@ -423,5 +428,9 @@ public class ColumnDef {
     @Override
     public String toString() {
         return toSql();
+    }
+
+    public void setAllowNull(boolean allowNull) {
+        isAllowNull = allowNull;
     }
 }

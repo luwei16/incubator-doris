@@ -22,20 +22,21 @@
 #include <memory>  // for unique_ptr
 
 #include "bloom_filter_index_reader.h"
+#include "cloud/io/file_reader.h"
 #include "common/config.h"
 #include "common/logging.h"
 #include "common/status.h"         // for Status
 #include "gen_cpp/segment_v2.pb.h" // for ColumnMetaPB
-#include "io/fs/file_reader.h"
 #include "olap/block_column_predicate.h"
 #include "olap/column_predicate.h"
+#include "olap/iterators.h"
 #include "olap/rowset/segment_v2/bitmap_index_reader.h" // for BitmapIndexReader
 #include "olap/rowset/segment_v2/common.h"
 #include "olap/rowset/segment_v2/inverted_index_reader.h" // for InvertedIndexReader
-#include "olap/rowset/segment_v2/ordinal_page_index.h" // for OrdinalPageIndexIterator
-#include "olap/rowset/segment_v2/page_handle.h"        // for PageHandle
-#include "olap/rowset/segment_v2/parsed_page.h"        // for ParsedPage
-#include "olap/rowset/segment_v2/row_ranges.h"         // for RowRanges
+#include "olap/rowset/segment_v2/ordinal_page_index.h"    // for OrdinalPageIndexIterator
+#include "olap/rowset/segment_v2/page_handle.h"           // for PageHandle
+#include "olap/rowset/segment_v2/parsed_page.h"           // for ParsedPage
+#include "olap/rowset/segment_v2/row_ranges.h"            // for RowRanges
 #include "olap/rowset/segment_v2/zone_map_index.h"
 #include "olap/tablet_schema.h"
 #include "util/file_cache.h"
@@ -77,6 +78,7 @@ struct ColumnIteratorOptions {
     // page types are divided into DATA_PAGE & INDEX_PAGE
     // INDEX_PAGE including index_page, dict_page and short_key_page
     PageTypePB type;
+
     bool kept_in_memory = false;
     bool is_persistent = false;
     bool use_disposable_cache = false;
@@ -472,11 +474,11 @@ private:
 
 class RowIdColumnIterator : public ColumnIterator {
 public:
-    RowIdColumnIterator() = delete; 
-    RowIdColumnIterator(int32_t tid, RowsetId rid, int32_t segid):
-        _tablet_id(tid), _rowset_id(rid), _segment_id(segid) {}
+    RowIdColumnIterator() = delete;
+    RowIdColumnIterator(int32_t tid, RowsetId rid, int32_t segid)
+            : _tablet_id(tid), _rowset_id(rid), _segment_id(segid) {}
 
-     Status seek_to_first() override {
+    Status seek_to_first() override {
         _current_rowid = 0;
         return Status::OK();
     }
@@ -499,8 +501,7 @@ public:
         for (size_t i = 0; i < *n; ++i) {
             rowid_t row_id = _current_rowid + i;
             GlobalRowLoacation location(_tablet_id, _rowset_id, _segment_id, row_id);
-            dst->insert_data(
-                    reinterpret_cast<const char*>(&location), sizeof(GlobalRowLoacation)); 
+            dst->insert_data(reinterpret_cast<const char*>(&location), sizeof(GlobalRowLoacation));
         }
         _current_rowid += *n;
         return Status::OK();
@@ -511,8 +512,7 @@ public:
         for (size_t i = 0; i < count; ++i) {
             rowid_t row_id = rowids[i];
             GlobalRowLoacation location(_tablet_id, _rowset_id, _segment_id, row_id);
-            dst->insert_data(
-                    reinterpret_cast<const char*>(&location), sizeof(GlobalRowLoacation)); 
+            dst->insert_data(reinterpret_cast<const char*>(&location), sizeof(GlobalRowLoacation));
         }
         return Status::OK();
     }
@@ -522,7 +522,7 @@ public:
 private:
     rowid_t _current_rowid = 0;
     int32_t _tablet_id = 0;
-    RowsetId _rowset_id; 
+    RowsetId _rowset_id;
     int32_t _segment_id = 0;
 };
 

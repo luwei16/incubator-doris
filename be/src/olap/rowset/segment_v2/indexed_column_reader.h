@@ -18,13 +18,14 @@
 #pragma once
 
 #include <memory>
+#include <string>
 
+#include "cloud/io/file_reader.h"
+#include "cloud/io/file_system.h"
+#include "cloud/io/file_system_map.h"
 #include "common/status.h"
 #include "env/env.h"
 #include "gen_cpp/segment_v2.pb.h"
-#include "io/fs/file_reader.h"
-#include "io/fs/file_system.h"
-#include "io/fs/file_system_map.h"
 #include "olap/column_block.h"
 #include "olap/rowset/segment_v2/common.h"
 #include "olap/rowset/segment_v2/index_page.h"
@@ -114,6 +115,10 @@ public:
     // Return NotFound if the given key is greater than all keys in this column.
     // Return NotSupported for column without value index.
     Status seek_at_or_after(const void* key, bool* exact_match);
+    Status seek_at_or_after(const std::string* key, bool* exact_match) {
+        Slice slice(key->data(), key->size());
+        return seek_at_or_after(static_cast<const void*>(&slice), exact_match);
+    }
 
     // Get the ordinal index that the iterator is currently pointed to.
     ordinal_t get_current_ordinal() const {

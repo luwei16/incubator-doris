@@ -86,7 +86,6 @@ public:
     std::string generate_presigned_url(const Path& path, int64_t expiration_secs,
                                        bool is_public_endpoint) const;
 
-private:
     std::string get_key(const Path& path) const;
 
 private:

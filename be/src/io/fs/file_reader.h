@@ -27,6 +27,9 @@
 #include "olap/olap_common.h"
 #include "util/slice.h"
 namespace doris {
+
+struct IOContext;
+
 namespace io {
 
 class FileSystem;
@@ -52,8 +55,8 @@ public:
 
     virtual Status close() = 0;
 
-    virtual Status read_at(size_t offset, Slice result, size_t* bytes_read,
-                           IOState* state = nullptr) = 0;
+    virtual Status read_at(size_t offset, Slice result, const IOContext& io_ctx,
+                           size_t* bytes_read) = 0;
 
     virtual const Path& path() const = 0;
 

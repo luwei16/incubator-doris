@@ -200,7 +200,7 @@ Status CloudSchemaChange::_convert_historical_rowsets(const SchemaChangeParams& 
         context.oldest_write_timestamp = rs_reader->oldest_write_timestamp();
         context.newest_write_timestamp = rs_reader->newest_write_timestamp();
         context.fs = cloud::latest_fs();
-        RETURN_IF_ERROR(new_tablet->create_rowset_writer(&context, &rowset_writer));
+        RETURN_IF_ERROR(new_tablet->create_rowset_writer(context, &rowset_writer));
 
         RowsetMetaSharedPtr existed_rs_meta;
         auto st = meta_mgr()->prepare_rowset(rowset_writer->rowset_meta(), true, &existed_rs_meta);
@@ -573,7 +573,7 @@ Status CloudSchemaChange::_drop_inverted_index(
         auto fs = rowset_meta->fs();
         for (auto i = 0; i < rowset_meta->num_segments(); ++i) {
             std::string segment_path = rowset_meta->is_local()
-                    ? BetaRowset::local_segment_path(tablet->tablet_path(), rowset_meta->rowset_id(), i)
+                    ? BetaRowset::segment_file_path(tablet->tablet_path(), rowset_meta->rowset_id(), i)
                     : BetaRowset::remote_segment_path(tablet->tablet_id(), rowset_meta->rowset_id(), i);
             for (auto& inverted_index: alter_inverted_indexs) {
                 auto column_name = inverted_index.columns[0];

@@ -1,9 +1,9 @@
 #pragma once
 
-#include "service/brpc_conflict.h"
 #include <bthread/bthread.h>
+
+#include "cloud/io/file_system.h"
 #include "olap/olap_define.h"
-#include "io/fs/file_system.h"
 #include "priority_thread_pool.hpp"
 #include "runtime/threadlocal.h"
 
@@ -19,10 +19,11 @@ struct AsyncIOCtx {
 class AsyncIO {
 public:
     AsyncIO() {
-         _io_thread_pool = new PriorityThreadPool(config::doris_scanner_thread_pool_thread_num,
-                                                config::doris_scanner_thread_pool_queue_size);
-        _remote_thread_pool = new PriorityThreadPool(config::doris_remote_scanner_thread_pool_thread_num,
-                                                config::doris_remote_scanner_thread_pool_queue_size);
+        _io_thread_pool = new PriorityThreadPool(config::doris_scanner_thread_pool_thread_num,
+                                                 config::doris_scanner_thread_pool_queue_size, "async_io_thread_pool");
+        _remote_thread_pool =
+                new PriorityThreadPool(config::doris_remote_scanner_thread_pool_thread_num,
+                                       config::doris_remote_scanner_thread_pool_queue_size, "async_remote_thread_pool");
     }
 
     ~AsyncIO() {
@@ -47,7 +48,7 @@ public:
         doris::ConditionVariable cv;
         std::unique_lock<doris::Mutex> l(mutex);
 
-        AsyncIOCtx *ctx = static_cast<AsyncIOCtx*>(bthread_getspecific(btls_io_ctx_key));
+        AsyncIOCtx* ctx = static_cast<AsyncIOCtx*>(bthread_getspecific(btls_io_ctx_key));
         int nice = -1;
         if (ctx == nullptr) {
             nice = 18;
@@ -70,21 +71,18 @@ public:
         }
         cv.wait(l);
     }
- 
+
     inline static bthread_key_t btls_io_ctx_key;
 
-    static void io_ctx_key_deleter(void *d) {
-        delete static_cast<AsyncIOCtx*>(d);
-    }
+    static void io_ctx_key_deleter(void* d) { delete static_cast<AsyncIOCtx*>(d); }
 
 private:
     PriorityThreadPool* _io_thread_pool = nullptr;
     PriorityThreadPool* _remote_thread_pool = nullptr;
 
 private:
-    PriorityThreadPool* io_thread_pool() {return _io_thread_pool;}
-    PriorityThreadPool* remote_thread_pool() {return _remote_thread_pool;}
-
+    PriorityThreadPool* io_thread_pool() { return _io_thread_pool; }
+    PriorityThreadPool* remote_thread_pool() { return _remote_thread_pool; }
 };
 
 } // end namespace doris

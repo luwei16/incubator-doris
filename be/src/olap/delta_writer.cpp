@@ -28,6 +28,7 @@
 #include "olap/schema.h"
 #include "olap/schema_change.h"
 #include "olap/storage_engine.h"
+#include "runtime/load_channel_mgr.h"
 #include "runtime/row_batch.h"
 #include "runtime/tuple_row.h"
 #include "service/backend_options.h"
@@ -62,8 +63,6 @@ DeltaWriter::~DeltaWriter() {
     }
 #endif
 
-    _mem_table.reset();
-
     if (!_is_init) {
         return;
     }
@@ -83,6 +82,8 @@ DeltaWriter::~DeltaWriter() {
         _tablet->data_dir()->remove_pending_ids(ROWSET_ID_PREFIX +
                                                 _rowset_writer->rowset_id().to_string());
     }
+
+    _mem_table.reset();
 }
 
 void DeltaWriter::_garbage_collection() {
@@ -161,7 +162,7 @@ Status DeltaWriter::init() {
     context.tablet_schema = _tablet_schema;
     context.fs = cloud::latest_fs();
     context.tablet = _tablet;
-    RETURN_NOT_OK(_tablet->create_rowset_writer(&context, &_rowset_writer));
+    RETURN_NOT_OK(_tablet->create_rowset_writer(context, &_rowset_writer));
     _schema.reset(new Schema(_tablet_schema));
 #ifdef CLOUD_MODE
     RETURN_IF_ERROR(cloud::meta_mgr()->prepare_rowset(_rowset_writer->rowset_meta(), true));
@@ -201,12 +202,12 @@ Status DeltaWriter::write(Tuple* tuple) {
     // if memtable is full, push it to the flush executor,
     // and create a new memtable for incoming data
     if (_mem_table->memory_usage() >= config::write_buffer_size) {
-        if (++_segment_counter > config::max_segment_num_per_rowset) {
-            return Status::OLAPInternalError(OLAP_ERR_TOO_MANY_SEGMENTS);
-        }
-        RETURN_NOT_OK(_flush_memtable_async());
+        auto s = _flush_memtable_async();
         // create a new memtable for new incoming data
         _reset_mem_table();
+        if (OLAP_UNLIKELY(!s.ok())) {
+            return s;
+        }
     }
     return Status::OK();
 }
@@ -231,8 +232,11 @@ Status DeltaWriter::write(const RowBatch* row_batch, const std::vector<int>& row
     }
 
     if (_mem_table->memory_usage() >= config::write_buffer_size) {
-        RETURN_NOT_OK(_flush_memtable_async());
+        auto s = _flush_memtable_async();
         _reset_mem_table();
+        if (OLAP_UNLIKELY(!s.ok())) {
+            return s;
+        }
     }
 
     return Status::OK();
@@ -261,8 +265,11 @@ Status DeltaWriter::write(const vectorized::Block* block, const std::vector<int>
     if (_mem_table->need_to_agg()) {
         _mem_table->shrink_memtable_by_agg();
         if (_mem_table->is_flush()) {
-            RETURN_NOT_OK(_flush_memtable_async());
+            auto s = _flush_memtable_async();
             _reset_mem_table();
+            if (OLAP_UNLIKELY(!s.ok())) {
+                return s;
+            }
         }
     }
 
@@ -270,9 +277,6 @@ Status DeltaWriter::write(const vectorized::Block* block, const std::vector<int>
 }
 
 Status DeltaWriter::_flush_memtable_async() {
-    if (++_segment_counter > config::max_segment_num_per_rowset) {
-        return Status::OLAPInternalError(OLAP_ERR_TOO_MANY_SEGMENTS);
-    }
     return _flush_token->submit(std::move(_mem_table));
 }
 
@@ -293,8 +297,11 @@ Status DeltaWriter::flush_memtable_and_wait(bool need_wait) {
     VLOG_NOTICE << "flush memtable to reduce mem consumption. memtable size: "
                 << _mem_table->memory_usage() << ", tablet: " << _req.tablet_id
                 << ", load id: " << print_id(_req.load_id);
-    RETURN_NOT_OK(_flush_memtable_async());
+    auto s = _flush_memtable_async();
     _reset_mem_table();
+    if (OLAP_UNLIKELY(!s.ok())) {
+        return s;
+    }
 
     if (need_wait) {
         // wait all memtables in flush queue to be flushed.
@@ -321,12 +328,23 @@ void DeltaWriter::_reset_mem_table() {
     if (_tablet->enable_unique_key_merge_on_write() && _delete_bitmap == nullptr) {
         _delete_bitmap.reset(new DeleteBitmap(_tablet->tablet_id()));
     }
+#ifndef BE_TEST
+    auto mem_table_insert_tracker = std::make_shared<MemTracker>(
+            fmt::format("MemTableManualInsert:TabletId={}:MemTableNum={}#loadID={}",
+                        std::to_string(tablet_id()), _mem_table_num, _load_id.to_string()),
+            nullptr, ExecEnv::GetInstance()->load_channel_mgr()->mem_tracker_set());
+    auto mem_table_flush_tracker = std::make_shared<MemTracker>(
+            fmt::format("MemTableHookFlush:TabletId={}:MemTableNum={}#loadID={}",
+                        std::to_string(tablet_id()), _mem_table_num++, _load_id.to_string()),
+            nullptr, ExecEnv::GetInstance()->load_channel_mgr()->mem_tracker_set());
+#else
     auto mem_table_insert_tracker = std::make_shared<MemTracker>(
             fmt::format("MemTableManualInsert:TabletId={}:MemTableNum={}#loadID={}",
                         std::to_string(tablet_id()), _mem_table_num, _load_id.to_string()));
     auto mem_table_flush_tracker = std::make_shared<MemTracker>(
             fmt::format("MemTableHookFlush:TabletId={}:MemTableNum={}#loadID={}",
                         std::to_string(tablet_id()), _mem_table_num++, _load_id.to_string()));
+#endif
     {
         std::lock_guard<SpinLock> l(_mem_table_tracker_lock);
         _mem_table_tracker.push_back(mem_table_insert_tracker);
@@ -353,12 +371,16 @@ Status DeltaWriter::close() {
         return _cancel_status;
     }
 
-    RETURN_NOT_OK(_flush_memtable_async());
+    auto s = _flush_memtable_async();
     _mem_table.reset();
 
     _is_closed = true;
 
-    return Status::OK();
+    if (OLAP_UNLIKELY(!s.ok())) {
+        return s;
+    } else {
+        return Status::OK();
+    }
 }
 
 Status DeltaWriter::close_wait(const PSlaveTabletNodes& slave_tablet_nodes,

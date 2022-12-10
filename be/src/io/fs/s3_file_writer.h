@@ -17,35 +17,28 @@
 
 #pragma once
 
-#include <atomic>
-#include <chrono>
+#include <cstddef>
 #include <list>
-#include <memory>
-#include <unordered_set>
 
-#include "common/config.h"
-#include "gutil/int128.h"
-#include "io/fs/file_reader.h"
 #include "io/fs/file_writer.h"
-#include "io/fs/s3_file_system.h"
+#include "util/s3_util.h"
 
-namespace Aws::Transfer {
-class TransferHandle;
+namespace Aws::S3 {
+namespace Model {
+class CompletedPart;
 }
+class S3Client;
+} // namespace Aws::S3
 
 namespace doris {
 namespace io {
 
-class S3FileSystem;
-class TmpFileMgr;
 class S3FileWriter final : public FileWriter {
 public:
-    S3FileWriter(Path path, std::string key, std::string bucket, S3FileSystem* fs);
+    S3FileWriter(Path path, std::shared_ptr<Aws::S3::S3Client> client, const S3Conf& s3_conf);
     ~S3FileWriter() override;
 
-    Status open() override;
-
-    Status close(bool sync = true) override;
+    Status close() override;
 
     Status abort() override;
 
@@ -57,24 +50,29 @@ public:
 
     Status finalize() override;
 
-    size_t bytes_appended() const override { return _tmp_file_writer->bytes_appended(); }
-
-
-    FileSystem* fs() const override { return _fs; }
-
-    int64_t upload_speed_bytes_s() const { return *_upload_speed_bytes_s; }
+    size_t bytes_appended() const override { return _bytes_appended; }
 
 private:
-    S3FileSystem* _fs;
+    Status _close();
 
-    std::string _bucket;
-    std::string _key;
-    bool _closed = true;
+    Status _open();
 
-    FileWriterPtr _tmp_file_writer;
-    std::shared_ptr<Aws::Transfer::TransferHandle> _handle;
+    Status _upload_part();
 
-    std::shared_ptr<int64_t> _upload_speed_bytes_s = std::make_shared<int64_t>();
+    void _reset_stream();
+
+private:
+    std::shared_ptr<Aws::S3::S3Client> _client;
+    S3Conf _s3_conf;
+    std::string _upload_id;
+    bool _is_open = false;
+    bool _closed = false;
+    size_t _bytes_appended = 0;
+
+    std::shared_ptr<Aws::StringStream> _stream_ptr;
+    // Current Part Num for CompletedPart
+    int _cur_part_num = 0;
+    std::list<std::shared_ptr<Aws::S3::Model::CompletedPart>> _completed_parts;
 };
 
 } // namespace io

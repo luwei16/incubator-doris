@@ -26,7 +26,9 @@ add_library(Rowset STATIC
     rowset.cpp
     rowset_factory.cpp
     rowset_meta_manager.cpp
-    beta_rowset.cpp
+    # TODO(liuchangliang)
+    # beta_rowset.cpp
     beta_rowset_reader.cpp
-    beta_rowset_writer.cpp
+    # FIXME(cyx): use compile options
+    # beta_rowset_writer.cpp
     rowset_tree.cpp)

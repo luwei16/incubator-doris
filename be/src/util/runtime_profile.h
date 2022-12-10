@@ -45,6 +45,7 @@ namespace doris {
 
 #define ADD_COUNTER(profile, name, type) (profile)->add_counter(name, type)
 #define ADD_TIMER(profile, name) (profile)->add_counter(name, TUnit::TIME_NS)
+#define ADD_CHILD_COUNTER(profile, name, type, parent) (profile)->add_counter(name, type, parent)
 #define ADD_CHILD_TIMER(profile, name, parent) (profile)->add_counter(name, TUnit::TIME_NS, parent)
 #define SCOPED_TIMER(c) ScopedTimer<MonotonicStopWatch> MACRO_CONCAT(SCOPED_TIMER, __COUNTER__)(c)
 #define SCOPED_CPU_TIMER(c) \
@@ -477,7 +478,7 @@ private:
 
     // Helper function to compute compute the fraction of the total time spent in
     // this profile and its children.
-    // Called recusively.
+    // Called recursively.
     void compute_time_in_profile(int64_t total_time);
 
     // Print the child counters of the given counter name

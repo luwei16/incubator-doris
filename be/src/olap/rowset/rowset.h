@@ -22,10 +22,10 @@
 #include <mutex>
 #include <vector>
 
+#include "cloud/io/remote_file_system.h"
 #include "env/env.h"
 #include "gen_cpp/olap_file.pb.h"
 #include "gutil/macros.h"
-#include "io/fs/remote_file_system.h"
 #include "olap/rowset/rowset_meta.h"
 #include "olap/tablet_schema.h"
 #include "util/lock.h"
@@ -230,6 +230,8 @@ public:
 
     const std::string& tablet_path() const { return _tablet_path; }
 
+    virtual std::string rowset_dir() { return _rowset_dir; }
+
     static bool comparator(const RowsetSharedPtr& left, const RowsetSharedPtr& right) {
         return left->end_version() < right->end_version();
     }
@@ -292,6 +294,7 @@ protected:
     TabletSchemaSPtr _schema;
 
     std::string _tablet_path;
+    std::string _rowset_dir;
     RowsetMetaSharedPtr _rowset_meta;
     // init in constructor
     bool _is_pending;    // rowset is pending iff it's not in visible state

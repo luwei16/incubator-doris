@@ -142,6 +142,10 @@ public interface GlobalTransactionMgrInterface extends Writable {
     public TWaitingTxnStatusResult getWaitingTxnStatus(TWaitingTxnStatusRequest request)
             throws AnalysisException, TimeoutException;
 
+    public long getAllRunningTxnNum();
+
+    public long getAllRunningTxnReplicaNum();
+
     public void readFields(DataInput in) throws IOException;
 
     public long getTxnNumByStatus(TransactionStatus status);

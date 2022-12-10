@@ -17,8 +17,8 @@
 
 #include "olap/primary_key_index.h"
 
+#include "cloud/io/file_reader.h"
 #include "common/config.h"
-#include "io/fs/file_reader.h"
 #include "olap/rowset/segment_v2/encoding_info.h"
 
 namespace doris {

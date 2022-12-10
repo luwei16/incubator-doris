@@ -17,14 +17,20 @@
 
 #pragma once
 
+#include "cloud/io/file_system.h"
 #include "gen_cpp/olap_file.pb.h"
-#include "io/fs/file_system.h"
 #include "olap/data_dir.h"
+#ifdef CLOUD_MODE
+#include "cloud/olap/storage_engine.h"
+#else
 #include "olap/storage_engine.h"
+#endif
 #include "olap/tablet.h"
 #include "olap/tablet_schema.h"
 
 namespace doris {
+
+using TabletSharedPtr = std::shared_ptr<Tablet>;
 
 namespace vectorized::object_util {
 class LocalSchemaChangeRecorder;
@@ -48,26 +54,6 @@ struct RowsetWriterContext {
         load_id.set_lo(0);
     }
 
-    static RowsetWriterContext create(const Version& version, TabletSharedPtr new_tablet,
-                                      RowsetTypePB new_rowset_type,
-                                      SegmentsOverlapPB segments_overlap) {
-        RowsetWriterContext context;
-        context.rowset_id = StorageEngine::instance()->next_rowset_id();
-        context.tablet_uid = new_tablet->tablet_uid();
-        context.tablet_id = new_tablet->tablet_id();
-        context.partition_id = new_tablet->partition_id();
-        context.tablet_schema_hash = new_tablet->schema_hash();
-        context.rowset_type = new_rowset_type;
-        context.tablet_path = new_tablet->tablet_path();
-        context.tablet_schema = new_tablet->tablet_schema();
-        context.data_dir = new_tablet->data_dir();
-        context.rowset_state = VISIBLE;
-        context.version = version;
-        context.segments_overlap = segments_overlap;
-
-        return context;
-    }
-
     RowsetId rowset_id;
     int64_t tablet_id;
     int64_t tablet_schema_hash;
@@ -75,7 +61,7 @@ struct RowsetWriterContext {
     int64_t index_id;
     int64_t partition_id;
     RowsetTypePB rowset_type;
-    std::string tablet_path;
+    std::string rowset_dir = "";
     TabletSchemaSPtr tablet_schema;
     // PREPARED/COMMITTED for pending rowset
     // VISIBLE for non-pending rowset
@@ -103,7 +89,7 @@ struct RowsetWriterContext {
 
     // If `fs == nullptr`, use `global_local_filesystem` as default fs to perform IO operation.
     // (see `RowsetMeta::fs()`)
-    io::FileSystemPtr fs;
+    io::FileSystemSPtr fs;
 
     int64_t oldest_write_timestamp = -1;
     int64_t newest_write_timestamp = -1;
@@ -113,7 +99,8 @@ struct RowsetWriterContext {
     TabletSharedPtr tablet = nullptr;
 
     // for tracing local schema change record
-    std::shared_ptr<vectorized::object_util::LocalSchemaChangeRecorder> schema_change_recorder = nullptr;
+    std::shared_ptr<vectorized::object_util::LocalSchemaChangeRecorder> schema_change_recorder =
+            nullptr;
 };
 
 } // namespace doris

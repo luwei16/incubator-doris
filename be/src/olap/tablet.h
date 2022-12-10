@@ -28,10 +28,10 @@
 #include <unordered_set>
 #include <vector>
 
+#include "cloud/io/file_system.h"
 #include "gen_cpp/AgentService_types.h"
 #include "gen_cpp/MasterService_types.h"
 #include "gen_cpp/olap_file.pb.h"
-#include "io/fs/file_system.h"
 #include "olap/base_tablet.h"
 #include "olap/cumulative_compaction_policy.h"
 #include "olap/data_dir.h"
@@ -40,7 +40,11 @@
 #include "olap/rowset/rowset.h"
 #include "olap/rowset/rowset_reader.h"
 #include "olap/rowset/rowset_tree.h"
+#ifdef CLOUD_MODE
+#include "cloud/olap/segment.h"
+#else
 #include "olap/rowset/segment_v2/segment.h"
+#endif
 #include "olap/tablet_meta.h"
 #include "olap/tuple.h"
 #include "olap/utils.h"
@@ -356,17 +360,7 @@ public:
         return _tablet_meta->tablet_schema(version);
     }
 
-    Status create_rowset_writer(const Version& version, const RowsetStatePB& rowset_state,
-                                const SegmentsOverlapPB& overlap, TabletSchemaSPtr tablet_schema,
-                                int64_t oldest_write_timestamp, int64_t newest_write_timestamp,
-                                std::unique_ptr<RowsetWriter>* rowset_writer);
-
-    Status create_rowset_writer(const int64_t& txn_id, const PUniqueId& load_id,
-                                const RowsetStatePB& rowset_state, const SegmentsOverlapPB& overlap,
-                                TabletSchemaSPtr tablet_schema,
-                                std::unique_ptr<RowsetWriter>* rowset_writer);
-
-    Status create_rowset_writer(RowsetWriterContext* context,
+    Status create_rowset_writer(RowsetWriterContext& context,
                                 std::unique_ptr<RowsetWriter>* rowset_writer);
 
     Status create_rowset(RowsetMetaSharedPtr rowset_meta, RowsetSharedPtr* rowset);
@@ -420,6 +414,7 @@ public:
     bool is_persistent() const { return _tablet_meta->is_persistent(); }
 
     RowsetSharedPtr get_rowset(const RowsetId& rowset_id);
+
 private:
     Status _init_once_action();
     void _print_missed_versions(const std::vector<Version>& missed_versions) const;

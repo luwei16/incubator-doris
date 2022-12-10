@@ -20,7 +20,32 @@ set(LIBRARY_OUTPUT_PATH "${BUILD_DIR}/src/cloud")
 
 # where to put generated binaries
 set(EXECUTABLE_OUTPUT_PATH "${BUILD_DIR}/src/cloud")
-  
+
+set(IO_FILES
+    io/file_system_map.cpp
+    io/local_file_reader.cpp
+    io/local_file_system.cpp
+    io/local_file_writer.cpp
+    io/s3_file_reader.cpp
+    io/s3_file_system.cpp
+    io/s3_file_writer.cpp
+    io/s3_file_writer.cpp
+    io/cloud_file_segment.cpp
+    io/cloud_lru_file_cache.cpp
+    io/cloud_file_cache.cpp
+    io/cloud_file_cache_factory.cpp
+    io/cached_remote_file_reader.cpp
+    io/cloud_file_cache_profile.cpp
+    io/tmp_file_mgr.cpp
+)
+
+set(OLAP_FILES
+    olap/beta_rowset_writer.cpp
+    olap/beta_rowset.cpp
+    olap/olap_server.cpp 
+    olap/segment.cpp
+)
+
 add_library(Cloud STATIC
 cloud_base_compaction.cpp
 cloud_cumulative_compaction.cpp
@@ -29,4 +54,6 @@ cloud_schema_change.cpp
 cloud_stream_load_executor.cpp
 cloud_tablet_mgr.cpp
 utils.cpp
+${IO_FILES}
+${OLAP_FILES}
 )

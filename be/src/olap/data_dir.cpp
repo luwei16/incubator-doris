@@ -17,12 +17,15 @@
 
 #include "olap/data_dir.h"
 
+#ifndef __APPLE__
+#include <mntent.h>
+#include <sys/statfs.h>
+#endif
+
 #include <ctype.h>
 #include <gen_cpp/olap_file.pb.h>
-#include <mntent.h>
 #include <stdio.h>
 #include <sys/file.h>
-#include <sys/statfs.h>
 #include <utime.h>
 
 #include <atomic>
@@ -35,10 +38,10 @@
 #include <sstream>
 #include <string>
 
+#include "cloud/io/local_file_system.h"
+#include "cloud/io/path.h"
 #include "env/env_util.h"
 #include "gutil/strings/substitute.h"
-#include "io/fs/local_file_system.h"
-#include "io/fs/path.h"
 #include "olap/file_helper.h"
 #include "olap/olap_define.h"
 #include "olap/rowset/beta_rowset.h"
@@ -69,7 +72,7 @@ DataDir::DataDir(const std::string& path, int64_t capacity_bytes,
                  TStorageMedium::type storage_medium, TabletManager* tablet_manager,
                  TxnManager* txn_manager)
         : _path(path),
-          _fs(std::make_shared<io::LocalFileSystem>(path)),
+          _fs(io::LocalFileSystem::create(path)),
           _capacity_bytes(capacity_bytes),
           _available_bytes(0),
           _disk_capacity_bytes(0),

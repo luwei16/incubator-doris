@@ -25,7 +25,7 @@
 #include <mutex>
 #include <vector>
 
-#include "io/fs/file_system.h"
+#include "cloud/io/file_system.h"
 #include "util/lock.h"
 
 namespace doris {
@@ -61,14 +61,14 @@ private:
 
 protected:
     DorisCompoundDirectory();
-    virtual void init(io::FileSystem* fs, const char* path,
+    virtual void init(const io::FileSystemSPtr& fs, const char* path,
                       lucene::store::LockFactory* lockFactory = nullptr,
-                      io::FileSystem* compound_fs = nullptr, const char* cfs_path = nullptr);
+                      const io::FileSystemSPtr& compound_fs = nullptr, const char* cfs_path = nullptr);
     void priv_getFN(char* buffer, const char* name) const;
 
 private:
-    io::FileSystem* fs;
-    io::FileSystem* compound_fs;
+    io::FileSystemSPtr fs;
+    io::FileSystemSPtr compound_fs;
     std::string directory;
     std::string cfs_directory;
     void create();
@@ -91,8 +91,8 @@ public:
     friend class DorisCompoundDirectory::FSIndexOutput;
     friend class DorisCompoundDirectory::FSIndexInput;
 
-    io::FileSystem* getFileSystem() { return fs; }
-    io::FileSystem* getCompoundFileSystem() { return compound_fs; }
+    const io::FileSystemSPtr& getFileSystem() { return fs; }
+    const io::FileSystemSPtr& getCompoundFileSystem() { return compound_fs; }
     ///Destructor - only call this if you are sure the directory
     ///is not being used anymore. Otherwise use the ref-counting
     ///facilities of _CLDECDELETE
@@ -114,7 +114,7 @@ public:
     * create a new index.
     */
     static _CL_DEPRECATED(getDirectory(fs, file, lockFactory)) DorisCompoundDirectory* getDirectory(
-            io::FileSystem* fs, const char* file, const bool create,
+            const io::FileSystemSPtr& fs, const char* file, const bool create,
             lucene::store::LockFactory* lockFactory);
 
     /**
@@ -131,14 +131,14 @@ public:
     @param create if true, create, or erase any existing contents.
     @return the DorisFSDirectory for the named file.
     */
-    static DorisCompoundDirectory* getDirectory(io::FileSystem* fs, const char* file,
+    static DorisCompoundDirectory* getDirectory(const io::FileSystemSPtr& fs, const char* file,
                                                 lucene::store::LockFactory* lockFactory = nullptr,
-                                                io::FileSystem* cfs_fs = nullptr,
+                                                const io::FileSystemSPtr& cfs_fs = nullptr,
                                                 const char* cfs_file = nullptr);
 
-    static DorisCompoundDirectory* getDirectory(io::FileSystem* fs, const char* file,
+    static DorisCompoundDirectory* getDirectory(const io::FileSystemSPtr& fs, const char* file,
                                                 bool useCompoundFileWriter,
-                                                io::FileSystem* cfs_fs = nullptr,
+                                                const io::FileSystemSPtr& cfs_fs = nullptr,
                                                 const char* cfs_file = nullptr);
 
     /// Returns the time the named file was last modified.
@@ -254,7 +254,7 @@ protected:
     FSIndexInput(const FSIndexInput& clone);
 
 public:
-    static bool open(io::FileSystem* fs, const char* path, IndexInput*& ret, CLuceneError& error,
+    static bool open(const io::FileSystemSPtr& fs, const char* path, IndexInput*& ret, CLuceneError& error,
                      int32_t bufferSize = -1);
     ~FSIndexInput() override;
 

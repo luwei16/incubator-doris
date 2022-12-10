@@ -34,10 +34,8 @@ public:
 
     Status close() override;
 
-    Status read_at(size_t offset, Slice result, size_t* bytes_read,
-                   IOState* state = nullptr) override;
-
-    Status read_at_impl(size_t offset, Slice result, size_t* bytes_read, IOState* state);
+    Status read_at(size_t offset, Slice result, const IOContext& io_ctx,
+                   size_t* bytes_read) override;
 
     const Path& path() const override { return _path; }
 

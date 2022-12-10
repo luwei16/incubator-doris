@@ -16,10 +16,10 @@
 // under the License.
 
 #include "olap/rowset/segment_v2/inverted_index_compound_reader.h"
-#include "olap/rowset/segment_v2/inverted_index_compound_directory.h"
 
-#include "io/fs/file_reader.h"
-#include "io/fs/file_writer.h"
+#include "cloud/io/file_reader.h"
+#include "cloud/io/file_writer.h"
+#include "olap/rowset/segment_v2/inverted_index_compound_directory.h"
 
 #ifdef _CL_HAVE_IO_H
 #include <io.h>
@@ -63,7 +63,7 @@ namespace segment_v2 {
 
 class DorisCompoundReader::ReaderFileEntry : LUCENE_BASE {
 public:
-    std::string file_name{};
+    std::string file_name {};
     int64_t offset;
     int64_t length;
     ReaderFileEntry() {
@@ -333,8 +333,8 @@ lucene::store::IndexOutput* DorisCompoundReader::createOutput(const char* name) 
 }
 
 std::string DorisCompoundReader::toString() const {
-    return std::string("DorisCompoundReader@") + this->directory
-           + std::string("; file_name: ") + std::string(file_name);
+    return std::string("DorisCompoundReader@") + this->directory + std::string("; file_name: ") +
+           std::string(file_name);
 }
 
 } // namespace segment_v2
