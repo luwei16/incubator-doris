@@ -40,6 +40,8 @@ public:
 
     Status create_file(const Path& path, FileWriterPtr* writer) override;
 
+    Status create_file_impl(const Path& path, FileWriterPtr* writer);
+
     Status open_file(const Path& path, FileReaderSPtr* reader) override;
 
     Status open_file_impl(const Path& path, metrics_hook, FileReaderSPtr* reader);
@@ -48,14 +50,20 @@ public:
 
     Status delete_file(const Path& path) override;
 
+    Status delete_file_impl(const Path& path);
+
     Status create_directory(const Path& path) override;
 
     // Delete all objects start with path.
     Status delete_directory(const Path& path) override;
 
+    Status delete_directory_impl(const Path& path);
+
     Status link_file(const Path& src, const Path& dest) override;
 
     Status exists(const Path& path, bool* res) const override;
+
+    Status exists_impl(const Path& path, bool* res) const;
 
     Status file_size(const Path& path, size_t* file_size) const override;
 
@@ -65,10 +73,17 @@ public:
 
     Status upload(const Path& local_path, const Path& dest_path) override;
 
+    Status upload_impl(const Path& local_path, const Path& dest_path);
+
     Status batch_upload(const std::vector<Path>& local_paths,
                         const std::vector<Path>& dest_paths) override;
 
+    Status batch_upload_impl(const std::vector<Path>& local_paths,
+                        const std::vector<Path>& dest_paths);
+
     Status connect() override;
+
+    Status connect_impl();
 
     std::shared_ptr<Aws::S3::S3Client> get_client() const {
         std::lock_guard lock(_client_mu);

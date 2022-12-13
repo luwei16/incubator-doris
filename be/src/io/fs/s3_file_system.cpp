@@ -70,6 +70,16 @@ S3FileSystem::S3FileSystem(S3Conf s3_conf, ResourceId resource_id)
 S3FileSystem::~S3FileSystem() = default;
 
 Status S3FileSystem::connect() {
+    if (bthread_self() == 0) {
+        return connect_impl();
+    }
+    Status s;
+    auto task = [&] { s = connect_impl(); };
+    AsyncIO::run_task(task, io::FileSystemType::S3);
+    return s;
+}
+
+Status S3FileSystem::connect_impl() {
     auto client = ClientFactory::instance().create(_s3_conf);
     if (!client) {
         return Status::InternalError("failed to init s3 client with {}", _s3_conf.to_string());
@@ -80,6 +90,16 @@ Status S3FileSystem::connect() {
 }
 
 Status S3FileSystem::upload(const Path& local_path, const Path& dest_path) {
+    if (bthread_self() == 0) {
+        return upload_impl(local_path, dest_path);
+    }
+    Status s;
+    auto task = [&] { s = upload_impl(local_path, dest_path); };
+    AsyncIO::run_task(task, io::FileSystemType::S3);
+    return s;
+}
+
+Status S3FileSystem::upload_impl(const Path& local_path, const Path& dest_path) {
     auto client = get_client();
     CHECK_S3_CLIENT(client);
 
@@ -112,6 +132,17 @@ Status S3FileSystem::upload(const Path& local_path, const Path& dest_path) {
 }
 
 Status S3FileSystem::batch_upload(const std::vector<Path>& local_paths,
+                                  const std::vector<Path>& dest_paths) {
+    if (bthread_self() == 0) {
+        return batch_upload_impl(local_paths, dest_paths);
+    }
+    Status s;
+    auto task = [&] { s = batch_upload_impl(local_paths, dest_paths); };
+    AsyncIO::run_task(task, io::FileSystemType::S3);
+    return s;
+}
+
+Status S3FileSystem::batch_upload_impl(const std::vector<Path>& local_paths,
                                   const std::vector<Path>& dest_paths) {
     auto client = get_client();
     CHECK_S3_CLIENT(client);
@@ -148,6 +179,16 @@ Status S3FileSystem::batch_upload(const std::vector<Path>& local_paths,
 }
 
 Status S3FileSystem::create_file(const Path& path, FileWriterPtr* writer) {
+    if (bthread_self() == 0) {
+        return create_file_impl(path, writer);
+    }
+    Status s;
+    auto task = [&] { s = create_file_impl(path, writer); };
+    AsyncIO::run_task(task, io::FileSystemType::S3);
+    return s;
+}
+
+Status S3FileSystem::create_file_impl(const Path& path, FileWriterPtr* writer) {
     auto key = get_key(path);
     auto fs_path = Path(_s3_conf.endpoint) / _s3_conf.bucket / key;
     *writer = std::make_unique<S3FileWriter>(std::move(fs_path), std::move(key), _s3_conf.bucket,
@@ -190,6 +231,16 @@ Status S3FileSystem::open_file(const Path& path, metrics_hook metrics, FileReade
 }
 
 Status S3FileSystem::delete_file(const Path& path) {
+    if (bthread_self() == 0) {
+        return delete_file_impl(path);
+    }
+    Status s;
+    auto task = [&] { s = delete_file_impl(path); };
+    AsyncIO::run_task(task, io::FileSystemType::S3);
+    return s;
+}
+
+Status S3FileSystem::delete_file_impl(const Path& path) {
     auto client = get_client();
     CHECK_S3_CLIENT(client);
 
@@ -212,6 +263,16 @@ Status S3FileSystem::create_directory(const Path& path) {
 }
 
 Status S3FileSystem::delete_directory(const Path& path) {
+    if (bthread_self() == 0) {
+        return delete_directory_impl(path);
+    }
+    Status s;
+    auto task = [&] { s = delete_directory_impl(path); };
+    AsyncIO::run_task(task, io::FileSystemType::S3);
+    return s;
+}
+
+Status S3FileSystem::delete_directory_impl(const Path& path) {
     auto client = get_client();
     CHECK_S3_CLIENT(client);
 
@@ -270,6 +331,16 @@ Status S3FileSystem::link_file(const Path& src, const Path& dest) {
 }
 
 Status S3FileSystem::exists(const Path& path, bool* res) const {
+    if (bthread_self() == 0) {
+        return exists_impl(path, res);
+    }
+    Status s;
+    auto task = [&] { s = exists_impl(path, res); };
+    AsyncIO::run_task(task, io::FileSystemType::S3);
+    return s;
+}
+
+Status S3FileSystem::exists_impl(const Path& path, bool* res) const {
     auto client = get_client();
     CHECK_S3_CLIENT(client);
 

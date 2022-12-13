@@ -37,6 +37,16 @@ Path LocalFileSystem::absolute_path(const Path& path) const {
 }
 
 Status LocalFileSystem::create_file(const Path& path, FileWriterPtr* writer) {
+    if (bthread_self() == 0) {
+        return create_file_impl(path, writer);
+    }
+    Status s;
+    auto task = [&] {s = create_file_impl(path, writer);};
+    AsyncIO::run_task(task, io::FileSystemType::LOCAL);
+    return s;
+}
+
+Status LocalFileSystem::create_file_impl(const Path& path, FileWriterPtr* writer) {
     auto fs_path = absolute_path(path);
     *writer = std::make_unique<LocalFileWriter>(std::move(fs_path), this);
     return (*writer)->open();
@@ -66,6 +76,16 @@ Status LocalFileSystem::open_file_impl(const Path& path, FileReaderSPtr* reader)
 }
 
 Status LocalFileSystem::delete_file(const Path& path) {
+    if (bthread_self() == 0) {
+        return delete_file_impl(path);
+    }
+    Status s;
+    auto task = [&] {s = delete_file_impl(path);};
+    AsyncIO::run_task(task, io::FileSystemType::LOCAL);
+    return s;
+}
+
+Status LocalFileSystem::delete_file_impl(const Path& path) {
     auto fs_path = absolute_path(path);
     if (!std::filesystem::exists(fs_path)) {
         return Status::OK();
@@ -81,7 +101,18 @@ Status LocalFileSystem::delete_file(const Path& path) {
     return Status::OK();
 }
 
+
 Status LocalFileSystem::create_directory(const Path& path) {
+    if (bthread_self() == 0) {
+        return create_directory_impl(path);
+    }
+    Status s;
+    auto task = [&] {s = create_directory_impl(path);};
+    AsyncIO::run_task(task, io::FileSystemType::LOCAL);
+    return s;
+}
+
+Status LocalFileSystem::create_directory_impl(const Path& path) {
     auto fs_path = absolute_path(path);
     if (std::filesystem::exists(fs_path)) {
         return Status::IOError("{} exists", fs_path.native());
@@ -94,7 +125,18 @@ Status LocalFileSystem::create_directory(const Path& path) {
     return Status::OK();
 }
 
+
 Status LocalFileSystem::delete_directory(const Path& path) {
+    if (bthread_self() == 0) {
+        return delete_directory_impl(path);
+    }
+    Status s;
+    auto task = [&] {s = delete_directory_impl(path);};
+    AsyncIO::run_task(task, io::FileSystemType::LOCAL);
+    return s;
+}
+
+Status LocalFileSystem::delete_directory_impl(const Path& path) {
     auto fs_path = absolute_path(path);
     if (!std::filesystem::exists(fs_path)) {
         return Status::OK();
@@ -111,6 +153,16 @@ Status LocalFileSystem::delete_directory(const Path& path) {
 }
 
 Status LocalFileSystem::link_file(const Path& src, const Path& dest) {
+    if (bthread_self() == 0) {
+        return link_file_impl(src, dest);
+    }
+    Status s;
+    auto task = [&] {s = link_file_impl(src, dest);};
+    AsyncIO::run_task(task, io::FileSystemType::LOCAL);
+    return s;
+}
+
+Status LocalFileSystem::link_file_impl(const Path& src, const Path& dest) {
     if (::link(src.c_str(), dest.c_str()) != 0) {
         return Status::IOError("fail to create hard link: {}. from {} to {}", std::strerror(errno),
                                src.native(), dest.native());
@@ -119,6 +171,16 @@ Status LocalFileSystem::link_file(const Path& src, const Path& dest) {
 }
 
 Status LocalFileSystem::exists(const Path& path, bool* res) const {
+    if (bthread_self() == 0) {
+        return exists_impl(path, res);
+    }
+    Status s;
+    auto task = [&] {s = exists_impl(path, res);};
+    AsyncIO::run_task(task, io::FileSystemType::LOCAL);
+    return s;
+}
+
+Status LocalFileSystem::exists_impl(const Path& path, bool* res) const {
     auto fs_path = absolute_path(path);
     *res = std::filesystem::exists(fs_path);
     return Status::OK();
@@ -147,6 +209,17 @@ Status LocalFileSystem::file_size_impl(const Path& path, size_t* file_size) cons
 }
 
 Status LocalFileSystem::list(const Path& path, std::vector<Path>* files) {
+    if (bthread_self() == 0) {
+        return list_impl(path, files);
+    }
+
+    Status s;
+    auto task = [&] {s = list_impl(path, files);};
+    AsyncIO::run_task(task, io::FileSystemType::LOCAL);
+    return s;
+}
+
+Status LocalFileSystem::list_impl(const Path& path, std::vector<Path>* files) {
     files->clear();
     auto fs_path = absolute_path(path);
     std::error_code ec;
