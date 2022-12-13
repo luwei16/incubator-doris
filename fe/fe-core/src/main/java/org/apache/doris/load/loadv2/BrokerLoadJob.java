@@ -53,6 +53,7 @@ import org.apache.doris.transaction.TransactionState.TxnCoordinator;
 import org.apache.doris.transaction.TransactionState.TxnSourceType;
 
 import com.google.common.base.Joiner;
+import com.google.common.base.Strings;
 import com.google.common.collect.Lists;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -108,6 +109,9 @@ public class BrokerLoadJob extends BulkLoadJob {
             ConnectContext context = ConnectContext.get();
             if (context != null) {
                 cluster = context.getCloudCluster();
+                if (!Strings.isNullOrEmpty(context.getSessionVariable().getCloudCluster())) {
+                    cluster = context.getSessionVariable().getCloudCluster();
+                }
                 qualifiedUser = context.getQualifiedUser();
             }
         }

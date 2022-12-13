@@ -22,6 +22,7 @@ import org.apache.doris.catalog.Env;
 import org.apache.doris.common.AnalysisException;
 import org.apache.doris.common.DdlException;
 import org.apache.doris.common.Pair;
+import org.apache.doris.qe.SessionVariable;
 import org.apache.doris.utframe.TestWithFeService;
 import org.apache.doris.utframe.UtFrameUtils;
 
@@ -208,6 +209,27 @@ public class CopyIntoTest extends TestWithFeService {
         Assert.assertEquals(INTERNAL_STAGE_ID, copyStmt.getStageId());
         Assert.assertEquals(StageType.INTERNAL, copyStmt.getStageType());
         Assert.assertEquals("tmp_ak", copyStmt.getObjectInfo().getAk());
+    }
+
+    @Test
+    public void testCopyWithCloudCluster() throws Exception {
+        List<StagePB> stages = Lists.newArrayList(internalStagePB);
+        List<String> clusters = Lists.newArrayList("cluster0");
+        new Expectations(connectContext.getEnv().getInternalCatalog(), Env.getCurrentSystemInfo()) {
+            {
+                Env.getCurrentInternalCatalog().getStage(StageType.INTERNAL, anyString, null, null);
+                minTimes = 0;
+                result = stages;
+
+                Env.getCurrentSystemInfo().getCloudClusterNames();
+                minTimes = 0;
+                result = clusters;
+            }
+        };
+
+        String sql = "copy into /*+SET_VAR(cloud_cluster=cluster0)*/ t2 from @~";
+        CopyStmt copyStmt = parseAndAnalyze(sql);
+        Assert.assertEquals("cluster0", copyStmt.getOptHints().get(SessionVariable.CLOUD_CLUSTER));
     }
 
     @Test

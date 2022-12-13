@@ -19,6 +19,7 @@ package org.apache.doris.qe;
 
 import org.apache.doris.analysis.Analyzer;
 import org.apache.doris.analysis.ArrayLiteral;
+import org.apache.doris.analysis.CopyStmt;
 import org.apache.doris.analysis.CreateTableAsSelectStmt;
 import org.apache.doris.analysis.DdlStmt;
 import org.apache.doris.analysis.DecimalLiteral;
@@ -634,9 +635,9 @@ public class StmtExecutor implements ProfileWriter {
      */
     private void analyzeVariablesInStmt() throws DdlException {
         SessionVariable sessionVariable = context.getSessionVariable();
-        if (parsedStmt != null && parsedStmt instanceof SelectStmt) {
-            SelectStmt selectStmt = (SelectStmt) parsedStmt;
-            Map<String, String> optHints = selectStmt.getSelectList().getOptHints();
+        if (parsedStmt != null && (parsedStmt instanceof SelectStmt || parsedStmt instanceof CopyStmt)) {
+            Map<String, String> optHints = parsedStmt instanceof SelectStmt ? ((SelectStmt) parsedStmt).getSelectList()
+                    .getOptHints() : ((CopyStmt) parsedStmt).getOptHints();
             if (optHints != null) {
                 sessionVariable.setIsSingleSetVar(true);
                 for (String key : optHints.keySet()) {

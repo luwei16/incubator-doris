@@ -29,6 +29,7 @@ import org.apache.doris.common.util.DebugUtil;
 import org.apache.doris.load.loadv2.LoadTask.MergeType;
 import org.apache.doris.mysql.privilege.PrivPredicate;
 import org.apache.doris.qe.ConnectContext;
+import org.apache.doris.qe.SessionVariable;
 import org.apache.doris.qe.ShowResultSetMetaData;
 
 import com.google.common.collect.Lists;
@@ -64,6 +65,7 @@ public class CopyStmt extends DdlStmt {
             .build();
     public static final String S3_BUCKET = "bucket";
     public static final String S3_PREFIX = "prefix";
+    private static final String SET_VAR_KEY = "set_var";
 
     @Getter
     private final TableName tableName;
@@ -71,6 +73,7 @@ public class CopyStmt extends DdlStmt {
     private CopyFromParam copyFromParam;
     @Getter
     private CopyIntoProperties copyIntoProperties;
+    private Map<String, String> optHints;
 
     private LabelName label = null;
     private BrokerDesc brokerDesc = null;
@@ -92,18 +95,24 @@ public class CopyStmt extends DdlStmt {
     /**
      * Use for cup.
      */
-    public CopyStmt(TableName tableName, List<String> cols,
-            CopyFromParam copyFromParam, Map<String, String> properties) {
+    public CopyStmt(TableName tableName, List<String> cols, CopyFromParam copyFromParam,
+            Map<String, String> properties, Map<String, Map<String, String>> optHints) {
         this.tableName = tableName;
         this.copyFromParam = copyFromParam;
         this.copyFromParam.setTargetColumns(cols);
         this.stage = copyFromParam.getStageAndPattern().getStageName();
         this.copyIntoProperties = new CopyIntoProperties(properties);
+        if (optHints != null) {
+            this.optHints = optHints.get(SET_VAR_KEY);
+        }
     }
 
     @Override
     public void analyze(Analyzer analyzer) throws UserException {
         super.analyze(analyzer);
+        if (this.optHints != null && this.optHints.containsKey(SessionVariable.CLOUD_CLUSTER)) {
+            Env.getCurrentEnv().checkCloudClusterPriv(this.optHints.get(SessionVariable.CLOUD_CLUSTER));
+        }
         // generate a label
         String labelName = "copy_" + DebugUtil.printId(analyzer.getContext().queryId()).replace("-", "_");
         label = new LabelName(tableName.getDb(), labelName);
@@ -267,5 +276,9 @@ public class CopyStmt extends DdlStmt {
 
     public String getPattern() {
         return this.copyFromParam.getStageAndPattern().getPattern();
+    }
+
+    public Map<String, String> getOptHints() {
+        return optHints;
     }
 }

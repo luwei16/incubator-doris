@@ -16,7 +16,7 @@
 ## 语法
 
 ```
-COPY INTO [<db_name>.]<table_name> [ ( <col_name> [ , <col_name> ... ] ) ] FROM {copy_from_param} PROPERTIES (
+COPY INTO [ /*+ SET_VAR(cloud_cluster=<cluster_name>)*/ ] [<db_name>.]<table_name> [ ( <col_name> [ , <col_name> ... ] ) ] FROM {copy_from_param} PROPERTIES (
     {copy_into_properties}
 )
 ```
@@ -340,4 +340,10 @@ mysql> SHOW COPY WHERE id = '8fcf20b156dc4f66_99aa062042941aff';
 
   ```
   COPY INTO unique_table FROM (SELECT $1, $2, $3, $4 > 10 @ext_stage('1.csv')) properties ('copy.use_delete_sign' = 'true');
+  ```
+
+* copy into时，指定cluster: 比如使用`cluster0`
+
+  ```
+  COPY INTO /*+SET_VAR(cloud_cluster=cluster0)*/ test_table FROM @ext_stage('dir1/**.csv')
   ```
