@@ -79,7 +79,7 @@ Status S3FileWriter::close() {
     _closed = true;
 
     {
-        SCOPED_ATTACH_TASK(ExecEnv::GetInstance()->orphan_mem_tracker());
+        SCOPED_SWITCH_THREAD_MEM_TRACKER_LIMITER(ExecEnv::GetInstance()->orphan_mem_tracker());
         _handle->WaitUntilFinished();
         if (_handle->GetStatus() != Aws::Transfer::TransferStatus::COMPLETED) {
             return Status::IOError("failed to upload {}: {}", _path.native(),
@@ -117,7 +117,7 @@ Status S3FileWriter::finalize() {
     }
     RETURN_IF_ERROR(_tmp_file_writer->close());
     {
-        SCOPED_ATTACH_TASK(ExecEnv::GetInstance()->orphan_mem_tracker());
+        SCOPED_SWITCH_THREAD_MEM_TRACKER_LIMITER(ExecEnv::GetInstance()->orphan_mem_tracker());
         auto tmp_file_mgr = TmpFileMgr::instance();
         bool is_async_upload = tmp_file_mgr->check_if_has_enough_space_to_async_upload(
                 _tmp_file_writer->path(), _tmp_file_writer->bytes_appended());

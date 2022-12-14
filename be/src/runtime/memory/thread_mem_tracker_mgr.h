@@ -167,11 +167,8 @@ inline bool ThreadMemTrackerMgr::push_consumer_tracker(MemTracker* tracker) {
 
 inline void ThreadMemTrackerMgr::pop_consumer_tracker() {
     DCHECK(!_consumer_tracker_stack.empty());
-    // wait pick 0b945fe3619cffb7b41333ded81aeee3b8971587
-    if (!_consumer_tracker_stack.empty()) {
-        _consumer_tracker_stack.back()->consume(_untracked_mem);
-        _consumer_tracker_stack.pop_back();
-    }
+    _consumer_tracker_stack.back()->consume(_untracked_mem);
+    _consumer_tracker_stack.pop_back();
 }
 
 inline void ThreadMemTrackerMgr::consume(int64_t size) {
