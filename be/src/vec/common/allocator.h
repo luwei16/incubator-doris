@@ -102,12 +102,22 @@ static constexpr size_t CHUNK_THRESHOLD = 1024;
 static constexpr size_t MMAP_MIN_ALIGNMENT = 4096;
 static constexpr size_t MALLOC_MIN_ALIGNMENT = 8;
 
-#define RETURN_BAD_ALLOC(err)                                              \
-    do {                                                                   \
-        LOG(ERROR) << err;                                                 \
-        if (doris::enable_thread_cache_bad_alloc) throw std::bad_alloc {}; \
-        doris::MemTrackerLimiter::print_log_process_usage(err);            \
-        return nullptr;                                                    \
+#define RETURN_BAD_ALLOC(err)                                       \
+    do {                                                            \
+        LOG(WARNING) << err;                                        \
+        if (!doris::enable_thread_catch_bad_alloc)                  \
+            doris::MemTrackerLimiter::print_log_process_usage(err); \
+        throw std::bad_alloc {};                                    \
+    } while (0)
+
+#define RETURN_BAD_ALLOC_IF_PRE_CATCH(err)                          \
+    do {                                                            \
+        LOG(WARNING) << err;                                        \
+        if (!doris::enable_thread_catch_bad_alloc) {                \
+            doris::MemTrackerLimiter::print_log_process_usage(err); \
+        } else {                                                    \
+            throw std::bad_alloc {};                                \
+        }                                                           \
     } while (0)
 
 /** Responsible for allocating / freeing memory. Used, for example, in PODArray, Arena.
@@ -135,7 +145,13 @@ public:
                                 alignment, size),
                         doris::TStatusCode::VEC_BAD_ARGUMENTS);
 
-            CONSUME_THREAD_MEM_TRACKER(size);
+            if (!TRY_CONSUME_THREAD_MEM_TRACKER(size)) {
+                RETURN_BAD_ALLOC_IF_PRE_CATCH(
+                        fmt::format("Allocator Pre Catch: Cannot mmap {}.", size));
+                // memory exceeds the limit, consume mem tracker fails, but there is no external catch bad_alloc,
+                // alloc will continue to execute, so the consume memtracker is forced.
+                CONSUME_THREAD_MEM_TRACKER(size);
+            }
             buf = mmap(get_mmap_hint(), size, PROT_READ | PROT_WRITE, mmap_flags, -1, 0);
             if (MAP_FAILED == buf) {
                 RELEASE_THREAD_MEM_TRACKER(size);
@@ -181,8 +197,9 @@ public:
             if (0 != munmap(buf, size)) {
                 auto err = fmt::format("Allocator: Cannot munmap {}.", size);
                 LOG(ERROR) << err;
-                if (doris::enable_thread_cache_bad_alloc) throw std::bad_alloc {};
-                doris::MemTrackerLimiter::print_log_process_usage(err);
+                if (!doris::enable_thread_catch_bad_alloc)
+                    doris::MemTrackerLimiter::print_log_process_usage(err);
+                throw std::bad_alloc {};
             } else {
                 RELEASE_THREAD_MEM_TRACKER(size);
             }
@@ -218,7 +235,12 @@ public:
                     memset(reinterpret_cast<char*>(buf) + old_size, 0, new_size - old_size);
         } else if (old_size >= MMAP_THRESHOLD && new_size >= MMAP_THRESHOLD) {
             /// Resize mmap'd memory region.
-            CONSUME_THREAD_MEM_TRACKER(new_size - old_size);
+            if (!TRY_CONSUME_THREAD_MEM_TRACKER(new_size - old_size)) {
+                RETURN_BAD_ALLOC_IF_PRE_CATCH(fmt::format(
+                        "Allocator Pre Catch: Cannot mremap memory chunk from {} to {}.", old_size,
+                        new_size));
+                CONSUME_THREAD_MEM_TRACKER(new_size - old_size);
+            }
 
             // On apple and freebsd self-implemented mremap used (common/mremap.h)
             buf = clickhouse_mremap(buf, old_size, new_size, MREMAP_MAYMOVE, PROT_READ | PROT_WRITE,

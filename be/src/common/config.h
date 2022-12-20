@@ -46,7 +46,10 @@ CONF_Int32(single_replica_load_brpc_num_threads, "64");
 // If no ip match this rule, will choose one randomly.
 CONF_String(priority_networks, "");
 
+// memory mode
+// performance or compact
 CONF_String(memory_mode, "moderate");
+
 // process memory limit specified as number of bytes
 // ('<int>[bB]?'), megabytes ('<float>[mM]'), gigabytes ('<float>[gG]'),
 // or percentage of the physical memory ('<int>%').
@@ -54,6 +57,16 @@ CONF_String(memory_mode, "moderate");
 // must larger than 0. and if larger than physical memory size,
 // it will be set to physical memory size.
 CONF_String(mem_limit, "80%");
+
+// Soft memory limit as a fraction of hard memory limit.
+CONF_Double(soft_mem_limit_frac, "0.9");
+
+// The maximum low water mark of the system `/proc/meminfo/MemAvailable`, Unit byte, default 1.6G,
+// actual low water mark=min(1.6G, MemTotal * 10%), avoid wasting too much memory on machines
+// with large memory larger than 16G.
+// Turn up max. On machines with more than 16G memory, more memory buffers will be reserved for Full GC.
+// Turn down max. will use as much memory as possible.
+CONF_Int64(max_sys_mem_available_low_water_mark_bytes, "1717986918");
 
 // the port heartbeat service used
 CONF_Int32(heartbeat_service_port, "9050");
@@ -199,7 +212,7 @@ CONF_mInt32(default_num_rows_per_column_file_block, "1024");
 // pending data policy
 CONF_mInt32(pending_data_expire_time_sec, "1800");
 // inc_rowset snapshot rs sweep time interval
-CONF_mInt32(tablet_rowset_stale_sweep_time_sec, "1800");
+CONF_mInt32(tablet_rowset_stale_sweep_time_sec, "300");
 // garbage sweep policy
 CONF_Int32(max_garbage_sweep_interval, "3600");
 CONF_Int32(min_garbage_sweep_interval, "180");
@@ -415,7 +428,7 @@ CONF_Bool(disable_mem_pools, "false");
 // must larger than 0. and if larger than physical memory size, it will be set to physical memory size.
 // increase this variable can improve performance,
 // but will acquire more free memory which can not be used by other modules.
-CONF_mString(chunk_reserved_bytes_limit, "10%");
+CONF_mString(chunk_reserved_bytes_limit, "0");
 // 1024, The minimum chunk allocator size (in bytes)
 CONF_Int32(min_chunk_reserved_bytes, "1024");
 // Disable Chunk Allocator in Vectorized Allocator, this will reduce memory cache.
@@ -462,8 +475,11 @@ CONF_String(buffer_pool_limit, "20%");
 // This is the percentage of buffer_pool_limit
 CONF_String(buffer_pool_clean_pages_limit, "50%");
 
-// Sleep time in seconds between memory maintenance iterations
-CONF_mInt64(memory_maintenance_sleep_time_s, "10");
+// Sleep time in milliseconds between memory maintenance iterations
+CONF_mInt64(memory_maintenance_sleep_time_ms, "500");
+
+// Sleep time in milliseconds between load channel memory refresh iterations
+CONF_mInt64(load_channel_memory_refresh_sleep_time_ms, "100");
 
 // Alignment
 CONF_Int32(memory_max_alignment, "16");
@@ -598,9 +614,6 @@ CONF_Bool(ignore_load_tablet_failure, "false");
 // Whether to continue to start be when load tablet from header failed.
 CONF_mBool(ignore_rowset_stale_unconsistent_delete, "false");
 
-// Soft memory limit as a fraction of hard memory limit.
-CONF_Double(soft_mem_limit_frac, "0.9");
-
 // Set max cache's size of query results, the unit is M byte
 CONF_Int32(query_cache_max_size_mb, "256");
 
@@ -638,7 +651,8 @@ CONF_mInt32(remote_storage_read_buffer_mb, "16");
 // Whether Hook TCmalloc new/delete, currently consume/release tls mem tracker in Hook.
 CONF_Bool(enable_tcmalloc_hook, "true");
 
-CONF_Bool(memory_debug, "false");
+// Print more detailed logs, more detailed records, etc.
+CONF_mBool(memory_debug, "false");
 
 // The minimum length when TCMalloc Hook consumes/releases MemTracker, consume size
 // smaller than this value will continue to accumulate. specified as number of bytes.
@@ -787,8 +801,6 @@ CONF_mInt32(orc_natural_read_size_mb, "8");
 // if it is lower than a specific threshold, the predicate will be disabled.
 CONF_mInt32(bloom_filter_predicate_check_row_num, "204800");
 
-CONF_Bool(enable_decimalv3, "false");
-
 //whether turn on quick compaction feature
 CONF_Bool(enable_quick_compaction, "false");
 // For continuous versions that rows less than quick_compaction_max_rows will  trigger compaction quickly
@@ -839,6 +851,15 @@ CONF_mInt32(max_fragment_start_wait_time_seconds, "30");
 // any tablet.
 CONF_String(be_node_role, "mix");
 
+CONF_Int32(multi_get_per_batch, "10");
+
+// Temp config. True to use optimization for bitmap_index apply compound predicate.  Will remove after fully test.
+CONF_Bool(enable_index_apply_compound_predicates, "true");
+
+// Hide webserver page for safety.
+// Hide the be config page for webserver.
+CONF_Bool(hide_webserver_config_page, "false");
+
 CONF_Bool(enable_segcompaction, "false"); // currently only support vectorized storage
 
 // Trigger segcompaction if the num of segments in a rowset exceeds this threshold.
@@ -852,13 +873,8 @@ CONF_String(jvm_max_heap_size, "1024M");
 // enable java udf and jdbc scannode
 CONF_Bool(enable_java_support, "true");
 
-CONF_Int32(multi_get_per_batch, "10");
-// Hide webserver page for safety.
-// Hide the be config page for webserver.
-CONF_Bool(hide_webserver_config_page, "false");
-
-// Temp config. True to use optimization for bitmap_index apply compound predicate.  Will remove after fully test.
-CONF_Bool(enable_index_apply_compound_predicates, "true");
+// Set config randomly to check more issues in github workflow
+CONF_Bool(enable_fuzzy_mode, "false");
 
 #ifdef BE_TEST
 // test s3

@@ -25,6 +25,8 @@
 #include "cloud/io/file_system.h"
 #include "common/config.h"
 #include "common/logging.h" // LOG
+#include "io/cache/file_cache_manager.h"
+#include "io/fs/file_system.h"
 #include "olap/iterators.h"
 #include "olap/rowset/segment_v2/empty_segment_iterator.h"
 #include "olap/rowset/segment_v2/page_io.h"
@@ -54,10 +56,9 @@ Status Segment::open(io::FileSystem* fs, const std::string& path, const std::str
     if (!config::file_cache_type.empty()) {
         RETURN_IF_ERROR(io::global_local_filesystem()->open_file(path, &file_reader));
     } else {
-        RETURN_IF_ERROR(fs->open_file(path, &file_reader));
+        RETURN_IF_ERROR(fs->open_file(path, metrics, &file_reader));
     }
 #endif
-
     if (fs->type() != io::FileSystemType::LOCAL && !config::file_cache_type.empty()) {
         io::FileCachePtr cache_reader = FileCacheManager::instance()->new_file_cache(
                 cache_path, config::file_cache_alive_time_sec, file_reader,
@@ -78,12 +79,12 @@ Segment::Segment(uint32_t segment_id, RowsetId rowset_id, TabletSchemaSPtr table
         : _segment_id(segment_id),
           _rowset_id(rowset_id),
           _tablet_schema(tablet_schema),
-          _meta_mem_usage(0) {}
+          _meta_mem_usage(0),
+          _segment_meta_mem_tracker(StorageEngine::instance()->segment_meta_mem_tracker()) {}
 
 Segment::~Segment() {
 #ifndef BE_TEST
-    if (StorageEngine::instance())
-        StorageEngine::instance()->segment_meta_mem_tracker()->release(_meta_mem_usage);
+    _segment_meta_mem_tracker->release(_meta_mem_usage);
 #endif
 }
 
@@ -186,8 +187,7 @@ Status Segment::_parse_footer() {
                                   _file_reader->path().native(), file_size, 12 + footer_length);
     }
     _meta_mem_usage += footer_length;
-    if (StorageEngine::instance())
-        StorageEngine::instance()->segment_meta_mem_tracker()->consume(footer_length);
+    _segment_meta_mem_tracker->consume(footer_length);
 
     std::string footer_buf;
     footer_buf.resize(footer_length);
@@ -254,8 +254,7 @@ Status Segment::load_index() {
             DCHECK(footer.has_short_key_page_footer());
 
             _meta_mem_usage += body.get_size();
-            if (StorageEngine::instance())
-                StorageEngine::instance()->segment_meta_mem_tracker()->consume(body.get_size());
+            _segment_meta_mem_tracker->consume(body.get_size());
             _sk_index_decoder.reset(new ShortKeyIndexDecoder);
             return _sk_index_decoder->parse(body, footer.short_key_page_footer());
         }

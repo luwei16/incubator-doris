@@ -64,8 +64,7 @@ public:
     Status evaluate(BitmapIndexIterator* iterator, uint32_t num_rows,
                             roaring::Roaring* roaring) const override {
         LOG(FATAL) << "Not Implemented RangePredicate::evaluate";
-        return Status::ErrorFmt(TStatusCode::NOT_IMPLEMENTED_ERROR,
-                                "Not Implemented RangePredicate::evaluate");
+        return Status::NotSupported("Not Implemented RangePredicate::evaluate");
     }
 
     //evaluate predicate on inverted

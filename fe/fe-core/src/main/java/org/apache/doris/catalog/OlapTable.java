@@ -47,6 +47,9 @@ import org.apache.doris.common.util.PropertyAnalyzer;
 import org.apache.doris.common.util.Util;
 import org.apache.doris.qe.OriginStatement;
 import org.apache.doris.resource.Tag;
+import org.apache.doris.statistics.AnalysisJob;
+import org.apache.doris.statistics.AnalysisJobInfo;
+import org.apache.doris.statistics.AnalysisJobScheduler;
 import org.apache.doris.system.Backend;
 import org.apache.doris.system.SystemInfoService;
 import org.apache.doris.thrift.TCompressionType;
@@ -67,6 +70,7 @@ import com.selectdb.cloud.catalog.CloudPartition;
 import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.apache.parquet.Strings;
 
 import java.io.DataInput;
 import java.io.DataOutput;
@@ -236,7 +240,7 @@ public class OlapTable extends Table {
     public Map<String, Index> getIndexesMap() {
         Map<String, Index> indexMap = new HashMap<>();
         if (indexes != null) {
-            Optional.ofNullable(indexes.getIndexes()).orElse(Collections.emptyList()).stream().forEach(
+            Optional.ofNullable(indexes.getIndexes()).orElse(Collections.emptyList()).forEach(
                     i -> indexMap.put(i.getIndexName(), i));
         }
         return indexMap;
@@ -905,6 +909,21 @@ public class OlapTable extends Table {
         this.bfFpp = bfFpp;
     }
 
+    public String getSequenceMapCol() {
+        if (tableProperty == null) {
+            return null;
+        }
+        return tableProperty.getSequenceMapCol();
+    }
+
+    // map the sequence column to other column
+    public void setSequenceMapCol(String colName) {
+        if (tableProperty == null) {
+            tableProperty = new TableProperty(new HashMap<>());
+        }
+        tableProperty.setSequenceMapCol(colName);
+    }
+
     public void setSequenceInfo(Type type) {
         this.hasSequenceCol = true;
         this.sequenceType = type;
@@ -986,6 +1005,11 @@ public class OlapTable extends Table {
                 fullSchema.size(), 0, getName(), "");
         tTableDescriptor.setOlapTable(tOlapTable);
         return tTableDescriptor;
+    }
+
+    @Override
+    public AnalysisJob createAnalysisJob(AnalysisJobScheduler scheduler, AnalysisJobInfo info) {
+        return new AnalysisJob(scheduler, info);
     }
 
     @Override
@@ -1647,7 +1671,11 @@ public class OlapTable extends Table {
         tableProperty.buildEnableLightSchemaChange();
     }
 
-    public void setStoragePolicy(String storagePolicy) {
+    public void setStoragePolicy(String storagePolicy) throws UserException {
+        if (!Config.enable_storage_policy && !Strings.isNullOrEmpty(storagePolicy)) {
+            throw new UserException("storage policy feature is disabled by default. "
+                    + "Enable it by setting 'enable_storage_policy=true' in fe.conf");
+        }
         if (tableProperty == null) {
             tableProperty = new TableProperty(new HashMap<>());
         }
@@ -1705,19 +1733,6 @@ public class OlapTable extends Table {
         }
         tableProperty.modifyDataSortInfoProperties(dataSortInfo);
         tableProperty.buildDataSortInfo();
-    }
-
-    /**
-     * set remote storage policy for table.
-     *
-     * @param remoteStoragePolicy remote storage policy name
-     */
-    public void setRemoteStoragePolicy(String remoteStoragePolicy) {
-        if (tableProperty == null) {
-            tableProperty = new TableProperty(new HashMap<>());
-        }
-        tableProperty.setRemoteStoragePolicy(remoteStoragePolicy);
-        tableProperty.buildRemoteStoragePolicy();
     }
 
     // return true if partition with given name already exist, both in partitions and temp partitions.
@@ -1885,18 +1900,6 @@ public class OlapTable extends Table {
             return new DataSortInfo(TSortType.LEXICAL, this.getKeysNum());
         }
         return tableProperty.getDataSortInfo();
-    }
-
-    /**
-     * get remote storage policy name.
-     *
-     * @return remote storage policy name for this table.
-     */
-    public String getRemoteStoragePolicy() {
-        if (tableProperty == null) {
-            return "";
-        }
-        return tableProperty.getRemoteStoragePolicy();
     }
 
     public void setEnableUniqueKeyMergeOnWrite(boolean speedup) {

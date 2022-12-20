@@ -204,6 +204,9 @@ public:
         }
         return 0;
     }
+    size_t operator()(const Int128I& x) {
+        LOG(FATAL) << "not implemented";
+    }
     size_t operator()(const Null&) {
         have_nulls = true;
         return 0;

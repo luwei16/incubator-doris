@@ -386,74 +386,12 @@ suite("test_jsonb_load_and_function", "p0") {
     qt_select """SELECT CAST('[null, true, false, 100, 6.18, "abc"]' AS JSONB)"""
     qt_select """SELECT CAST('[{"k1":"v41", "k2": 400}, 1, "a", 3.14]' AS JSONB)"""
     qt_select """SELECT CAST('{"k1":"v31", "k2": 300, "a1": [{"k1":"v41", "k2": 400}, 1, "a", 3.14]}' AS JSONB)"""
-    // qt_select """SELECT CAST("''" AS JSONB)"""
-    // qt_select """SELECT CAST("'abc'" AS JSONB)"""
-    // qt_select """SELECT CAST('abc' AS JSONB)"""
-    // qt_select """SELECT CAST('100x' AS JSONB)"""
-    // qt_select """SELECT CAST('6.a8' AS JSONB)"""
-    // qt_select """SELECT CAST('{x' AS JSONB)"""
-    // qt_select """SELECT CAST('[123, abc]' AS JSONB)"""
-    
-    success = true
-    try {
-        sql """SELECT CAST("''" AS JSONB)"""
-    } catch(Exception ex) {
-       logger.info("cast bad json exception: " + ex)
-       success = false
-    }
-    assertEquals(false, success)
+    qt_select """SELECT CAST("''" AS JSONB)"""
+    qt_select """SELECT CAST("'abc'" AS JSONB)"""
+    qt_select """SELECT CAST('abc' AS JSONB)"""
+    qt_select """SELECT CAST('100x' AS JSONB)"""
+    qt_select """SELECT CAST('6.a8' AS JSONB)"""
+    qt_select """SELECT CAST('{x' AS JSONB)"""
+    qt_select """SELECT CAST('[123, abc]' AS JSONB)"""
 
-    success = true
-    try {
-        sql """SELECT CAST("'abc'" AS JSONB)"""
-    } catch(Exception ex) {
-       logger.info("cast bad json exception: " + ex)
-       success = false
-    }
-    assertEquals(false, success)
-
-    success = true
-    try {
-        sql """SELECT CAST('abc' AS JSONB)"""
-    } catch(Exception ex) {
-       logger.info("cast bad json exception: " + ex)
-       success = false
-    }
-    assertEquals(false, success)
-
-    success = true
-    try {
-        sql """SELECT CAST('100x' AS JSONB)"""
-    } catch(Exception ex) {
-       logger.info("cast bad json exception: " + ex)
-       success = false
-    }
-    assertEquals(false, success)
-
-    success = true
-    try {
-        sql """SELECT CAST('6.a8' AS JSONB)"""
-    } catch(Exception ex) {
-       logger.info("cast bad json exception: " + ex)
-       success = false
-    }
-    assertEquals(false, success)
-
-    success = true
-    try {
-        sql """SELECT CAST('{x' AS JSONB)"""
-    } catch(Exception ex) {
-       logger.info("cast bad json exception: " + ex)
-       success = false
-    }
-    assertEquals(false, success)
-
-    success = true
-    try {
-        sql """SELECT CAST('[123, abc]' AS JSONB)"""
-    } catch(Exception ex) {
-       logger.info("cast bad json exception: " + ex)
-       success = false
-    }
-    assertEquals(false, success)
 }

@@ -74,6 +74,8 @@ else
     PARALLEL="$(($(nproc) / 4 + 1))"
 fi
 
+BUILDCLUCENE=0
+
 if [[ "$#" -ne 1 ]]; then
     while true; do
         case "$1" in
@@ -704,6 +706,9 @@ build_hyperscan() {
     check_if_source_exist "${HYPERSCAN_SOURCE}"
     cd "${TP_SOURCE_DIR}/${HYPERSCAN_SOURCE}"
 
+    # We don't need to build tools/hsbench which depends on sqlite3 installed.
+    rm -rf "${TP_SOURCE_DIR}/${HYPERSCAN_SOURCE}/tools/hsbench"
+
     mkdir -p "${BUILD_DIR}"
     cd "${BUILD_DIR}"
 
@@ -859,6 +864,7 @@ build_cyrus_sasl() {
     CFLAGS="-fPIC" \
         CPPFLAGS="-I${TP_INCLUDE_DIR}" \
         LDFLAGS="-L${TP_LIB_DIR}" \
+        LIBS="-lcrypto" \
         ./configure --prefix="${TP_INSTALL_DIR}" --enable-static --enable-shared=no --with-openssl="${TP_INSTALL_DIR}" --with-pic --enable-gssapi="${TP_INSTALL_DIR}" --with-gss_impl=mit --with-dblib=none
 
     if [[ "${KERNEL}" != 'Darwin' ]]; then
@@ -1594,6 +1600,7 @@ build_leveldb
 build_brpc
 build_jemalloc
 build_rocksdb
+build_krb5 # before cyrus_sasl
 build_cyrus_sasl
 build_librdkafka
 build_flatbuffers
@@ -1614,7 +1621,6 @@ build_js_and_css
 build_lzma
 build_xml2
 build_idn
-build_krb5
 build_gsasl
 build_hdfs3
 build_benchmark

@@ -702,33 +702,40 @@ under the License.
             <artifactId>aliyun-sdk-oss</artifactId>
             <version>3.15.0</version>
         </dependency>
+
         <dependency>
             <groupId>com.amazonaws</groupId>
             <artifactId>aws-java-sdk-ec2</artifactId>
         </dependency>
+
         <dependency>
             <groupId>com.amazonaws</groupId>
             <artifactId>aws-java-sdk-s3</artifactId>
         </dependency>
+
         <dependency>
             <groupId>com.amazonaws</groupId>
             <artifactId>aws-java-sdk-dynamodb</artifactId>
         </dependency>
+
         <dependency>
             <groupId>com.qcloud</groupId>
             <artifactId>cos_api</artifactId>
             <version>5.6.89</version>
         </dependency>
+
         <dependency>
             <groupId>com.qcloud</groupId>
             <artifactId>qcloud-java-sdk</artifactId>
             <version>2.0.1</version>
         </dependency>
+
         <dependency>
             <groupId>com.huaweicloud</groupId>
             <artifactId>esdk-obs-java-bundle</artifactId>
             <version>[3.21.11,)</version>
         </dependency>
+
         <dependency>
             <groupId>com.baidubce</groupId>
             <artifactId>bce-java-sdk</artifactId>
@@ -743,6 +750,11 @@ under the License.
                     <artifactId>logback-classic</artifactId>
                 </exclusion>
             </exclusions>
+        </dependency>
+
+        <dependency>
+            <groupId>com.zaxxer</groupId>
+            <artifactId>HikariCP</artifactId>
         </dependency>
 
         <!-- for aliyun dlf -->
@@ -855,6 +867,7 @@ under the License.
                     <forkCount>${fe_ut_parallel}</forkCount>
                     <!-->not reuse forked jvm, so that each unit test will run in separate jvm. to avoid singleton conflict<-->
                     <reuseForks>false</reuseForks>
+                    <useFile>false</useFile>
                     <argLine>
                         -javaagent:${settings.localRepository}/org/jmockit/jmockit/${jmockit.version}/jmockit-${jmockit.version}.jar
                     </argLine>

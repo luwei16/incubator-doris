@@ -52,7 +52,6 @@ import org.apache.doris.rewrite.ExprRewriter;
 import org.apache.doris.rewrite.ExtractCommonFactorsRule;
 import org.apache.doris.rewrite.FoldConstantsRule;
 import org.apache.doris.rewrite.InferFiltersRule;
-import org.apache.doris.rewrite.MatchPredicateRule;
 import org.apache.doris.rewrite.NormalizeBinaryPredicatesRule;
 import org.apache.doris.rewrite.RewriteAliasFunctionRule;
 import org.apache.doris.rewrite.RewriteBinaryPredicatesRule;
@@ -410,7 +409,6 @@ public class Analyzer {
             rules.add(RewriteEncryptKeyRule.INSTANCE);
             rules.add(RewriteInPredicateRule.INSTANCE);
             rules.add(RewriteAliasFunctionRule.INSTANCE);
-            rules.add(MatchPredicateRule.INSTANCE);
             List<ExprRewriteRule> onceRules = Lists.newArrayList();
             onceRules.add(ExtractCommonFactorsRule.INSTANCE);
             onceRules.add(InferFiltersRule.INSTANCE);
@@ -980,9 +978,6 @@ public class Analyzer {
         result.setStats(srcSlotDesc.getStats());
         result.setType(srcSlotDesc.getType());
         result.setIsNullable(srcSlotDesc.getIsNullable());
-        if (srcSlotDesc.getColumn() != null) {
-            result.setColumn(srcSlotDesc.getColumn());
-        }
         // result.setItemTupleDesc(srcSlotDesc.getItemTupleDesc());
         return result;
     }
@@ -1941,6 +1936,9 @@ public class Analyzer {
                     && ((StringLiteral) exprs.get(i)).canConvertToDateV2(compatibleType)) {
                 // If string literal can be converted to dateV2, we use datev2 as the compatible type
                 // instead of datetimev2.
+            } else if (exprs.get(i).isConstantImpl()) {
+                exprs.get(i).compactForLiteral(compatibleType);
+                compatibleType = Type.getCmpType(compatibleType, exprs.get(i).getType());
             } else {
                 compatibleType = Type.getCmpType(compatibleType, exprs.get(i).getType());
             }

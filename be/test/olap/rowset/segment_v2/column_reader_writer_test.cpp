@@ -20,9 +20,9 @@
 #include <iostream>
 
 #include "env/env.h"
-#include "io/fs/file_system.h"
-#include "io/fs/file_writer.h"
-#include "io/fs/local_file_system.h"
+#include "cloud/io/file_system.h"
+#include "cloud/io/file_writer.h"
+#include "cloud/io/local_file_system.h"
 #include "olap/column_block.h"
 #include "olap/decimal12.h"
 #include "olap/olap_common.h"

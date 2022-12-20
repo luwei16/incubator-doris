@@ -51,7 +51,7 @@ constexpr bool is_enumeration_type(PrimitiveType type) {
     case TYPE_DECIMALV2:
     case TYPE_DECIMAL32:
     case TYPE_DECIMAL64:
-    case TYPE_DECIMAL128:
+    case TYPE_DECIMAL128I:
     case TYPE_BOOLEAN:
     case TYPE_ARRAY:
     case TYPE_HLL:
@@ -95,10 +95,6 @@ constexpr bool has_variable_type(PrimitiveType type) {
     return type == TYPE_CHAR || type == TYPE_VARCHAR || type == TYPE_OBJECT ||
            type == TYPE_QUANTILE_STATE || type == TYPE_STRING;
 }
-
-// NOTICE:signed integers always return bigint
-// used for adapt data in varaint column's subcolumns
-PrimitiveType get_primitive_type(vectorized::TypeIndex v_type);
 
 // Returns the byte size of 'type'  Returns 0 for variable length types.
 int get_byte_size(PrimitiveType type);
@@ -202,9 +198,9 @@ struct PrimitiveTypeTraits<TYPE_DECIMAL64> {
     using ColumnType = vectorized::ColumnDecimal<vectorized::Decimal64>;
 };
 template <>
-struct PrimitiveTypeTraits<TYPE_DECIMAL128> {
+struct PrimitiveTypeTraits<TYPE_DECIMAL128I> {
     using CppType = __int128_t;
-    using ColumnType = vectorized::ColumnDecimal<vectorized::Decimal128>;
+    using ColumnType = vectorized::ColumnDecimal<vectorized::Decimal128I>;
 };
 template <>
 struct PrimitiveTypeTraits<TYPE_LARGEINT> {

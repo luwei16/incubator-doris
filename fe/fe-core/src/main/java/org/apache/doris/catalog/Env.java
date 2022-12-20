@@ -172,7 +172,6 @@ import org.apache.doris.metric.MetricRepo;
 import org.apache.doris.mtmv.MTMVJobManager;
 import org.apache.doris.mysql.privilege.PaloAuth;
 import org.apache.doris.mysql.privilege.PrivPredicate;
-import org.apache.doris.persist.AnalysisJobScheduler;
 import org.apache.doris.persist.BackendIdsUpdateInfo;
 import org.apache.doris.persist.BackendReplicasInfo;
 import org.apache.doris.persist.BackendTabletsInfo;
@@ -213,18 +212,13 @@ import org.apache.doris.qe.JournalObservable;
 import org.apache.doris.qe.VariableMgr;
 import org.apache.doris.resource.Tag;
 import org.apache.doris.service.FrontendOptions;
-import org.apache.doris.statistics.AnalysisJobInfo;
-import org.apache.doris.statistics.AnalysisJobInfo.AnalysisType;
-import org.apache.doris.statistics.AnalysisJobInfo.JobState;
-import org.apache.doris.statistics.AnalysisJobInfo.ScheduleType;
-import org.apache.doris.statistics.StatisticConstants;
-import org.apache.doris.statistics.StatisticStorageInitializer;
+import org.apache.doris.statistics.AnalysisJobScheduler;
 import org.apache.doris.statistics.StatisticsCache;
 import org.apache.doris.statistics.StatisticsJobManager;
 import org.apache.doris.statistics.StatisticsJobScheduler;
 import org.apache.doris.statistics.StatisticsManager;
+import org.apache.doris.statistics.StatisticsRepository;
 import org.apache.doris.statistics.StatisticsTaskScheduler;
-import org.apache.doris.statistics.StatisticsUtil;
 import org.apache.doris.system.Backend;
 import org.apache.doris.system.Frontend;
 import org.apache.doris.system.HeartbeatMgr;
@@ -240,8 +234,8 @@ import org.apache.doris.thrift.TNetworkAddress;
 import org.apache.doris.thrift.TStorageMedium;
 import org.apache.doris.transaction.CloudGlobalTransactionMgr;
 import org.apache.doris.transaction.DbUsedDataQuotaInfoCollector;
+import org.apache.doris.transaction.GlobalTransactionMgr;
 import org.apache.doris.transaction.GlobalTransactionMgrInterface;
-import org.apache.doris.transaction.NativeGlobalTransactionMgr;
 import org.apache.doris.transaction.PublishVersionDaemon;
 
 import com.google.common.base.Joiner;
@@ -264,7 +258,6 @@ import com.sleepycat.je.rep.NetworkRestoreConfig;
 import lombok.Setter;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.text.StringSubstitutor;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.codehaus.jackson.map.ObjectMapper;
@@ -618,7 +611,7 @@ public class Env {
         if (!Config.cloud_unique_id.isEmpty()) {
             this.globalTransactionMgr = new CloudGlobalTransactionMgr(this);
         } else {
-            this.globalTransactionMgr = new NativeGlobalTransactionMgr(this);
+            this.globalTransactionMgr = new GlobalTransactionMgr(this);
         }
 
         this.tabletStatMgr = new TabletStatMgr();
@@ -1566,7 +1559,7 @@ public class Env {
         getInternalCatalog().getIcebergTableCreationRecordMgr().start();
         this.statisticsJobScheduler.start();
         this.statisticsTaskScheduler.start();
-        new StatisticStorageInitializer().start();
+        new InternalSchemaInitializer().start();
     }
 
     // start threads that should running on all FE
@@ -3131,12 +3124,6 @@ public class Env {
             sb.append(",\n\"").append(PropertyAnalyzer.PROPERTIES_STORAGE_FORMAT).append("\" = \"");
             sb.append(olapTable.getStorageFormat()).append("\"");
 
-            // remote storage
-            String remoteStoragePolicy = olapTable.getRemoteStoragePolicy();
-            if (!Strings.isNullOrEmpty(remoteStoragePolicy)) {
-                sb.append(",\n\"").append(PropertyAnalyzer.PROPERTIES_REMOTE_STORAGE_POLICY).append("\" = \"");
-                sb.append(remoteStoragePolicy).append("\"");
-            }
             // compression type
             if (olapTable.getCompressionType() != TCompressionType.LZ4F) {
                 sb.append(",\n\"").append(PropertyAnalyzer.PROPERTIES_COMPRESSION).append("\" = \"");
@@ -3163,9 +3150,15 @@ public class Env {
 
             // sequence type
             if (olapTable.hasSequenceCol()) {
-                sb.append(",\n\"").append(PropertyAnalyzer.PROPERTIES_FUNCTION_COLUMN + "."
-                        + PropertyAnalyzer.PROPERTIES_SEQUENCE_TYPE).append("\" = \"");
-                sb.append(olapTable.getSequenceType().toString()).append("\"");
+                if (olapTable.getSequenceMapCol() != null) {
+                    sb.append(",\n\"").append(PropertyAnalyzer.PROPERTIES_FUNCTION_COLUMN + "."
+                            + PropertyAnalyzer.PROPERTIES_SEQUENCE_COL).append("\" = \"");
+                    sb.append(olapTable.getSequenceMapCol()).append("\"");
+                } else {
+                    sb.append(",\n\"").append(PropertyAnalyzer.PROPERTIES_FUNCTION_COLUMN + "."
+                            + PropertyAnalyzer.PROPERTIES_SEQUENCE_TYPE).append("\" = \"");
+                    sb.append(olapTable.getSequenceType().toString()).append("\"");
+                }
             }
 
             // dynamic schema
@@ -4738,6 +4731,11 @@ public class Env {
             }
         }
 
+        // 5. modify sequence map col
+        if (table.hasSequenceCol() && table.getSequenceMapCol().equalsIgnoreCase(colName)) {
+            table.setSequenceMapCol(newColName);
+        }
+
         table.rebuildFullSchema();
 
         if (!isReplay) {
@@ -5424,7 +5422,7 @@ public class Env {
     public void createFunction(CreateFunctionStmt stmt) throws UserException {
         FunctionName name = stmt.getFunctionName();
         Database db = getInternalCatalog().getDbOrDdlException(name.getDb());
-        db.addFunction(stmt.getFunction());
+        db.addFunction(stmt.getFunction(), stmt.isIfNotExists());
     }
 
     public void replayCreateFunction(Function function) throws MetaNotFoundException {
@@ -5436,7 +5434,7 @@ public class Env {
     public void dropFunction(DropFunctionStmt stmt) throws UserException {
         FunctionName name = stmt.getFunctionName();
         Database db = getInternalCatalog().getDbOrDdlException(name.getDb());
-        db.dropFunction(stmt.getFunction());
+        db.dropFunction(stmt.getFunction(), stmt.isIfExists());
     }
 
     public void replayDropFunction(FunctionSearchDesc functionSearchDesc) throws MetaNotFoundException {
@@ -5980,40 +5978,6 @@ public class Env {
     //  2. support sample job
     //  3. support period job
     public void createAnalysisJob(AnalyzeStmt analyzeStmt) {
-        String catalogName = analyzeStmt.getCatalogName();
-        String db = analyzeStmt.getDBName();
-        String tbl = analyzeStmt.getTblName();
-        List<String> colNames = analyzeStmt.getOptColumnNames();
-        String persistAnalysisJobSQLTemplate = "INSERT INTO " + StatisticConstants.STATISTIC_DB_NAME + "."
-                + StatisticConstants.ANALYSIS_JOB_TABLE + " VALUES(${jobId}, '${catalogName}', '${dbName}',"
-                + "'${tblName}','${colName}', '${jobType}', '${analysisType}', '${message}', '${lastExecTimeInMs}',"
-                + "'${state}', '${scheduleType}')";
-        if (colNames != null) {
-            for (String colName : colNames) {
-                AnalysisJobInfo analysisJobInfo = new AnalysisJobInfo(Env.getCurrentEnv().getNextId(), catalogName, db,
-                        tbl, colName, AnalysisJobInfo.JobType.MANUAL, ScheduleType.ONCE);
-                analysisJobInfo.analysisType = AnalysisType.FULL;
-                Map<String, String> params = new HashMap<>();
-                params.put("jobId", String.valueOf(analysisJobInfo.jobId));
-                params.put("catalogName", analysisJobInfo.catalogName);
-                params.put("dbName", analysisJobInfo.dbName);
-                params.put("tblName", analysisJobInfo.tblName);
-                params.put("colName", analysisJobInfo.colName);
-                params.put("jobType", analysisJobInfo.jobType.toString());
-                params.put("analysisType", analysisJobInfo.analysisType.toString());
-                params.put("message", "");
-                params.put("lastExecTimeInMs", "0");
-                params.put("state", JobState.PENDING.toString());
-                params.put("scheduleType", analysisJobInfo.scheduleType.toString());
-                try {
-                    StatisticsUtil.execUpdate(
-                            new StringSubstitutor(params).replace(persistAnalysisJobSQLTemplate));
-                } catch (Exception e) {
-                    LOG.warn("Failed to persite job for column: {}", colName, e);
-                    return;
-                }
-                Env.getCurrentEnv().getAnalysisJobScheduler().schedule(analysisJobInfo);
-            }
-        }
+        StatisticsRepository.createAnalysisJob(analyzeStmt);
     }
 }

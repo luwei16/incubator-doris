@@ -59,8 +59,10 @@ import java.io.IOException;
 import java.text.StringCharacterIterator;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -70,19 +72,47 @@ public class FunctionCallExpr extends Expr {
             new ImmutableSortedSet.Builder(String.CASE_INSENSITIVE_ORDER)
                     .add("stddev").add("stddev_val").add("stddev_samp").add("stddev_pop")
                     .add("variance").add("variance_pop").add("variance_pop").add("var_samp").add("var_pop").build();
-    public static final ImmutableSet<String> DECIMAL_SAME_TYPE_SET =
-            new ImmutableSortedSet.Builder(String.CASE_INSENSITIVE_ORDER)
-                    .add("min").add("max").add("lead").add("lag")
-                    .add("first_value").add("last_value").add("abs")
-                    .add("positive").add("negative").build();
-    public static final ImmutableSet<String> DECIMAL_WIDER_TYPE_SET =
-            new ImmutableSortedSet.Builder(String.CASE_INSENSITIVE_ORDER)
-                    .add("sum").add("avg").add("multi_distinct_sum").build();
-    public static final ImmutableSet<String> DECIMAL_FUNCTION_SET =
-            new ImmutableSortedSet.Builder<>(String.CASE_INSENSITIVE_ORDER)
-                    .addAll(DECIMAL_SAME_TYPE_SET)
-                    .addAll(DECIMAL_WIDER_TYPE_SET)
-                    .addAll(STDDEV_FUNCTION_SET).build();
+    public static final Map<String, java.util.function.Function<Type[], Type>> DECIMAL_INFER_RULE;
+    public static final java.util.function.Function<Type[], Type> DEFAULT_DECIMAL_INFER_RULE;
+
+    static {
+        java.util.function.Function<Type[], Type> sumRule = (com.google.common.base.Function<Type[], Type>) type -> {
+            Preconditions.checkArgument(type != null && type.length > 0);
+            if (type[0].isDecimalV3()) {
+                return ScalarType.createDecimalV3Type(ScalarType.MAX_DECIMAL128_PRECISION,
+                        ((ScalarType) type[0]).getScalarScale());
+            } else {
+                return type[0];
+            }
+        };
+        DEFAULT_DECIMAL_INFER_RULE = (com.google.common.base.Function<Type[], Type>) type -> {
+            Preconditions.checkArgument(type != null && type.length > 0);
+            return type[0];
+        };
+        DECIMAL_INFER_RULE = new HashMap<>();
+        DECIMAL_INFER_RULE.put("sum", sumRule);
+        DECIMAL_INFER_RULE.put("multi_distinct_sum", sumRule);
+        DECIMAL_INFER_RULE.put("avg", (com.google.common.base.Function<Type[], Type>) type -> {
+            // TODO: how to set scale?
+            Preconditions.checkArgument(type != null && type.length > 0);
+            if (type[0].isDecimalV3()) {
+                return ScalarType.createDecimalV3Type(ScalarType.MAX_DECIMAL128_PRECISION,
+                        ((ScalarType) type[0]).getScalarScale());
+            } else {
+                return type[0];
+            }
+        });
+        DECIMAL_INFER_RULE.put("if", (com.google.common.base.Function<Type[], Type>) type -> {
+            Preconditions.checkArgument(type != null && type.length == 3);
+            if (type[1].isDecimalV3() && type[2].isDecimalV3()) {
+                return ScalarType.createDecimalV3Type(
+                        Math.max(((ScalarType) type[1]).decimalPrecision(), ((ScalarType) type[2]).decimalPrecision()),
+                        Math.max(((ScalarType) type[1]).decimalScale(), ((ScalarType) type[2]).decimalScale()));
+            } else {
+                return type[0];
+            }
+        });
+    }
 
     public static final ImmutableSet<String> TIME_FUNCTIONS_WITH_PRECISION =
             new ImmutableSortedSet.Builder(String.CASE_INSENSITIVE_ORDER)
@@ -220,16 +250,22 @@ public class FunctionCallExpr extends Expr {
         this.argTypesForNereids = argTypes;
     }
 
-    // nereids constructor without finalize/analyze
-    public FunctionCallExpr(FunctionName functionName, Function function, FunctionParams functionParams) {
-        this.fnName = functionName;
+    // nereids scalar function call expr constructor without finalize/analyze
+    public FunctionCallExpr(Function function, FunctionParams functionParams) {
+        this(function, functionParams, null, false, functionParams.exprs());
+    }
+
+    // nereids aggregate function call expr constructor without finalize/analyze
+    public FunctionCallExpr(Function function, FunctionParams functionParams, FunctionParams aggFnParams,
+            boolean isMergeAggFn, List<Expr> children) {
+        this.fnName = function.getFunctionName();
         this.fn = function;
         this.type = function.getReturnType();
         this.fnParams = functionParams;
-        if (functionParams.exprs() != null) {
-            this.children.addAll(functionParams.exprs());
-        }
+        this.aggFnParams = aggFnParams;
+        this.children.addAll(children);
         this.originChildSize = children.size();
+        this.isMergeAggFn = isMergeAggFn;
         this.shouldFinalizeForNereids = false;
     }
 
@@ -570,7 +606,6 @@ public class FunctionCallExpr extends Expr {
             }
             return;
         }
-
         if (fnName.getFunction().equalsIgnoreCase("group_concat")) {
             if (children.size() - orderByElements.size() > 2 || children.isEmpty()) {
                 throw new AnalysisException(
@@ -593,7 +628,18 @@ public class FunctionCallExpr extends Expr {
 
             return;
         }
-
+        if (fnName.getFunction().equalsIgnoreCase("field")) {
+            if (children.size() < 2) {
+                throw new AnalysisException(fnName.getFunction() + " function parameter size is less than 2.");
+            } else {
+                for (int i = 1; i < children.size(); ++i) {
+                    if (!getChild(i).isConstant()) {
+                        throw new AnalysisException(fnName.getFunction()
+                                + " function except for the first argument, other parameter must be a constant.");
+                    }
+                }
+            }
+        }
         if (fnName.getFunction().equalsIgnoreCase("lag")
                 || fnName.getFunction().equalsIgnoreCase("lead")) {
             if (!isAnalyticFnCall) {
@@ -1182,7 +1228,13 @@ public class FunctionCallExpr extends Expr {
                 }
             }
         }
-
+        if (fnName.getFunction().equalsIgnoreCase("convert_to")) {
+            if (children.size() < 2 || !getChild(1).isConstant()) {
+                throw new AnalysisException(
+                        fnName.getFunction() + " needs two params, and the second is must be a constant: " + this
+                                .toSql());
+            }
+        }
         if (fn.getFunctionName().getFunction().equals("timediff")) {
             fn.getReturnType().getPrimitiveType().setTimeType();
         }
@@ -1222,13 +1274,15 @@ public class FunctionCallExpr extends Expr {
                     if (!argTypes[i].matchesType(args[ix]) && Config.enable_date_conversion
                             && !argTypes[i].isDateType() && (args[ix].isDate() || args[ix].isDatetime())) {
                         uncheckedCastChild(ScalarType.getDefaultDateType(args[ix]), i);
-                    } else if (!argTypes[i].matchesType(args[ix]) && Config.enable_decimalv3
+                    } else if (!argTypes[i].matchesType(args[ix])
                             && Config.enable_decimal_conversion
                             && argTypes[i].isDecimalV3() && args[ix].isDecimalV2()) {
                         uncheckedCastChild(ScalarType.createDecimalV3Type(argTypes[i].getPrecision(),
                                 ((ScalarType) argTypes[i]).getScalarScale()), i);
                     } else if (!argTypes[i].matchesType(args[ix]) && !(
-                            argTypes[i].isDateType() && args[ix].isDateType())) {
+                            argTypes[i].isDateType() && args[ix].isDateType())
+                            && (!fn.getReturnType().isDecimalV3()
+                            || (argTypes[i].isValid() && !argTypes[i].isDecimalV3() && args[ix].isDecimalV3()))) {
                         uncheckedCastChild(args[ix], i);
                     }
                 }
@@ -1291,7 +1345,7 @@ public class FunctionCallExpr extends Expr {
             }
         }
 
-        if (this.type.isDecimalV2() && Config.enable_decimal_conversion && Config.enable_decimalv3
+        if (this.type.isDecimalV2() && Config.enable_decimal_conversion
                 && fn.getArgs().length == childTypes.length) {
             boolean implicitCastToDecimalV3 = false;
             for (int i = 0; i < fn.getArgs().length; i++) {
@@ -1313,23 +1367,9 @@ public class FunctionCallExpr extends Expr {
         }
 
         if (this.type.isDecimalV3()) {
-            // DECIMAL need to pass precision and scale to be
-            if (DECIMAL_FUNCTION_SET.contains(fn.getFunctionName().getFunction())
-                    && (this.type.isDecimalV2() || this.type.isDecimalV3())) {
-                if (DECIMAL_SAME_TYPE_SET.contains(fnName.getFunction())) {
-                    this.type = argTypes[0];
-                    fn.setReturnType(this.type);
-                } else if (DECIMAL_WIDER_TYPE_SET.contains(fnName.getFunction())) {
-                    this.type = ScalarType.createDecimalV3Type(ScalarType.MAX_DECIMAL128_PRECISION,
-                            ((ScalarType) argTypes[0]).getScalarScale());
-                    fn.setReturnType(this.type);
-                } else if (STDDEV_FUNCTION_SET.contains(fnName.getFunction())) {
-                    // for all stddev function, use decimal(38,9) as computing result
-                    this.type = ScalarType.createDecimalV3Type(ScalarType.MAX_DECIMAL128_PRECISION,
-                            STDDEV_DECIMAL_SCALE);
-                    fn.setReturnType(this.type);
-                }
-            }
+            // TODO(gabriel): If type exceeds max precision of DECIMALV3, we should change it to a double function
+            this.type = DECIMAL_INFER_RULE.getOrDefault(fnName.getFunction(), DEFAULT_DECIMAL_INFER_RULE)
+                    .apply(collectChildReturnTypes());
         }
         // rewrite return type if is nested type function
         analyzeNestedFunction();

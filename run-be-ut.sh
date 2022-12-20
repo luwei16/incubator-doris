@@ -39,6 +39,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 
 export DORIS_HOME="${ROOT}"
 
+. "${DORIS_HOME}/env.sh"
+
 # Check args
 usage() {
     echo "
@@ -124,6 +126,10 @@ if [[ "$#" != 1 ]]; then
     done
 fi
 
+if [[ -z "${PARALLEL}" ]]; then
+    PARALLEL="$(($(nproc) / 5 + 1))"
+fi
+
 CMAKE_BUILD_TYPE="${BUILD_TYPE:-ASAN}"
 CMAKE_BUILD_TYPE="$(echo "${CMAKE_BUILD_TYPE}" | awk '{ print(toupper($0)) }')"
 
@@ -166,6 +172,14 @@ if [[ -z "${USE_LIBCPP}" ]]; then
     fi
 fi
 
+if [[ -z "${USE_MEM_TRACKER}" ]]; then
+    if [[ "$(uname -s)" != 'Darwin' ]]; then
+        USE_MEM_TRACKER='ON'
+    else
+        USE_MEM_TRACKER='OFF'
+    fi
+fi
+
 if [[ -z "${USE_DWARF}" ]]; then
     USE_DWARF='OFF'
 fi
@@ -187,7 +201,7 @@ cd "${CMAKE_BUILD_DIR}"
     -DCLOUD_MODE="${CLOUD_MODE}" \
     -DWITH_MYSQL=OFF \
     -DUSE_DWARF="${USE_DWARF}" \
-    -DUSE_MEM_TRACKER=ON \
+    -DUSE_MEM_TRACKER="${USE_MEM_TRACKER}" \
     -DUSE_JEMALLOC=OFF \
     -DSTRICT_MEMORY_USE=OFF \
     -DEXTRA_CXX_FLAGS="${EXTRA_CXX_FLAGS}" \

@@ -35,12 +35,12 @@ NewOlapScanner::NewOlapScanner(RuntimeState* state, NewOlapScanNode* parent, int
     _tablet_schema = std::make_shared<TabletSchema>();
 }
 
-Status NewOlapScanner::prepare(
-        const TPaloScanRange& scan_range, const std::vector<OlapScanRange*>& key_ranges,
-        VExprContext** vconjunct_ctx_ptr, const std::vector<TCondition>& filters,
-        const std::vector<std::pair<string, std::shared_ptr<BloomFilterFuncBase>>>& bloom_filters,
-        const std::vector<std::pair<string, std::shared_ptr<HybridSetBase>>>& in_filters,
-        const std::vector<FunctionFilter>& function_filters) {
+Status NewOlapScanner::prepare(const TPaloScanRange& scan_range,
+                               const std::vector<OlapScanRange*>& key_ranges,
+                               VExprContext** vconjunct_ctx_ptr,
+                               const std::vector<TCondition>& filters,
+                               const FilterPredicates& filter_predicates,
+                               const std::vector<FunctionFilter>& function_filters) {
     if (vconjunct_ctx_ptr != nullptr) {
         // Copy vconjunct_ctx_ptr from scan node to this scanner's _vconjunct_ctx.
         RETURN_IF_ERROR((*vconjunct_ctx_ptr)->clone(_state, &_vconjunct_ctx));
@@ -131,9 +131,13 @@ Status NewOlapScanner::prepare(
                 _tablet_schema->append_column(rowid_column);
             }
         }
+
+	// Initialize tablet_reader_params
+        RETURN_IF_ERROR(_init_tablet_reader_params(key_ranges, filters, filter_predicates,
+                                                       function_filters));
     }
-    // Initialize tablet_reader_params
-    return _init_tablet_reader_params(key_ranges, filters, bloom_filters, in_filters, function_filters);
+
+    return Status::OK();
 }
 
 Status NewOlapScanner::open(RuntimeState* state) {
@@ -159,8 +163,7 @@ void NewOlapScanner::set_compound_filters(
 // it will be called under tablet read lock because capture rs readers need
 Status NewOlapScanner::_init_tablet_reader_params(
         const std::vector<OlapScanRange*>& key_ranges, const std::vector<TCondition>& filters,
-        const std::vector<std::pair<string, std::shared_ptr<BloomFilterFuncBase>>>& bloom_filters,
-        const std::vector<std::pair<string, std::shared_ptr<HybridSetBase>>>& in_filters,
+        const FilterPredicates& filter_predicates,
         const std::vector<FunctionFilter>& function_filters) {
     // if the table with rowset [0-x] or [0-1] [2-y], and [0-1] is empty
     bool single_version =
@@ -226,11 +229,14 @@ Status NewOlapScanner::_init_tablet_reader_params(
             std::inserter(_tablet_reader_params.compound_conditions,
                         _tablet_reader_params.compound_conditions.begin()));
 
-    std::copy(bloom_filters.cbegin(), bloom_filters.cend(),
+    std::copy(filter_predicates.bloom_filters.cbegin(), filter_predicates.bloom_filters.cend(),
               std::inserter(_tablet_reader_params.bloom_filters,
                             _tablet_reader_params.bloom_filters.begin()));
+    std::copy(filter_predicates.bitmap_filters.cbegin(), filter_predicates.bitmap_filters.cend(),
+              std::inserter(_tablet_reader_params.bitmap_filters,
+                            _tablet_reader_params.bitmap_filters.begin()));
 
-    std::copy(in_filters.cbegin(), in_filters.cend(),
+    std::copy(filter_predicates.in_filters.cbegin(), filter_predicates.in_filters.cend(),
               std::inserter(_tablet_reader_params.in_filters,
                             _tablet_reader_params.in_filters.begin()));
 
@@ -445,6 +451,8 @@ void NewOlapScanner::_update_counters_before_close() {
     COUNTER_UPDATE(olap_parent->_block_init_timer, stats.block_init_ns);
     COUNTER_UPDATE(olap_parent->_block_init_seek_timer, stats.block_init_seek_ns);
     COUNTER_UPDATE(olap_parent->_block_init_seek_counter, stats.block_init_seek_num);
+    COUNTER_UPDATE(olap_parent->_block_conditions_filtered_timer,
+                   stats.block_conditions_filtered_ns);
     COUNTER_UPDATE(olap_parent->_first_read_timer, stats.first_read_ns);
     COUNTER_UPDATE(olap_parent->_first_read_seek_timer, stats.block_first_read_seek_ns);
     COUNTER_UPDATE(olap_parent->_first_read_seek_counter, stats.block_first_read_seek_num);

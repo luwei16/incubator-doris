@@ -66,8 +66,8 @@ import org.apache.doris.load.routineload.RoutineLoadJob;
 import org.apache.doris.load.sync.SyncJob;
 import org.apache.doris.meta.MetaContext;
 import org.apache.doris.metric.MetricRepo;
-import org.apache.doris.mtmv.metadata.AlterMTMVTask;
 import org.apache.doris.mtmv.metadata.ChangeMTMVJob;
+import org.apache.doris.mtmv.metadata.ChangeMTMVTask;
 import org.apache.doris.mtmv.metadata.DropMTMVJob;
 import org.apache.doris.mtmv.metadata.DropMTMVTask;
 import org.apache.doris.mtmv.metadata.MTMVJob;
@@ -79,7 +79,7 @@ import org.apache.doris.policy.Policy;
 import org.apache.doris.policy.StoragePolicy;
 import org.apache.doris.system.Backend;
 import org.apache.doris.system.Frontend;
-import org.apache.doris.transaction.NativeGlobalTransactionMgr;
+import org.apache.doris.transaction.GlobalTransactionMgr;
 import org.apache.doris.transaction.TransactionState;
 
 import org.apache.logging.log4j.LogManager;
@@ -166,11 +166,13 @@ public class EditLog {
                 case OperationType.OP_SAVE_TRANSACTION_ID: {
                     String idString = ((Text) journal.getData()).toString();
                     long id = Long.parseLong(idString);
+                    // SELECTDB_CODE_BEGIN
                     if (Config.cloud_unique_id.isEmpty()) {
-                        NativeGlobalTransactionMgr globalTransactionMgr =
-                                (NativeGlobalTransactionMgr) Env.getCurrentGlobalTransactionMgr();
+                        GlobalTransactionMgr globalTransactionMgr = (GlobalTransactionMgr) (Env
+                                .getCurrentGlobalTransactionMgr());
                         globalTransactionMgr.getTransactionIDGenerator().initTransactionId(id + 1);
                     }
+                    // SELECTDB_CODE_END
                     break;
                 }
                 case OperationType.OP_CREATE_DB: {
@@ -398,11 +400,13 @@ public class EditLog {
                     env.replayUpdateReplica(info);
                     break;
                 }
+                // SELECTDB_CODE_BEGIN
                 case OperationType.OP_UPDATE_CLOUD_REPLICA: {
                     UpdateCloudReplicaInfo info = (UpdateCloudReplicaInfo) journal.getData();
                     env.replayUpdateCloudReplica(info);
                     break;
                 }
+                // SELECTDB_CODE_END
                 case OperationType.OP_DELETE_REPLICA: {
                     ReplicaPersistInfo info = (ReplicaPersistInfo) journal.getData();
                     env.replayDeleteReplica(info);
@@ -504,8 +508,8 @@ public class EditLog {
                     int version = Integer.parseInt(versionString);
                     if (version > FeConstants.meta_version) {
                         LOG.error("meta data version is out of date, image: {}. meta: {}."
-                                + "please update FeConstants.meta_version and restart.",
-                                version, FeConstants.meta_version);
+                                        + "please update FeConstants.meta_version and restart.", version,
+                                FeConstants.meta_version);
                         System.exit(-1);
                     }
                     MetaContext.get().setMetaVersion(version);
@@ -584,8 +588,8 @@ public class EditLog {
                     break;
                 }
                 case OperationType.OP_BATCH_REMOVE_TXNS: {
-                    final BatchRemoveTransactionsOperation operation = (BatchRemoveTransactionsOperation) journal
-                            .getData();
+                    final BatchRemoveTransactionsOperation operation =
+                            (BatchRemoveTransactionsOperation) journal.getData();
                     Env.getCurrentGlobalTransactionMgr().replayBatchRemoveTransactions(operation);
                     break;
                 }
@@ -685,8 +689,8 @@ public class EditLog {
                     break;
                 }
                 case OperationType.OP_CREATE_LOAD_JOB: {
-                    org.apache.doris.load.loadv2.LoadJob loadJob = (org.apache.doris.load.loadv2.LoadJob) journal
-                            .getData();
+                    org.apache.doris.load.loadv2.LoadJob loadJob =
+                            (org.apache.doris.load.loadv2.LoadJob) journal.getData();
                     env.getLoadManager().replayCreateLoadJob(loadJob);
                     break;
                 }
@@ -768,21 +772,20 @@ public class EditLog {
                 }
                 case OperationType.OP_DYNAMIC_PARTITION:
                 case OperationType.OP_MODIFY_IN_MEMORY:
-                case OperationType.OP_MODIFY_PERSISTENT:
                 case OperationType.OP_MODIFY_REPLICATION_NUM: {
                     ModifyTablePropertyOperationLog log = (ModifyTablePropertyOperationLog) journal.getData();
                     env.replayModifyTableProperty(opCode, log);
                     break;
                 }
                 case OperationType.OP_MODIFY_DISTRIBUTION_BUCKET_NUM: {
-                    ModifyTableDefaultDistributionBucketNumOperationLog log
-                            = (ModifyTableDefaultDistributionBucketNumOperationLog) journal.getData();
+                    ModifyTableDefaultDistributionBucketNumOperationLog log =
+                            (ModifyTableDefaultDistributionBucketNumOperationLog) journal.getData();
                     env.replayModifyTableDefaultDistributionBucketNum(log);
                     break;
                 }
                 case OperationType.OP_REPLACE_TEMP_PARTITION: {
-                    ReplacePartitionOperationLog replaceTempPartitionLog = (ReplacePartitionOperationLog) journal
-                            .getData();
+                    ReplacePartitionOperationLog replaceTempPartitionLog =
+                            (ReplacePartitionOperationLog) journal.getData();
                     env.replayReplaceTempPartition(replaceTempPartitionLog);
                     break;
                 }
@@ -926,7 +929,7 @@ public class EditLog {
                     break;
                 }
                 case OperationType.OP_ALTER_MTMV_TASK: {
-                    final AlterMTMVTask changeTask = (AlterMTMVTask) journal.getData();
+                    final ChangeMTMVTask changeTask = (ChangeMTMVTask) journal.getData();
                     env.getMTMVJobManager().replayUpdateTask(changeTask);
                     break;
                 }
@@ -1224,9 +1227,11 @@ public class EditLog {
         logEdit(OperationType.OP_UPDATE_REPLICA, info);
     }
 
+    // SELECTDB_CODE_BEGIN
     public void logUpdateCloudReplica(UpdateCloudReplicaInfo info) {
         logEdit(OperationType.OP_UPDATE_CLOUD_REPLICA, info);
     }
+    // SELECTDB_CODE_END
 
     public void logDeleteReplica(ReplicaPersistInfo info) {
         logEdit(OperationType.OP_DELETE_REPLICA, info);
@@ -1531,9 +1536,11 @@ public class EditLog {
         logEdit(OperationType.OP_MODIFY_IN_MEMORY, info);
     }
 
+    // SELECTDB_CODE_BEGIN
     public void logModifyPersistent(ModifyTablePropertyOperationLog info) {
         logEdit(OperationType.OP_MODIFY_PERSISTENT, info);
     }
+    // SELECTDB_CODE_END
 
     public void logReplaceTempPartition(ReplacePartitionOperationLog info) {
         logEdit(OperationType.OP_REPLACE_TEMP_PARTITION, info);
@@ -1619,7 +1626,7 @@ public class EditLog {
         logEdit(OperationType.OP_CREATE_MTMV_TASK, task);
     }
 
-    public void logAlterScheduleTask(AlterMTMVTask changeTaskRecord) {
+    public void logAlterScheduleTask(ChangeMTMVTask changeTaskRecord) {
         logEdit(OperationType.OP_ALTER_MTMV_TASK, changeTaskRecord);
     }
 

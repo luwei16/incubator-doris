@@ -41,6 +41,7 @@ import org.apache.doris.common.UserException;
 import org.apache.doris.common.telemetry.Telemetry;
 import org.apache.doris.common.util.DebugUtil;
 import org.apache.doris.common.util.SqlParserUtils;
+import org.apache.doris.common.util.Util;
 import org.apache.doris.datasource.CatalogIf;
 import org.apache.doris.metric.LongCounterMetric;
 import org.apache.doris.metric.Metric.MetricUnit;
@@ -166,6 +167,9 @@ public class ConnectProcessor {
             ctx.getEnv().changeDb(ctx, dbName);
         } catch (DdlException e) {
             ctx.getState().setError(e.getMysqlErrorCode(), e.getMessage());
+            return;
+        } catch (Throwable t) {
+            ctx.getState().setError(ErrorCode.ERR_INTERNAL_ERROR, Util.getRootCauseMessage(t));
             return;
         }
 
@@ -428,7 +432,7 @@ public class ConnectProcessor {
         } catch (Exception e) {
             // TODO(lingbin): we catch 'Exception' to prevent unexpected error,
             // should be removed this try-catch clause future.
-            throw new AnalysisException("Internal Error, maybe syntax error or this is a bug");
+            throw new AnalysisException("Internal Error, maybe syntax error or this is a bug: " + e.getMessage(), e);
         }
     }
 
@@ -742,3 +746,4 @@ public class ConnectProcessor {
         }
     }
 }
+

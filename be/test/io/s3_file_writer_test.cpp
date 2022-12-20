@@ -19,11 +19,11 @@
 
 #include "common/config.h"
 #include "common/status.h"
-#include "io/cloud/tmp_file_mgr.h"
-#include "io/fs/file_reader.h"
-#include "io/fs/file_writer.h"
-#include "io/fs/local_file_system.h"
-#include "io/fs/s3_file_system.h"
+#include "cloud/io/tmp_file_mgr.h"
+#include "cloud/io/file_reader.h"
+#include "cloud/io/file_writer.h"
+#include "cloud/io/local_file_system.h"
+#include "cloud/io/s3_file_system.h"
 #include "util/s3_util.h"
 namespace doris {
 

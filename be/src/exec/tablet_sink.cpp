@@ -218,6 +218,7 @@ Status NodeChannel::open_wait() {
                 // if this is last rpc, will must set _add_batches_finished. otherwise, node channel's close_wait
                 // will be blocked.
                 _add_batches_finished = true;
+                VLOG_PROGRESS << "node channel " << channel_info() << "add_batches_finished";
             }
         });
 
@@ -275,6 +276,9 @@ Status NodeChannel::open_wait() {
                     _add_batches_finished = true;
                     _min_upload_speed = result.min_upload_speed();
                     _max_upload_speed = result.max_upload_speed();
+                    VLOG_PROGRESS << "node channel " << channel_info()
+                                  << "add_batches_finished and handled "
+                                  << result.tablet_errors().size() << " tablets errors";
                 }
             } else {
                 _cancel_with_msg(
@@ -361,6 +365,12 @@ Status NodeChannel::add_row(const BlockRow& block_row, int64_t tablet_id) {
         }
     }
 
+    while (!_cancelled && _pending_batches_num > 0 &&
+           _pending_batches_bytes > _max_pending_batches_bytes) {
+        SCOPED_ATOMIC_TIMER(&_mem_exceeded_block_ns);
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
     constexpr size_t BATCH_SIZE_FOR_SEND = 2 * 1024 * 1024; //2M
     auto row_no = _cur_batch->add_row();
     if (row_no == RowBatch::INVALID_ROW_INDEX ||
@@ -406,7 +416,8 @@ void NodeChannel::mark_close() {
         DCHECK(_pending_batches.back().second.eos());
         _close_time_ms = UnixMillis();
         LOG(INFO) << channel_info()
-                  << " mark closed, left pending batch size: " << _pending_batches.size();
+                  << " mark closed, left pending batch size: " << _pending_batches.size()
+                  << " left pending batch size: " << _pending_batches_bytes;
     }
 
     _eos_is_produced = true;
@@ -717,6 +728,8 @@ Status IndexChannel::init(RuntimeState* state, const std::vector<TTabletWithPart
 void IndexChannel::mark_as_failed(int64_t node_id, const std::string& host, const std::string& err,
                                   int64_t tablet_id) {
     VLOG_DEBUG << "mark_as_failed begin. tablet_id=" << tablet_id << ", err=" << err;
+    VLOG_PROGRESS << "mark node_id:" << node_id << " tablet_id: " << tablet_id
+                  << " as failed, err: " << err;
     const auto& it = _tablets_by_channel.find(node_id);
     if (it == _tablets_by_channel.end()) {
         return;
@@ -957,6 +970,10 @@ Status OlapTableSink::prepare(RuntimeState* state) {
                 tablet_with_partition.tablet_id = tablet;
                 tablets.emplace_back(std::move(tablet_with_partition));
             }
+        }
+        if (UNLIKELY(tablets.empty())) {
+            LOG(WARNING) << "load job:" << state->load_job_id() << " index: " << index->index_id
+                         << " would open 0 tablet";
         }
         _channels.emplace_back(new IndexChannel(this, index->index_id, use_vec));
         RETURN_IF_ERROR(_channels.back()->init(state, tablets));
@@ -1203,6 +1220,9 @@ Status OlapTableSink::close(RuntimeState* state, Status close_status) {
                 ch->cancel(status.get_error_msg());
             });
         }
+        LOG(INFO) << "finished to close olap table sink. load_id=" << print_id(_load_id)
+                  << ", txn_id=" << _txn_id
+                  << ", canceled all node channels due to error: " << status.get_error_msg();
     }
 
     // Sender join() must put after node channels mark_close/cancel.

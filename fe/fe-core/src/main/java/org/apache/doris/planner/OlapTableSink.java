@@ -64,7 +64,7 @@ import org.apache.doris.thrift.TStorageFormat;
 import org.apache.doris.thrift.TTabletLocation;
 import org.apache.doris.thrift.TUniqueId;
 import org.apache.doris.transaction.DatabaseTransactionMgr;
-import org.apache.doris.transaction.NativeGlobalTransactionMgr;
+import org.apache.doris.transaction.GlobalTransactionMgr;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.HashMultimap;
@@ -399,8 +399,8 @@ public class OlapTableSink extends DataSink {
         long dbId = tDataSink.getOlapTableSink().getDbId();
         long txnId = tDataSink.getOlapTableSink().getTxnId();
         try {
-            DatabaseTransactionMgr mgr =
-                    ((NativeGlobalTransactionMgr) Env.getCurrentGlobalTransactionMgr()).getDatabaseTransactionMgr(dbId);
+            DatabaseTransactionMgr mgr = ((GlobalTransactionMgr) Env.getCurrentGlobalTransactionMgr())
+                    .getDatabaseTransactionMgr(dbId);
             mgr.registerTxnReplicas(txnId, replicaNum);
         } catch (Exception e) {
             LOG.error("register txn replica failed, txnId={}, dbId={}", txnId, dbId);

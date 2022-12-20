@@ -20,7 +20,7 @@
 #include "common/status.h"
 #include "exprs/hybrid_set.h"
 #include "runtime/runtime_filter_mgr.h"
-#include "util/defer_op.h"
+#include "util/runtime_profile.h"
 #include "vec/columns/column_const.h"
 #include "vec/exec/scan/scanner_scheduler.h"
 #include "vec/exec/scan/vscanner.h"
@@ -60,7 +60,6 @@ static bool ignore_cast(SlotDescriptor* slot, VExpr* expr) {
 }
 
 Status VScanNode::init(const TPlanNode& tnode, RuntimeState* state) {
-    START_AND_SCOPE_SPAN_IF(state->enable_profile(), state->get_tracer(), "VScanNode::init");
     RETURN_IF_ERROR(ExecNode::init(tnode, state));
     _state = state;
 
@@ -97,7 +96,7 @@ Status VScanNode::prepare(RuntimeState* state) {
 Status VScanNode::open(RuntimeState* state) {
     _input_tuple_desc = state->desc_tbl().get_tuple_descriptor(_input_tuple_id);
     _output_tuple_desc = state->desc_tbl().get_tuple_descriptor(_output_tuple_id);
-    START_AND_SCOPE_SPAN_IF(state->enable_profile(), state->get_tracer(), "VScanNode::open");
+    START_AND_SCOPE_SPAN(state->get_tracer(), span, "VScanNode::open");
     SCOPED_TIMER(_runtime_profile->total_time_counter());
     RETURN_IF_CANCELLED(state);
     RETURN_IF_ERROR(ExecNode::open(state));
@@ -118,8 +117,7 @@ Status VScanNode::open(RuntimeState* state) {
 }
 
 Status VScanNode::get_next(RuntimeState* state, vectorized::Block* block, bool* eos) {
-    INIT_AND_SCOPE_REENTRANT_SPAN_IF(state->enable_profile(), state->get_tracer(), _get_next_span,
-                                     "VScanNode::get_next");
+    INIT_AND_SCOPE_GET_NEXT_SPAN(state->get_tracer(), _get_next_span, "VScanNode::get_next");
     SCOPED_TIMER(_get_next_timer);
     SCOPED_TIMER(_runtime_profile->total_time_counter());
     SCOPED_CONSUME_MEM_TRACKER(mem_tracker());
@@ -215,7 +213,7 @@ Status VScanNode::_register_runtime_filter() {
     for (int i = 0; i < filter_size; ++i) {
         IRuntimeFilter* runtime_filter = nullptr;
         const auto& filter_desc = _runtime_filter_descs[i];
-        RETURN_IF_ERROR(_state->runtime_filter_mgr()->regist_filter(
+        RETURN_IF_ERROR(_state->runtime_filter_mgr()->register_filter(
                 RuntimeFilterRole::CONSUMER, filter_desc, _state->query_options(), id()));
         RETURN_IF_ERROR(_state->runtime_filter_mgr()->get_consume_filter(filter_desc.filter_id,
                                                                          &runtime_filter));
@@ -313,10 +311,10 @@ Status VScanNode::_append_rf_into_conjuncts(std::vector<VExpr*>& vexprs) {
 }
 
 Status VScanNode::close(RuntimeState* state) {
-    START_AND_SCOPE_SPAN_IF(state->enable_profile(), state->get_tracer(), "VScanNode::close");
     if (is_closed()) {
         return Status::OK();
     }
+    START_AND_SCOPE_SPAN(state->get_tracer(), span, "VScanNode::close");
     if (_scanner_ctx.get()) {
         // stop and wait the scanner scheduler to be done
         // _scanner_ctx may not be created for some short circuit case.
@@ -332,6 +330,7 @@ Status VScanNode::close(RuntimeState* state) {
     for (auto& ctx : _stale_vexpr_ctxs) {
         (*ctx)->close(state);
     }
+    _scanner_pool.clear();
 
     RETURN_IF_ERROR(ExecNode::close(state));
     return Status::OK();
@@ -374,7 +373,7 @@ Status VScanNode::_normalize_conjuncts() {
     M(HLL)                          \
     M(DECIMAL32)                    \
     M(DECIMAL64)                    \
-    M(DECIMAL128)                   \
+    M(DECIMAL128I)                  \
     M(DECIMALV2)                    \
     M(BOOLEAN)                      \
     M(FLOAT)                        \
@@ -478,6 +477,8 @@ VExpr* VScanNode::_normalize_predicate(VExpr* conjunct_expr_root) {
                                     cur_expr, *(_vconjunct_ctx_ptr.get()), slot, value_range, 
                                     &pdt));
                             if (_is_key_column(slot->col_name())) {
+                                RETURN_IF_PUSH_DOWN(_normalize_bitmap_filter(
+                                        cur_expr, *(_vconjunct_ctx_ptr.get()), slot, &pdt));
                                 RETURN_IF_PUSH_DOWN(_normalize_bloom_filter(
                                         cur_expr, *(_vconjunct_ctx_ptr.get()), slot, &pdt));
                                 if (_state->enable_function_pushdown()) {
@@ -488,10 +489,9 @@ VExpr* VScanNode::_normalize_predicate(VExpr* conjunct_expr_root) {
                         },
                         *range);
             }
-
             if (pdt == PushDownType::UNACCEPTABLE && is_compound_predicate) {
                 std::vector<ColumnValueRangeType> column_value_rangs;
-                _normalize_compound_predicate(cur_expr, *(_vconjunct_ctx_ptr.get()), 
+                _normalize_compound_predicate(cur_expr, *(_vconjunct_ctx_ptr.get()),
                                 &pdt, is_runtimer_filter_predicate, &column_value_rangs,
                                 in_predicate_checker, eq_predicate_checker);
                 _compound_value_ranges.push_back(column_value_rangs);
@@ -531,7 +531,22 @@ Status VScanNode::_normalize_bloom_filter(VExpr* expr, VExprContext* expr_ctx, S
         DCHECK(expr->children().size() == 1);
         PushDownType temp_pdt = _should_push_down_bloom_filter();
         if (temp_pdt != PushDownType::UNACCEPTABLE) {
-            _bloom_filters_push_down.emplace_back(slot->col_name(), expr->get_bloom_filter_func());
+            _filter_predicates.bloom_filters.emplace_back(slot->col_name(),
+                                                          expr->get_bloom_filter_func());
+            *pdt = temp_pdt;
+        }
+    }
+    return Status::OK();
+}
+
+Status VScanNode::_normalize_bitmap_filter(VExpr* expr, VExprContext* expr_ctx,
+                                           SlotDescriptor* slot, PushDownType* pdt) {
+    if (TExprNodeType::BITMAP_PRED == expr->node_type()) {
+        DCHECK(expr->children().size() == 1);
+        PushDownType temp_pdt = _should_push_down_bitmap_filter();
+        if (temp_pdt != PushDownType::UNACCEPTABLE) {
+            _filter_predicates.bitmap_filters.emplace_back(slot->col_name(),
+                                                           expr->get_bitmap_filter_func());
             *pdt = temp_pdt;
         }
     }
@@ -646,7 +661,7 @@ Status VScanNode::_normalize_in_and_eq_predicate(VExpr* expr, VExprContext* expr
             if (hybrid_set->size() <= _max_pushdown_conditions_per_column) {
                 iter = hybrid_set->begin();
             } else {
-                _in_filters_push_down.emplace_back(slot->col_name(), expr->get_set_func());
+                _filter_predicates.in_filters.emplace_back(slot->col_name(), expr->get_set_func());
                 *pdt = PushDownType::ACCEPTABLE;
                 return Status::OK();
             }
@@ -1166,7 +1181,7 @@ Status VScanNode::_change_value_range(ColumnValueRange<PrimitiveType>& temp_rang
                          (PrimitiveType == TYPE_SMALLINT) || (PrimitiveType == TYPE_INT) ||
                          (PrimitiveType == TYPE_BIGINT) || (PrimitiveType == TYPE_LARGEINT) ||
                          (PrimitiveType == TYPE_DECIMAL32) || (PrimitiveType == TYPE_DECIMAL64) ||
-                         (PrimitiveType == TYPE_DECIMAL128) || (PrimitiveType == TYPE_STRING) ||
+                         (PrimitiveType == TYPE_DECIMAL128I) || (PrimitiveType == TYPE_STRING) ||
                          (PrimitiveType == TYPE_BOOLEAN) || (PrimitiveType == TYPE_DATEV2) ||
                          (PrimitiveType == TYPE_FLOAT) || (PrimitiveType == TYPE_DOUBLE)) {
         if constexpr (IsFixed) {

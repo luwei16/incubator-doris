@@ -47,8 +47,8 @@ PrimitiveType convert_type_to_primitive(FunctionContext::Type type) {
         return PrimitiveType::TYPE_DECIMAL32;
     case FunctionContext::Type::TYPE_DECIMAL64:
         return PrimitiveType::TYPE_DECIMAL64;
-    case FunctionContext::Type::TYPE_DECIMAL128:
-        return PrimitiveType::TYPE_DECIMAL128;
+    case FunctionContext::Type::TYPE_DECIMAL128I:
+        return PrimitiveType::TYPE_DECIMAL128I;
     case FunctionContext::Type::TYPE_BOOLEAN:
         return PrimitiveType::TYPE_BOOLEAN;
     case FunctionContext::Type::TYPE_ARRAY:
@@ -122,7 +122,7 @@ int get_byte_size(PrimitiveType type) {
     case TYPE_DATE:
     case TYPE_LARGEINT:
     case TYPE_DECIMALV2:
-    case TYPE_DECIMAL128:
+    case TYPE_DECIMAL128I:
         return 16;
 
     case INVALID_TYPE:
@@ -245,8 +245,8 @@ PrimitiveType thrift_to_type(TPrimitiveType::type ttype) {
     case TPrimitiveType::DECIMAL64:
         return TYPE_DECIMAL64;
 
-    case TPrimitiveType::DECIMAL128:
-        return TYPE_DECIMAL128;
+    case TPrimitiveType::DECIMAL128I:
+        return TYPE_DECIMAL128I;
 
     case TPrimitiveType::CHAR:
         return TYPE_CHAR;
@@ -339,8 +339,8 @@ TPrimitiveType::type to_thrift(PrimitiveType ptype) {
     case TYPE_DECIMAL64:
         return TPrimitiveType::DECIMAL64;
 
-    case TYPE_DECIMAL128:
-        return TPrimitiveType::DECIMAL128;
+    case TYPE_DECIMAL128I:
+        return TPrimitiveType::DECIMAL128I;
 
     case TYPE_CHAR:
         return TPrimitiveType::CHAR;
@@ -433,8 +433,8 @@ std::string type_to_string(PrimitiveType t) {
     case TYPE_DECIMAL64:
         return "DECIMAL64";
 
-    case TYPE_DECIMAL128:
-        return "DECIMAL128";
+    case TYPE_DECIMAL128I:
+        return "DECIMAL128I";
 
     case TYPE_CHAR:
         return "CHAR";
@@ -528,7 +528,7 @@ std::string type_to_odbc_string(PrimitiveType t) {
     case TYPE_DECIMAL64:
         return "decimal64";
 
-    case TYPE_DECIMAL128:
+    case TYPE_DECIMAL128I:
         return "decimal128";
 
     case TYPE_CHAR:
@@ -623,7 +623,7 @@ int get_slot_size(PrimitiveType type) {
         return sizeof(DateTimeValue);
 
     case TYPE_DECIMALV2:
-    case TYPE_DECIMAL128:
+    case TYPE_DECIMAL128I:
         return 16;
 
     case INVALID_TYPE:

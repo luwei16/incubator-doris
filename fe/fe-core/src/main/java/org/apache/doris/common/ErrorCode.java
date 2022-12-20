@@ -1699,7 +1699,9 @@ public enum ErrorCode {
     ERR_NO_CLUSTER_ERROR(5089, new byte[]{'4', '2', '0', '0', '0'}, "No cluster selected"),
     ERR_UNSUPPORTED_OPERATION_ERROR(5090, new byte[]{'4', '2', '0', '0', '0'}, "Unsupported operation"),
 
-    ERR_ClOUD_CLUSTER_ERROR(5091, new byte[]{'4', '2', '0', '0', '0'}, "Cluster %s not exist, use SQL 'SHOW CLUSTERS' to get a valid cluster");
+    ERR_ClOUD_CLUSTER_ERROR(5091, new byte[]{'4', '2', '0', '0', '0'}, "Cluster %s not exist, use SQL 'SHOW CLUSTERS' to get a valid cluster"),
+    ERR_TABLE_NAME_LENGTH_LIMIT(5092, new byte[]{'4', '2', '0', '0', '0'}, "Table name length exceeds limit, "
+     + "the length of table name '%s' is %d which is greater than the configuration 'table_name_length_limit' (%d).");
 
     // This is error code
     private final int code;

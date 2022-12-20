@@ -164,7 +164,9 @@ struct StringRef {
         return StringRef(reinterpret_cast<char*>(sv.ptr), sv.len);
     }
 
+    // SELECTDB_CODE_BEGIN
     bool empty() const { return size == 0; }
+    // SELECTDB_CODE_END
 
     bool start_with(StringRef& search_string) const {
         DCHECK(size >= search_string.size);

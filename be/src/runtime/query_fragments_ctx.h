@@ -104,8 +104,8 @@ public:
 
     vectorized::RuntimePredicate& get_runtime_predicate() { return _runtime_predicate; }
 
-    vectorized::SharedHashTableController* get_shared_hash_table_controller() {
-        return _shared_hash_table_controller.get();
+    std::shared_ptr<vectorized::SharedHashTableController> get_shared_hash_table_controller() {
+        return _shared_hash_table_controller;
     }
 
 public:
@@ -149,7 +149,7 @@ private:
     std::atomic<bool> _is_cancelled {false};
 
     vectorized::RuntimePredicate _runtime_predicate;
-    std::unique_ptr<vectorized::SharedHashTableController> _shared_hash_table_controller;
+    std::shared_ptr<vectorized::SharedHashTableController> _shared_hash_table_controller;
 };
 
 } // namespace doris

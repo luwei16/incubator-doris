@@ -472,9 +472,8 @@ void TaskWorkerPool::_alter_inverted_index_worker_thread_callback() {
         TAgentTaskRequest agent_task_req;
         {
             std::unique_lock<std::mutex> worker_thread_lock(_worker_thread_lock);
-            while (_is_work && _tasks.empty()) {
-                _worker_thread_condition_variable.wait(worker_thread_lock);
-            }
+            _worker_thread_condition_variable.wait(
+                    worker_thread_lock, [this]() { return !_is_work || !_tasks.empty(); });
             if (!_is_work) {
                 return;
             }
@@ -770,9 +769,8 @@ void TaskWorkerPool::_delete_worker_thread_callback() {
         TAgentTaskRequest agent_task_req;
         do {
             std::unique_lock<std::mutex> worker_thread_lock(_worker_thread_lock);
-            while (_is_work && _tasks.empty()) {
-                _worker_thread_condition_variable.wait(worker_thread_lock);
-            }
+            _worker_thread_condition_variable.wait(
+                    worker_thread_lock, [this]() { return !_is_work || !_tasks.empty(); });
             if (!_is_work) {
                 return;
             }

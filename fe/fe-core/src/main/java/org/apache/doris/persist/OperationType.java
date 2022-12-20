@@ -256,7 +256,6 @@ public class OperationType {
     public static final short OP_DROP_MTMV_TASK = 341;
     public static final short OP_ALTER_MTMV_TASK = 342;
 
-
     // set table persistent
     public static final short OP_MODIFY_PERSISTENT = 325;
 

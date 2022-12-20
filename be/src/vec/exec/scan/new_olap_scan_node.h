@@ -44,6 +44,8 @@ protected:
 
     PushDownType _should_push_down_bloom_filter() override { return PushDownType::ACCEPTABLE; }
 
+    PushDownType _should_push_down_bitmap_filter() override { return PushDownType::ACCEPTABLE; }
+
     PushDownType _should_push_down_is_null_predicate() override { return PushDownType::ACCEPTABLE; }
 
     Status _init_scanners(std::list<VScanner*>* scanners) override;
@@ -110,6 +112,7 @@ private:
     RuntimeProfile::Counter* _block_init_timer = nullptr;
     RuntimeProfile::Counter* _block_init_seek_timer = nullptr;
     RuntimeProfile::Counter* _block_init_seek_counter = nullptr;
+    RuntimeProfile::Counter* _block_conditions_filtered_timer = nullptr;
     RuntimeProfile::Counter* _first_read_timer = nullptr;
     RuntimeProfile::Counter* _first_read_seek_timer = nullptr;
     RuntimeProfile::Counter* _first_read_seek_counter = nullptr;

@@ -19,8 +19,8 @@
 
 #include <gtest/gtest.h>
 
-#include "io/fs/file_writer.h"
-#include "io/fs/local_file_system.h"
+#include "cloud/io/file_writer.h"
+#include "cloud/io/local_file_system.h"
 #include "olap/row_cursor.h"
 #include "olap/tablet_schema_helper.h"
 #include "util/debug_util.h"

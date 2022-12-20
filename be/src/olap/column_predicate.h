@@ -52,8 +52,9 @@ enum class PredicateType {
     IS_NULL = 9,
     IS_NOT_NULL = 10,
     BF = 11, // BloomFilter
-    MATCH = 12, // fulltext match
-    RANGE = 13, // range predicate for bkd index
+    BITMAP_FILTER = 12, // BitmapFilter
+    MATCH = 13, // fulltext match
+    RANGE = 14, // range predicate for bkd index
 };
 
 inline std::string type_to_string(PredicateType type) {

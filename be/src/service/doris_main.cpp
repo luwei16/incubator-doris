@@ -16,7 +16,6 @@
 // under the License.
 
 #include <errno.h>
-#include <gperftools/malloc_extension.h>
 #include <libgen.h>
 #include <setjmp.h>
 #include <sys/file.h>
@@ -56,7 +55,6 @@
 #include "olap/storage_engine.h"
 #include "runtime/exec_env.h"
 #include "runtime/heartbeat_flags.h"
-#include "runtime/load_channel_mgr.h"
 #include "service/backend_options.h"
 #include "service/backend_service.h"
 #include "service/brpc_service.h"
@@ -323,6 +321,11 @@ int main(int argc, char** argv) {
     if (!doris::config::init(custom_conffile.c_str(), true, false, false)) {
         fprintf(stderr, "error read custom config file. \n");
         return -1;
+    }
+
+    if (doris::config::enable_fuzzy_mode) {
+        LOG(INFO) << "enable_fuzzy_mode is true, set fuzzy configs";
+        doris::config::set_fuzzy_configs();
     }
 
 #if !defined(__SANITIZE_ADDRESS__) && !defined(ADDRESS_SANITIZER) && !defined(LEAK_SANITIZER) && \

@@ -514,17 +514,12 @@ public class SetOperationStmt extends QueryStmt {
 
         // Create tuple descriptor and slots.
         for (int i = 0; i < selectTypeWithNullable.size(); ++i) {
-            Expr expr = operands.get(0).getQueryStmt().getResultExprs().get(i);
             SlotDescriptor slotDesc = analyzer.addSlotDescriptor(tupleDesc);
             slotDesc.setLabel(getColLabels().get(i));
             slotDesc.setType(selectTypeWithNullable.get(i).first);
             slotDesc.setIsNullable(selectTypeWithNullable.get(i).second);
-            if (expr instanceof SlotRef) {
-                if (((SlotRef) expr).getColumn() != null) {
-                    slotDesc.setColumn(((SlotRef) expr).getColumn());
-                }
-            }
-
+            // TODO(zc)
+            // slotDesc.setStats(columnStats.get(i));
             SlotRef outputSlotRef = new SlotRef(slotDesc);
             resultExprs.add(outputSlotRef);
 

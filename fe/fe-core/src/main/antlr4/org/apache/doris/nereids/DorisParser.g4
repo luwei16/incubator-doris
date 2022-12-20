@@ -49,8 +49,25 @@ singleStatement
     ;
 
 statement
-    : cte? query                                                        #statementDefault
-    | (EXPLAIN | DESC | DESCRIBE) level=(VERBOSE | GRAPH)? query        #explain
+    : explain? cte? query                           #statementDefault
+    | CREATE ROW POLICY (IF NOT EXISTS)? name=identifier
+        ON table=multipartIdentifier
+        AS type=(RESTRICTIVE | PERMISSIVE)
+        TO user=identifier
+        USING LEFT_PAREN booleanExpression RIGHT_PAREN                 #createRowPolicy
+    ;
+
+explain
+    : (EXPLAIN planType? | DESC | DESCRIBE)
+          level=(VERBOSE | GRAPH | PLAN)?
+    ;
+
+planType
+    : PARSED
+    | ANALYZED
+    | REWRITTEN | LOGICAL  // same type
+    | OPTIMIZED | PHYSICAL   // same type
+    | ALL // default type
     ;
 
 //  -----------------Query-----------------
@@ -109,11 +126,18 @@ joinRelation
     ;
 
 aggClause
-    : GROUP BY groupByItem?
+    : GROUP BY groupingElement?
     ;
 
-groupByItem
-    : expression (',' expression)*
+groupingElement
+    : ROLLUP LEFT_PAREN (expression (COMMA expression)*)? RIGHT_PAREN
+    | CUBE LEFT_PAREN (expression (COMMA expression)*)? RIGHT_PAREN
+    | GROUPING SETS LEFT_PAREN groupingSet (COMMA groupingSet)* RIGHT_PAREN
+    | expression (COMMA expression)*
+    ;
+
+groupingSet
+    : LEFT_PAREN (expression (COMMA expression)*)? RIGHT_PAREN
     ;
 
 havingClause
@@ -135,7 +159,7 @@ queryOrganization
     ;
 
 sortClause
-    : (ORDER BY sortItem (',' sortItem)*)
+    : (ORDER BY sortItem (COMMA sortItem)*)
     ;
 
 sortItem
@@ -317,8 +341,6 @@ number
     | MINUS? (EXPONENT_VALUE | DECIMAL_VALUE) #decimalLiteral
     ;
 
-
-
 // When `SQL_standard_keyword_behavior=true`, there are 2 kinds of keywords in Spark SQL.
 // - Reserved keywords:
 //     Keywords that are reserved and can't be used as identifiers for table, view, column,
@@ -335,6 +357,7 @@ ansiNonReserved
     | AFTER
     | ALTER
     | ANALYZE
+    | ANALYZED
     | ANTI
     | ARCHIVE
     | ARRAY
@@ -441,6 +464,7 @@ ansiNonReserved
     | NO
     | NULLS
     | OF
+    | OPTIMIZED
     | OPTION
     | OPTIONS
     | OUT
@@ -448,12 +472,15 @@ ansiNonReserved
     | OVER
     | OVERLAY
     | OVERWRITE
+    | PARSED
     | PARTITION
     | PARTITIONED
     | PARTITIONS
     | PERCENTLIT
+    | PHYSICAL
     | PIVOT
     | PLACING
+    | PLAN
     | POSITION
     | PRECEDING
     | PRINCIPALS
@@ -474,6 +501,7 @@ ansiNonReserved
     | RESPECT
     | RESTRICT
     | REVOKE
+    | REWRITTEN
     | RLIKE
     | ROLE
     | ROLES
@@ -575,6 +603,7 @@ nonReserved
     | ALL
     | ALTER
     | ANALYZE
+    | ANALYZED
     | AND
     | ANY
     | ARCHIVE
@@ -716,6 +745,7 @@ nonReserved
     | NULLS
     | OF
     | ONLY
+    | OPTIMIZED
     | OPTION
     | OPTIONS
     | OR
@@ -727,13 +757,17 @@ nonReserved
     | OVERLAPS
     | OVERLAY
     | OVERWRITE
+    | PARSED
     | PARTITION
     | PARTITIONED
     | PARTITIONS
     | PERCENTILE_CONT
     | PERCENTLIT
+    | PHYSICAL
     | PIVOT
     | PLACING
+    | PLAN
+    | POLICY
     | POSITION
     | PRECEDING
     | PRIMARY
@@ -756,6 +790,7 @@ nonReserved
     | RESPECT
     | RESTRICT
     | REVOKE
+    | REWRITTEN
     | RLIKE
     | ROLE
     | ROLES

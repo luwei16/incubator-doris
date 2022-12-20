@@ -25,6 +25,7 @@
 #include "runtime/runtime_state.h"
 #include "runtime/thread_context.h"
 #include "util/pretty_printer.h"
+#include "util/stack_util.h"
 #include "util/string_util.h"
 
 namespace doris {
@@ -66,6 +67,7 @@ MemTrackerLimiter::MemTrackerLimiter(Type type, const std::string& label, int64_
 }
 
 MemTrackerLimiter::~MemTrackerLimiter() {
+    consume(_untracked_mem);
     // mem hook record tracker cannot guarantee that the final consumption is 0,
     // nor can it guarantee that the memory alloc and free are recorded in a one-to-one correspondence.
     // In order to ensure `consumption of all limiter trackers` + `orphan tracker consumption` = `process tracker consumption`
@@ -167,11 +169,19 @@ std::string MemTrackerLimiter::log_usage(MemTracker::Snapshot snapshot) {
             print_bytes(snapshot.peak_consumption), snapshot.peak_consumption);
 }
 
+std::string MemTrackerLimiter::type_log_usage(MemTracker::Snapshot snapshot) {
+    return fmt::format("Type={}, Used={}({} B), Peak={}({} B)", snapshot.type,
+                       print_bytes(snapshot.cur_consumption), snapshot.cur_consumption,
+                       print_bytes(snapshot.peak_consumption), snapshot.peak_consumption);
+}
+
 void MemTrackerLimiter::print_log_usage(const std::string& msg) {
-    std::string detail = msg;
-    detail += "\n    " + MemTrackerLimiter::process_mem_log_str();
     if (_enable_print_log_usage) {
-        detail += "\n    " + log_usage();
+        _enable_print_log_usage = false;
+        std::string detail = msg;
+        detail += "\nProcess Memory Summary:\n    " + MemTrackerLimiter::process_mem_log_str();
+        detail += "\nAlloc Stacktrace:\n" + get_stack_trace();
+        detail += "\nMemory Tracker Summary:    " + log_usage();
         std::string child_trackers_usage;
         std::vector<MemTracker::Snapshot> snapshots;
         MemTracker::make_group_snapshot(&snapshots, _group_num, _label);
@@ -180,30 +190,31 @@ void MemTrackerLimiter::print_log_usage(const std::string& msg) {
         }
         if (!child_trackers_usage.empty()) detail += child_trackers_usage;
 
-        // TODO: memory leak by calling `boost::stacktrace` in tcmalloc hook,
-        // test whether overwriting malloc/free is the same problem in jemalloc/tcmalloc.
-        // detail += "\n" + boost::stacktrace::to_string(boost::stacktrace::stacktrace());
         LOG(WARNING) << detail;
-        _enable_print_log_usage = false;
     }
 }
 
-void MemTrackerLimiter::print_log_process_usage(const std::string& msg) {
-    MemTrackerLimiter::_enable_print_log_process_usage = false;
-    std::string detail = msg;
-    detail += "\n    " + MemTrackerLimiter::process_mem_log_str();
-    std::vector<MemTracker::Snapshot> snapshots;
-    MemTrackerLimiter::make_process_snapshots(&snapshots);
-    MemTrackerLimiter::make_type_snapshots(&snapshots, MemTrackerLimiter::Type::GLOBAL);
-    for (const auto& snapshot : snapshots) {
-        if (snapshot.parent_label == "") {
-            detail += "\n    " + MemTrackerLimiter::log_usage(snapshot);
-        } else {
-            detail += "\n    " + MemTracker::log_usage(snapshot);
+void MemTrackerLimiter::print_log_process_usage(const std::string& msg, bool with_stacktrace) {
+    if (MemTrackerLimiter::_enable_print_log_process_usage) {
+        MemTrackerLimiter::_enable_print_log_process_usage = false;
+        std::string detail = msg;
+        detail += "\nProcess Memory Summary:\n    " + MemTrackerLimiter::process_mem_log_str();
+        if (with_stacktrace) detail += "\nAlloc Stacktrace:\n" + get_stack_trace();
+        std::vector<MemTracker::Snapshot> snapshots;
+        MemTrackerLimiter::make_process_snapshots(&snapshots);
+        MemTrackerLimiter::make_type_snapshots(&snapshots, MemTrackerLimiter::Type::GLOBAL);
+        detail += "\nMemory Tracker Summary:";
+        for (const auto& snapshot : snapshots) {
+            if (snapshot.label == "" && snapshot.parent_label == "") {
+                detail += "\n    " + MemTrackerLimiter::type_log_usage(snapshot);
+            } else if (snapshot.parent_label == "") {
+                detail += "\n    " + MemTrackerLimiter::log_usage(snapshot);
+            } else {
+                detail += "\n    " + MemTracker::log_usage(snapshot);
+            }
         }
+        LOG(WARNING) << detail;
     }
-    LOG(WARNING) << detail;
-    // LOG(WARNING) << boost::stacktrace::to_string(boost::stacktrace::stacktrace()); // TODO
 }
 
 std::string MemTrackerLimiter::mem_limit_exceeded(const std::string& msg,
@@ -212,7 +223,7 @@ std::string MemTrackerLimiter::mem_limit_exceeded(const std::string& msg,
     std::string detail = fmt::format(
             "Memory limit exceeded:<consuming tracker:<{}>, {}>, executing msg:<{}>. backend {} "
             "process memory used {}, limit {}. If query tracker exceed, `set "
-            "exec_mem_limit=8G` to change limit, details mem usage see be.INFO.",
+            "exec_mem_limit=8G` to change limit, details see be.INFO.",
             _label, limit_exceeded_errmsg, msg, BackendOptions::get_localhost(),
             PerfCounters::get_vm_rss_str(), MemInfo::mem_limit_str());
     return detail;

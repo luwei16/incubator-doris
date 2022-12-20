@@ -33,7 +33,7 @@ import org.apache.doris.persist.EditLog;
 import org.apache.doris.task.MasterTaskExecutor;
 import org.apache.doris.thrift.TUniqueId;
 import org.apache.doris.transaction.BeginTransactionException;
-import org.apache.doris.transaction.NativeGlobalTransactionMgr;
+import org.apache.doris.transaction.GlobalTransactionMgr;
 import org.apache.doris.transaction.TransactionState;
 
 import com.google.common.collect.Lists;
@@ -88,7 +88,7 @@ public class LoadJobTest {
     }
 
     @Test
-    public void testExecute(@Mocked NativeGlobalTransactionMgr globalTransactionMgr,
+    public void testExecute(@Mocked GlobalTransactionMgr globalTransactionMgr,
                             @Mocked MasterTaskExecutor masterTaskExecutor)
             throws LabelAlreadyUsedException, BeginTransactionException, AnalysisException, DuplicatedRequestException,
             QuotaExceedException, MetaNotFoundException, InterruptedException {
@@ -171,7 +171,7 @@ public class LoadJobTest {
 
         // TxnStateCallbackFactory factory = Catalog.getCurrentEnv().getGlobalTransactionMgr().getCallbackFactory();
         Env env = Env.getCurrentEnv();
-        NativeGlobalTransactionMgr mgr = new NativeGlobalTransactionMgr(env);
+        GlobalTransactionMgr mgr = new GlobalTransactionMgr(env);
         Deencapsulation.setField(env, "globalTransactionMgr", mgr);
         Assert.assertEquals(1, loadJob.idToTasks.size());
         loadJob.updateState(JobState.FINISHED);

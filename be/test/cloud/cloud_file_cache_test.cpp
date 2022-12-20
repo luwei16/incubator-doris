@@ -1,4 +1,4 @@
-#include "io/cloud/cloud_file_cache.h"
+#include "cloud/io/cloud_file_cache.h"
 
 #include <gtest/gtest.h>
 
@@ -8,11 +8,11 @@
 #include <thread>
 
 #include "common/config.h"
-#include "io/cloud/cloud_file_cache.h"
-#include "io/cloud/cloud_file_cache_profile.h"
-#include "io/cloud/cloud_file_cache_settings.h"
-#include "io/cloud/cloud_file_segment.h"
-#include "io/cloud/cloud_lru_file_cache.h"
+#include "cloud/io/cloud_file_cache.h"
+#include "cloud/io/cloud_file_cache_profile.h"
+#include "cloud/io/cloud_file_cache_settings.h"
+#include "cloud/io/cloud_file_segment.h"
+#include "cloud/io/cloud_lru_file_cache.h"
 #include "olap/options.h"
 #include "util/slice.h"
 

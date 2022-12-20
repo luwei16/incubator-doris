@@ -151,7 +151,7 @@ enum FieldType {
     OLAP_FIELD_TYPE_TIMEV2 = 30,
     OLAP_FIELD_TYPE_DECIMAL32 = 31,
     OLAP_FIELD_TYPE_DECIMAL64 = 32,
-    OLAP_FIELD_TYPE_DECIMAL128 = 33,
+    OLAP_FIELD_TYPE_DECIMAL128I = 33,
     OLAP_FIELD_TYPE_JSONB = 34,
     OLAP_FIELD_TYPE_VARIANT = 35
 };
@@ -312,6 +312,7 @@ struct OlapReaderStatistics {
     // block_load_ns
     //      block_init_ns
     //          block_init_seek_ns
+    //          block_conditions_filtered_ns
     //      first_read_ns
     //          block_first_read_seek_ns
     //      lazy_read_ns
@@ -348,6 +349,7 @@ struct OlapReaderStatistics {
     int64_t rows_del_by_bitmap = 0;
     // the number of rows filtered by various column indexes.
     int64_t rows_conditions_filtered = 0;
+    int64_t block_conditions_filtered_ns = 0;
 
     int64_t index_load_ns = 0;
 

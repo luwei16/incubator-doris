@@ -39,9 +39,12 @@
 #include "io/fs/remote_file_system.h"
 #include "io/fs/s3_file_reader.h"
 #include "io/fs/s3_file_writer.h"
+<<<<<<< HEAD
 #include "olap/olap_common.h"
 #include "util/async_io.h"
 #include "util/string_util.h"
+=======
+>>>>>>> 1.2.0-rc04-origin
 
 namespace doris {
 namespace io {
@@ -179,21 +182,8 @@ Status S3FileSystem::batch_upload_impl(const std::vector<Path>& local_paths,
 }
 
 Status S3FileSystem::create_file(const Path& path, FileWriterPtr* writer) {
-    if (bthread_self() == 0) {
-        return create_file_impl(path, writer);
-    }
-    Status s;
-    auto task = [&] { s = create_file_impl(path, writer); };
-    AsyncIO::run_task(task, io::FileSystemType::S3);
-    return s;
-}
-
-Status S3FileSystem::create_file_impl(const Path& path, FileWriterPtr* writer) {
-    auto key = get_key(path);
-    auto fs_path = Path(_s3_conf.endpoint) / _s3_conf.bucket / key;
-    *writer = std::make_unique<S3FileWriter>(std::move(fs_path), std::move(key), _s3_conf.bucket,
-                                             this);
-    return (*writer)->open();
+    *writer = std::make_unique<S3FileWriter>(Path(get_key(path)), get_client(), _s3_conf);
+    return Status::OK();
 }
 
 Status S3FileSystem::open_file(const Path& path, FileReaderSPtr* reader) {

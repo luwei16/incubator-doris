@@ -134,7 +134,6 @@ public:
         return nullptr;
     }
 
-
     virtual TypeIndex get_data_type() const { return TypeIndex::Nothing; };
 
     // Only used on ColumnDictionary

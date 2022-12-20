@@ -70,7 +70,6 @@ LoadChannelMgr::~LoadChannelMgr() {
 Status LoadChannelMgr::init(int64_t process_mem_limit) {
     _load_hard_mem_limit = calc_process_max_load_memory(process_mem_limit);
     _load_soft_mem_limit = _load_hard_mem_limit * config::load_process_soft_mem_limit_percent / 100;
-
     // If a load channel's memory consumption is no more than 10% of the hard limit, it's not
     // worth to reduce memory on it. Since we only reduce 1/3 memory for one load channel,
     // for a channel consume 10% of hard limit, we can only release about 3% memory each time,
@@ -221,7 +220,7 @@ Status LoadChannelMgr::_start_load_channels_clean() {
 void LoadChannelMgr::_handle_mem_exceed_limit() {
     // Check the soft limit.
     DCHECK(_load_soft_mem_limit > 0);
-    int64_t process_mem_limit = MemInfo::mem_limit() * config::soft_mem_limit_frac;
+    int64_t process_mem_limit = MemInfo::soft_mem_limit();
     if (_mem_tracker->consumption() < _load_soft_mem_limit &&
         MemInfo::proc_mem_no_allocator_cache() < process_mem_limit) {
         return;

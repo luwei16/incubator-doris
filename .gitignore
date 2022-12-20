@@ -59,17 +59,12 @@ regression-test/realdata/*
 regression-test/cacheData/*
 regression-test/conf/regression-conf-custom.groovy
 
-regression-test/cacheData/*
-regression-test/conf/regression-conf-custom.groovy
-
 samples/doris-demo/remote-udf-python-demo/*_pb2.py
 samples/doris-demo/remote-udf-python-demo/*_pb2_grpc.py
 samples/doris-demo/remote-udf-cpp-demo/*.o
 samples/doris-demo/remote-udf-cpp-demo/*.pb.h
 samples/doris-demo/remote-udf-cpp-demo/*.pb.cc
 samples/doris-demo/remote-udf-cpp-demo/function_server_demo
-
-!regression-test/data/cloud/copy_into/test_compress_json.json.gz
 
 # FE
 fe/mocked/
@@ -99,8 +94,3 @@ tools/**/tpch-data/
 
 # be-ut
 data_test
-
-# cloud
-cloud/build*/
-cloud/ut_build*/
-cloud/cmake-build*/

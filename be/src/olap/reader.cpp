@@ -20,11 +20,8 @@
 #include <parallel_hashmap/phmap.h>
 
 #include "common/status.h"
+#include "exprs/create_predicate_function.h"
 #include "exprs/match_predicate.h"
-#include "olap/bloom_filter_predicate.h"
-#include "olap/collect_iterator.h"
-#include "olap/comparison_predicate.h"
-#include "olap/in_list_predicate.h"
 #include "exprs/hybrid_set.h"
 #include "olap/like_column_predicate.h"
 #include "olap/olap_common.h"
@@ -471,6 +468,10 @@ void TabletReader::_init_conditions_param(const ReaderParams& read_params) {
         _col_predicates.emplace_back(_parse_to_predicate(filter));
     }
 
+    for (const auto& filter : read_params.bitmap_filters) {
+        _col_predicates.emplace_back(_parse_to_predicate(filter));
+    }
+
     for (const auto& filter : read_params.in_filters) {
         _col_predicates.emplace_back(_parse_to_predicate(filter));
     }
@@ -523,6 +524,17 @@ ColumnPredicate* TabletReader::_parse_to_predicate(
     }
     const TabletColumn& column = _tablet_schema->column(index);
     return create_column_predicate(index, in_filter.second, column.type(),
+                                   _reader_context.runtime_state->be_exec_version(), &column);
+}
+
+ColumnPredicate* TabletReader::_parse_to_predicate(
+        const std::pair<std::string, std::shared_ptr<BitmapFilterFuncBase>>& bitmap_filter) {
+    int32_t index = _tablet_schema->field_index(bitmap_filter.first);
+    if (index < 0) {
+        return nullptr;
+    }
+    const TabletColumn& column = _tablet_schema->column(index);
+    return create_column_predicate(index, bitmap_filter.second, column.type(),
                                    _reader_context.runtime_state->be_exec_version(), &column);
 }
 

@@ -70,7 +70,7 @@ public:
                            uint32_t max_row_per_segment, const SegmentWriterOptions& opts);
     ~SegmentWriter();
 
-    Status init(const vectorized::Block* block = nullptr);
+    Status init(const vectorized::Block* block);
 
     template <typename RowType>
     Status append_row(const RowType& row);

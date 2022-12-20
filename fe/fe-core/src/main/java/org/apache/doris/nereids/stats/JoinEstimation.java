@@ -84,11 +84,13 @@ public class JoinEstimation {
             throw new RuntimeException("estimateInnerJoinV2 cannot find columnStats: " + eqRight);
         }
 
-        double rowCount =
-                (leftStats.getRowCount()
-                        * rightStats.getRowCount()
-                        * rColumnStats.selectivity
-                        / rColumnStats.ndv);
+        double rowCount = 0;
+        if (rColumnStats.ndv != 0) {
+            rowCount = (leftStats.getRowCount()
+                    * rightStats.getRowCount()
+                    * rColumnStats.selectivity
+                    / rColumnStats.ndv);
+        }
         rowCount = Math.ceil(rowCount);
         return rowCount;
     }
@@ -197,14 +199,14 @@ public class JoinEstimation {
             throw new RuntimeException("joinType is not supported");
         }
 
-        StatsDeriveResult statsDeriveResult = new StatsDeriveResult(rowCount, Maps.newHashMap());
+        StatsDeriveResult statsDeriveResult = new StatsDeriveResult(rowCount,
+                rightStats.getWidth() + leftStats.getWidth(), 0, Maps.newHashMap());
         if (joinType.isRemainLeftJoin()) {
             statsDeriveResult.merge(leftStats);
         }
         if (joinType.isRemainRightJoin()) {
             statsDeriveResult.merge(rightStats);
         }
-        statsDeriveResult.setWidth(rightStats.getWidth() + leftStats.getWidth());
         statsDeriveResult.setPenalty(0.0);
         return statsDeriveResult;
     }
@@ -281,16 +283,17 @@ public class JoinEstimation {
             throw new RuntimeException("joinType is not supported");
         }
 
-        StatsDeriveResult statsDeriveResult = new StatsDeriveResult(rowCount, Maps.newHashMap());
+        StatsDeriveResult statsDeriveResult = new StatsDeriveResult(rowCount,
+                rightStats.getWidth() + leftStats.getWidth(),
+                0, Maps.newHashMap());
         if (joinType.isRemainLeftJoin()) {
             statsDeriveResult.merge(leftStats);
         }
         if (joinType.isRemainRightJoin()) {
             statsDeriveResult.merge(rightStats);
         }
-        statsDeriveResult = new StatsDeriveResult(rowCount);
+
         statsDeriveResult.isReduced = !forbiddenReducePropagation && (isReducedByHashJoin || leftStats.isReduced);
-        statsDeriveResult.setWidth(rightStats.getWidth() + leftStats.getWidth());
         return statsDeriveResult;
     }
 

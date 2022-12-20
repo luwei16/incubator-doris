@@ -127,6 +127,7 @@ import org.apache.doris.load.loadv2.JobState;
 import org.apache.doris.load.loadv2.LoadJob;
 import org.apache.doris.load.sync.SyncJobManager;
 import org.apache.doris.mysql.privilege.PaloAuth;
+import org.apache.doris.statistics.StatisticsRepository;
 
 import com.google.common.collect.Lists;
 import org.apache.logging.log4j.LogManager;
@@ -185,7 +186,7 @@ public class DdlExecutor {
         } else if (ddlStmt instanceof AlterTableStatsStmt) {
             env.getStatisticsManager().alterTableStatistics((AlterTableStatsStmt) ddlStmt);
         } else if (ddlStmt instanceof AlterColumnStatsStmt) {
-            env.getStatisticsManager().alterColumnStatistics((AlterColumnStatsStmt) ddlStmt);
+            StatisticsRepository.alterColumnStatistics((AlterColumnStatsStmt) ddlStmt);
         } else if (ddlStmt instanceof AlterViewStmt) {
             env.alterView((AlterViewStmt) ddlStmt);
         } else if (ddlStmt instanceof CancelAlterTableStmt) {

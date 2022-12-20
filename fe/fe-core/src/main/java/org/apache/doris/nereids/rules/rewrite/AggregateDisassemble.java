@@ -28,7 +28,6 @@ import org.apache.doris.nereids.trees.expressions.functions.agg.AggregateFunctio
 import org.apache.doris.nereids.trees.plans.AggPhase;
 import org.apache.doris.nereids.trees.plans.GroupPlan;
 import org.apache.doris.nereids.trees.plans.logical.LogicalAggregate;
-import org.apache.doris.nereids.types.DataType;
 import org.apache.doris.nereids.util.ExpressionUtils;
 
 import com.google.common.base.Preconditions;
@@ -113,6 +112,7 @@ public class AggregateDisassemble extends OneRewriteRuleFactory {
                 aggregate.isNormalized(),
                 false,
                 AggPhase.GLOBAL,
+                aggregate.getSourceRepeat(),
                 localDistinct
         );
         return new LogicalAggregate<>(
@@ -122,6 +122,7 @@ public class AggregateDisassemble extends OneRewriteRuleFactory {
                 aggregate.isNormalized(),
                 true,
                 AggPhase.DISTINCT_LOCAL,
+                aggregate.getSourceRepeat(),
                 globalDistinct
         );
     }
@@ -191,20 +192,15 @@ public class AggregateDisassemble extends OneRewriteRuleFactory {
                 AggregateFunction localAggregateFunction = aggregateFunction.withAggregateParam(
                         aggregateFunction.getAggregateParam()
                                 .withDistinct(false)
-                                .withGlobal(false)
+                                .withGlobalAndDisassembled(false, true)
                 );
                 NamedExpression localOutputExpr = new Alias(localAggregateFunction, aggregateFunction.toSql());
 
-                List<DataType> inputTypesBeforeDissemble = aggregateFunction.children()
-                        .stream()
-                        .map(Expression::getDataType)
-                        .collect(Collectors.toList());
                 AggregateFunction substitutionValue = aggregateFunction
                         // save the origin input types to the global aggregate functions
                         .withAggregateParam(aggregateFunction.getAggregateParam()
                                 .withDistinct(false)
-                                .withGlobal(true)
-                                .withInputTypesBeforeDissemble(Optional.of(inputTypesBeforeDissemble)))
+                                .withGlobalAndDisassembled(true, true))
                         .withChildren(Lists.newArrayList(localOutputExpr.toSlot()));
 
                 inputSubstitutionMap.put(aggregateFunction, substitutionValue);
@@ -234,6 +230,7 @@ public class AggregateDisassemble extends OneRewriteRuleFactory {
                 aggregate.isNormalized(),
                 false,
                 AggPhase.LOCAL,
+                aggregate.getSourceRepeat(),
                 aggregate.child()
         );
         return Pair.of(new LogicalAggregate<>(
@@ -243,6 +240,7 @@ public class AggregateDisassemble extends OneRewriteRuleFactory {
                 aggregate.isNormalized(),
                 true,
                 AggPhase.GLOBAL,
+                aggregate.getSourceRepeat(),
                 localAggregate
         ), hasDistinct);
     }

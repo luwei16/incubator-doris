@@ -816,12 +816,6 @@ else ()
     set(MALLOCLIB tcmalloc)
 endif()
 
-if (USE_JEMALLOC)
-    set(MALLOCLIB jemalloc)
-else ()
-    set(MALLOCLIB tcmalloc)
-endif()
-
 if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
     set(ASAN_LIBS -static-libasan)
     set(LSAN_LIBS -static-liblsan)

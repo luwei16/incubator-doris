@@ -55,7 +55,6 @@ Status LocalFileReader::close() {
     return Status::OK();
 }
 
-
 Status LocalFileReader::read_at(size_t offset, Slice result, const IOContext& io_ctx,
                                 size_t* bytes_read) {
     DCHECK(!closed());

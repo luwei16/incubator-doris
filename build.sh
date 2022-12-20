@@ -304,11 +304,7 @@ if [[ -z "${USE_MEM_TRACKER}" ]]; then
     fi
 fi
 if [[ -z "${USE_JEMALLOC}" ]]; then
-    if [[ "$(uname -s)" != 'Darwin' ]]; then
-        USE_JEMALLOC='OFF'
-    else
-        USE_JEMALLOC='OFF'
-    fi
+    USE_JEMALLOC='ON'
 fi
 if [[ -z ${USE_BTHREAD_SCANNER} ]]; then
     USE_BTHREAD_SCANNER=ON
@@ -319,7 +315,6 @@ fi
 if [[ -z "${USE_DWARF}" ]]; then
     USE_DWARF='OFF'
 fi
-
 
 if [[ -z "${CLOUD_MODE}" ]]; then
     CLOUD_MODE='ON'
@@ -350,7 +345,7 @@ if [[ "${BUILD_JAVA_UDF}" -eq 1 && "$(uname -s)" == 'Darwin' ]]; then
     fi
 
     if [[ -n "${CAUSE}" ]]; then
-        echo -e "\033[33;1mWARNNING: \033[37;1mSkip building with JAVA UDF due to ${CAUSE}.\033[0m"
+        echo -e "\033[33;1mWARNNING: \033[37;1mSkip building with Java UDF due to ${CAUSE}.\033[0m"
         BUILD_JAVA_UDF=0
     fi
 fi
@@ -523,6 +518,7 @@ function build_ui() {
         ui_dist="${CUSTOM_UI_DIST}"
     else
         cd "${DORIS_HOME}/ui"
+        "${NPM}" cache clean --force
         "${NPM}" install --legacy-peer-deps
         "${NPM}" run build
     fi
@@ -593,6 +589,15 @@ if [[ "${BUILD_BE}" -eq 1 ]]; then
 
     cp -r -p "${DORIS_HOME}/be/output/bin"/* "${DORIS_OUTPUT}/be/bin"/
     cp -r -p "${DORIS_HOME}/be/output/conf"/* "${DORIS_OUTPUT}/be/conf"/
+
+    if [[ "${BUILD_JAVA_UDF}" -eq 0 ]]; then
+        echo -e "\033[33;1mWARNNING: \033[37;1mDisable Java UDF support in be.conf due to the BE was built without Java UDF.\033[0m"
+        cat >>"${DORIS_OUTPUT}/be/conf/be.conf" <<EOF
+
+# Java UDF support
+enable_java_support = false
+EOF
+    fi
 
     # Fix Killed: 9 error on MacOS (arm64).
     # See: https://stackoverflow.com/questions/67378106/mac-m1-cping-binary-over-another-results-in-crash

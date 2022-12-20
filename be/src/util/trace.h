@@ -73,7 +73,7 @@ class Trace;
 
 // Like the above, but takes the trace pointer as an explicit argument.
 #define TRACE_TO(trace, format, substitutions...) \
-    (trace)->SubstituteAndTrace(__FILE__, __LINE__, (format), ##substitutions)
+    (trace)->SubstituteAndTrace(1, __FILE__, __LINE__, (format), ##substitutions)
 
 // Increment a counter associated with the current trace.
 //

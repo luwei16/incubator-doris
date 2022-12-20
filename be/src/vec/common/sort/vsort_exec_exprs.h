@@ -37,12 +37,6 @@ public:
     // Initialize the expressions from a TSortInfo using the specified pool.
     Status init(const TSortInfo& sort_info, ObjectPool* pool);
 
-    // Initialize the ordering and (optionally) materialization expressions from the thrift
-    // TExprs into the specified pool. sort_tuple_slot_exprs is NULL if the tuple is not
-    // materialized.
-    Status init(const std::vector<TExpr>& ordering_exprs,
-                const std::vector<TExpr>* sort_tuple_slot_exprs, ObjectPool* pool);
-
     // prepare all expressions used for sorting and tuple materialization.
     Status prepare(RuntimeState* state, const RowDescriptor& child_row_desc,
                    const RowDescriptor& output_row_desc);
@@ -96,6 +90,12 @@ private:
     // analogous functions in this class). Used for testing.
     Status init(const std::vector<VExprContext*>& lhs_ordering_expr_ctxs,
                 const std::vector<VExprContext*>& rhs_ordering_expr_ctxs);
+
+    // Initialize the ordering and (optionally) materialization expressions from the thrift
+    // TExprs into the specified pool. sort_tuple_slot_exprs is NULL if the tuple is not
+    // materialized.
+    Status init(const std::vector<TExpr>& ordering_exprs,
+                const std::vector<TExpr>* sort_tuple_slot_exprs, ObjectPool* pool);
 };
 
 } // namespace vectorized

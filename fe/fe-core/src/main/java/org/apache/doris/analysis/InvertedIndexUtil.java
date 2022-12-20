@@ -17,7 +17,6 @@
 
 package org.apache.doris.analysis;
 
-import org.apache.doris.catalog.Column;
 import org.apache.doris.catalog.PrimitiveType;
 import org.apache.doris.common.AnalysisException;
 
@@ -38,7 +37,7 @@ public class InvertedIndexUtil {
         return parser != null ? parser : INVERTED_INDEX_PARSER_NONE;
     }
 
-    public static void checkInvertedIndexParser(Column column, String indexColName, PrimitiveType colType,
+    public static void checkInvertedIndexParser(String indexColName, PrimitiveType colType,
             Map<String, String> properties) throws AnalysisException {
         String parser = getInvertedIndexParser(properties);
         if (colType.isStringType()) {

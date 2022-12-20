@@ -1319,6 +1319,15 @@ public class Config extends ConfigBase {
     public static boolean drop_backend_after_decommission = true;
 
     /**
+     * When tablet size of decommissioned backend is lower than this threshold,
+     * SystemHandler will start to check if all tablets of this backend are in recycled status,
+     * this backend will be dropped immediately if the check result is true.
+     * For performance based considerations, better not set a very high value for this.
+     */
+    @ConfField(mutable = true, masterOnly = true)
+    public static int decommission_tablet_check_threshold = 5000;
+
+    /**
      * Define thrift server's server model, default is TThreadPoolServer model
      */
     @ConfField
@@ -1694,13 +1703,6 @@ public class Config extends ConfigBase {
     @ConfField(mutable = true, masterOnly = false)
     public static long file_scan_node_split_num = 128;
 
-    /*
-     * If set to TRUE, the precision of decimal will be broaden to [1, 38].
-     * Decimalv3 of storage layer needs to be enabled first.
-     */
-    @ConfField
-    public static boolean enable_decimalv3 = false;
-
     /**
      * If set to TRUE, FE will:
      * 1. divide BE into high load and low load(no mid load) to force triggering tablet scheduling;
@@ -1876,13 +1878,22 @@ public class Config extends ConfigBase {
     public static boolean enable_mtmv_scheduler_framework = false;
 
     @ConfField(mutable = true, masterOnly = true)
+    public static long scheduler_mtmv_task_expire_ms = 24 * 60 * 60 * 1000L; // 1day
+    /* Max running task num at the same time, otherwise the submitted task will still be keep in pending poll*/
+    @ConfField(mutable = true, masterOnly = true)
     public static int max_running_mtmv_scheduler_task_num = 100;
 
+    /* Max pending task num keep in pending poll, otherwise it reject the task submit*/
     @ConfField(mutable = true, masterOnly = true)
     public static int max_pending_mtmv_scheduler_task_num = 100;
 
+    /* Remove the completed mtmv job after this expired time. */
     @ConfField(mutable = true, masterOnly = true)
-    public static long scheduler_mtmv_task_expire_ms = 24 * 60 * 60 * 1000L; // 1day
+    public static long scheduler_mtmv_job_expired = 24 * 60 * 60L; // 1day
+
+    /* Remove the finished mtmv task after this expired time. */
+    @ConfField(mutable = true, masterOnly = true)
+    public static long scheduler_mtmv_task_expired = 24 * 60 * 60L; // 1day
 
     /**
      * The candidate of the backend node for federation query such as hive table and es table query.
@@ -1940,12 +1951,6 @@ public class Config extends ConfigBase {
     public static int statistic_parallel_exec_instance_num = 1;
 
     @ConfField
-    public static int statistics_simultaneously_running_job_num = 10;
-
-    @ConfField
-    public static int statistic_internal_table_replica_num = 1;
-
-    @ConfField
     public static int statistic_clean_interval_in_hours = 24 * 2;
 
     @ConfField
@@ -1971,6 +1976,19 @@ public class Config extends ConfigBase {
 
     @ConfField
     public static int statistics_cache_refresh_interval = 24 * 2;
+
+    /**
+     * Used to determined how many statistics collection SQL could run simultaneously.
+     */
+    @ConfField
+    public static int statistics_simultaneously_running_job_num = 10;
+
+    /**
+     * Internal table replica num, once set, user should promise the avaible BE is greater than this value,
+     * otherwise the statistics related internal table creation would be failed.
+     */
+    @ConfField
+    public static int statistic_internal_table_replica_num = 1;
 
     /**
      * if table has too many replicas, Fe occur oom when schema change.
@@ -2007,5 +2025,33 @@ public class Config extends ConfigBase {
     @ConfField(mutable = false, masterOnly = false)
     public static long external_cache_expire_time_minutes_after_access = 24 * 60; // 1 day
 
+    /**
+     * Set session variables randomly to check more issues in github workflow
+     */
+    @ConfField(mutable = true, masterOnly = false)
+    public static boolean use_fuzzy_session_variable = false;
+
+    /**
+     * Collect external table statistic info by running sql when set to true.
+     * Otherwise, use external catalog metadata.
+     */
+    @ConfField(mutable = true)
+    public static boolean collect_external_table_stats_by_sql = false;
+
+    /**
+     * Max num of same name meta informatntion in catalog recycle bin.
+     * Default is 3.
+     * 0 means do not keep any meta obj with same name.
+     * < 0 means no limit
+     */
+    @ConfField(mutable = true, masterOnly = true)
+    public static int max_same_name_catalog_trash_num = 3;
+
+    /**
+     * The storage policy is still under developement.
+     * Disable it by default.
+     */
+    @ConfField(mutable = true, masterOnly = true)
+    public static boolean enable_storage_policy = false;
 }
 

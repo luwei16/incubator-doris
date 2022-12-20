@@ -439,7 +439,7 @@ public class Column implements Writable {
                 return 4;
             case DECIMAL64:
                 return 8;
-            case DECIMAL128:
+            case DECIMAL128I:
                 return 16;
             case DECIMALV2:
                 return 12; // use 12 bytes in olap engine.

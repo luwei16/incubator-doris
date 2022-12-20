@@ -78,6 +78,7 @@ struct ColumnIteratorOptions {
     // page types are divided into DATA_PAGE & INDEX_PAGE
     // INDEX_PAGE including index_page, dict_page and short_key_page
     PageTypePB type;
+    IOContext io_ctx;
 
     bool kept_in_memory = false;
     bool is_persistent = false;
@@ -171,6 +172,8 @@ public:
 
     DictEncodingType get_dict_encoding_type() { return _dict_encoding_type; }
 
+    void disable_index_meta_cache() { _index_meta_use_page_cache = false; }
+
 private:
     ColumnReader(const ColumnReaderOptions& opts, const ColumnMetaPB& meta, uint64_t num_rows,
                  io::FileReaderSPtr file_reader);
@@ -231,6 +234,7 @@ private:
             nullptr; // initialized in init(), used for create PageDecoder
 
     // meta for various column indexes (null if the index is absent)
+    bool _index_meta_use_page_cache = true;
     const ZoneMapIndexPB* _zone_map_index_meta = nullptr;
     const OrdinalIndexPB* _ordinal_index_meta = nullptr;
     const BitmapIndexPB* _bitmap_index_meta = nullptr;

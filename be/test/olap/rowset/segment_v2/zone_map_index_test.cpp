@@ -24,9 +24,9 @@
 
 #include "common/config.h"
 #include "env/env.h"
-#include "io/fs/file_system.h"
-#include "io/fs/file_writer.h"
-#include "io/fs/local_file_system.h"
+#include "cloud/io/file_system.h"
+#include "cloud/io/file_writer.h"
+#include "cloud/io/local_file_system.h"
 #include "olap/page_cache.h"
 #include "olap/tablet_schema_helper.h"
 #include "util/file_utils.h"

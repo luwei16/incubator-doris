@@ -134,12 +134,13 @@ download_func() {
     local DESC_DIR=$2
     local MD5SUM=$3
 
+    echo "$FILENAME $DESC_DIR  $MD5SUM"
     if [ -z "$FILENAME" ]; then
         echo "Error: No file name specified to download"
         exit 1
     fi
     if [ -z "$DESC_DIR" ]; then
-        echo "Error: No dest dir specified for $FILENAME"
+        echo "Error: No dest dir specified for ${FILENAME} in clucene"
         exit 1
     fi
 
@@ -183,7 +184,7 @@ then
     exit 1
 fi
 
-download_func ${CLUCENE_NAME} $TP_SOURCE_DIR ${CLUCENE_MD5SUM}
+download_func ${CLUCENE_NAME} ${TP_SOURCE_DIR} ${CLUCENE_MD5SUM}
 if [ "$?"x != "0"x ]; then
     echo "Failed to download ${CLUCENE_NAME}"
     exit 1

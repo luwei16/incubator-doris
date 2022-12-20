@@ -179,6 +179,10 @@ struct TQueryOptions {
   51: optional bool enable_new_shuffle_hash_method
 
   52: optional i32 be_exec_version = 0
+  
+  53: optional i32 partitioned_hash_join_rows_threshold = 0
+
+  54: optional bool enable_share_hash_table_for_broadcast_join
 }
     
 
@@ -513,12 +517,14 @@ struct TFetchDataResult {
     4: optional Status.TStatus status
 }
 
+// SELECTDB_CODE_BEGIN
 enum TCompoundType {
     UNKNOWN = 0,
     AND = 1,
     OR = 2,
     NOT = 3,
 }
+// SELECTDB_CODE_END
 
 struct TCondition {
     1:  required string column_name
@@ -527,8 +533,10 @@ struct TCondition {
     // In delete condition, the different column may have same column name, need
     // using unique id to distinguish them
     4:  optional i32 column_unique_id
+    // SELECTDB_CODE_BEGIN
     5:  optional TCompoundType compound_type = TCompoundType.UNKNOWN
     6:  optional bool marked_by_runtime_filter = false
+    // SELECTDB_CODE_END
 }
 
 struct TExportStatusResult {

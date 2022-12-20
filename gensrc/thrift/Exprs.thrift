@@ -52,11 +52,14 @@ enum TExprNodeType {
   // only used in runtime filter
   BLOOM_PRED,
 
-  // for fulltext search
-  MATCH_PRED,
-
   // for josn
   JSON_LITERAL,
+
+  // only used in runtime filter
+  BITMAP_PRED,
+
+  // for fulltext search
+  MATCH_PRED,
 }
 
 //enum TAggregationOp {

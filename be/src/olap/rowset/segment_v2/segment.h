@@ -78,7 +78,9 @@ public:
     Status new_iterator(const Schema& schema, const StorageReadOptions& read_options,
                         std::unique_ptr<RowwiseIterator>* iter);
 
-    uint64_t id() const { return _segment_id; }
+    uint32_t id() const { return _segment_id; }
+
+    RowsetId rowset_id() const { return _rowset_id; }
 
     RowsetId rowset_id() const { return _rowset_id; }
 
@@ -162,6 +164,8 @@ private:
     std::unique_ptr<ShortKeyIndexDecoder> _sk_index_decoder;
     // primary key index reader
     std::unique_ptr<PrimaryKeyIndexReader> _pk_index_reader;
+    // Segment may be destructed after StorageEngine, in order to exit gracefully.
+    std::shared_ptr<MemTracker> _segment_meta_mem_tracker;
 };
 
 } // namespace segment_v2

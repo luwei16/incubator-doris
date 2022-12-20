@@ -25,10 +25,10 @@
 
 #include "common/logging.h"
 #include "env/env.h"
-#include "io/fs/file_reader.h"
-#include "io/fs/file_system.h"
-#include "io/fs/file_writer.h"
-#include "io/fs/local_file_system.h"
+#include "cloud/io/file_reader.h"
+#include "cloud/io/file_system.h"
+#include "cloud/io/file_writer.h"
+#include "cloud/io/local_file_system.h"
 #include "olap/page_cache.h"
 #include "util/file_utils.h"
 

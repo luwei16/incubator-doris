@@ -24,11 +24,15 @@
 #include <shared_mutex>
 #include <string>
 
-#include "cloud/io/file_system.h"
 #include "common/status.h"
 #include "env/env.h"
 #include "gen_cpp/Types_types.h"
 #include "gen_cpp/olap_file.pb.h"
+#ifdef CLOUD_MODE
+#include "cloud/io/file_system.h"
+#else
+#include "io/fs/file_system.h"
+#endif
 #include "olap/olap_common.h"
 #include "olap/rowset/rowset_id_generator.h"
 #include "util/metrics.h"

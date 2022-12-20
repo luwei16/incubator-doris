@@ -169,9 +169,6 @@ public class IndexDef {
             if (colType.isArrayType()) {
                 colType = ((ArrayType) column.getType()).getItemType().getPrimitiveType();
             }
-            if (indexType == IndexType.INVERTED) {
-                InvertedIndexUtil.checkInvertedIndexParser(column, indexColName, colType, properties);
-            }
 
             if (!(colType.isDateType() || colType.isDecimalV2Type() || colType.isDecimalV3Type()
                     || colType.isFixedPointType() || colType.isStringType() || colType == PrimitiveType.BOOLEAN
@@ -182,6 +179,10 @@ public class IndexDef {
                 throw new AnalysisException(indexType.toString()
                         + " index only used in columns of DUP_KEYS/UNIQUE_KEYS table or key columns of"
                                 + " AGG_KEYS table. invalid column: " + indexColName);
+            }
+
+            if (indexType == IndexType.INVERTED) {
+                InvertedIndexUtil.checkInvertedIndexParser(indexColName, colType, properties);
             }
         } else {
             throw new AnalysisException("Unsupported index type: " + indexType);

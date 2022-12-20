@@ -50,8 +50,8 @@ public class DatabaseTransactionMgrTest {
     private static FakeEditLog fakeEditLog;
     private static FakeEnv fakeEnv;
     private static FakeTransactionIDGenerator fakeTransactionIDGenerator;
-    private static NativeGlobalTransactionMgr masterTransMgr;
-    private static NativeGlobalTransactionMgr slaveTransMgr;
+    private static GlobalTransactionMgr masterTransMgr;
+    private static GlobalTransactionMgr slaveTransMgr;
     private static Env masterEnv;
     private static Env slaveEnv;
     private static Map<String, Long> LabelToTxnId;
@@ -70,10 +70,10 @@ public class DatabaseTransactionMgrTest {
         metaContext.setMetaVersion(FeMetaVersion.VERSION_CURRENT);
         metaContext.setThreadLocalInfo();
 
-        masterTransMgr = (NativeGlobalTransactionMgr) masterEnv.getGlobalTransactionMgr();
+        masterTransMgr = (GlobalTransactionMgr) masterEnv.getGlobalTransactionMgr();
         masterTransMgr.setEditLog(masterEnv.getEditLog());
 
-        slaveTransMgr = (NativeGlobalTransactionMgr) slaveEnv.getGlobalTransactionMgr();
+        slaveTransMgr = (GlobalTransactionMgr) slaveEnv.getGlobalTransactionMgr();
         slaveTransMgr.setEditLog(slaveEnv.getEditLog());
 
         LabelToTxnId = addTransactionToTransactionMgr();

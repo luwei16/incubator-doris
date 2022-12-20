@@ -232,6 +232,7 @@ message TabletSchemaPB {
     optional CompressKind compress_kind = 5; // OLAPHeaderMessage.compress_kind
     optional double bf_fpp = 6; // OLAPHeaderMessage.bf_fpp
     optional uint32 next_column_unique_id = 7; // OLAPHeaderMessage.next_column_unique_id
+
     optional int32 delete_sign_idx = 8 [default = -1];
     optional int32 sequence_col_idx = 9 [default= -1];
     optional SortType sort_type = 10;

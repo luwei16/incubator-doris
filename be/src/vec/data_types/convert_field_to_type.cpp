@@ -53,6 +53,9 @@ public:
     [[noreturn]] String operator()(const UInt128& x) const { LOG(FATAL) << "not implemeted"; }
     [[noreturn]] String operator()(const Array& x) const { LOG(FATAL) << "not implemeted"; }
     [[noreturn]] String operator()(const Tuple& x) const { LOG(FATAL) << "not implemeted"; }
+    [[noreturn]] String operator()(const Int128I& x) const {
+        LOG(FATAL) << "not implemeted";
+    }
     [[noreturn]] String operator()(const DecimalField<Decimal32>& x) const {
         LOG(FATAL) << "not implemeted";
     }
@@ -60,6 +63,9 @@ public:
         LOG(FATAL) << "not implemeted";
     }
     [[noreturn]] String operator()(const DecimalField<Decimal128>& x) const {
+        LOG(FATAL) << "not implemeted";
+    }
+    [[noreturn]] String operator()(const DecimalField<Decimal128I>& x) const {
         LOG(FATAL) << "not implemeted";
     }
     [[noreturn]] String operator()(const AggregateFunctionStateData& x) const {

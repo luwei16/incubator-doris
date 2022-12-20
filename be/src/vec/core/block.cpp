@@ -68,10 +68,6 @@ Block::Block(const std::vector<SlotDescriptor*>& slots, size_t block_size) {
 
 Block::Block(const PBlock& pblock) {
     int be_exec_version = pblock.has_be_exec_version() ? pblock.be_exec_version() : 0;
-    if (!pblock.has_be_exec_version()) {
-        LOG(WARNING) << "pblock.has_be_exec_version()=false, maybe pblock not be serialized well, "
-                        "or be version too old.";
-    }
     CHECK(BeExecVersionManager::check_be_exec_version(be_exec_version));
 
     const char* buf = nullptr;
@@ -882,7 +878,7 @@ void Block::deep_copy_slot(void* dst, MemPool* pool, const doris::TypeDescriptor
                     DateTimeVal datetime_val;
                     datetime_value.to_datetime_val(&datetime_val);
                     iterator.set(&datetime_val);
-                } else if (item_type_desc.is_decimal_type()) {
+                } else if (item_type_desc.is_decimal_v2_type()) {
                     // In CollectionValue, decimal type data is stored as decimal12_t.
                     DecimalV2Value decimal_value;
                     deep_copy_slot(&decimal_value, pool, item_type_desc, data_ref, item_column,

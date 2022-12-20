@@ -32,6 +32,16 @@ namespace doris::vectorized {
 class VScanner;
 class VSlotRef;
 
+struct FilterPredicates {
+    // Save all runtime filter predicates which may be pushed down to data source.
+    // column name -> bloom filter function
+    std::vector<std::pair<std::string, std::shared_ptr<BloomFilterFuncBase>>> bloom_filters;
+
+    std::vector<std::pair<std::string, std::shared_ptr<BitmapFilterFuncBase>>> bitmap_filters;
+
+    std::vector<std::pair<std::string, std::shared_ptr<HybridSetBase>>> in_filters;
+};
+
 class VScanNode : public ExecNode {
 public:
     VScanNode(ObjectPool* pool, const TPlanNode& tnode, const DescriptorTbl& descs)
@@ -134,6 +144,8 @@ protected:
 
     virtual PushDownType _should_push_down_bloom_filter() { return PushDownType::UNACCEPTABLE; }
 
+    virtual PushDownType _should_push_down_bitmap_filter() { return PushDownType::UNACCEPTABLE; }
+
     virtual PushDownType _should_push_down_is_null_predicate() {
         return PushDownType::UNACCEPTABLE;
     }
@@ -186,10 +198,7 @@ protected:
     // indicate this scan node has no more data to return
     bool _eos = false;
 
-    // Save all bloom filter predicates which may be pushed down to data source.
-    // column name -> bloom filter function
-    std::vector<std::pair<std::string, std::shared_ptr<BloomFilterFuncBase>>>
-            _bloom_filters_push_down;
+    FilterPredicates _filter_predicates {};
 
     std::vector<std::pair<std::string, std::shared_ptr<HybridSetBase>>> _in_filters_push_down;
 
@@ -271,6 +280,9 @@ private:
 
     Status _normalize_bloom_filter(VExpr* expr, VExprContext* expr_ctx, SlotDescriptor* slot,
                                    PushDownType* pdt);
+
+    Status _normalize_bitmap_filter(VExpr* expr, VExprContext* expr_ctx, SlotDescriptor* slot,
+                                    PushDownType* pdt);
 
     Status _normalize_function_filters(VExpr* expr, VExprContext* expr_ctx, SlotDescriptor* slot,
                                        PushDownType* pdt);
