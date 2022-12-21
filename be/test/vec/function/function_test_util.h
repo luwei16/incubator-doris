@@ -272,7 +272,7 @@ Status check_function(const std::string& func_name, const InputTypeSet& input_ty
     for (int i = 0; i < row_size; ++i) {
         auto check_column_data = [&]() {
             if constexpr (std::is_same_v<ReturnType, DataTypeJsonb>) {
-                const auto& expect_data = std::any_cast<String>(data_set[i].second);
+                const auto& expect_data = any_cast<String>(data_set[i].second);
                 auto s = column->get_data_at(i);
                 if (expect_data.size() == 0) {
                     // zero size result means invalid
@@ -287,7 +287,7 @@ Status check_function(const std::string& func_name, const InputTypeSet& input_ty
                 column->get(i, field);
 
                 const auto& expect_data =
-                        std::any_cast<typename ReturnType::FieldType>(data_set[i].second);
+                        any_cast<typename ReturnType::FieldType>(data_set[i].second);
 
                 if constexpr (std::is_same_v<ReturnType, DataTypeDecimal<Decimal128>>) {
                     const auto& column_data = field.get<DecimalField<Decimal128>>().get_value();
