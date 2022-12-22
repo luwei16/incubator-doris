@@ -279,7 +279,8 @@ public class ResourceTagQueryTest {
         Assert.assertEquals(1000000, execMemLimit);
 
         List<List<String>> userProps = Env.getCurrentEnv().getAuth().getUserProperties(PaloAuth.ROOT_USER);
-        Assert.assertEquals(17, userProps.size());
+        System.out.println(userProps);
+        Assert.assertEquals(18, userProps.size());
     }
 
     private void checkTableReplicaAllocation(OlapTable tbl) throws InterruptedException {
