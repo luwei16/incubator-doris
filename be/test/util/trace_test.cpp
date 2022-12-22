@@ -73,8 +73,8 @@ TEST_F(TraceTest, TestBasic) {
 
     std::string result = XOutDigits(t->DumpToString(Trace::NO_FLAGS));
     EXPECT_EQ(
-            "XXXX XX:XX:XX.XXXXXX trace_test.cpp:XX] hello world, XXXXX\n"
-            "XXXX XX:XX:XX.XXXXXX trace_test.cpp:XX] goodbye cruel world, XXXXX\n",
+            "XXXX XX:XX:XX.XXXXXX trace_test.cpp:XX] finish hello world, XXXXX\n"
+            "XXXX XX:XX:XX.XXXXXX trace_test.cpp:XX] finish goodbye cruel world, XXXXX\n",
             result);
 }
 

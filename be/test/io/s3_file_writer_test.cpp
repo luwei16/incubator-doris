@@ -27,7 +27,7 @@
 #include "util/s3_util.h"
 namespace doris {
 
-static io::S3FileSystem* s3_fs = nullptr;
+static std::shared_ptr<io::S3FileSystem> s3_fs{nullptr};
 
 class S3FileWriterTest : public testing::Test {
 public:
@@ -43,11 +43,12 @@ public:
         s3_conf.region = config::test_s3_region;
         s3_conf.bucket = config::test_s3_bucket;
         s3_conf.prefix = "s3_file_writer_test";
-        s3_fs = new io::S3FileSystem(std::move(s3_conf), "s3_file_writer_test");
+        s3_fs = std::make_shared<io::S3FileSystem>(std::move(s3_conf), "s3_file_writer_test");
+        std::cout << "s3 conf: " << s3_conf.to_string() << std::endl;
         ASSERT_EQ(Status::OK(), s3_fs->connect());
     }
 
-    static void TearDownTestSuite() { delete s3_fs; }
+    static void TearDownTestSuite() { }
 };
 
 TEST_F(S3FileWriterTest, normal) {
