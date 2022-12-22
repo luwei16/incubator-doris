@@ -268,7 +268,8 @@ public class CreateTableAsSelectStmtTest extends TestWithFeService {
                 + "as select userId  from `test`.`varchar_table` union select userId from `test`.`join_table`";
         createTableAsSelect(selectFromName);
         ShowResultSet showResultSet = showCreateTableByName("select_union");
-        Assertions.assertEquals("CREATE TABLE `select_union` (\n" + "  `userId` varchar(255) NULL\n" + ") ENGINE=OLAP\n"
+        System.out.println(showResultSet.getResultRows().get(0).get(1));
+        Assertions.assertEquals("CREATE TABLE `select_union` (\n" + "  `userId` varchar(65533) NULL\n" + ") ENGINE=OLAP\n"
                 + "DUPLICATE KEY(`userId`)\n" + "COMMENT 'OLAP'\n" + "DISTRIBUTED BY HASH(`userId`) BUCKETS 10\n"
                 + "PROPERTIES (\n" + "\"replication_allocation\" = \"tag.location.default: 1\",\n"
                 + "\"in_memory\" = \"false\",\n" + "\"persistent\" = \"false\",\n"
