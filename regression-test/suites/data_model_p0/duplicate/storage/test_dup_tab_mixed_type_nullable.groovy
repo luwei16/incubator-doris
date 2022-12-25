@@ -42,7 +42,7 @@ PROPERTIES (
 )
 """
 
-    sql "set enable_vectorized_engine = false"
+    sql "set enable_vectorized_engine = true"
 
     sql """insert into ${table1} values(1,2,3.1,4.2,5.3,5.4,'a1','a2'),
             (2,3,4.1,5.2,6.3,7.4,'b1','b2'),

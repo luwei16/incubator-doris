@@ -29,7 +29,7 @@ suite("explode_split") {
     sql """ INSERT INTO ${tableName} VALUES (1, 'a,b,c') """
 
     // not_vectorized
-    sql """ set enable_vectorized_engine = false """
+    sql """ set enable_vectorized_engine = true """
     qt_explode_split """ select * from ${tableName} 
                         lateral view explode_split(k2, ',') tmp1 as e1 """
 

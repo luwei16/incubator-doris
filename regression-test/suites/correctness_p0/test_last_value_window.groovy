@@ -44,7 +44,7 @@ suite("test_last_value_window") {
             (24,"02-24-10-21",1); """
 
     // not_vectorized
-    sql """ set enable_vectorized_engine = false; """
+    sql """ set enable_vectorized_engine = true; """
 
     qt_select_default """ select *,last_value(state) over(partition by myday order by time_col) from ${tableName} order by myday, time_col, state; """
 

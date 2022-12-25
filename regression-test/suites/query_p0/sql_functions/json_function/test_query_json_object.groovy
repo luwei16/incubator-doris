@@ -16,7 +16,7 @@
 // under the License.
 
 suite("test_query_json_object", "query") {
-    sql "set enable_vectorized_engine = false;"
+    sql "set enable_vectorized_engine = true;"
     def tableName = "test_query_json_object"
     sql "DROP TABLE IF EXISTS ${tableName}"
     sql """

@@ -38,7 +38,7 @@ PROPERTIES (
 )
 """
 
-    sql "set enable_vectorized_engine = false"
+    sql "set enable_vectorized_engine = true"
 
     sql """insert into ${table1} values
         (9,10,11,12),

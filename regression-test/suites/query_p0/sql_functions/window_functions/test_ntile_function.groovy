@@ -65,7 +65,7 @@ suite("test_ntile_function") {
         }
     }
     // Not Vectorized
-    sql """ set enable_vectorized_engine = false """
+    sql """ set enable_vectorized_engine = true """
 
     sql "sync"
 

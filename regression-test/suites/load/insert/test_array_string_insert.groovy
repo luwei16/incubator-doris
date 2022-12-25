@@ -24,7 +24,7 @@ suite("test_array_string_insert", "load") {
         if (enable_vectorized_flag) {
             sql """ set enable_vectorized_engine = true """
         } else {
-            sql """ set enable_vectorized_engine = false """
+            sql """ set enable_vectorized_engine = true """
         }
 
         def result1 = sql """

@@ -17,7 +17,7 @@
 
 suite("test_timestampdiff") {
     // non vectorized
-    sql """ set enable_vectorized_engine = false """
+    sql """ set enable_vectorized_engine = true """
 
     qt_select """SELECT TIMESTAMPDIFF(YEAR,DATE('1981-09-11'),'2022-04-28') AS `date-str`,
                         TIMESTAMPDIFF(YEAR,'1981-09-11','2022-04-28') AS `str-str`,

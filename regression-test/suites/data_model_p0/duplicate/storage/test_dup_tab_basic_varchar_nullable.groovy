@@ -38,7 +38,7 @@ suite("test_dup_tab_basic_varchar_nullable") {
     )
     """
 
-    sql "set enable_vectorized_engine = false"
+    sql "set enable_vectorized_engine = true"
 
     sql """insert into ${table1} values(null,'qie3','yy','lj'),
         (null,'hehe',null,'lala'),

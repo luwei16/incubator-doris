@@ -53,7 +53,7 @@ suite("test_date_function") {
     sql """ truncate table ${tableName} """
 
     def timezoneCachedTableName = "test_convert_tz_with_timezone_cache"
-    sql """ SET enable_vectorized_engine = false """
+    sql """ SET enable_vectorized_engine = true """
     sql """ DROP TABLE IF EXISTS ${timezoneCachedTableName} """
     sql """
         CREATE TABLE ${timezoneCachedTableName} (
@@ -578,7 +578,7 @@ suite("test_date_function") {
     sql """ DROP TABLE IF EXISTS ${tableName}; """
 
     // test last_day for not vec
-    sql """ SET enable_vectorized_engine = FALSE; """
+    sql """ SET enable_vectorized_engine = true; """
     sql """ DROP TABLE IF EXISTS ${tableName}; """
     sql """
             CREATE TABLE IF NOT EXISTS ${tableName} (

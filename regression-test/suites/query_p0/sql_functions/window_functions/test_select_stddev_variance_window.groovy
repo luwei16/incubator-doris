@@ -77,7 +77,7 @@ suite("test_select_stddev_variance_window") {
         }
     }
     // Not Vectorized
-    sql """ set enable_vectorized_engine = false """
+    sql """ set enable_vectorized_engine = true """
 
     sql "sync"
 

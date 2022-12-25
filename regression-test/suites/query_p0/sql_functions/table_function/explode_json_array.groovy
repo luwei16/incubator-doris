@@ -37,7 +37,7 @@ suite("explode_json_array") {
         (400, 'Dan', 50, 4, 'Street 4')  """
 
     // not vectorized
-    sql """ set enable_vectorized_engine = false """
+    sql """ set enable_vectorized_engine = true """
     qt_explode_json_array1 """ SELECT * FROM ${tableName} 
                         LATERAL VIEW EXPLODE_JSON_ARRAY_INT('[30, 60]') t1 as c_age 
                         LATERAL VIEW EXPLODE_JSON_ARRAY_INT('[40, 80]') t2 as d_age 

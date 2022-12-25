@@ -51,7 +51,7 @@ suite("test_case_when") {
         
 
     // not_vectorized
-    sql """ set enable_vectorized_engine = false """
+    sql """ set enable_vectorized_engine = true """
 
     qt_select_default """ 
     select  hour_time as date_hour, station_type,

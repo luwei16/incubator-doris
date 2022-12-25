@@ -108,7 +108,7 @@ suite("test_cast_array_functions_by_literal") {
     }
 
     // Not Vectorized Engine
-    sql """ set enable_vectorized_engine = false """
+    sql """ set enable_vectorized_engine = true """
 
     //  ========== cast scalar to array ===========
     test {

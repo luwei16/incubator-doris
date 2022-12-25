@@ -23,7 +23,7 @@ suite("test_load_json_column_exclude_schema_without_jsonpath", "p0") {
         if (enable_vectorized_flag) {
             sql """ set enable_vectorized_engine = true """
         } else {
-            sql """ set enable_vectorized_engine = false """
+            sql """ set enable_vectorized_engine = true """
         }
 
         def result1 = sql """

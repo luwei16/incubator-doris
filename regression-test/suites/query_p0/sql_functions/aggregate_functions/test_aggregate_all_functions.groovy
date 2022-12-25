@@ -103,7 +103,7 @@ suite("test_aggregate_all_functions") {
     sql "insert into ${tableName_03} select dt,page,to_bitmap(user_id_int) user_id from ${tableName_04}"
     sql "insert into ${tableName_03} select dt,page,bitmap_hash(user_id_str) user_id from ${tableName_04}"
 
-    sql "set enable_vectorized_engine = false"
+    sql "set enable_vectorized_engine = true"
     qt_bitmap_intersect "select dt, bitmap_to_string(bitmap_intersect(user_id_bitmap)) from ${tableName_04} group by dt order by dt"
 
     sql "set enable_vectorized_engine = true"
