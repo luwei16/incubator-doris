@@ -46,7 +46,7 @@ suite("aggregate_groupby_null") {
         """
     sql """ INSERT INTO ${rightTable} VALUES (1,'name'),(3,null) """
 
-    sql """ set enable_vectorized_engine=false """
+    sql """ set enable_vectorized_engine=true """
     qt_groupby_null """ SELECT rt.device_name, COUNT(${leftTable}.id) FROM ${leftTable}
                         LEFT JOIN ${rightTable} rt ON ${leftTable}.id = rt.id
 		        WHERE rt.device_name is NULL group by rt.device_name """

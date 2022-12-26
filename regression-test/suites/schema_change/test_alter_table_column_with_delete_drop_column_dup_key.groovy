@@ -41,7 +41,7 @@ suite("test_alter_table_column_with_delete_drop_column_dup_key", "schema_change"
     sql "insert into ${tbName1} values(3,3,3,3);"
     sql "insert into ${tbName1} values(4,4,4,4);"
     qt_sql "select /*+ SET_VAR(enable_vectorized_engine=true) */ * from ${tbName1} order by k1;"
-    qt_sql "select /*+ SET_VAR(enable_vectorized_engine=false) */ * from ${tbName1} order by k1;"
+    qt_sql "select /*+ SET_VAR(enable_vectorized_engine=true) */ * from ${tbName1} order by k1;"
 
     // drop value3
     sql """
@@ -62,7 +62,7 @@ suite("test_alter_table_column_with_delete_drop_column_dup_key", "schema_change"
         }
     }
     qt_sql "select /*+ SET_VAR(enable_vectorized_engine=true) */ * from ${tbName1} order by k1;"
-    qt_sql "select /*+ SET_VAR(enable_vectorized_engine=false) */ * from ${tbName1} order by k1;"
+    qt_sql "select /*+ SET_VAR(enable_vectorized_engine=true) */ * from ${tbName1} order by k1;"
 
      // drop value3
     sql """
@@ -83,11 +83,11 @@ suite("test_alter_table_column_with_delete_drop_column_dup_key", "schema_change"
         }
     }
     qt_sql "select /*+ SET_VAR(enable_vectorized_engine=true) */ * from ${tbName1} order by k1;"
-    qt_sql "select /*+ SET_VAR(enable_vectorized_engine=false) */ * from ${tbName1} order by k1;"
+    qt_sql "select /*+ SET_VAR(enable_vectorized_engine=true) */ * from ${tbName1} order by k1;"
 
     sql "insert into ${tbName1} values(5,5,5,'B');"
     qt_sql "select /*+ SET_VAR(enable_vectorized_engine=true) */ * from ${tbName1} order by k1;"
-    qt_sql "select /*+ SET_VAR(enable_vectorized_engine=false) */ * from ${tbName1} order by k1;"
+    qt_sql "select /*+ SET_VAR(enable_vectorized_engine=true) */ * from ${tbName1} order by k1;"
     sql "DROP TABLE ${tbName1} FORCE;"
 
 //======================= Test Light Weight Schema Change 
@@ -109,7 +109,7 @@ suite("test_alter_table_column_with_delete_drop_column_dup_key", "schema_change"
     sql "insert into ${tbName1} values(3,3,3,3);"
     sql "insert into ${tbName1} values(4,4,4,4);"
     qt_sql "select /*+ SET_VAR(enable_vectorized_engine=true) */ * from ${tbName1} where value3=3 order by k1;"
-    qt_sql "select /*+ SET_VAR(enable_vectorized_engine=false) */ * from ${tbName1} where value3=3 order by k1;"
+    qt_sql "select /*+ SET_VAR(enable_vectorized_engine=true) */ * from ${tbName1} where value3=3 order by k1;"
 
     // drop value3
     sql """
@@ -130,7 +130,7 @@ suite("test_alter_table_column_with_delete_drop_column_dup_key", "schema_change"
         }
     }
     qt_sql "select /*+ SET_VAR(enable_vectorized_engine=true) */ * from ${tbName1} where value1=3 order by k1;"
-    qt_sql "select /*+ SET_VAR(enable_vectorized_engine=false) */ * from ${tbName1} where value1=3 order by k1;"
+    qt_sql "select /*+ SET_VAR(enable_vectorized_engine=true) */ * from ${tbName1} where value1=3 order by k1;"
 
     // drop value3
     sql """
@@ -151,11 +151,11 @@ suite("test_alter_table_column_with_delete_drop_column_dup_key", "schema_change"
         }
     }
     qt_sql "select /*+ SET_VAR(enable_vectorized_engine=true) */ * from ${tbName1} where value1=4 order by k1;"
-    qt_sql "select /*+ SET_VAR(enable_vectorized_engine=false) */ * from ${tbName1} where value1=4  order by k1;"
+    qt_sql "select /*+ SET_VAR(enable_vectorized_engine=true) */ * from ${tbName1} where value1=4  order by k1;"
 
     sql "insert into ${tbName1} values(5,5,5,'B');"
     qt_sql "select /*+ SET_VAR(enable_vectorized_engine=true) */ * from ${tbName1} order by k1;"
-    qt_sql "select /*+ SET_VAR(enable_vectorized_engine=false) */ * from ${tbName1} order by k1;"
+    qt_sql "select /*+ SET_VAR(enable_vectorized_engine=true) */ * from ${tbName1} order by k1;"
 
     // Do schema change that not do light weight schema change
     sql """
@@ -176,7 +176,7 @@ suite("test_alter_table_column_with_delete_drop_column_dup_key", "schema_change"
         }
     }
     qt_sql "select /*+ SET_VAR(enable_vectorized_engine=true) */ * from ${tbName1} where value1=4 order by k1;"
-    qt_sql "select /*+ SET_VAR(enable_vectorized_engine=false) */ * from ${tbName1} where value1=4  order by k1;"
+    qt_sql "select /*+ SET_VAR(enable_vectorized_engine=true) */ * from ${tbName1} where value1=4  order by k1;"
     sql "DROP TABLE ${tbName1} FORCE;"
 
 //======================= Test Light Weight Schema Change  with Compaction
@@ -198,7 +198,7 @@ suite("test_alter_table_column_with_delete_drop_column_dup_key", "schema_change"
     sql "insert into ${tbName1} values(3,3,3,3);"
     sql "insert into ${tbName1} values(4,4,4,4);"
     qt_sql "select /*+ SET_VAR(enable_vectorized_engine=true) */ * from ${tbName1} order by k1;"
-    qt_sql "select /*+ SET_VAR(enable_vectorized_engine=false) */ * from ${tbName1} order by k1;"
+    qt_sql "select /*+ SET_VAR(enable_vectorized_engine=true) */ * from ${tbName1} order by k1;"
 
     // drop value3
     sql """
@@ -219,7 +219,7 @@ suite("test_alter_table_column_with_delete_drop_column_dup_key", "schema_change"
         }
     }
     qt_sql "select /*+ SET_VAR(enable_vectorized_engine=true) */ * from ${tbName1} order by k1;"
-    qt_sql "select /*+ SET_VAR(enable_vectorized_engine=false) */ * from ${tbName1} order by k1;"
+    qt_sql "select /*+ SET_VAR(enable_vectorized_engine=true) */ * from ${tbName1} order by k1;"
 
      // drop value3
     sql """
@@ -240,7 +240,7 @@ suite("test_alter_table_column_with_delete_drop_column_dup_key", "schema_change"
         }
     }
     qt_sql "select /*+ SET_VAR(enable_vectorized_engine=true) */ * from ${tbName1} order by k1;"
-    qt_sql "select /*+ SET_VAR(enable_vectorized_engine=false) */ * from ${tbName1} order by k1;"
+    qt_sql "select /*+ SET_VAR(enable_vectorized_engine=true) */ * from ${tbName1} order by k1;"
 
     sql "insert into ${tbName1} values(5,5,5,'B');"
     sql "insert into ${tbName1} values(5,5,5,'B');"
@@ -252,7 +252,7 @@ suite("test_alter_table_column_with_delete_drop_column_dup_key", "schema_change"
 
     Thread.sleep(5000)
     qt_sql "select /*+ SET_VAR(enable_vectorized_engine=true) */ * from ${tbName1} order by k1;"
-    qt_sql "select /*+ SET_VAR(enable_vectorized_engine=false) */ * from ${tbName1} order by k1;"
+    qt_sql "select /*+ SET_VAR(enable_vectorized_engine=true) */ * from ${tbName1} order by k1;"
     sql "DROP TABLE ${tbName1} FORCE;"
 
 }

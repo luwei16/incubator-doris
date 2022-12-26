@@ -46,7 +46,7 @@ suite("test_materialized_view_bitmap", "rollup") {
         }
     }
 
-    sql "set enable_vectorized_engine=false"
+    sql "set enable_vectorized_engine=true"
     explain {
         sql "insert into ${tbName1} values(1,1,1);"
         contains "to_bitmap_with_check"
@@ -57,7 +57,7 @@ suite("test_materialized_view_bitmap", "rollup") {
         contains "to_bitmap_with_check"
     }
     sql "insert into ${tbName1} values(1,1,1);"
-    sql "set enable_vectorized_engine=false"
+    sql "set enable_vectorized_engine=true"
     sql "insert into ${tbName1} values(0,1,1);"
     sql "set enable_vectorized_engine=true"
 
@@ -66,7 +66,7 @@ suite("test_materialized_view_bitmap", "rollup") {
         // check exception message contains
         exception "The input: -1 is not valid, to_bitmap only support bigint value from 0 to 18446744073709551615 currently"
     }
-    sql "set enable_vectorized_engine=false"
+    sql "set enable_vectorized_engine=true"
     test {
         sql "insert into ${tbName1} values(1,-1,-1);"
         // check exception message contains

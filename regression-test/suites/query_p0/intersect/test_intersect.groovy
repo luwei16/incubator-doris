@@ -16,7 +16,7 @@
 // under the License.
 
 suite("test_intersect") {
-    sql 'set enable_vectorized_engine=false'
+    sql 'set enable_vectorized_engine=true'
     qt_select """
                 SELECT * FROM (SELECT k1 FROM test_query_db.baseall
                     INTERSECT SELECT k1 FROM test_query_db.test) a ORDER BY k1
