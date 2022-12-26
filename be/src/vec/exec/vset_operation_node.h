@@ -193,7 +193,6 @@ struct HashTableProbe {
                     _probe_keys[i] = serialize_keys_to_pool_contiguous(i, keys_size,
                                                                        _probe_raw_ptrs, *_arena);
                 }
-                _probe_index++;
             }
         }
 
