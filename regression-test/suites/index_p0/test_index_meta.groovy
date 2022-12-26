@@ -15,10 +15,11 @@
 // specific language governing permissions and limitations
 // under the License.
 
+import groovy.json.JsonException
 import groovy.json.JsonOutput
 import org.codehaus.groovy.runtime.IOGroovyMethods
 
-suite("index_meta", "p0") {
+suite("test_index_meta", "p0") {
     // prepare test table
     def timeout = 60000
     def delta_time = 1000
@@ -153,15 +154,19 @@ suite("index_meta", "p0") {
         String out = process.getText()
         logger.info("get meta process result: code=" + code + ", out=" + out + ", err=" + err)
         assertEquals(code, 0)
-        def json = parseJson(out.trim())
-        assert json.schema.index instanceof List
-        int i = 0;
-        for (Object index in (List) json.schema.index) {
-            // assertEquals(index.index_id, i);
-            assertEquals(index.index_name, show_result[i][2])
-            assertEquals(index.index_type, show_result[i][10])
-            // assertEquals(index.properties, show_result[j][12]);
-            i++;
+        try {
+            def json = parseJson(out.trim())
+            assert json.schema.index instanceof List
+            int i = 0;
+            for (Object index in (List) json.schema.index) {
+                // assertEquals(index.index_id, i);
+                assertEquals(index.index_name, show_result[i][2])
+                assertEquals(index.index_type, show_result[i][10])
+                // assertEquals(index.properties, show_result[j][12]);
+                i++;
+            }
+        } catch(JsonException ex) {
+            logger.info("ignore parse json exception: " + ex)
         }
     }
 }
