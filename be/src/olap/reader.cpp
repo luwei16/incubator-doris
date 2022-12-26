@@ -473,7 +473,13 @@ void TabletReader::_init_conditions_param(const ReaderParams& read_params) {
     }
 
     for (const auto& filter : read_params.in_filters) {
-        _col_predicates.emplace_back(_parse_to_predicate(filter));
+        ColumnPredicate* predicate = _parse_to_predicate(filter);
+        if (predicate != nullptr) {
+            // in_filters from runtime filter predicates which pushed down to data source.
+            auto predicate_params = predicate->predicate_params();
+            predicate_params->marked_by_runtime_filter = true;
+        }
+        _col_predicates.emplace_back(predicate);
     }
 
     // Function filter push down to storage engine
