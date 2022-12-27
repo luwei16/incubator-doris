@@ -1572,22 +1572,22 @@ Status SegmentIterator::next_batch(RowBlockV2* block) {
  *   This is an estimate, if we want more precise cost, statistics collection is necessary(this is a todo).
  *   In short, when returned non-pred columns contains string/hll/bitmap, we using Lazy Materialization.
  *   Otherwise, we disable it.
- *    
+ *
  *   When Lazy Materialization enable, we need to read column at least two times.
  *   First time to read Pred col, second time to read non-pred.
  *   Here's an interesting question to research, whether read Pred col once is the best plan.
  *   (why not read Pred col twice or more?)
  *
  *   When Lazy Materialization disable, we just need to read once.
- *   
- * 
+ *
+ *
  *  2 Whether the predicate type can be evaluate in a fast way(using SIMD to eval pred)
  *    Such as integer type and float type, they can be eval fast.
  *    But for BloomFilter/string/date, they eval slow.
  *    If a type can be eval fast, we use vectorization to eval it.
  *    Otherwise, we use short-circuit to eval it.
- * 
- *  
+ *
+ *
  */
 
 // todo(wb) need a UT here
@@ -1613,7 +1613,7 @@ void SegmentIterator::_vec_init_lazy_materialization() {
 
     // add runtime predicate to _col_predicates
     // should NOT add for order by key,
-    //  since key is already sorted and topn_next only need first N rows from each segment, 
+    //  since key is already sorted and topn_next only need first N rows from each segment,
     //  but runtime predicate will filter some rows and read more than N rows.
     // should add add for order by none-key column, since none-key column is not sorted and
     //  all rows should be read, so runtime predicate will reduce rows for topn node
@@ -1990,6 +1990,8 @@ Status SegmentIterator::next_batch(vectorized::Block* block) {
             if (_is_pred_column[cid]) {
                 _current_return_columns[cid] =
                         Schema::get_predicate_column_nullable_ptr(*column_desc);
+                _current_return_columns[cid]->set_rowset_segment_id(
+                        {_segment->rowset_id(), _segment->id()});
                 _current_return_columns[cid]->reserve(_opts.block_row_max);
             } else if (i >= block->columns()) {
                 // if i >= block->columns means the column and not the pred_column means `column i` is
@@ -2191,7 +2193,6 @@ void SegmentIterator::_convert_dict_code_for_predicate_if_necessary_impl(
         ColumnPredicate* predicate) {
     auto& column = _current_return_columns[predicate->column_id()];
     auto* col_ptr = column.get();
-    column->set_rowset_segment_id({_segment->rowset_id(), _segment->id()});
 
     if (PredicateTypeTraits::is_range(predicate->type())) {
         col_ptr->convert_dict_codes_if_necessary();
