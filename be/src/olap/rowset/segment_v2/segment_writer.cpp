@@ -149,9 +149,9 @@ Status SegmentWriter::init(const vectorized::Block* block) {
         return Status::OK();
     };
     if (block) {
-        _create_writers_with_block(block, create_column_writer);
+        RETURN_IF_ERROR(_create_writers_with_block(block, create_column_writer));
     } else {
-        _create_writers(create_column_writer);
+        RETURN_IF_ERROR(_create_writers(create_column_writer));
     }
 
     // we don't need the short key index for unique key merge on write table.

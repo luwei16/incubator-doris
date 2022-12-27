@@ -401,13 +401,13 @@ private:
     roaring::Roaring _null_bitmap;
     uint64_t _reverted_index_size;
 
-    lucene::document::Document* _doc;
-    lucene::document::Field* _field;
-    lucene::index::IndexWriter* _index_writer;
-    lucene::util::SStringReader<char>* _char_string_reader;
-    lucene::analysis::SimpleAnalyzer<TCHAR>* _default_analyzer;
-    lucene::analysis::SimpleAnalyzer<char>* _default_char_analyzer;
-    lucene::analysis::standard::StandardAnalyzer* _standard_analyzer;
+    lucene::document::Document* _doc{};
+    lucene::document::Field* _field{};
+    lucene::index::IndexWriter* _index_writer{};
+    lucene::util::SStringReader<char>* _char_string_reader{};
+    lucene::analysis::SimpleAnalyzer<TCHAR>* _default_analyzer{};
+    lucene::analysis::SimpleAnalyzer<char>* _default_char_analyzer{};
+    lucene::analysis::standard::StandardAnalyzer* _standard_analyzer{};
     std::shared_ptr<lucene::util::bkd::bkd_writer> _bkd_writer;
     std::string _segment_file_name;
     std::string _directory;
@@ -442,95 +442,83 @@ Status InvertedIndexColumnWriter::create(const Field* field,
     case OLAP_FIELD_TYPE_CHAR: {
         *res = std::make_unique<InvertedIndexColumnWriterImpl<OLAP_FIELD_TYPE_CHAR>>(
                 field_name, uuid, segment_file_name, dir, fs, index_meta);
-        (*res)->init();
         break;
     }
     case OLAP_FIELD_TYPE_VARCHAR: {
         *res = std::make_unique<InvertedIndexColumnWriterImpl<OLAP_FIELD_TYPE_VARCHAR>>(
                 field_name, uuid, segment_file_name, dir, fs, index_meta);
-        (*res)->init();
         break;
     }
     case OLAP_FIELD_TYPE_STRING: {
         *res = std::make_unique<InvertedIndexColumnWriterImpl<OLAP_FIELD_TYPE_STRING>>(
                 field_name, uuid, segment_file_name, dir, fs, index_meta);
-        (*res)->init();
         break;
     }
     case OLAP_FIELD_TYPE_DATETIME: {
         *res = std::make_unique<InvertedIndexColumnWriterImpl<OLAP_FIELD_TYPE_DATETIME>>(
                 field_name, uuid, segment_file_name, dir, fs, index_meta);
-        (*res)->init();
         break;
     }
     case OLAP_FIELD_TYPE_DATE: {
         *res = std::make_unique<InvertedIndexColumnWriterImpl<OLAP_FIELD_TYPE_DATE>>(
                 field_name, uuid, segment_file_name, dir, fs, index_meta);
-        (*res)->init();
         break;
     }
     case OLAP_FIELD_TYPE_TINYINT: {
         *res = std::make_unique<InvertedIndexColumnWriterImpl<OLAP_FIELD_TYPE_TINYINT>>(
                 field_name, uuid, segment_file_name, dir, fs, index_meta);
-        (*res)->init();
         break;
     }
     case OLAP_FIELD_TYPE_SMALLINT: {
         *res = std::make_unique<InvertedIndexColumnWriterImpl<OLAP_FIELD_TYPE_SMALLINT>>(
                 field_name, uuid, segment_file_name, dir, fs, index_meta);
-        (*res)->init();
         break;
     }
     case OLAP_FIELD_TYPE_UNSIGNED_INT: {
         *res = std::make_unique<InvertedIndexColumnWriterImpl<OLAP_FIELD_TYPE_UNSIGNED_INT>>(
                 field_name, uuid, segment_file_name, dir, fs, index_meta);
-        (*res)->init();
         break;
     }
     case OLAP_FIELD_TYPE_INT: {
         *res = std::make_unique<InvertedIndexColumnWriterImpl<OLAP_FIELD_TYPE_INT>>(
                 field_name, uuid, segment_file_name, dir, fs, index_meta);
-        (*res)->init();
         break;
     }
     case OLAP_FIELD_TYPE_LARGEINT: {
         *res = std::make_unique<InvertedIndexColumnWriterImpl<OLAP_FIELD_TYPE_LARGEINT>>(
                 field_name, uuid, segment_file_name, dir, fs, index_meta);
-        (*res)->init();
         break;
     }
     case OLAP_FIELD_TYPE_DECIMAL: {
         *res = std::make_unique<InvertedIndexColumnWriterImpl<OLAP_FIELD_TYPE_DECIMAL>>(
                 field_name, uuid, segment_file_name, dir, fs, index_meta);
-        (*res)->init();
         break;
     }
     case OLAP_FIELD_TYPE_BOOL: {
         *res = std::make_unique<InvertedIndexColumnWriterImpl<OLAP_FIELD_TYPE_BOOL>>(
                 field_name, uuid, segment_file_name, dir, fs, index_meta);
-        (*res)->init();
         break;
     }
     case OLAP_FIELD_TYPE_DOUBLE: {
         *res = std::make_unique<InvertedIndexColumnWriterImpl<OLAP_FIELD_TYPE_DOUBLE>>(
                 field_name, uuid, segment_file_name, dir, fs, index_meta);
-        (*res)->init();
         break;
     }
     case OLAP_FIELD_TYPE_FLOAT: {
         *res = std::make_unique<InvertedIndexColumnWriterImpl<OLAP_FIELD_TYPE_FLOAT>>(
                 field_name, uuid, segment_file_name, dir, fs, index_meta);
-        (*res)->init();
         break;
     }
     case OLAP_FIELD_TYPE_BIGINT: {
         *res = std::make_unique<InvertedIndexColumnWriterImpl<OLAP_FIELD_TYPE_BIGINT>>(
                 field_name, uuid, segment_file_name, dir, fs, index_meta);
-        (*res)->init();
         break;
     }
     default:
         return Status::NotSupported("unsupported type for inverted index: " + std::to_string(type));
+    }
+    if (*res != nullptr) {
+        RETURN_IF_ERROR((*res)->init());
     }
     return Status::OK();
 }
