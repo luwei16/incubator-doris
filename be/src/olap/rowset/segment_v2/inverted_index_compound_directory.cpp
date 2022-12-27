@@ -156,7 +156,13 @@ void DorisCompoundFileWriter::writeCompoundFile() {
     std::string idx_name = std::string(cfs_path.stem().c_str()) + COMPOUND_FILE_EXTENSION;
     // write file entries to ram directory to get header length
     lucene::store::RAMDirectory ram_dir;
-    std::unique_ptr<lucene::store::IndexOutput> ram_output(ram_dir.createOutput(idx_name.c_str()));
+    auto out_idx = ram_dir.createOutput(idx_name.c_str());
+    if (out_idx == nullptr) {
+        LOG(WARNING) << "Write compound file error: RAMDirectory output is nullptr.";
+        return;
+    }
+
+    std::unique_ptr<lucene::store::IndexOutput> ram_output(out_idx);
     ram_output->writeVInt(file_count);
     // write file entries in ram directory
     // number of files, which data are in header
@@ -185,7 +191,12 @@ void DorisCompoundFileWriter::writeCompoundFile() {
     auto compound_fs = ((DorisCompoundDirectory*)directory)->getCompoundFileSystem();
     auto out_dir = DorisCompoundDirectory::getDirectory(compound_fs, idx_path.c_str(), false);
 
-    std::unique_ptr<lucene::store::IndexOutput> output(out_dir->createOutput(idx_name.c_str()));
+    auto out = out_dir->createOutput(idx_name.c_str());
+    if (out == nullptr) {
+        LOG(WARNING) << "Write compound file error: CompoundDirectory output is nullptr.";
+        return;
+    }
+    std::unique_ptr<lucene::store::IndexOutput> output(out);
     output->writeVInt(file_count);
     // write file entries
     int64_t data_offset = header_len;
@@ -273,7 +284,8 @@ protected:
     void flushBuffer(const uint8_t* b, const int32_t size) override;
 
 public:
-    FSIndexOutput(const io::FileSystemSPtr& fs, const char* path, int filemode);
+    FSIndexOutput() = default;
+    void init(const io::FileSystemSPtr& fileSystem, const char* path);
     ~FSIndexOutput() override;
 
     // output methods:
@@ -444,41 +456,25 @@ void DorisCompoundDirectory::FSIndexInput::readInternal(uint8_t* b, const int32_
     handle->_fpos = _pos;
 }
 
-DorisCompoundDirectory::FSIndexOutput::FSIndexOutput(const io::FileSystemSPtr& fs, const char* path,
-                                                     int filemode) {
-    //O_BINARY - Opens file in binary (untranslated) mode
-    //O_CREAT - Creates and opens new file for writing. Has no effect if file specified by filename exists
-    //O_RANDOM - Specifies that caching is optimized for, but not restricted to, random access from disk.
-    //O_WRONLY - Opens file for writing only;
-    if (filemode <= 0) {
-        filemode = 0644;
-    }
-    // if (Misc::dir_Exists(path))
-    //     fhandle = _cl_open(path, _O_BINARY | O_RDWR | _O_RANDOM | O_TRUNC, filemode);
-    // else // added by JBP
-    //     fhandle = _cl_open(path, _O_BINARY | O_RDWR | _O_RANDOM | O_CREAT, filemode);
-
-    fs->create_file(path, &writer); // TODO xk
-
-    // if (fhandle < 0) {
-    if (!writer) {
-        int err = errno;
-        if (err == ENOENT)
-            _CLTHROWA(CL_ERR_IO, "File does not exist");
-        else if (err == EACCES)
-            _CLTHROWA(CL_ERR_IO, "File Access denied");
-        else if (err == EMFILE)
-            _CLTHROWA(CL_ERR_IO, "Too many open files");
+void DorisCompoundDirectory::FSIndexOutput::init(const io::FileSystemSPtr& fileSystem, const char* path) {
+    // create file path
+    Status status = fileSystem->create_file(path, &writer);
+    if (!status.ok()) {
+        // create file failed, set writer to nullptr
+        writer.reset(nullptr);
+        auto err = "Create compound file error: " + status.get_error_msg();
+        LOG(WARNING) << err;
+        _CLTHROWA(CL_ERR_IO, err.c_str());
     }
 }
+
 DorisCompoundDirectory::FSIndexOutput::~FSIndexOutput() {
-    // if (fhandle >= 0) {
     if (writer) {
         try {
             FSIndexOutput::close();
         } catch (CLuceneError& err) {
-            //ignore IO errors...
-            // if (err.number() != CL_ERR_IO) throw; // TODO xk
+            //ignore errors...
+            LOG(WARNING) << "FSIndexOutput deconstruct error: " << err.what();
         }
     }
 }
@@ -487,9 +483,17 @@ DorisCompoundDirectory::FSIndexOutput::~FSIndexOutput() {
 void DorisCompoundDirectory::FSIndexOutput::flushBuffer(const uint8_t* b, const int32_t size) {
     // CND_PRECONDITION(fhandle >= 0, "file is not open");
     // if (size > 0 && _write(fhandle, b, size) != size) _CLTHROWA(CL_ERR_IO, "File IO Write error");
-    CND_PRECONDITION(writer != nullptr, "file is not open");
-    Slice data {b, (size_t)size};
-    if (size > 0 && !writer->append(data).ok()) _CLTHROWA(CL_ERR_IO, "File IO Write error");
+    //CND_PRECONDITION(writer != nullptr, "file is not open");
+    // insure file_writer is not nullptr
+    if (writer != nullptr && b != nullptr && size > 0) {
+        Slice data {b, (size_t)size};
+        Status st = writer->append(data);
+        if (!st.ok()) {
+            LOG(WARNING) << "File IO Write error: " << st.get_error_msg();
+        }
+    } else {
+        LOG(WARNING) << "File writer is nullptr, ignore flush.";
+    }
 }
 
 void DorisCompoundDirectory::FSIndexOutput::close() {
@@ -497,18 +501,26 @@ void DorisCompoundDirectory::FSIndexOutput::close() {
         BufferedIndexOutput::close();
     } catch (CLuceneError& err) {
         //ignore IO errors...
-        if (err.number() != CL_ERR_IO) throw;
+        LOG(WARNING) << "FSIndexOutput close, BufferedIndexOutput close error: " << err.what();
+        if (err.number() != CL_ERR_IO) {
+            LOG(WARNING) << "FSIndexOutput close, BufferedIndexOutput close IO error: " << err.what();
+            throw;
+        }
     }
-    // if (::_close(fhandle) != 0)
-    Status ret = writer->finalize();
-    if (ret != Status::OK()) {
-        _CLTHROWA(CL_ERR_IO, ret.to_string().c_str());
+    if (writer) {
+        Status ret = writer->finalize();
+        if (ret != Status::OK()) {
+            LOG(WARNING) << "FSIndexOutput close, file writer finalize error: " << ret.to_string();
+            _CLTHROWA(CL_ERR_IO, ret.to_string().c_str());
+        }
+        ret = writer->close();
+        if (ret != Status::OK()) {
+            LOG(WARNING) << "FSIndexOutput close, file writer close error: " << ret.to_string();
+            _CLTHROWA(CL_ERR_IO, ret.to_string().c_str());
+        }
+    } else {
+        LOG(WARNING) << "File writer is nullptr, ignore finalize and close.";
     }
-    ret = writer->close();
-    if (ret != Status::OK()) {
-        _CLTHROWA(CL_ERR_IO, ret.to_string().c_str());
-    }
-    // fhandle = -1; //-1 now indicates closed
     writer = nullptr;
 }
 
@@ -602,13 +614,16 @@ void DorisCompoundDirectory::init(const io::FileSystemSPtr& _fs, const char* _pa
         return;
     }
     bool exists = false;
-    fs->exists(directory, &exists);
+    Status status = fs->exists(directory, &exists);
+    if (!status.ok()) {
+        auto err = "File system error: " + status.get_error_msg();
+        LOG(WARNING) << err;
+        _CLTHROWA_DEL(CL_ERR_IO, err.c_str());
+    }
     if (!exists) {
-        char* err =
-                _CL_NEWARRAY(char, 19 + directory.length() + 1); //19: len of " is not a directory"
-        strcpy(err, directory.c_str());
-        strcat(err, " is not a directory");
-        _CLTHROWA_DEL(CL_ERR_IO, err);
+        auto e = "Doris compound directory init error: " + directory + " is not a directory";
+        LOG(WARNING) << e;
+        _CLTHROWA_DEL(CL_ERR_IO, e.c_str());
     }
 }
 
@@ -920,21 +935,29 @@ lucene::store::IndexOutput* DorisCompoundDirectory::createOutput(const char* nam
     char fl[CL_MAX_DIR];
     priv_getFN(fl, name);
     bool exists = false;
-    fs->exists(fl, &exists);
-    // if (lucene::util::Misc::dir_Exists(fl)) {
+    auto status = fs->exists(fl, &exists);
+    if (!status.ok()) {
+        LOG(WARNING) << "Doris compound directory create output error: " << status.get_error_msg();
+        return nullptr;
+    }
     if (exists) {
-        // if (Misc::file_Unlink(fl, 1) == -1) {
         if (!fs->delete_file(fl).ok()) {
             char tmp[1024];
             strcpy(tmp, "Cannot overwrite: ");
             strcat(tmp, name);
             _CLTHROWA(CL_ERR_IO, tmp);
         }
-        // assert(!Misc::dir_Exists(fl));
         fs->exists(fl, &exists);
         assert(!exists);
     }
-    return _CLNEW FSIndexOutput(fs, fl, this->filemode);
+    auto ret = _CLNEW FSIndexOutput();
+    try {
+        ret->init(fs, fl);
+    } catch(CLuceneError& err) {
+        LOG(WARNING) << "FSIndexOutput init error: " << err.what();
+        _CLTHROWA(CL_ERR_IO, "FSIndexOutput init error");
+    }
+    return ret;
 }
 
 std::string DorisCompoundDirectory::toString() const {

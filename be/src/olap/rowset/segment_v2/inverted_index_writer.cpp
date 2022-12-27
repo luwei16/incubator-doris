@@ -16,6 +16,9 @@
 #include "olap/tablet_schema.h"
 #include "util/string_util.h"
 
+#define FINALIZE_OUTPUT(x) if (x != nullptr){x->close(); _CLDELETE(x);}
+#define FINALLY_FINALIZE_OUTPUT(x) try{FINALIZE_OUTPUT(x)}catch(...){}
+
 namespace doris::segment_v2 {
 const int32_t MAX_FIELD_LEN = 0x7FFFFFFFL;
 const int32_t MAX_LEAF_COUNT = 1024;
@@ -42,29 +45,22 @@ public:
         _field_name = std::wstring(field_name.begin(), field_name.end());
     };
 
-    ~InvertedIndexColumnWriterImpl() override {
-        try {
-            if constexpr (field_is_slice_type(field_type)) {
-                if (_index_writer) {
-                    auto index_file_name = InvertedIndexDescriptor::get_index_file_name(
-                            _segment_file_name, _index_meta->index_id());
-                    LOG(WARNING) << "inverted index column writer should be null here, close it "
-                                 << index_file_name;
-                }
-                close();
-            }
-        } catch (...) {
-            LOG(WARNING) << "inverted index column writer close error";
-        }
-    }
+    ~InvertedIndexColumnWriterImpl() override {}
 
     Status init() override {
-        if constexpr (field_is_slice_type(field_type)) {
-            return init_fulltext_index();
-        } else if constexpr (field_is_numeric_type(field_type)) {
-            return init_bkd_index();
+        try {
+            if constexpr (field_is_slice_type(field_type)) {
+                return init_fulltext_index();
+            } else if constexpr (field_is_numeric_type(field_type)) {
+                return init_bkd_index();
+            }
+            return Status::InternalError("field type not supported");
+        } catch (const CLuceneError& e) {
+            LOG(WARNING) << "Inverted index writer init error occurred: " << e.what();
+            return Status::OLAPInternalError(
+                    OLAP_ERR_INVERTED_INDEX_CLUCENE_ERROR,
+                    fmt::format("Inverted index writer init error occurred, error msg: {}", e.what()));
         }
-        return Status::InternalError("field type not supported");
     }
 
     void close() {
@@ -339,6 +335,10 @@ public:
     }
 
     Status finish() override {
+        lucene::store::Directory* dir = nullptr;
+        lucene::store::IndexOutput* data_out= nullptr;
+        lucene::store::IndexOutput* index_out= nullptr;
+        lucene::store::IndexOutput* meta_out= nullptr;
         try {
             if constexpr (field_is_numeric_type(field_type)) {
                 auto index_path = InvertedIndexDescriptor::get_temporary_index_path(
@@ -350,32 +350,39 @@ public:
                 auto lfs_index_path = InvertedIndexDescriptor::get_temporary_index_path(
                         io::TmpFileMgr::instance()->get_tmp_file_dir() + "/" + _segment_file_name,
                         _index_meta->index_id());
-                lucene::store::Directory* dir = DorisCompoundDirectory::getDirectory(
+                dir = DorisCompoundDirectory::getDirectory(
                         _lfs, lfs_index_path.c_str(), true, _fs, index_path.c_str());
 #else
-                lucene::store::Directory* dir =
-                        DorisCompoundDirectory::getDirectory(_fs, index_path.c_str(), true);
+                dir = DorisCompoundDirectory::getDirectory(_fs, index_path.c_str(), true);
 #endif
                 _bkd_writer->max_doc_ = _rid;
                 _bkd_writer->docs_seen_ = _row_ids_seen_for_bkd;
-                std::unique_ptr<lucene::store::IndexOutput> data_out(dir->createOutput(
-                        InvertedIndexDescriptor::get_temporary_bkd_index_data_file_name().c_str()));
-                std::unique_ptr<lucene::store::IndexOutput> meta_out(dir->createOutput(
-                        InvertedIndexDescriptor::get_temporary_bkd_index_meta_file_name().c_str()));
-                std::unique_ptr<lucene::store::IndexOutput> index_out(dir->createOutput(
-                        InvertedIndexDescriptor::get_temporary_bkd_index_file_name().c_str()));
-                _bkd_writer->meta_finish(meta_out.get(),
-                                         _bkd_writer->finish(data_out.get(), index_out.get()),
-                                         field_type);
-                meta_out->close();
-                data_out->close();
-                index_out->close();
-                dir->close();
-                _CLDELETE(dir)
+		data_out = dir->createOutput(
+                        InvertedIndexDescriptor::get_temporary_bkd_index_data_file_name().c_str());
+                meta_out = dir->createOutput(
+                        InvertedIndexDescriptor::get_temporary_bkd_index_meta_file_name().c_str());
+                index_out = dir->createOutput(
+                        InvertedIndexDescriptor::get_temporary_bkd_index_file_name().c_str());
+		if (data_out != nullptr && meta_out != nullptr && index_out != nullptr){
+                    _bkd_writer->meta_finish(meta_out,
+                                             _bkd_writer->finish(data_out, index_out),
+                                             field_type);
+                }
+                FINALIZE_OUTPUT(meta_out)
+                FINALIZE_OUTPUT(data_out)
+                FINALIZE_OUTPUT(index_out)
+                FINALIZE_OUTPUT(dir)
             } else if constexpr (field_is_slice_type(field_type)) {
                 close();
             }
-        } catch (const CLuceneError& e) {
+        } catch (CLuceneError& e) {
+	    LOG(WARNING) << "InvertedIndexColumnWriter finish catch exception: " << e.what()
+                         << ", meta_out: " << meta_out << ", data_out: " << data_out
+                         << ", index_out: " << index_out;
+            FINALLY_FINALIZE_OUTPUT(meta_out)
+            FINALLY_FINALIZE_OUTPUT(data_out)
+            FINALLY_FINALIZE_OUTPUT(index_out)
+            FINALLY_FINALIZE_OUTPUT(dir)
             LOG(WARNING) << "Inverted index writer finish error occurred: " << e.what();
             return Status::OLAPInternalError(
                     OLAP_ERR_INVERTED_INDEX_CLUCENE_ERROR,
