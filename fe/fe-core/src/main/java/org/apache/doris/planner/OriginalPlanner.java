@@ -344,8 +344,9 @@ public class OriginalPlanner extends Planner {
     }
 
 
-    private void injectRowIdColumnSlot(Analyzer analyzer, TupleDescriptor tupleDesc) {
+    private SlotDescriptor injectRowIdColumnSlot(Analyzer analyzer, TupleDescriptor tupleDesc) {
         SlotDescriptor slotDesc = analyzer.getDescTbl().addSlotDescriptor(tupleDesc);
+        LOG.debug("inject slot {}", slotDesc);
         String name = Column.ROWID_COL;
         Column col = new Column(name, Type.STRING, false, null, false, "",
                                         "rowid column");
@@ -356,6 +357,7 @@ public class OriginalPlanner extends Planner {
         // Non-nullable slots will have 0 for the byte offset and -1 for the bit mask
         slotDesc.setNullIndicatorBit(-1);
         slotDesc.setNullIndicatorByte(0);
+        return slotDesc;
     }
 
     /**
@@ -386,9 +388,12 @@ public class OriginalPlanner extends Planner {
             // and reconconstruct the final block
             if (!addedRowIdColumn &&  sortNode.isUseTopNTwoPhaseOptimize()) {
                 // fragment.setParallelExecNum(1);
-                injectRowIdColumnSlot(analyzer, scanNode.getTupleDesc());
+                SlotDescriptor slot = injectRowIdColumnSlot(analyzer, scanNode.getTupleDesc());
                 injectRowIdColumnSlot(analyzer, sortNode.getSortInfo().getSortTupleDescriptor());
                 addedRowIdColumn = true;
+                SlotRef extSlot = new SlotRef(slot);
+                sortNode.getResolvedTupleExprs().add(extSlot);
+                sortNode.getSortInfo().setUseTwoPhaseRead();
             }
 
             if (!scanNode.checkPushSort(sortNode)) {

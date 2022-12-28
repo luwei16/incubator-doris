@@ -21,7 +21,6 @@
 package org.apache.doris.planner;
 
 import org.apache.doris.analysis.Analyzer;
-import org.apache.doris.analysis.Expr;
 import org.apache.doris.analysis.SortInfo;
 import org.apache.doris.analysis.TupleDescriptor;
 import org.apache.doris.analysis.TupleId;
@@ -37,7 +36,6 @@ import org.apache.doris.thrift.TNodeInfo;
 import org.apache.doris.thrift.TPaloNodesInfo;
 import org.apache.doris.thrift.TPlanNode;
 import org.apache.doris.thrift.TPlanNodeType;
-import org.apache.doris.thrift.TSortInfo;
 
 import com.google.common.base.MoreObjects;
 import com.google.common.base.MoreObjects.ToStringHelper;
@@ -71,9 +69,6 @@ public class ExchangeNode extends PlanNode {
     // Offset after which the exchange begins returning rows. Currently valid
     // only if mergeInfo_ is non-null, i.e. this is a merging exchange node.
     private long offset;
-
-    // Used send rpc to fetch data by RowIds
-    TPaloNodesInfo nodesInfo;
 
     /**
      * Create ExchangeNode that consumes output of inputNode.
@@ -166,15 +161,12 @@ public class ExchangeNode extends PlanNode {
             msg.exchange_node.addToInputRowTuples(tid.asInt());
         }
         if (mergeInfo != null) {
-            TSortInfo sortInfo = new TSortInfo(
-                    Expr.treesToThrift(mergeInfo.getOrderingExprs()),
-                    mergeInfo.getIsAscOrder(), mergeInfo.getNullsFirst());
-            msg.exchange_node.setSortInfo(sortInfo);
+            msg.exchange_node.setSortInfo(mergeInfo.toThrift());
             msg.exchange_node.setOffset(offset);
-        }
-        // nodeinfos for second phase fetch rows
-        if (nodesInfo != null) {
-            msg.exchange_node.setNodesInfo(nodesInfo);
+
+            if (mergeInfo.useTwoPhaseRead()) {
+                msg.exchange_node.setNodesInfo(createNodesInfo());
+            }
         }
     }
 
@@ -195,12 +187,13 @@ public class ExchangeNode extends PlanNode {
     * Set the parameters used to fetch data by rowid column
     * after init().
     */
-    public void createNodesInfo() {
-        nodesInfo = new TPaloNodesInfo();
+    private TPaloNodesInfo createNodesInfo() {
+        TPaloNodesInfo nodesInfo = new TPaloNodesInfo();
         SystemInfoService systemInfoService = Env.getCurrentSystemInfo();
         for (Long id : systemInfoService.getBackendIds(true /*need alive*/)) {
             Backend backend = systemInfoService.getBackend(id);
             nodesInfo.addToNodes(new TNodeInfo(backend.getId(), 0, backend.getHost(), backend.getBrpcPort()));
         }
+        return nodesInfo;
     }
 }

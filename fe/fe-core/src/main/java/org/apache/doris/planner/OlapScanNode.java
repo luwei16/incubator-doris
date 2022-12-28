@@ -1013,6 +1013,9 @@ public class OlapScanNode extends ScanNode {
         if (useTopnOpt) {
             output.append(prefix).append("TOPN OPT\n");
         }
+        if (sortInfo.useTwoPhaseRead()) {
+            output.append(prefix).append("OPT TWO PHASE\n");
+        }
         if (!conjuncts.isEmpty()) {
             output.append(prefix).append("PREDICATES: ").append(getExplainString(conjuncts)).append("\n");
         }

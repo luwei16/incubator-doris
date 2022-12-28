@@ -62,7 +62,7 @@ private:
 
     // for fetch data by rowids
     DorisNodesInfo* _nodes_info = nullptr;
-    const TupleDescriptor* _scan_node_tuple_desc;
+    bool _use_two_phase_read = false;
 };
 } // namespace vectorized
 } // namespace doris

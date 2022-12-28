@@ -82,7 +82,7 @@ public:
 
     RowsetId rowset_id() const { return _rowset_id; }
 
-    RowsetId rowset_id() const { return _rowset_id; }
+    // RowsetId rowset_id() const { return _rowset_id; }
 
     uint32_t num_rows() const { return _footer.num_rows(); }
 

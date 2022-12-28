@@ -51,7 +51,7 @@ Status VExchangeNode::init(const TPlanNode& tnode, RuntimeState* state) {
     if (tnode.exchange_node.__isset.nodes_info) {
         _nodes_info = _pool->add(new DorisNodesInfo(tnode.exchange_node.nodes_info));
     }
-    _scan_node_tuple_desc = state->desc_tbl().get_tuple_descriptor(tnode.olap_scan_node.tuple_id);
+    _use_two_phase_read = tnode.exchange_node.sort_info.use_two_phase_read;
     return Status::OK();
 }
 
@@ -90,27 +90,32 @@ Status VExchangeNode::get_next(RuntimeState* state, RowBatch* row_batch, bool* e
 }
 
 Status VExchangeNode::second_phase_fetch_data(RuntimeState* state, Block* final_block) {
-    auto row_id_col =  final_block->try_get_by_name(BeConsts::ROWID_COL);
-    if (row_id_col != nullptr && final_block->rows() > 0) {
-        MonotonicStopWatch watch;
-        watch.start();
-        RowIDFetcher id_fetcher(_scan_node_tuple_desc, state);
-        RETURN_IF_ERROR(id_fetcher.init(_nodes_info));
-        vectorized::Block materialized_block(_scan_node_tuple_desc->slots(), final_block->rows());
-        auto tmp_block = MutableBlock::build_mutable_block(&materialized_block);
-        // fetch will sort block by sequence of ROWID_COL
-        RETURN_IF_ERROR(id_fetcher.fetch(row_id_col->column, &tmp_block));
-        materialized_block.swap(tmp_block.to_block());
-
-        // materialize by name
-        for (auto& column_type_name : *final_block) {
-            auto materialized_column = materialized_block.try_get_by_name(column_type_name.name); 
-            if (materialized_column != nullptr) {
-                column_type_name.column = std::move(materialized_column->column);
-            }
-        }
-        LOG(INFO) << "fetch_id finished, cost(ms):" << watch.elapsed_time() / 1000 / 1000; 
+    if (!_use_two_phase_read) {
+        return Status::OK();
     }
+    if (final_block->rows() == 0) {
+        return Status::OK();
+    }
+    auto row_id_col = final_block->get_by_position(final_block->columns() - 1);
+    MonotonicStopWatch watch;
+    watch.start();
+    auto tuple_desc = _row_descriptor.tuple_descriptors()[0];
+    RowIDFetcher id_fetcher(tuple_desc, state);
+    RETURN_IF_ERROR(id_fetcher.init(_nodes_info));
+    vectorized::Block materialized_block(tuple_desc->slots(), final_block->rows());
+    auto tmp_block = MutableBlock::build_mutable_block(&materialized_block);
+    // fetch will sort block by sequence of ROWID_COL
+    RETURN_IF_ERROR(id_fetcher.fetch(row_id_col.column, &tmp_block));
+    materialized_block.swap(tmp_block.to_block());
+
+    // materialize by name
+    for (auto& column_type_name : *final_block) {
+        auto materialized_column = materialized_block.try_get_by_name(column_type_name.name);
+        if (materialized_column != nullptr) {
+            column_type_name.column = std::move(materialized_column->column);
+        }
+    }
+    LOG(INFO) << "fetch_id finished, cost(ms):" << watch.elapsed_time() / 1000 / 1000;
     return Status::OK();
 }
 

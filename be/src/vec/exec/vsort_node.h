@@ -69,10 +69,9 @@ private:
 
     bool _reuse_mem;
     bool _use_topn_opt = false;
+    bool _use_two_phase_read = false;
 
     std::unique_ptr<Sorter> _sorter;
-
-    const TupleDescriptor* _scan_node_tuple_desc = nullptr;
 
     static constexpr size_t ACCUMULATED_PARTIAL_SORT_THRESHOLD = 256;
 

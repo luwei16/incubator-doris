@@ -40,6 +40,7 @@ Status VSortNode::init(const TPlanNode& tnode, RuntimeState* state) {
     _is_asc_order = tnode.sort_node.sort_info.is_asc_order;
     _nulls_first = tnode.sort_node.sort_info.nulls_first;
     _use_topn_opt = tnode.sort_node.use_topn_opt;
+    _use_two_phase_read = tnode.sort_node.sort_info.use_two_phase_read;
     const auto& row_desc = child(0)->row_desc();
     // If `limit` is smaller than HEAP_SORT_THRESHOLD, we consider using heap sort in priority.
     // To do heap sorting, each income block will be filtered by heap-top row. There will be some
@@ -61,7 +62,6 @@ Status VSortNode::init(const TPlanNode& tnode, RuntimeState* state) {
     }
 
     _sorter->init_profile(_runtime_profile.get());
-    _scan_node_tuple_desc = state->desc_tbl().get_tuple_descriptor(tnode.olap_scan_node.tuple_id);
     return Status::OK();
 }
 
@@ -95,11 +95,10 @@ Status VSortNode::open(RuntimeState* state) {
                 child(0)->get_next_after_projects(state, upstream_block.get(), &eos),
                 child(0)->get_next_span(), eos);
         if (upstream_block->rows() != 0) {
-            // If block contains ROWID_COL column, indicating topn two phase
-            // read enabled, some columns maybe pruned in the scann nodes
+            // Indicating topn two phase read enabled, some columns maybe pruned in the scann nodes
             // to ensure everything goes well, we mock some columns for later usage 
             // those columns will be read in the second phase when everything's ready
-            if (upstream_block->try_get_by_name(BeConsts::ROWID_COL)) {
+            if (_use_two_phase_read) {
                 // We must not reuse upstream_block,since it's rebuilded.
                 _reuse_mem = false; 
                 _rebuild_block(upstream_block.get());
@@ -136,7 +135,7 @@ Status VSortNode::open(RuntimeState* state) {
 // find by name
 void VSortNode::_rebuild_block(Block* block) {
     Block new_block;
-    for (auto slot : _scan_node_tuple_desc->slots()) {
+    for (auto slot : child(0)->row_desc().tuple_descriptors()[0]->slots()) {
         auto type_column = block->try_get_by_name(slot->col_name());
         if (!type_column) {
             auto type = slot->get_data_type_ptr();
