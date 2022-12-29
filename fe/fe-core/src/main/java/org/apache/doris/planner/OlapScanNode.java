@@ -1006,15 +1006,15 @@ public class OlapScanNode extends ScanNode {
             sortInfo.getMaterializedOrderingExprs().forEach(expr -> {
                 output.append(prefix).append(prefix).append(expr.toSql()).append("\n");
             });
+            if (sortInfo.useTwoPhaseRead()) {
+                output.append(prefix).append("OPT TWO PHASE\n");
+            }
         }
         if (sortLimit != -1) {
             output.append(prefix).append("SORT LIMIT: ").append(sortLimit).append("\n");
         }
         if (useTopnOpt) {
             output.append(prefix).append("TOPN OPT\n");
-        }
-        if (sortInfo.useTwoPhaseRead()) {
-            output.append(prefix).append("OPT TWO PHASE\n");
         }
         if (!conjuncts.isEmpty()) {
             output.append(prefix).append("PREDICATES: ").append(getExplainString(conjuncts)).append("\n");
