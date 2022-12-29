@@ -257,7 +257,7 @@ public:
 
     const void set_error_row_number(int64_t number) { _error_row_number = number; }
 
-    const std::string get_error_log_file_path() const { return _error_log_file_path; }
+    const std::string get_error_log_file_path() const;
 
     // append error msg and error line to file when loading data.
     // is_summary is true, means we are going to write the summary line
@@ -397,7 +397,6 @@ public:
 
     bool enable_profile() const { return _query_options.is_report_success; }
 
-    std::string get_load_error_http_path() const;
     bool enable_share_hash_table_for_broadcast_join() const {
         return _query_options.__isset.enable_share_hash_table_for_broadcast_join &&
                _query_options.enable_share_hash_table_for_broadcast_join;

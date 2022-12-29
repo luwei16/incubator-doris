@@ -69,7 +69,7 @@ Status StreamLoadExecutor::execute_plan_fragment(StreamLoadContext* ctx) {
                     }
                     if (ctx->number_filtered_rows > 0 &&
                         !executor->runtime_state()->get_error_log_file_path().empty()) {
-                        ctx->error_url = executor->runtime_state()->get_load_error_http_path();
+                        ctx->error_url = executor->runtime_state()->get_error_log_file_path();
                     }
 
                     if (status.ok()) {
