@@ -387,7 +387,7 @@ Status RuntimeState::append_error_msg_to_file(std::function<std::string()> line,
     return Status::OK();
 }
 
-std::string RuntimeState::get_error_log_file_path() const {
+const std::string RuntimeState::get_error_log_file_path() const {
     if (_error_log_file_path.empty()) {
         return "";
     }
