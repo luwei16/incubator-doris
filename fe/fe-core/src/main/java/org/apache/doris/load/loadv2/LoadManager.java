@@ -361,6 +361,9 @@ public class LoadManager implements Writable {
         job.unprotectReadEndOperation(operation);
         LOG.info(new LogBuilder(LogKey.LOAD_JOB, operation.getId()).add("operation", operation)
                 .add("msg", "replay end load job").build());
+        if (job.isCompleted()) {
+            Env.getCurrentGlobalTransactionMgr().getCallbackFactory().removeCallback(job.getId());
+        }
     }
 
     /**
