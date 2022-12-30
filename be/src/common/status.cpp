@@ -109,7 +109,7 @@ Status Status::ConstructErrorStatus(int16_t precise_code) {
         // https://github.com/boostorg/stacktrace/issues/111
         // return Status(TStatusCode::INTERNAL_ERROR,
         //               boost::stacktrace::to_string(boost::stacktrace::stacktrace()), precise_code);
-        return Status(TStatusCode::INTERNAL_ERROR, std::string(), precise_code);
+        return Status(TStatusCode::INTERNAL_ERROR, get_stack_trace(), precise_code);
     } else {
         return Status(TStatusCode::INTERNAL_ERROR, std::string_view(), precise_code);
     }

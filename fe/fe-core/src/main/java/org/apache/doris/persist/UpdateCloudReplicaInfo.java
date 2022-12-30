@@ -26,6 +26,8 @@ import com.google.gson.annotations.SerializedName;
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 
 public class UpdateCloudReplicaInfo implements Writable {
     @SerializedName(value = "dbId")
@@ -46,6 +48,12 @@ public class UpdateCloudReplicaInfo implements Writable {
     @SerializedName(value = "beId")
     private long beId;
 
+    @SerializedName(value = "tabletIds")
+    private List<Long> tabletIds = new ArrayList<Long>();
+
+    @SerializedName(value = "beIds")
+    private List<Long> beIds = new ArrayList<Long>();
+
     public UpdateCloudReplicaInfo() {
     }
 
@@ -59,6 +67,24 @@ public class UpdateCloudReplicaInfo implements Writable {
         this.replicaId = replicaId;
         this.clusterId = clusterId;
         this.beId = beId;
+
+        this.beIds = null;
+        this.tabletIds = null;
+    }
+
+    public UpdateCloudReplicaInfo(long dbId, long tableId, long partitionId, long indexId,
+            String clusterId, List<Long> beIds, List<Long> tabletIds) {
+        this.dbId = dbId;
+        this.tableId = tableId;
+        this.partitionId = partitionId;
+        this.indexId = indexId;
+        this.clusterId = clusterId;
+        this.beIds = beIds;
+        this.tabletIds = tabletIds;
+
+        this.tabletId = -1;
+        this.replicaId = -1;
+        this.beId = -1;
     }
 
     /*
@@ -132,4 +158,41 @@ public class UpdateCloudReplicaInfo implements Writable {
     public long getBeId() {
         return beId;
     }
+
+    public List<Long> getBeIds() {
+        return beIds;
+    }
+
+    public List<Long> getTabletIds() {
+        return tabletIds;
+    }
+
+    public String toString() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("database id: ").append(dbId);
+        sb.append(" table id: ").append(tableId);
+        sb.append(" partition id: ").append(partitionId);
+        sb.append(" index id: ").append(indexId);
+        sb.append(" tablet id: ").append(tabletId);
+        sb.append(" replica id: ").append(replicaId);
+        sb.append(" cluster: ").append(clusterId);
+        sb.append(" backend id: ").append(beId);
+
+        if (tabletId == -1) {
+            if (beIds != null && !beIds.isEmpty()) {
+                sb.append(" be id list: ");
+                for (long id : beIds) {
+                    sb.append(" ").append(id);
+                }
+
+                sb.append(" tablet id list: ");
+                for (long id : tabletIds) {
+                    sb.append(" ").append(id);
+                }
+            }
+        }
+
+        return sb.toString();
+    }
+
 }

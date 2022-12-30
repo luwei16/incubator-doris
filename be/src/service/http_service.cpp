@@ -26,6 +26,7 @@
 #include "http/action/health_action.h"
 #include "http/action/meta_action.h"
 #include "http/action/metrics_action.h"
+#include "http/action/pad_segment_action.h"
 #include "http/action/pprof_actions.h"
 #include "http/action/reload_tablet_action.h"
 #include "http/action/reset_rpc_channel_action.h"
@@ -240,6 +241,10 @@ Status HttpService::cloud_start() {
     ResetRPCChannelAction* reset_rpc_channel_action = _pool.add(new ResetRPCChannelAction(_env));
     _ev_http_server->register_handler(HttpMethod::GET, "/api/reset_rpc_channel/{endpoints}",
                                       reset_rpc_channel_action);
+
+    // data repair actions
+    PadSegmentAction* pad_segment_action = _pool.add(new PadSegmentAction);
+    _ev_http_server->register_handler(HttpMethod::GET, "/api/pad_segment", pad_segment_action);
 
     _ev_http_server->start();
     return Status::OK();

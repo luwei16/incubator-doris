@@ -19,11 +19,11 @@ class FileCacheFactory {
 public:
     static FileCacheFactory& instance();
 
-    void create_file_cache(const std::string& cache_base_path,
-                           const FileCacheSettings& file_cache_settings, FileCacheType type);
+    Status create_file_cache(const std::string& cache_base_path,
+                             const FileCacheSettings& file_cache_settings, FileCacheType type);
 
-    CloudFileCachePtr getByPath(const IFileCache::Key& key);
-    CloudFileCachePtr getDisposableCache(const IFileCache::Key& key);
+    CloudFileCachePtr get_by_path(const IFileCache::Key& key);
+    CloudFileCachePtr get_disposable_cache(const IFileCache::Key& key);
     std::vector<IFileCache::QueryContextHolderPtr> get_query_context_holders(
             const TUniqueId& query_id);
     FileCacheFactory() = default;

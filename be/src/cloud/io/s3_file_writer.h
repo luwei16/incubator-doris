@@ -17,13 +17,16 @@
 
 #pragma once
 
+#include <atomic>
+#include <chrono>
+#include <list>
 #include <memory>
+#include <unordered_set>
 
-#include "cloud/io/file_reader.h"
-#include "cloud/io/file_writer.h"
-#include "cloud/io/s3_file_system.h"
 #include "common/config.h"
 #include "gutil/int128.h"
+#include "cloud/io/file_writer.h"
+#include "cloud/io/s3_file_system.h"
 
 namespace Aws::Transfer {
 class TransferHandle;
@@ -32,6 +35,8 @@ class TransferHandle;
 namespace doris {
 namespace io {
 
+class S3FileSystem;
+class TmpFileMgr;
 class S3FileWriter final : public FileWriter {
 public:
     S3FileWriter(Path path, std::string key, std::string bucket, std::shared_ptr<S3FileSystem> fs);
@@ -39,7 +44,7 @@ public:
 
     Status open() override;
 
-    Status close() override;
+    Status close(bool sync = true) override;
 
     Status abort() override;
 
@@ -54,9 +59,12 @@ public:
     size_t bytes_appended() const override { return _tmp_file_writer->bytes_appended(); }
 
     FileSystemSPtr fs() const override { return _fs; }
-    int64_t upload_speed_bytes_s() const { return *_upload_speed_bytes_s; }
+    int64_t upload_cost_ms() const { return *_upload_cost_ms; }
+
+    const Path& path() const override { return _path; }
 
 private:
+    Path _path;
     std::shared_ptr<S3FileSystem> _fs;
 
     std::string _bucket;
@@ -66,7 +74,7 @@ private:
     FileWriterPtr _tmp_file_writer;
     std::shared_ptr<Aws::Transfer::TransferHandle> _handle;
 
-    std::shared_ptr<int64_t> _upload_speed_bytes_s = std::make_shared<int64_t>();
+    std::shared_ptr<int64_t> _upload_cost_ms;
 };
 
 } // namespace io

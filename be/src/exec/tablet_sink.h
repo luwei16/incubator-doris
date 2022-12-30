@@ -218,8 +218,7 @@ public:
                      int64_t* serialize_batch_ns, int64_t* mem_exceeded_block_ns,
                      int64_t* queue_push_lock_ns, int64_t* actual_consume_ns,
                      int64_t* total_add_batch_exec_time_ns, int64_t* add_batch_exec_time_ns,
-                     int64_t* total_add_batch_num, int64_t* max_upload_speed,
-                     int64_t* min_upload_speed) {
+                     int64_t* total_add_batch_num) {
         (*add_batch_counter_map)[_node_id] += _add_batch_counter;
         (*add_batch_counter_map)[_node_id].close_wait_time_ms = _close_time_ms;
         *serialize_batch_ns += _serialize_batch_ns;
@@ -229,10 +228,13 @@ public:
         *add_batch_exec_time_ns = (_add_batch_counter.add_batch_execution_time_us * 1000);
         *total_add_batch_exec_time_ns += *add_batch_exec_time_ns;
         *total_add_batch_num += _add_batch_counter.add_batch_num;
-        *max_upload_speed =
-                *max_upload_speed > _max_upload_speed ? *max_upload_speed : _max_upload_speed;
-        *min_upload_speed =
-                *min_upload_speed > _min_upload_speed ? _min_upload_speed : *min_upload_speed;
+    }
+
+    void cloud_time_report(int64_t& max_build_rowset_cost_ms, int64_t& avg_build_rowset_cost_ms,
+                           int64_t& upload_speed_bytes_s) const {
+        max_build_rowset_cost_ms = std::max(max_build_rowset_cost_ms, _max_build_rowset_cost_ms);
+        avg_build_rowset_cost_ms = _avg_build_rowset_cost_ms;
+        upload_speed_bytes_s = _upload_speed_bytes_s;
     }
 
     int64_t node_id() const { return _node_id; }
@@ -340,8 +342,10 @@ protected:
 
     RuntimeState* _state;
 
-    int64_t _max_upload_speed = 0;
-    int64_t _min_upload_speed = 0;
+    // CLOUD_MODE upload metrics
+    int64_t _max_build_rowset_cost_ms = 0;
+    int64_t _avg_build_rowset_cost_ms = 0;
+    int64_t _upload_speed_bytes_s = 0;
 
 private:
     std::unique_ptr<RowBatch> _cur_batch;
@@ -388,6 +392,8 @@ public:
         }
         return mem_consumption;
     }
+
+    int64_t index_id() const { return _index_id; }
 
 private:
     friend class NodeChannel;

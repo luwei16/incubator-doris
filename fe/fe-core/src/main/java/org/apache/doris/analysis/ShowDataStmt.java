@@ -61,6 +61,12 @@ public class ShowDataStmt extends ShowStmt {
                     .addColumn(new Column("ReplicaCount", ScalarType.createVarchar(20)))
                     .build();
 
+    private static final ShowResultSetMetaData SHOW_WAREHOUSE_DATA_META_DATA =
+            ShowResultSetMetaData.builder()
+                    .addColumn(new Column("DBName", ScalarType.createVarchar(20)))
+                    .addColumn(new Column("DataSize", ScalarType.createVarchar(20)))
+                    .build();
+
     private static final ShowResultSetMetaData SHOW_INDEX_DATA_META_DATA =
             ShowResultSetMetaData.builder()
                     .addColumn(new Column("TableName", ScalarType.createVarchar(20)))
@@ -84,15 +90,50 @@ public class ShowDataStmt extends ShowStmt {
     private List<OrderByElement> orderByElements;
     private List<OrderByPair> orderByPairs;
 
-    public ShowDataStmt(TableName tableName, List<OrderByElement> orderByElements) {
+    private final Map<String, String> properties;
+
+    private static final String WAREHOUSE = "entire_warehouse";
+    private static final String DB_LIST = "db_names";
+
+    public ShowDataStmt(TableName tableName, List<OrderByElement> orderByElements, Map<String, String> properties) {
         this.tableName = tableName;
         this.totalRows = Lists.newArrayList();
         this.orderByElements = orderByElements;
+        this.properties = properties;
     }
 
     @Override
     public void analyze(Analyzer analyzer) throws UserException {
         super.analyze(analyzer);
+        if (properties != null) {
+            String value = properties.get(WAREHOUSE);
+            if (value != null && value.equals("true")) {
+                String[] dbList = null;
+                String dbNames = properties.get(DB_LIST);
+                if (dbNames != null) {
+                    dbList = dbNames.split(",");
+                }
+                Map<String, Long> dbToDataSize = Env.getCurrentInternalCatalog().getUsedDataQuota();
+                Long total = 0L;
+                if (dbList == null) {
+                    for (Map.Entry<String, Long> pair : dbToDataSize.entrySet()) {
+                        List<String> result = Arrays.asList(pair.getKey(), String.valueOf(pair.getValue()));
+                        totalRows.add(result);
+                        total += pair.getValue();
+                    }
+                } else {
+                    for (String dbName : dbList) {
+                        Long dataSize = dbToDataSize.getOrDefault(dbName, 0L);
+                        List<String> result = Arrays.asList(dbName, String.valueOf(dataSize));
+                        totalRows.add(result);
+                        total += dataSize;
+                    }
+                }
+                List<String> result = Arrays.asList("total", String.valueOf(total));
+                totalRows.add(result);
+                return;
+            }
+        }
         dbName = analyzer.getDefaultDb();
         if (tableName != null) {
             tableName.analyze(analyzer);
@@ -340,7 +381,13 @@ public class ShowDataStmt extends ShowStmt {
 
     @Override
     public ShowResultSetMetaData getMetaData() {
-        if (tableName != null) {
+        String value = null;
+        if (properties != null) {
+            value = properties.get(WAREHOUSE);
+        }
+        if (value != null && value.equals("true")) {
+            return SHOW_WAREHOUSE_DATA_META_DATA;
+        } else if (tableName != null) {
             return SHOW_INDEX_DATA_META_DATA;
         } else {
             return SHOW_TABLE_DATA_META_DATA;

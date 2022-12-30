@@ -32,6 +32,7 @@
 #include <memory>
 
 #include "cloud/io/cached_remote_file_reader.h"
+#include "cloud/io/cached_remote_file_writer.h"
 #include "cloud/io/local_file_system.h"
 #include "cloud/io/remote_file_system.h"
 #include "cloud/io/s3_file_reader.h"
@@ -78,9 +79,32 @@ Status S3FileSystem::connect() {
     if (!client) {
         return Status::InternalError("failed to init s3 client with {}", _s3_conf.to_string());
     }
-    std::lock_guard lock(_client_mu);
-    _client = std::move(client);
+    std::shared_ptr<Aws::Transfer::TransferManager> transfer_manager;
+    {
+        std::lock_guard lock(_client_mu);
+        _client.swap(client);
+        _transfer_manager.swap(transfer_manager);
+    }
     return Status::OK();
+}
+
+std::shared_ptr<Aws::Transfer::TransferManager> S3FileSystem::get_transfer_manager() {
+    std::lock_guard lock(_client_mu);
+    if (_transfer_manager == nullptr) {
+        if (_client == nullptr) {
+            return nullptr;
+        }
+        Aws::Transfer::TransferManagerConfiguration transfer_config(_executor.get());
+        transfer_config.s3Client = _client;
+        transfer_config.transferBufferMaxHeapSize = config::s3_transfer_buffer_size_mb << 20;
+        transfer_config.transferStatusUpdatedCallback =
+                [](const Aws::Transfer::TransferManager*,
+                   const std::shared_ptr<const Aws::Transfer::TransferHandle>& handle) {
+                    handle->Callback();
+                };
+        _transfer_manager = Aws::Transfer::TransferManager::Create(transfer_config);
+    }
+    return _transfer_manager;
 }
 
 Status S3FileSystem::upload(const Path& local_path, const Path& dest_path) {
@@ -157,6 +181,9 @@ Status S3FileSystem::create_file(const Path& path, FileWriterPtr* writer) {
     *writer = std::make_unique<S3FileWriter>(
             std::move(fs_path), std::move(key), _s3_conf.bucket,
             std::static_pointer_cast<S3FileSystem>(shared_from_this()));
+    if (config::enable_file_cache) {
+        *writer = std::make_unique<CachedRemoteFileWriter>(std::move(*writer));
+    }
     return (*writer)->open();
 }
 

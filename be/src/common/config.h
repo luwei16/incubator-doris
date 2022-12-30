@@ -132,6 +132,8 @@ CONF_String(sys_log_level, "INFO");
 CONF_String(sys_log_roll_mode, "SIZE-MB-1024");
 // log roll num
 CONF_Int32(sys_log_roll_num, "10");
+// set the roll num of warn log, "-1" means keep consistent with "sys_log_roll_num"
+CONF_Int32(sys_warn_log_roll_num, "-1");
 // verbose log
 CONF_Strings(sys_log_verbose_modules, "");
 // verbose log level
@@ -828,6 +830,7 @@ CONF_Validator(file_cache_type, [](const std::string config) -> bool {
 CONF_mInt64(file_cache_max_size_per_disk, "0"); // zero for no limit
 
 CONF_Int32(s3_transfer_executor_pool_size, "2");
+CONF_Int32(s3_transfer_buffer_size_mb, "500");
 
 CONF_Bool(enable_time_lut, "true");
 CONF_Bool(enable_simdjson_reader, "false");

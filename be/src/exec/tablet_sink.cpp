@@ -274,11 +274,9 @@ Status NodeChannel::open_wait() {
                         }
                     }
                     _add_batches_finished = true;
-                    _min_upload_speed = result.min_upload_speed();
-                    _max_upload_speed = result.max_upload_speed();
-                    VLOG_PROGRESS << "node channel " << channel_info()
-                                  << "add_batches_finished and handled "
-                                  << result.tablet_errors().size() << " tablets errors";
+                    _max_build_rowset_cost_ms = result.max_build_rowset_cost_ms();
+                    _avg_build_rowset_cost_ms = result.avg_build_rowset_cost_ms();
+                    _upload_speed_bytes_s = result.upload_speed_bytes_s();
                 }
             } else {
                 _cancel_with_msg(
@@ -1137,16 +1135,15 @@ Status OlapTableSink::close(RuntimeState* state, Status close_status) {
                         [](const std::shared_ptr<NodeChannel>& ch) { ch->mark_close(); });
                 num_node_channels += index_channel->num_node_channels();
             }
-            int64_t max_upload_speed = 0;
-            int64_t min_upload_speed = INT64_MAX;
+            int64_t max_build_rowset_cost_ms = 0;
             for (auto index_channel : _channels) {
                 int64_t add_batch_exec_time = 0;
                 index_channel->for_each_node_channel(
                         [&index_channel, &state, &node_add_batch_counter_map, &serialize_batch_ns,
                          &mem_exceeded_block_ns, &queue_push_lock_ns, &actual_consume_ns,
                          &total_add_batch_exec_time_ns, &add_batch_exec_time, &total_add_batch_num,
-                         &max_upload_speed,
-                         &min_upload_speed](const std::shared_ptr<NodeChannel>& ch) {
+                         &max_build_rowset_cost_ms,
+                         profile = _profile](const std::shared_ptr<NodeChannel>& ch) {
                             auto s = ch->close_wait(state);
                             if (!s.ok()) {
                                 index_channel->mark_as_failed(ch->node_id(), ch->host(),
@@ -1160,8 +1157,17 @@ Status OlapTableSink::close(RuntimeState* state, Status close_status) {
                             ch->time_report(&node_add_batch_counter_map, &serialize_batch_ns,
                                             &mem_exceeded_block_ns, &queue_push_lock_ns,
                                             &actual_consume_ns, &total_add_batch_exec_time_ns,
-                                            &add_batch_exec_time, &total_add_batch_num,
-                                            &max_upload_speed, &min_upload_speed);
+                                            &add_batch_exec_time, &total_add_batch_num);
+                            int64_t avg_build_rowset_cost_ms = 0;
+                            int64_t upload_speed_bytes_s = 0;
+                            ch->cloud_time_report(max_build_rowset_cost_ms,
+                                                  avg_build_rowset_cost_ms, upload_speed_bytes_s);
+                            // clang-format off
+                            auto counter = profile->add_counter(fmt::format("AvgBuildRowsetTime_{}_{}", index_channel->index_id(), ch->node_id()), TUnit::TIME_MS);
+                            COUNTER_SET(counter, avg_build_rowset_cost_ms);
+                            counter = ADD_COUNTER(profile, fmt::format("UploadSpeed_{}_{}", index_channel->index_id(), ch->node_id()), TUnit::BYTES_PER_SECOND);
+                            COUNTER_SET(counter, upload_speed_bytes_s);
+                            // clang-format on
                         });
 
                 if (add_batch_exec_time > max_add_batch_exec_time_ns) {
@@ -1174,9 +1180,8 @@ Status OlapTableSink::close(RuntimeState* state, Status close_status) {
                     status = index_st;
                 }
             } // end for index channels
-            COUNTER_SET(_min_upload_speed_bytes_s,
-                        min_upload_speed == INT64_MAX ? 0 : min_upload_speed);
-            COUNTER_SET(_max_upload_speed_bytes_s, max_upload_speed);
+            auto counter = ADD_COUNTER(_profile, "MaxBuildRowsetTime", TUnit::TIME_MS);
+            COUNTER_SET(counter, max_build_rowset_cost_ms);
         }
         // TODO need to be improved
         LOG(INFO) << "total mem_exceeded_block_ns=" << mem_exceeded_block_ns

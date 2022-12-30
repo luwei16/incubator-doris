@@ -402,11 +402,14 @@ Status DeltaWriter::close_wait(const PSlaveTabletNodes& slave_tablet_nodes,
     _mem_table.reset();
 
     // use rowset meta manager to save meta
+    using namespace std::chrono;
+    auto build_start = steady_clock::now();
     _cur_rowset = _rowset_writer->build();
     if (_cur_rowset == nullptr) {
         LOG(WARNING) << "fail to build rowset";
         return Status::OLAPInternalError(OLAP_ERR_MALLOC_ERROR);
     }
+    _build_rowset_cost_ms = duration_cast<milliseconds>(steady_clock::now() - build_start).count();
 #ifdef CLOUD_MODE
     RETURN_IF_ERROR(cloud::meta_mgr()->commit_rowset(_cur_rowset->rowset_meta(), true));
     // These stats may be larger than the actual value if the txn is aborted

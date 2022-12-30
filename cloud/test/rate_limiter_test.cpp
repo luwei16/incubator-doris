@@ -1,0 +1,91 @@
+#include <gtest/gtest.h>
+
+#include "common/config.h"
+#include "common/util.h"
+#include "meta-service/keys.h"
+#include "meta-service/mem_txn_kv.h"
+#include "meta-service/meta_service.h"
+#include "mock_resource_manager.h"
+#include "rate-limiter/rate_limiter.h"
+
+int main(int argc, char** argv) {
+    selectdb::config::init(nullptr, true);
+    ::testing::InitGoogleTest(&argc, argv);
+    return RUN_ALL_TESTS();
+}
+
+using namespace selectdb;
+
+std::unique_ptr<MetaServiceImpl> get_meta_service() {
+    auto txn_kv = std::dynamic_pointer_cast<TxnKv>(std::make_shared<MemTxnKv>());
+    [&] { ASSERT_NE(txn_kv.get(), nullptr); }();
+    auto rs = std::make_shared<MockResourceManager>(txn_kv);
+    auto rl = std::make_shared<RateLimiter>();
+    auto meta_service = std::make_unique<MetaServiceImpl>(txn_kv, rs, rl);
+    return meta_service;
+}
+
+TEST(RateLimiterTest, RateLimitGetClusterTest) {
+    auto meta_service = get_meta_service();
+    // add cluster first
+    InstanceKeyInfo key_info {mock_instance};
+    std::string key;
+    std::string val;
+    instance_key(key_info, &key);
+
+    InstanceInfoPB instance;
+    instance.set_instance_id(mock_instance);
+    ClusterPB c1;
+    c1.set_cluster_name(mock_cluster_name);
+    c1.set_cluster_id(mock_cluster_id);
+    c1.add_mysql_user_name()->append("name1");
+    instance.add_clusters()->CopyFrom(c1);
+    val = instance.SerializeAsString();
+
+    std::unique_ptr<Transaction> txn;
+    std::string get_val;
+    int ret = meta_service->txn_kv_->create_txn(&txn);
+    ASSERT_EQ(ret, 0);
+    txn->put(key, val);
+    ASSERT_EQ(txn->commit(), 0);
+
+    auto get_cluster = [&](MetaServiceCode code) {
+        GetClusterRequest req;
+        req.set_cloud_unique_id("test_cloud_unique_id");
+        req.set_cluster_id(mock_cluster_id);
+        req.set_cluster_name(mock_cluster_name);
+        brpc::Controller cntl;
+        GetClusterResponse res;
+        meta_service->get_cluster(reinterpret_cast<::google::protobuf::RpcController*>(&cntl), &req,
+                                  &res, nullptr);
+
+        ASSERT_EQ(res.status().code(), code);
+    };
+    std::vector<std::thread> threads;
+    for (int i = 0; i < 20; ++i) {
+        threads.emplace_back(get_cluster, MetaServiceCode::OK);
+    }
+    for (auto& t: threads) {
+        t.join();
+    }
+    threads.clear();
+
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+    meta_service->rate_limiter_->get_rpc_rate_limiter(
+                        "get_cluster")->qps_limiter_[mock_instance]->max_qps_limit_ = 1;
+    threads.emplace_back(get_cluster, MetaServiceCode::MAX_QPS_LIMIT);
+    for (auto& t: threads) {
+        t.join();
+    }
+    threads.clear();
+
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+    meta_service->rate_limiter_->get_rpc_rate_limiter(
+                        "get_cluster")->qps_limiter_[mock_instance]->max_qps_limit_ = 10000;
+    threads.emplace_back(get_cluster, MetaServiceCode::OK);
+    for (auto& t: threads) {
+        t.join();
+    }
+    threads.clear();
+
+}

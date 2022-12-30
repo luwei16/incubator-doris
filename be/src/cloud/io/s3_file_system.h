@@ -28,6 +28,9 @@ class S3Client;
 namespace Aws::Utils::Threading {
 class PooledThreadExecutor;
 } // namespace Aws::Utils::Threading
+namespace Aws::Transfer {
+class TransferManager;
+} // namespace Aws::Transfer
 
 namespace doris {
 namespace io {
@@ -76,6 +79,8 @@ public:
         return _client;
     };
 
+    std::shared_ptr<Aws::Transfer::TransferManager> get_transfer_manager();
+
     // Guarded by external lock.
     void set_ak(const std::string& ak) { _s3_conf.ak = ak; }
 
@@ -97,6 +102,7 @@ private:
 
     // FIXME(cyx): We can use std::atomic<std::shared_ptr> since c++20.
     std::shared_ptr<Aws::S3::S3Client> _client;
+    std::shared_ptr<Aws::Transfer::TransferManager> _transfer_manager;
     mutable std::mutex _client_mu;
 
     friend class S3FileWriter;

@@ -17,6 +17,9 @@
 
 #include "runtime_filter.h"
 
+#include <memory>
+#include <type_traits>
+
 #include "common/object_pool.h"
 #include "common/status.h"
 #include "exprs/binary_predicate.h"

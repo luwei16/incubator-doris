@@ -77,8 +77,11 @@ public class CloudClusterChecker extends MasterDaemon {
                     }
                     // Attach tag to BEs
                     Map<String, String> newTagMap = Tag.DEFAULT_BACKEND_TAG.toMap();
-                    newTagMap.put(Tag.CLOUD_CLUSTER_NAME, remoteClusterIdToPB.get(addId).getClusterName());
-                    newTagMap.put(Tag.CLOUD_CLUSTER_ID, remoteClusterIdToPB.get(addId).getClusterId());
+                    String clusterName = remoteClusterIdToPB.get(addId).getClusterName();
+                    String clusterId = remoteClusterIdToPB.get(addId).getClusterId();
+                    newTagMap.put(Tag.CLOUD_CLUSTER_NAME, clusterName);
+                    newTagMap.put(Tag.CLOUD_CLUSTER_ID, clusterId);
+                    MetricRepo.registerClusterMetrics(clusterName, clusterId);
                     toAdd.forEach(i -> i.setTagMap(newTagMap));
                     Env.getCurrentSystemInfo().updateCloudBackends(toAdd, new ArrayList<>());
                 }
@@ -94,7 +97,8 @@ public class CloudClusterChecker extends MasterDaemon {
         toDelClusterIds.forEach(
                 delId -> {
                     LOG.debug("begin to drop clusterId: {}", delId);
-                    List<Backend> toDel = new ArrayList<>(finalClusterIdToBackend.get(delId));
+                    List<Backend> toDel =
+                            new ArrayList<>(finalClusterIdToBackend.getOrDefault(delId, new ArrayList<>()));
                     Env.getCurrentSystemInfo().updateCloudBackends(new ArrayList<>(), toDel);
                     // del clusterName
                     String delClusterName = Env.getCurrentSystemInfo().getClusterNameByClusterId(delId);
@@ -120,7 +124,7 @@ public class CloudClusterChecker extends MasterDaemon {
                 continue;
             }
             String newClusterName = cp.getClusterName();
-            List<Backend> currentBes = clusterIdToBackend.get(cid);
+            List<Backend> currentBes = clusterIdToBackend.getOrDefault(cid, new ArrayList<>());
             String currentClusterName = currentBes.stream().map(Backend::getCloudClusterName).findFirst().orElse("");
 
             if (!newClusterName.equals(currentClusterName)) {
@@ -245,7 +249,12 @@ public class CloudClusterChecker extends MasterDaemon {
         Map<String, String> clusterNameToId = Env.getCurrentSystemInfo().getCloudClusterNameToId();
         for (Map.Entry<String, String> entry : clusterNameToId.entrySet()) {
             long aliveNum = 0L;
-            for (Backend backend : clusterIdToBackend.get(entry.getValue())) {
+            List<Backend> bes = clusterIdToBackend.get(entry.getValue());
+            if (bes == null || bes.size() == 0) {
+                LOG.info("cant get be nodes by cluster {}, bes {}", entry, bes);
+                continue;
+            }
+            for (Backend backend : bes) {
                 MetricRepo.CLOUD_CLUSTER_BACKEND_ALIVE.computeIfAbsent(backend.getAddress(), key -> {
                     GaugeMetricImpl<Integer> backendAlive = new GaugeMetricImpl<>("backend_alive", MetricUnit.NOUNIT,
                             "backend alive or not");

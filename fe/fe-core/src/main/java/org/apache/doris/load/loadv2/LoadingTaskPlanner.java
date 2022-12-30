@@ -192,20 +192,34 @@ public class LoadingTaskPlanner {
             ((BrokerScanNode) scanNode).setLoadInfo(loadJobId, txnId, table, brokerDesc, fileGroups, strictMode,
                     loadParallelism, userInfo);
         }
-        scanNode.init(analyzer);
-        scanNode.finalize(analyzer);
-        if (Config.enable_vectorized_load) {
-            scanNode.convertToVectoriezd();
-        }
-        scanNodes.add(scanNode);
-        descTable.computeStatAndMemLayout();
 
-        // 2. Olap table sink
-        List<Long> partitionIds = getAllPartitionIds();
-        OlapTableSink olapTableSink = new OlapTableSink(table, destTupleDesc, partitionIds,
-                Config.enable_single_replica_load);
-        olapTableSink.init(loadId, txnId, dbId, timeoutS, sendBatchParallelism, false, timeoutS);
-        olapTableSink.complete();
+        OlapTableSink olapTableSink = null;
+        try {
+            scanNode.init(analyzer);
+            scanNode.finalize(analyzer);
+            if (Config.enable_vectorized_load) {
+                scanNode.convertToVectoriezd();
+            }
+            scanNodes.add(scanNode);
+            descTable.computeStatAndMemLayout();
+
+            // 2. Olap table sink
+            List<Long> partitionIds = getAllPartitionIds();
+            olapTableSink = new OlapTableSink(table, destTupleDesc, partitionIds,
+                    Config.enable_single_replica_load);
+            olapTableSink.init(loadId, txnId, dbId, timeoutS, sendBatchParallelism, false, timeoutS);
+            olapTableSink.complete();
+        } catch (UserException e) {
+            throw e;
+        } finally {
+            // connectContext is a thread local variable, so you must claar
+            // context to avoid it from containing old cluster information
+            if (!Config.cloud_unique_id.isEmpty() && scanNode instanceof BrokerScanNode) {
+                if (((BrokerScanNode) scanNode).needClearContext()) {
+                    ConnectContext.remove();
+                }
+            }
+        }
 
         // 3. Plan fragment
         PlanFragment sinkFragment = new PlanFragment(new PlanFragmentId(0), scanNode, DataPartition.RANDOM);

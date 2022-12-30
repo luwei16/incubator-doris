@@ -21,6 +21,10 @@ import org.apache.doris.catalog.MaterializedIndex.IndexExtState;
 import org.apache.doris.catalog.TableIf.TableType;
 import org.apache.doris.common.Config;
 import org.apache.doris.common.util.MasterDaemon;
+import org.apache.doris.metric.GaugeMetricImpl;
+import org.apache.doris.metric.Metric.MetricUnit;
+import org.apache.doris.metric.MetricLabel;
+import org.apache.doris.metric.MetricRepo;
 import org.apache.doris.rpc.RpcException;
 
 import com.selectdb.cloud.proto.SelectdbCloud;
@@ -31,7 +35,6 @@ import org.apache.logging.log4j.Logger;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ForkJoinPool;
-
 
 /*
  * CloudTabletStatMgr is for collecting tablet(replica) statistics from backends.
@@ -152,10 +155,85 @@ public class CloudTabletStatMgr extends MasterDaemon {
                 } finally {
                     table.writeUnlock();
                 }
+                reportTableStat(olapTable);
             }
         }
         LOG.info("finished to update index row num of all databases. cost: {} ms",
                 (System.currentTimeMillis() - start));
+    }
+
+    private void reportTableStat(OlapTable table) {
+        Long tableRowCount = 0L;
+        Long tableSegmentCount = 0L;
+        Long tableRowsetCount = 0L;
+        Long tableDataSize = 0L;
+        String dbName = table.getDBName();
+        String tableName = table.name;
+        String metricKey = dbName + "." + table.name;
+        table.readLock();
+        try {
+            for (Partition partition : table.getAllPartitions()) {
+                Long partitionRowCount = 0L;
+                Long partitionSegmentCount = 0L;
+                Long partitionRowsetCount = 0L;
+                Long partitionDataSize = 0L;
+                for (MaterializedIndex index : partition.getMaterializedIndices(IndexExtState.VISIBLE)) {
+                    Long indexRowCount = 0L;
+                    Long indexSegmentCount = 0L;
+                    Long indexRowsetCount = 0L;
+                    Long indexDataSize = 0L;
+                    for (Tablet tablet : index.getTablets()) {
+                        Replica replica = tablet.getReplicas().get(0);
+                        indexRowCount += replica.getRowCount();
+                        indexSegmentCount += replica.getSegmentCount();
+                        indexRowsetCount += replica.getRowsetCount();
+                        indexDataSize += replica.getDataSize();
+                    } // end for tablets
+                    partitionRowCount += indexRowCount;
+                    partitionSegmentCount += indexSegmentCount;
+                    partitionRowsetCount += indexRowsetCount;
+                    partitionDataSize += indexDataSize;
+                } // end for indices
+                tableRowCount += partitionRowCount;
+                tableSegmentCount += partitionSegmentCount;
+                tableRowsetCount += partitionRowsetCount;
+                tableDataSize += partitionDataSize;
+            } // end for partitions
+        } finally {
+            table.readUnlock();
+        }
+        MetricRepo.CLOUD_DB_TABLE_DATA_SIZE.computeIfAbsent(metricKey, key -> {
+            GaugeMetricImpl<Long> gaugeDataSize = new GaugeMetricImpl<>("table_data_size", MetricUnit.BYTES,
+                    "table data size");
+            gaugeDataSize.addLabel(new MetricLabel("db_name", dbName));
+            gaugeDataSize.addLabel(new MetricLabel("table_name", tableName));
+            MetricRepo.DORIS_METRIC_REGISTER.addMetrics(gaugeDataSize);
+            return gaugeDataSize;
+        }).setValue(tableDataSize);
+        MetricRepo.CLOUD_DB_TABLE_ROWSET_COUNT.computeIfAbsent(metricKey, key -> {
+            GaugeMetricImpl<Long> gaugeRowsetCount = new GaugeMetricImpl<>("table_rowset_count", MetricUnit.ROWSETS,
+                    "table rowset count");
+            gaugeRowsetCount.addLabel(new MetricLabel("db_name", dbName));
+            gaugeRowsetCount.addLabel(new MetricLabel("table_name", tableName));
+            MetricRepo.DORIS_METRIC_REGISTER.addMetrics(gaugeRowsetCount);
+            return gaugeRowsetCount;
+        }).setValue(tableRowsetCount);
+        MetricRepo.CLOUD_DB_TABLE_SEGMENT_COUNT.computeIfAbsent(metricKey, key -> {
+            GaugeMetricImpl<Long> gaugeSegmentCount = new GaugeMetricImpl<>("table_segment_count", MetricUnit.NOUNIT,
+                    "table segment count");
+            gaugeSegmentCount.addLabel(new MetricLabel("db_name", dbName));
+            gaugeSegmentCount.addLabel(new MetricLabel("table_name", tableName));
+            MetricRepo.DORIS_METRIC_REGISTER.addMetrics(gaugeSegmentCount);
+            return gaugeSegmentCount;
+        }).setValue(tableSegmentCount);
+        MetricRepo.CLOUD_DB_TABLE_ROW_COUNT.computeIfAbsent(metricKey, key -> {
+            GaugeMetricImpl<Long> gaugeRowCount = new GaugeMetricImpl<>("table_row_count", MetricUnit.ROWS,
+                    "table row count");
+            gaugeRowCount.addLabel(new MetricLabel("db_name", dbName));
+            gaugeRowCount.addLabel(new MetricLabel("table_name", tableName));
+            MetricRepo.DORIS_METRIC_REGISTER.addMetrics(gaugeRowCount);
+            return gaugeRowCount;
+        }).setValue(tableRowCount);
     }
 
     private void updateTabletStat(SelectdbCloud.GetTabletStatsResponse result) {
@@ -164,7 +242,8 @@ public class CloudTabletStatMgr extends MasterDaemon {
             if (invertedIndex.getTabletMeta(stat.getIdx().getTabletId()) != null) {
                 List<Replica> replicas = invertedIndex.getReplicasByTabletId(stat.getIdx().getTabletId());
                 if (replicas != null && !replicas.isEmpty() && replicas.get(0) != null) {
-                    replicas.get(0).updateStat(stat.getDataSize(), 0, stat.getNumRows(), -1);
+                    replicas.get(0).updateCloudStat(stat.getDataSize(), stat.getNumRowsets(),
+                            stat.getNumSegments(), stat.getNumRows());
                 }
             }
         }

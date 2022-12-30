@@ -54,7 +54,7 @@ Status sync_dir(const io::Path& dirname) {
 namespace io {
 
 LocalFileWriter::LocalFileWriter(Path path, std::shared_ptr<LocalFileSystem> fs)
-        : FileWriter(std::move(path)), _fs(std::move(fs)) {
+        : _fs(std::move(fs)), _path(std::move(path)) {
     DorisMetrics::instance()->local_file_open_writing->increment(1);
     DorisMetrics::instance()->local_file_writer_total->increment(1);
 }
@@ -75,12 +75,37 @@ Status LocalFileWriter::open() {
     return Status::OK();
 }
 
-Status LocalFileWriter::close() {
-    return _close(true);
+Status LocalFileWriter::close(bool sync) {
+    if (_closed) {
+        return Status::OK();
+    }
+    if (sync && _dirty) {
+#ifdef __APPLE__
+        if (fcntl(_fd, F_FULLFSYNC) < 0) {
+            return Status::IOError("cannot sync {}: {}", _path.native(), std::strerror(errno));
+        }
+#else
+        if (0 != ::fdatasync(_fd)) {
+            return Status::IOError("cannot fdatasync {}: {}", _path.native(), std::strerror(errno));
+        }
+#endif
+        RETURN_IF_ERROR(detail::sync_dir(_path.parent_path()));
+        _dirty = false;
+    }
+    _closed = true;
+
+    DorisMetrics::instance()->local_file_open_writing->increment(-1);
+    DorisMetrics::instance()->file_created_total->increment(1);
+    DorisMetrics::instance()->local_bytes_written_total->increment(_bytes_appended);
+
+    if (0 != ::close(_fd)) {
+        return Status::IOError("cannot close {}: {}", _path.native(), std::strerror(errno));
+    }
+    return Status::OK();
 }
 
 Status LocalFileWriter::abort() {
-    auto st = _close(false);
+    auto st = close(false);
     io::global_local_filesystem()->delete_file(_path);
     return st;
 }
@@ -154,35 +179,6 @@ Status LocalFileWriter::finalize() {
             return Status::IOError("cannot sync {}: {}", _path.native(), std::strerror(errno));
         }
 #endif
-    }
-    return Status::OK();
-}
-
-Status LocalFileWriter::_close(bool sync) {
-    if (_closed) {
-        return Status::OK();
-    }
-    if (sync && _dirty) {
-#ifdef __APPLE__
-        if (fcntl(_fd, F_FULLFSYNC) < 0) {
-            return Status::IOError("cannot sync {}: {}", _path.native(), std::strerror(errno));
-        }
-#else
-        if (0 != ::fdatasync(_fd)) {
-            return Status::IOError("cannot fdatasync {}: {}", _path.native(), std::strerror(errno));
-        }
-#endif
-        RETURN_IF_ERROR(detail::sync_dir(_path.parent_path()));
-        _dirty = false;
-    }
-    _closed = true;
-
-    DorisMetrics::instance()->local_file_open_writing->increment(-1);
-    DorisMetrics::instance()->file_created_total->increment(1);
-    DorisMetrics::instance()->local_bytes_written_total->increment(_bytes_appended);
-
-    if (0 != ::close(_fd)) {
-        return Status::IOError("cannot close {}: {}", _path.native(), std::strerror(errno));
     }
     return Status::OK();
 }

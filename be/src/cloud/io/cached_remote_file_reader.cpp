@@ -39,8 +39,8 @@ CachedRemoteFileReader::CachedRemoteFileReader(FileReaderSPtr remote_file_reader
                                                metrics_hook metrics)
         : _remote_file_reader(std::move(remote_file_reader)), _metrics(metrics) {
     _cache_key = IFileCache::hash(path().filename().native());
-    _cache = FileCacheFactory::instance().getByPath(_cache_key);
-    _disposable_cache = FileCacheFactory::instance().getDisposableCache(_cache_key);
+    _cache = FileCacheFactory::instance().get_by_path(_cache_key);
+    _disposable_cache = FileCacheFactory::instance().get_disposable_cache(_cache_key);
 }
 
 CachedRemoteFileReader::~CachedRemoteFileReader() {
@@ -89,7 +89,7 @@ Status CachedRemoteFileReader::read_at_impl(size_t offset, Slice result, size_t*
         *bytes_read = 0;
         return Status::OK();
     }
-    CloudFileCachePtr cache = state == nullptr              ? _cache
+    CloudFileCachePtr cache = !state                        ? _cache
                               : state->use_disposable_cache ? _disposable_cache
                                                             : _cache;
     // cache == nullptr since use_disposable_cache = true and don't set  disposable cache in conf
@@ -98,9 +98,15 @@ Status CachedRemoteFileReader::read_at_impl(size_t offset, Slice result, size_t*
     }
     ReadStatistics stats;
     stats.bytes_read = bytes_req;
-    auto [align_left, align_size] = _align_size(offset, bytes_req);
-    DCHECK((align_left % config::file_cache_max_file_segment_size) == 0);
-    // if state == nullptr, the method is called for read footer/index
+    // if state == nullptr, the method is called for read footer
+    // if state->read_segmeng_index, read all the end of file
+    size_t align_left = offset, align_size = size() - offset;
+    if (state && !state->read_segmeng_index) {
+        auto pair = _align_size(offset, bytes_req);
+        align_left = pair.first;
+        align_size = pair.second;
+        DCHECK((align_left % config::file_cache_max_file_segment_size) == 0);
+    }
     bool is_persistent = state ? state->is_persistent : true;
     TUniqueId query_id = state && state->query_id ? *state->query_id : TUniqueId();
     FileSegmentsHolder holder =
@@ -156,6 +162,9 @@ Status CachedRemoteFileReader::read_at_impl(size_t offset, Slice result, size_t*
     size_t end_offset = offset + bytes_req - 1;
     *bytes_read = 0;
     for (auto& segment : holder.file_segments) {
+        if (current_offset > end_offset) {
+            break;
+        }
         size_t left = segment->range().left;
         size_t right = segment->range().right;
         if (right < offset) {
@@ -168,19 +177,19 @@ Status CachedRemoteFileReader::read_at_impl(size_t offset, Slice result, size_t*
             current_offset = right + 1;
             continue;
         }
-        FileSegment::State state;
+        FileSegment::State segment_state;
         int64_t wait_time = 0;
         static int64_t MAX_WAIT_TIME = 10;
         do {
-            state = segment->wait();
-            if (state == FileSegment::State::DOWNLOADED) {
+            segment_state = segment->wait();
+            if (segment_state == FileSegment::State::DOWNLOADED) {
                 break;
             }
-            if (state != FileSegment::State::DOWNLOADING) {
+            if (segment_state != FileSegment::State::DOWNLOADING) {
                 return Status::IOError(
                         "File Cache State is {}, the cache downloader encounters an error, please "
                         "retry it",
-                        state);
+                        segment_state);
             }
         } while (++wait_time < MAX_WAIT_TIME);
         if (UNLIKELY(wait_time) == MAX_WAIT_TIME) {
@@ -189,12 +198,9 @@ Status CachedRemoteFileReader::read_at_impl(size_t offset, Slice result, size_t*
         size_t file_offset = current_offset - left;
         RETURN_IF_ERROR(segment->read_at(Slice(result.data + (current_offset - offset), read_size),
                                          file_offset));
-        stats.bytes_read_from_file_cache = read_size;
+        stats.bytes_read_from_file_cache += read_size;
         *bytes_read += read_size;
         current_offset = right + 1;
-        if (current_offset > end_offset) {
-            break;
-        }
     }
     DCHECK(*bytes_read == bytes_req);
     _update_state(stats, state);

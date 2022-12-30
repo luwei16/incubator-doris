@@ -63,7 +63,10 @@ struct FileCacheProfile {
         return s_profile;
     }
 
-    FileCacheProfile() = default;
+    FileCacheProfile() {
+        OlapReaderStatistics stats;
+        update(0, 0, &stats);
+    }
 
     // avoid performance impact, use https to control
     inline static std::atomic<bool> s_enable_profile = true;

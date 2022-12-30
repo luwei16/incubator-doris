@@ -34,7 +34,7 @@ public:
     static void SetUpTestSuite() {
         std::string cur_path = std::filesystem::current_path();
         config::tmp_file_dirs = R"([{"path":")" + cur_path +
-                R"(/ut_dir/s3_file_writer_test","max_cache_bytes":21474836480,"max_upload_bytes":10737418240}])";
+                R"(/ut_dir/s3_file_writer_test","max_cache_bytes":0,"max_upload_bytes":10737418240}])";
         io::TmpFileMgr::create_tmp_file_mgrs();
         S3Conf s3_conf;
         s3_conf.ak = config::test_s3_ak;

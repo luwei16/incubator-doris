@@ -34,11 +34,16 @@ CONF_Bool(use_mem_kv, "false");
 CONF_Int32(meta_server_register_interval_ms, "20000");
 CONF_Int32(meta_server_lease_ms, "60000");
 
+
+CONF_Int64(brpc_max_body_size, "3147483648")
+CONF_Int64(brpc_socket_max_unwritten_bytes, "1073741824");
+
 // logging
 CONF_String(log_dir, "./log/");
 CONF_String(log_level, "info"); // info warn error fatal
 CONF_Int64(log_size_mb, "1024");
 CONF_Int32(log_filenum_quota, "10");
+CONF_Int32(warn_log_filenum_quota, "1");
 CONF_Bool(log_immediate_flush, "false");
 CONF_Strings(log_verbose_modules, ""); // Comma seprated list: a.*,b.*
 CONF_Int32(log_verbose_level, "5");
@@ -73,5 +78,14 @@ CONF_Bool(use_detailed_metrics, "true");
 
 // stage num config
 CONF_Int32(max_num_stages, "40");
+
+// qps limit config
+
+// limit by each warehouse each rpc
+CONF_Int64(default_max_qps_limit, "1000000");
+// limit by each warehouse specific rpc
+CONF_String(specific_max_qps_limit, "get_cluster:5000000;begin_txn:5000000");
+CONF_Bool(enable_rate_limit, "true");
+CONF_Int64(bvar_qps_update_second, "5");
 
 } // namespace selectdb::config

@@ -147,6 +147,14 @@ public class RollupJobV2 extends AlterJobV2 implements GsonPostProcessable {
             int baseSchemaHash, int rollupSchemaHash, KeysType rollupKeysType, short rollupShortKeyColumnCount,
             OriginStatement origStmt) {
         super(jobId, JobType.ROLLUP, dbId, tableId, tableName, timeoutMs);
+        if (!Config.cloud_unique_id.isEmpty()) {
+            ConnectContext context = ConnectContext.get();
+            if (context != null) {
+                LOG.debug("rollup job add cloud cluster, context not null, cluster: {}", context.getCloudCluster());
+                setCloudClusterName(context.getCloudCluster());
+            }
+            LOG.debug("rollup job add cloud cluster, context {}", context);
+        }
 
         this.baseIndexId = baseIndexId;
         this.rollupIndexId = rollupIndexId;

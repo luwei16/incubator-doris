@@ -39,6 +39,8 @@ bool init_glog(const char* basename) {
     // Set roll num
     FLAGS_log_filenum_quota = config::log_filenum_quota;
 
+    // Set warn log roll num
+    FLAGS_warn_log_filenum_quota = config::warn_log_filenum_quota;
     // clang-format off
     // set log level
     std::string& loglevel = config::log_level;

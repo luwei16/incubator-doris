@@ -102,6 +102,8 @@ public class Log4jConfig extends XmlConfiguration {
             + "    <Logger name=\"audit\" level=\"ERROR\" additivity=\"false\">\n"
             + "      <AppenderRef ref=\"Auditfile\"/>\n"
             + "    </Logger>\n"
+            + "    <Logger name=\"com.obs.services.AbstractClient\" level=\"ERROR\"> \n"
+            + "    </Logger>\n"
             + "    <!--REPLACED BY AUDIT AND VERBOSE MODULE NAMES-->\n"
             + "  </Loggers>\n"
             + "</Configuration>";

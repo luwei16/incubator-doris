@@ -86,8 +86,9 @@ public:
 
     virtual const RowsetMetaSharedPtr& rowset_meta() const = 0;
 
-    virtual int64_t max_upload_speed() const = 0;
-    virtual int64_t min_upload_speed() const = 0;
+    // metrics 
+    virtual int64_t upload_cost_ms() const = 0;
+    virtual int64_t total_data_size() const = 0;
 
 private:
     DISALLOW_COPY_AND_ASSIGN(RowsetWriter);

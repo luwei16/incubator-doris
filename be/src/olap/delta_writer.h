@@ -111,8 +111,10 @@ public:
 
     void finish_slave_tablet_pull_rowset(int64_t node_id, bool is_succeed);
 
-    int64_t max_upload_speed() const { return _rowset_writer->max_upload_speed(); }
-    int64_t min_upload_speed() const { return _rowset_writer->min_upload_speed(); }
+    // metrics
+    int64_t upload_cost_ms() const { return _rowset_writer->upload_cost_ms(); }
+    int64_t total_data_size() const { return _rowset_writer->total_data_size(); }
+    int64_t build_rowset_cost_ms() const { return _build_rowset_cost_ms; }
 
 private:
     DeltaWriter(WriteRequest* req, StorageEngine* storage_engine, const UniqueId& load_id,
@@ -177,6 +179,8 @@ private:
     RowsetIdUnorderedSet _rowset_ids;
     // current max version, used to calculate delete bitmap
     int64_t _cur_max_version;
+
+    int64_t _build_rowset_cost_ms = 0;
 };
 
 } // namespace doris

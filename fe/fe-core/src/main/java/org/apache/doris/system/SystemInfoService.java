@@ -142,7 +142,7 @@ public class SystemInfoService {
 
     public void dropCluster(final String clusterId, final String clusterName) {
         lock.lock();
-        clusterNameToId.remove(clusterName);
+        clusterNameToId.remove(clusterName, clusterId);
         clusterIdToBackend.remove(clusterId);
         lock.unlock();
     }
@@ -251,6 +251,7 @@ public class SystemInfoService {
             if (be == null) {
                 be = new ArrayList<>();
                 clusterIdToBackend.put(clusterId, be);
+                MetricRepo.registerClusterMetrics(clusterName, clusterId);
             }
             Set<String> existed = be.stream().map(i -> i.getHost() + ":" + i.getHeartbeatPort())
                     .collect(Collectors.toSet());
@@ -285,6 +286,13 @@ public class SystemInfoService {
             be = be.stream().filter(i -> !d.contains(i.getId())).collect(Collectors.toList());
             // ATTN: clusterId may have zero nodes
             clusterIdToBackend.replace(clusterId, be);
+            // such as dropCluster, but no lock
+            // ATTN: Empty clusters are treated as dropped clusters.
+            if (be.size() == 0) {
+                LOG.info("del clusterId {} and clusterName {} due to be nodes eq 0", clusterId, clusterName);
+                clusterNameToId.remove(clusterName, clusterId);
+                clusterIdToBackend.remove(clusterId);
+            }
             LOG.info("update (del) cloud cluster map, clusterName={} clusterId={} backendNum={} current backend={}",
                     clusterName, clusterId, be.size(), b);
         }
@@ -370,7 +378,10 @@ public class SystemInfoService {
 
     public synchronized void updateCloudBackends(List<Backend> toAdd, List<Backend> toDel) {
         // Deduplicate and validate
-        // TODO(gavin): consider vpc
+        if (toAdd.size() == 0 && toDel.size() == 0) {
+            LOG.info("nothing to do");
+            return;
+        }
         Set<String> existedBes = idToBackendRef.entrySet().stream().map(i -> i.getValue())
                                                .map(i -> i.getHost() + ":" + i.getHeartbeatPort())
                                                .collect(Collectors.toSet());

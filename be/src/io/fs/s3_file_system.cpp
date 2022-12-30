@@ -35,7 +35,7 @@
 #include "common/status.h"
 #include "gutil/strings/stringpiece.h"
 #include "io/cloud/cached_remote_file_reader.h"
-#include "io/fs/local_file_system.h"
+#include "io/cloud/cached_remote_file_writer.h"
 #include "io/fs/remote_file_system.h"
 #include "io/fs/s3_file_reader.h"
 #include "io/fs/s3_file_writer.h"
@@ -43,9 +43,6 @@
 #include "olap/olap_common.h"
 #include "util/async_io.h"
 #include "util/string_util.h"
-=======
->>>>>>> 1.2.0-rc04-origin
-
 namespace doris {
 namespace io {
 
@@ -87,28 +84,37 @@ Status S3FileSystem::connect_impl() {
     if (!client) {
         return Status::InternalError("failed to init s3 client with {}", _s3_conf.to_string());
     }
-    std::lock_guard lock(_client_mu);
-    _client = std::move(client);
+    std::shared_ptr<Aws::Transfer::TransferManager> transfer_manager;
+    {
+        std::lock_guard lock(_client_mu);
+        _client.swap(client);
+        _transfer_manager.swap(transfer_manager);
+    }
     return Status::OK();
 }
 
-Status S3FileSystem::upload(const Path& local_path, const Path& dest_path) {
-    if (bthread_self() == 0) {
-        return upload_impl(local_path, dest_path);
+std::shared_ptr<Aws::Transfer::TransferManager> S3FileSystem::get_transfer_manager() {
+    std::lock_guard lock(_client_mu);
+    if (_transfer_manager == nullptr) {
+        if (_client == nullptr) {
+            return nullptr;
+        }
+        Aws::Transfer::TransferManagerConfiguration transfer_config(_executor.get());
+        transfer_config.s3Client = _client;
+        transfer_config.transferBufferMaxHeapSize = config::s3_transfer_buffer_size_mb << 20;
+        transfer_config.transferStatusUpdatedCallback =
+                [](const Aws::Transfer::TransferManager*,
+                   const std::shared_ptr<const Aws::Transfer::TransferHandle>& handle) {
+                    handle->Callback();
+                };
+        _transfer_manager = Aws::Transfer::TransferManager::Create(transfer_config);
     }
-    Status s;
-    auto task = [&] { s = upload_impl(local_path, dest_path); };
-    AsyncIO::run_task(task, io::FileSystemType::S3);
-    return s;
+    return _transfer_manager;
 }
 
-Status S3FileSystem::upload_impl(const Path& local_path, const Path& dest_path) {
-    auto client = get_client();
-    CHECK_S3_CLIENT(client);
-
-    Aws::Transfer::TransferManagerConfiguration transfer_config(_executor.get());
-    transfer_config.s3Client = client;
-    auto transfer_manager = Aws::Transfer::TransferManager::Create(transfer_config);
+Status S3FileSystem::upload(const Path& local_path, const Path& dest_path) {
+    auto transfer_manager = get_transfer_manager();
+    CHECK_S3_CLIENT(transfer_manager);
 
     auto start = std::chrono::steady_clock::now();
 
@@ -136,27 +142,12 @@ Status S3FileSystem::upload_impl(const Path& local_path, const Path& dest_path) 
 
 Status S3FileSystem::batch_upload(const std::vector<Path>& local_paths,
                                   const std::vector<Path>& dest_paths) {
-    if (bthread_self() == 0) {
-        return batch_upload_impl(local_paths, dest_paths);
-    }
-    Status s;
-    auto task = [&] { s = batch_upload_impl(local_paths, dest_paths); };
-    AsyncIO::run_task(task, io::FileSystemType::S3);
-    return s;
-}
-
-Status S3FileSystem::batch_upload_impl(const std::vector<Path>& local_paths,
-                                  const std::vector<Path>& dest_paths) {
     auto client = get_client();
     CHECK_S3_CLIENT(client);
 
     if (local_paths.size() != dest_paths.size()) {
         return Status::InvalidArgument("local_paths.size() != dest_paths.size()");
     }
-
-    Aws::Transfer::TransferManagerConfiguration transfer_config(_executor.get());
-    transfer_config.s3Client = client;
-    auto transfer_manager = Aws::Transfer::TransferManager::Create(transfer_config);
 
     std::vector<std::shared_ptr<Aws::Transfer::TransferHandle>> handles;
     for (int i = 0; i < local_paths.size(); ++i) {

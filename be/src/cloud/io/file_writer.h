@@ -30,7 +30,7 @@ class FileSystem;
 
 class FileWriter {
 public:
-    FileWriter(Path&& path) : _path(std::move(path)) {}
+    FileWriter() = default;
     virtual ~FileWriter() = default;
 
     DISALLOW_COPY_AND_ASSIGN(FileWriter);
@@ -38,7 +38,7 @@ public:
     virtual Status open() = 0;
 
     // Normal close. Wait for all data to persist before returning.
-    virtual Status close() = 0;
+    virtual Status close(bool sync = true) = 0;
 
     // Abnormal close and remove this file.
     virtual Status abort() = 0;
@@ -57,10 +57,7 @@ public:
 
     virtual std::shared_ptr<FileSystem> fs() const = 0;
 
-    const Path& path() const { return _path; }
-
-protected:
-    Path _path;
+    virtual const Path& path() const = 0;
 };
 
 using FileWriterPtr = std::unique_ptr<FileWriter>;

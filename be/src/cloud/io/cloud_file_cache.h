@@ -38,7 +38,7 @@ public:
     virtual ~IFileCache() = default;
 
     /// Restore cache from local filesystem.
-    virtual void initialize() = 0;
+    virtual Status initialize() = 0;
 
     virtual void remove_if_exists(const Key& key, bool is_persistent) = 0;
 

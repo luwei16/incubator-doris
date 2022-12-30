@@ -1,17 +1,18 @@
 #!/bin/bash
 
-if [ $# != 2 ]
+if [ $# != 3 ]
 then
-echo "usage: $0 backupdir waitsecond"
+echo "usage: $0 <backupdir> <backup_waitsecond> <backup_keep_days>, e.g., ./fdbbackup.sh /mnt/backup 3600 15"
 exit 1
 fi
 
 BACKUPDIR=$1
 LOGDIR=$1
 WAITSEC=$2
+KEEYDAYS=$3
 INTERVALSEC=5
 
-CURRENTDATE=$(date +%Y-%m-%d-%H-%M)
+CURRENTDATE=$(date +%Y-%m-%d)
 
 echo "start backup:" $(date +%Y-%m-%d-%H-%M-%S) >> ${LOGDIR}/backup.log
 
@@ -21,6 +22,7 @@ echo $BACKUPCMD
 
 echo "$BACKUPCMD" >> ${LOGDIR}/backup.log
 
+# start to backup
 i=0
 succ=false
 while ((i < ${WAITSEC}))
@@ -41,17 +43,16 @@ do
     fi
 done
 
+# if failed to backup, abort it
 if [[ ${succ} == "false" ]]
 then
     echo "backup fail" >> ${LOGDIR}/backup.log
     abort_result=`fdbbackup abort -t ${CURRENTDATE}`
     echo "abort result: $abort_result" >> ${LOGDIR}/backup.log
-else
-    delete_old_file=`cd ${BACKUPDIR} && ls -ltr | grep '^d' | head -1 | grep -v ${CURRENTDATE} | xargs | awk '{print $9}'`
-    if [[ $delete_old_file =~ "backup-" ]]
-    then
-        echo "delete ${delete_old_file}" >> ${LOGDIR}/backup.log
-        delete_result=`fdbbackup delete -d file://${BACKUPDIR}/${delete_old_file}`
-        echo "delete result: $delete_result" >> ${LOGDIR}/backup.log
-    fi
 fi
+
+# delete outdated backup data
+echo 'delete outdated backup data' >> ${LOGDIR}/backup.log
+delete_list=`find ${LOGDIR}/ -type d -name "backup-*" -mtime +${KEEYDAYS}`
+echo "delete list: ${delete_list}" >> ${LOGDIR}/backup.log 
+find ${LOGDIR}/ -type d -name "backup-*" -mtime +${KEEYDAYS} -prune -exec rm -rf {} +

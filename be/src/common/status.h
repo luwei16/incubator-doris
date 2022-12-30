@@ -243,7 +243,8 @@ class PStatus;
     M(OLAP_ERR_ROWSET_RENAME_FILE_FAILED, -3116, "", false)              \
     M(OLAP_ERR_SEGCOMPACTION_INIT_READER, -3117, "", false)              \
     M(OLAP_ERR_SEGCOMPACTION_INIT_WRITER, -3118, "", false)              \
-    M(OLAP_ERR_SEGCOMPACTION_FAILED, -3119, "", false)
+    M(OLAP_ERR_SEGCOMPACTION_FAILED, -3119, "", false)                   \
+    M(EMPTY_SEGMENT, -4002, "", false)
 
 enum ErrorCode {
 #define M(NAME, ERRORCODE, DESC, STACKTRACEENABLED) NAME = ERRORCODE,

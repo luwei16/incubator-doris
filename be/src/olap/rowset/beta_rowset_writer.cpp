@@ -739,34 +739,9 @@ RowsetSharedPtr BetaRowsetWriter::build() {
         }
         auto s3_file_writer = dynamic_cast<io::S3FileWriter*>(file_writer.get());
         if (s3_file_writer != nullptr) {
-            int64_t cur_upload_speed = s3_file_writer->upload_speed_bytes_s();
-            _max_upload_speed =
-                    cur_upload_speed > _max_upload_speed ? cur_upload_speed : _max_upload_speed;
-            _min_upload_speed =
-                    cur_upload_speed > _min_upload_speed ? _min_upload_speed : cur_upload_speed;
+            _upload_cost_ms = s3_file_writer->upload_cost_ms();
         }
     }
-    Status status;
-    status = _wait_flying_segcompaction();
-    if (!status.ok()) {
-        LOG(WARNING) << "segcompaction failed when build new rowset 1st wait, res=" << status;
-        return nullptr;
-    }
-    status = _segcompaction_ramaining_if_necessary();
-    if (!status.ok()) {
-        LOG(WARNING) << "segcompaction failed when build new rowset, res=" << status;
-        return nullptr;
-    }
-    status = _wait_flying_segcompaction();
-    if (!status.ok()) {
-        LOG(WARNING) << "segcompaction failed when build new rowset 2nd wait, res=" << status;
-        return nullptr;
-    }
-
-    if (_segcompaction_file_writer) {
-        _segcompaction_file_writer->close();
-    }
-    Status status;
     status = _wait_flying_segcompaction();
     if (!status.ok()) {
         LOG(WARNING) << "segcompaction failed when build new rowset 1st wait, res=" << status;

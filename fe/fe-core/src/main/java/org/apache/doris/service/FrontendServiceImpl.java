@@ -683,6 +683,10 @@ public class FrontendServiceImpl implements FrontendService.Iface {
         ConnectContext context = new ConnectContext(null);
         // Set current connected FE to the client address, so that we can know where this request come from.
         context.setCurrentConnectedFEIp(clientAddr.getHostname());
+        if (!Config.cloud_unique_id.isEmpty() && !Strings.isNullOrEmpty(params.getCloudCluster())) {
+            context.setCloudCluster(params.getCloudCluster());
+        }
+
         ConnectProcessor processor = new ConnectProcessor(context);
         TMasterOpResult result = processor.proxyExecute(params);
         if (QueryState.MysqlStateType.ERR.name().equalsIgnoreCase(result.getStatus())) {
@@ -1076,6 +1080,11 @@ public class FrontendServiceImpl implements FrontendService.Iface {
     private TExecPlanFragmentParams streamLoadPutImpl(TStreamLoadPutRequest request) throws UserException {
         ConnectContext ctx = new ConnectContext();
         ctx.setThreadLocalInfo();
+        ctx.setQualifiedUser(request.getUser());
+        ctx.setCurrentUserIdentity(UserIdentity.createAnalyzedUserIdentWithIp(request.getUser(), "%"));
+        ctx.setCloudCluster();
+        LOG.debug("streamLoadPutImpl set context: cluster {}, setCurrentUserIdentity {}",
+                ctx.getCloudCluster(), ctx.getCurrentUserIdentity());
         String cluster = request.getCluster();
         if (Strings.isNullOrEmpty(cluster)) {
             cluster = SystemInfoService.DEFAULT_CLUSTER;
@@ -1089,11 +1098,13 @@ public class FrontendServiceImpl implements FrontendService.Iface {
             if (Strings.isNullOrEmpty(request.getCluster())) {
                 dbName = request.getDb();
             }
+            ConnectContext.remove();
             throw new UserException("unknown database, database=" + dbName);
         }
         long timeoutMs = request.isSetThriftRpcTimeoutMs() ? request.getThriftRpcTimeoutMs() : 5000;
         Table table = db.getTableOrMetaException(request.getTbl(), TableType.OLAP);
         if (!table.tryReadLock(timeoutMs, TimeUnit.MILLISECONDS)) {
+            ConnectContext.remove();
             throw new UserException(
                     "get table read lock timeout, database=" + fullDbName + ",table=" + table.getName());
         }
@@ -1109,6 +1120,7 @@ public class FrontendServiceImpl implements FrontendService.Iface {
             }
             return plan;
         } finally {
+            ConnectContext.remove();
             table.readUnlock();
         }
     }

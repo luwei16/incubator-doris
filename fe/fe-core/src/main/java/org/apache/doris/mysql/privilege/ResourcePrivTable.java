@@ -41,7 +41,7 @@ public class ResourcePrivTable extends PrivTable {
         for (PrivEntry entry : entries) {
             ResourcePrivEntry resourcePrivEntry = (ResourcePrivEntry) entry;
 
-            if (!resourcePrivEntry.match(currentUser, true)) {
+            if (!resourcePrivEntry.match(currentUser)) {
                 continue;
             }
 

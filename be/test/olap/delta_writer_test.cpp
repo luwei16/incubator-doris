@@ -386,7 +386,7 @@ TEST_F(TestDeltaWriter, open) {
     PUniqueId load_id;
     load_id.set_hi(0);
     load_id.set_lo(0);
-    WriteRequest write_req = {10003,   270068375,  WriteType::LOAD,      20001, 30001,
+    WriteRequest write_req = {10003,   270068375,  WriteType::LOAD,      20001, 0, 30001,
                               load_id, tuple_desc, &tuple_desc->slots(), true};
     DeltaWriter* delta_writer = nullptr;
     DeltaWriter::open(&write_req, &delta_writer);
@@ -426,8 +426,8 @@ TEST_F(TestDeltaWriter, write) {
     PUniqueId load_id;
     load_id.set_hi(0);
     load_id.set_lo(0);
-    WriteRequest write_req = {10004, 270068376, WriteType::LOAD, 20002,
-                              30002, load_id,   tuple_desc,      &(tuple_desc->slots())};
+    WriteRequest write_req = {10004,   270068376,  WriteType::LOAD,       20002, 0, 30002,
+                              load_id, tuple_desc, &(tuple_desc->slots())};
     DeltaWriter* delta_writer = nullptr;
     DeltaWriter::open(&write_req, &delta_writer);
     EXPECT_NE(delta_writer, nullptr);
@@ -548,8 +548,8 @@ TEST_F(TestDeltaWriter, vec_write) {
     PUniqueId load_id;
     load_id.set_hi(0);
     load_id.set_lo(0);
-    WriteRequest write_req = {10004, 270068376, WriteType::LOAD, 20002,
-                              30002, load_id,   tuple_desc,      &(tuple_desc->slots())};
+    WriteRequest write_req = {10004,   270068376,  WriteType::LOAD,       20002, 0, 30002,
+                              load_id, tuple_desc, &(tuple_desc->slots())};
     DeltaWriter* delta_writer = nullptr;
     DeltaWriter::open(&write_req, &delta_writer, TUniqueId(), true);
     ASSERT_NE(delta_writer, nullptr);
@@ -694,8 +694,8 @@ TEST_F(TestDeltaWriter, sequence_col) {
     PUniqueId load_id;
     load_id.set_hi(0);
     load_id.set_lo(0);
-    WriteRequest write_req = {10005, 270068377, WriteType::LOAD, 20003,
-                              30003, load_id,   tuple_desc,      &(tuple_desc->slots())};
+    WriteRequest write_req = {10005,   270068377,  WriteType::LOAD,       20003, 0, 30003,
+                              load_id, tuple_desc, &(tuple_desc->slots())};
     DeltaWriter* delta_writer = nullptr;
     DeltaWriter::open(&write_req, &delta_writer);
     EXPECT_NE(delta_writer, nullptr);
@@ -761,8 +761,8 @@ TEST_F(TestDeltaWriter, vec_sequence_col) {
     PUniqueId load_id;
     load_id.set_hi(0);
     load_id.set_lo(0);
-    WriteRequest write_req = {10005, 270068377, WriteType::LOAD, 20003,
-                              30003, load_id,   tuple_desc,      &(tuple_desc->slots())};
+    WriteRequest write_req = {10005,   270068377,  WriteType::LOAD,       20003, 0, 30003,
+                              load_id, tuple_desc, &(tuple_desc->slots())};
     DeltaWriter* delta_writer = nullptr;
     DeltaWriter::open(&write_req, &delta_writer, TUniqueId(), true);
     ASSERT_NE(delta_writer, nullptr);

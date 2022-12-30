@@ -176,10 +176,13 @@ Status BetaRowsetReader::init(RowsetReaderContext* read_context) {
     read_options.runtime_state = read_context->runtime_state;
     read_options.output_columns = read_context->output_columns;
 
-    // load segments
-    RETURN_NOT_OK(SegmentLoader::instance()->load_segments(
-            _rowset, &_segment_cache_handle,
-            read_context->reader_type == ReaderType::READER_QUERY));
+    {
+        SCOPED_RAW_TIMER(&_stats->load_segments_timer);
+        // load segments
+        RETURN_NOT_OK(SegmentLoader::instance()->load_segments(
+                _rowset, &_segment_cache_handle,
+                read_context->reader_type == ReaderType::READER_QUERY));
+    }
 
     // create iterator for each segment
     std::vector<std::unique_ptr<RowwiseIterator>> seg_iterators;
@@ -385,10 +388,11 @@ bool BetaRowsetReader::_should_push_down_value_predicates() const {
 }
 
 Status BetaRowsetReader::get_segment_num_rows(std::vector<uint32_t>* segment_num_rows) {
-    auto& seg_ptrs = _segment_cache_handle.get_segments();
-    segment_num_rows->resize(seg_ptrs.size());
-    for (size_t i = 0; i < seg_ptrs.size(); i++) {
-        (*segment_num_rows)[i] = seg_ptrs[i]->num_rows();
+    segment_num_rows->clear();
+    auto& segments = _segment_cache_handle.get_segments();
+    segment_num_rows->reserve(segments.size());
+    for (auto& seg : segments) {
+        segment_num_rows->push_back(seg->num_rows());
     }
     return Status::OK();
 }

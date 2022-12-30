@@ -184,8 +184,8 @@ private:
     Status _ensure_index_loaded() {
         return _load_index_once.call([this] {
             bool use_page_cache = !config::disable_storage_page_cache;
-            RETURN_IF_ERROR(_load_zone_map_index(use_page_cache, true));
             RETURN_IF_ERROR(_load_ordinal_index(use_page_cache, true));
+            RETURN_IF_ERROR(_load_zone_map_index(use_page_cache, true));
             RETURN_IF_ERROR(_load_bitmap_index(use_page_cache, true));
             RETURN_IF_ERROR(_load_bloom_filter_index(use_page_cache, true));
             return Status::OK();

@@ -26,6 +26,8 @@ import org.apache.doris.common.io.Writable;
 
 import com.google.common.base.Preconditions;
 import org.apache.commons.lang.NotImplementedException;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import java.io.DataInput;
 import java.io.DataOutput;
@@ -34,6 +36,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 
 public abstract class PrivEntry implements Comparable<PrivEntry>, Writable {
+    private static final Logger LOG = LogManager.getLogger(PrivEntry.class);
     protected static final String ANY_HOST = "%";
     protected static final String ANY_USER = "%";
 
@@ -133,6 +136,12 @@ public abstract class PrivEntry implements Comparable<PrivEntry>, Writable {
 
     public UserIdentity getUserIdent() {
         return userIdentity;
+    }
+
+    public boolean match(UserIdentity userIdent) {
+        // cluster、stage resource just compare user name
+        LOG.info("origUser: {}, userIdent: {}", origUser, userIdent);
+        return origUser.equals(userIdent.getQualifiedUser());
     }
 
     public boolean match(UserIdentity userIdent, boolean exactMatch) {

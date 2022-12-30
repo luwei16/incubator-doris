@@ -69,7 +69,9 @@ public class CopyIntoProperties extends CopyProperties {
     }
 
     public Map<String, String> getExecProperties() {
-        return getKeysProperties(EXEC_PROPERTIES);
+        Map<String, String> results = getKeysProperties(EXEC_PROPERTIES);
+        results.put(LoadStmt.MAX_FILTER_RATIO_PROPERTY, String.valueOf(getMaxFilterRatio()));
+        return results;
     }
 
     private Map<String, String> getKeysProperties(ImmutableSet<String> keys) {

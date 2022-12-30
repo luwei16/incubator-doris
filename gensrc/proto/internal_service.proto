@@ -166,8 +166,11 @@ message PTabletWriterAddBatchResult {
     optional int64 wait_execution_time_us = 5;
     repeated PTabletError tablet_errors = 6;
     map<int64, PSuccessSlaveTabletNodeIds> success_slave_tablet_node_ids = 7;
-    optional int64 max_upload_speed = 8;
-    optional int64 min_upload_speed = 9;
+    optional int64 DEPRECATED_max_upload_speed = 8;
+    optional int64 DEPRECATED_min_upload_speed = 9;
+    optional int64 max_build_rowset_cost_ms = 10;
+    optional int64 avg_build_rowset_cost_ms = 11;
+    optional int64 upload_speed_bytes_s = 12;
 };
 
 message PTabletWriterAddBlockResult {
@@ -178,8 +181,11 @@ message PTabletWriterAddBlockResult {
     optional int64 wait_execution_time_us = 5;
     repeated PTabletError tablet_errors = 6;
     map<int64, PSuccessSlaveTabletNodeIds> success_slave_tablet_node_ids = 7;
-    optional int64 max_upload_speed = 8;
-    optional int64 min_upload_speed = 9;
+    optional int64 DEPRECATED_max_upload_speed = 8;
+    optional int64 DEPRECATED_min_upload_speed = 9;
+    optional int64 max_build_rowset_cost_ms = 10;
+    optional int64 avg_build_rowset_cost_ms = 11;
+    optional int64 upload_speed_bytes_s = 12;
 };
 
 // tablet writer cancel

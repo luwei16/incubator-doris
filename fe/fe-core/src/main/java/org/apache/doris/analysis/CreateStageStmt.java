@@ -34,6 +34,9 @@ import lombok.Getter;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import java.net.HttpURLConnection;
+import java.net.SocketTimeoutException;
+import java.net.URL;
 import java.util.Map;
 import java.util.UUID;
 
@@ -78,6 +81,7 @@ public class CreateStageStmt extends DdlStmt {
     private void checkObjectStorageInfo() throws AnalysisException {
         RemoteBase remote = null;
         try {
+            tryConnect(stageProperties.getObjectStoreInfoPB().getEndpoint());
             remote = RemoteBase.newInstance(new ObjectInfo(stageProperties.getObjectStoreInfoPB()));
             // RemoteBase#headObject does not throw exception if key does not exist.
             remote.headObject("1");
@@ -93,6 +97,28 @@ public class CreateStageStmt extends DdlStmt {
         } finally {
             if (remote != null) {
                 remote.close();
+            }
+        }
+    }
+
+    private void tryConnect(String endpoint) throws Exception {
+        HttpURLConnection connection = null;
+        try {
+            URL url = new URL("http://" + endpoint);
+            connection = (HttpURLConnection) url.openConnection();
+            connection.setConnectTimeout(10000);
+            connection.connect();
+        } catch (SocketTimeoutException e) {
+            throw e;
+        } catch (Exception e) {
+            LOG.warn("Failed to connect endpoint=" + endpoint, e);
+        } finally {
+            if (connection != null) {
+                try {
+                    connection.disconnect();
+                } catch (Exception e) {
+                    LOG.warn("Failed to disconnect connection, endpoint={}", endpoint, e);
+                }
             }
         }
     }

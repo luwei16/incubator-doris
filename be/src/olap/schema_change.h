@@ -139,11 +139,13 @@ protected:
     };
 
     bool _check_row_nums(const RowsetReaderSharedPtr& reader, const RowsetWriter& writer) const {
-        if (reader->rowset()->num_rows() != writer.num_rows() + _merged_rows + _filtered_rows) {
+        int64_t source_rows = 0;
+        std::vector<uint32_t> segment_num_rows;
+        reader->get_segment_num_rows(&segment_num_rows);
+        for (auto n : segment_num_rows) source_rows += n;
+        if (source_rows != writer.num_rows() + _merged_rows + _filtered_rows) {
             LOG(WARNING) << "fail to check row num! "
-                         << "source_rows=" << reader->rowset()->num_rows()
-                         << ", writer rows=" << writer.num_rows()
-                         << ", merged_rows=" << merged_rows()
+                         << "source_rows=" << source_rows << ", merged_rows=" << merged_rows()
                          << ", filtered_rows=" << filtered_rows()
                          << ", new_index_rows=" << writer.num_rows();
             return false;

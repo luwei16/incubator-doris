@@ -17,11 +17,13 @@
 
 package org.apache.doris.qe;
 
+import org.apache.doris.analysis.ResourceTypeEnum;
 import org.apache.doris.analysis.UserIdentity;
 import org.apache.doris.catalog.DatabaseIf;
 import org.apache.doris.catalog.Env;
 import org.apache.doris.cluster.ClusterNamespace;
 import org.apache.doris.common.Config;
+import org.apache.doris.common.ErrorCode;
 import org.apache.doris.common.UserException;
 import org.apache.doris.common.telemetry.Telemetry;
 import org.apache.doris.common.util.DebugUtil;
@@ -32,6 +34,7 @@ import org.apache.doris.mysql.MysqlCapability;
 import org.apache.doris.mysql.MysqlChannel;
 import org.apache.doris.mysql.MysqlCommand;
 import org.apache.doris.mysql.MysqlSerializer;
+import org.apache.doris.mysql.privilege.PrivPredicate;
 import org.apache.doris.nereids.StatementContext;
 import org.apache.doris.plugin.AuditEvent.AuditEventBuilder;
 import org.apache.doris.resource.Tag;
@@ -635,7 +638,9 @@ public class ConnectContext {
             row.add("" + connectionId);
             row.add(ClusterNamespace.getNameFromFullName(qualifiedUser));
             row.add(getMysqlChannel().getRemoteHostPortString());
-            row.add(clusterName);
+            // row.add(clusterName);
+            // http://jira.selectdb.com:8090/browse/CORE-995?filter=-1
+            row.add(cloudCluster);
             row.add(ClusterNamespace.getNameFromFullName(currentDb));
             row.add(command.toString());
             row.add("" + (nowMs - startTime) / 1000);
@@ -663,6 +668,45 @@ public class ConnectContext {
 
     public String getCloudCluster() {
         return cloudCluster;
+    }
+
+    public void setCloudCluster() {
+        List<String> cloudClusterNames = Env.getCurrentSystemInfo().getCloudClusterNames();
+        // try set default cluster
+        String defaultCloudCluster = Env.getCurrentEnv().getAuth().getDefaultCloudCluster(getQualifiedUser());
+        if (!Strings.isNullOrEmpty(defaultCloudCluster)) {
+            // check cluster validity
+            if (cloudClusterNames.contains(defaultCloudCluster)) {
+                // valid
+                setCloudCluster(defaultCloudCluster);
+                LOG.info("use default cluster {}", defaultCloudCluster);
+                return;
+            } else {
+                // invalid
+                LOG.warn("default cluster {} current invalid, please change it", defaultCloudCluster);
+                getState().setError(ErrorCode.ERR_NO_CLUSTER_ERROR,
+                        "default cluster " + defaultCloudCluster + "current invalid, please change it");
+                return;
+            }
+        }
+
+        // get all available cluster of the user
+        for (String cloudClusterName : cloudClusterNames) {
+            if (Env.getCurrentEnv().getAuth().checkCloudPriv(ConnectContext.get().getCurrentUserIdentity(),
+                    cloudClusterName, PrivPredicate.USAGE, ResourceTypeEnum.CLUSTER)) {
+                // set a cluster to context cloudCluster
+                setCloudCluster(cloudClusterName);
+                LOG.debug("set context cluster name {}", cloudClusterName);
+                break;
+            }
+        }
+        if (Strings.isNullOrEmpty(this.cloudCluster)) {
+            LOG.warn("cant get a valid cluster for user {} to use", getCurrentUserIdentity());
+            getState().setError(ErrorCode.ERR_NO_CLUSTER_ERROR,
+                    "Cant get a Valid cluster for you to use, plz connect admin");
+            return;
+        }
+        LOG.info("finally set context cluster name {}", cloudCluster);
     }
 
 }

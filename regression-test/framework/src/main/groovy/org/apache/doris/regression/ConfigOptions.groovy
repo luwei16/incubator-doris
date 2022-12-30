@@ -66,6 +66,9 @@ class ConfigOptions {
     static Option withOutLoadDataOpt
     static Option dryRunOpt
     static Option isSmokeTestOpt
+    static Option multiClusterBesOpt
+    static Option metaServiceTokenOpt
+    static Option multiClusterInstanceOpt
 
     static CommandLine initCommands(String[] args) {
         helpOption = Option.builder("h")
@@ -376,6 +379,21 @@ class ConfigOptions {
                 .hasArg(false)
                 .desc("is smoke test")
                 .build()
+        multiClusterBesOpt = Option.builder("multiClusterBes")
+                .required(false)
+                .hasArg(false)
+                .desc("multi cluster backend info")
+                .build()
+        metaServiceTokenOpt = Option.builder("metaServiceToken")
+                .required(false)
+                .hasArg(false)
+                .desc("meta service token")
+                .build()
+        multiClusterInstanceOpt = Option.builder("multiClusterInstance")
+                .required(false)
+                .hasArg(false)
+                .desc("multi cluster instance")
+                .build()
 
         Options options = new Options()
                 .addOption(helpOption)
@@ -412,6 +430,9 @@ class ConfigOptions {
                 .addOption(withOutLoadDataOpt)
                 .addOption(dryRunOpt)
                 .addOption(isSmokeTestOpt)
+                .addOption(multiClusterBesOpt)
+                .addOption(metaServiceTokenOpt)
+                .addOption(multiClusterInstanceOpt)
 
         CommandLine cmd = new DefaultParser().parse(options, args, true)
         if (cmd.hasOption(helpOption)) {

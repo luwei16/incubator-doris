@@ -30,7 +30,7 @@ class FileSystem;
 
 class FileWriter {
 public:
-    FileWriter(Path&& path) : _path(std::move(path)) {}
+    FileWriter() = default;
     virtual ~FileWriter() = default;
 
     DISALLOW_COPY_AND_ASSIGN(FileWriter);
@@ -55,12 +55,7 @@ public:
 
     virtual size_t bytes_appended() const = 0;
 
-    virtual FileSystem* fs() const = 0;
-
-    const Path& path() const { return _path; }
-
-protected:
-    Path _path;
+    virtual const Path& path() const = 0;
 };
 
 using FileWriterPtr = std::unique_ptr<FileWriter>;

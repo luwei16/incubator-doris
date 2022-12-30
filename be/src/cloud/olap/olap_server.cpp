@@ -620,16 +620,19 @@ std::vector<TabletSharedPtr> StorageEngine::_generate_cloud_compaction_tasks(
         bool need_pick_tablet = true;
         // clang-format off
         int thread_per_disk = config::compaction_task_num_per_fast_disk; // all disks are fast in cloud mode
-        // We need to reserve at least one thread for cumulative compaction,
-        // because base compactions may take too long to complete, which may
-        // leads to "too many rowsets" error.
-        int n = compaction_type == CompactionType::CUMULATIVE_COMPACTION
-                        ? thread_per_disk - (copied_cumu_map[data_dir].size() + copied_base_map[data_dir].size())
-                        : std::min(config::max_base_compaction_task_num_per_disk, thread_per_disk - 1) - copied_base_map[data_dir].size();
-        // clang-format on                                  
+        int n = thread_per_disk - (copied_cumu_map[data_dir].size() + copied_base_map[data_dir].size());
+        if (compaction_type == CompactionType::BASE_COMPACTION) {
+            // We need to reserve at least one thread for cumulative compaction,
+            // because base compactions may take too long to complete, which may
+            // leads to "too many rowsets" error.
+            int base_n = std::min(config::max_base_compaction_task_num_per_disk, thread_per_disk - 1) - copied_base_map[data_dir].size();
+            n = std::min(base_n, n);
+        }
+        // clang-format on
         if (n <= 0) { // No threads available
-            need_pick_tablet = false;
             if (!check_score) continue;
+            need_pick_tablet = false;
+            n = 0;
         }
 
         // Return true for skipping compaction

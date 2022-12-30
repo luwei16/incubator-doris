@@ -93,6 +93,7 @@ Status IndexedColumnReader::read_page(const PagePointer& pp, PageHandle* handle,
     opts.encoding_info = _encoding_info;
     opts.is_persistent = true;
     opts.pre_decode = pre_decode;
+    opts.read_segmeng_index = true;
 
     return PageIO::read_and_decompress_page(opts, handle, body, footer);
 }

@@ -177,19 +177,37 @@ Status parse_conf_cache_paths(const std::string& config_path, std::vector<CacheP
         auto map = config.GetObject();
         DCHECK(map.HasMember(CACHE_PATH.c_str()));
         std::string path = map.FindMember(CACHE_PATH.c_str())->value.GetString();
-        int64_t normal_size = map.HasMember(CACHE_NORMAL_SIZE.c_str())
-                                      ? map.FindMember(CACHE_NORMAL_SIZE.c_str())->value.GetInt64()
-                                      : 0;
-        int64_t persistent_size =
-                map.HasMember(CACHE_PERSISTENT_SIZE.c_str())
-                        ? map.FindMember(CACHE_PERSISTENT_SIZE.c_str())->value.GetInt64()
-                        : 0;
-        int64_t query_limit_bytes = 0;
+        int64_t normal_size = 0, persistent_size = 0, query_limit_bytes = 0;
+        if (map.HasMember(CACHE_NORMAL_SIZE.c_str())) {
+            auto& value = map.FindMember(CACHE_NORMAL_SIZE.c_str())->value;
+            if (value.IsInt64()) {
+                normal_size = value.GetInt64();
+            } else {
+                LOG(WARNING) << "normal should be int64";
+                return Status::OLAPInternalError(OLAP_ERR_INPUT_PARAMETER_ERROR);
+            }
+        }
+        if (map.HasMember(CACHE_PERSISTENT_SIZE.c_str())) {
+            auto& value = map.FindMember(CACHE_PERSISTENT_SIZE.c_str())->value;
+            if (value.IsInt64()) {
+                persistent_size = value.GetInt64();
+            } else {
+                LOG(WARNING) << "persistent should be int64";
+                return Status::OLAPInternalError(OLAP_ERR_INPUT_PARAMETER_ERROR);
+            }
+        }
         if (config::enable_file_cache_query_limit) {
-            query_limit_bytes =
-                    map.HasMember(CACHE_QUERY_LIMIT_SIZE.c_str())
-                            ? map.FindMember(CACHE_QUERY_LIMIT_SIZE.c_str())->value.GetInt64()
-                            : normal_size / 5;
+            if (map.HasMember(CACHE_QUERY_LIMIT_SIZE.c_str())) {
+                auto& value = map.FindMember(CACHE_QUERY_LIMIT_SIZE.c_str())->value;
+                if (value.IsInt64()) {
+                    query_limit_bytes = value.GetInt64();
+                } else {
+                    LOG(WARNING) << "query_limit should be int64";
+                    return Status::OLAPInternalError(OLAP_ERR_INPUT_PARAMETER_ERROR);
+                }
+            } else {
+                query_limit_bytes = normal_size / 5;
+            }
         }
         if (normal_size <= 0 || persistent_size <= 0) {
             LOG(WARNING)

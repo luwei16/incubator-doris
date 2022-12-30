@@ -25,7 +25,11 @@ suite("test_cast_function") {
     qt_sql """ select cast (NULL AS CHAR(1)); """
     qt_sql """ select cast ('20190101' AS CHAR(2)); """
 
+<<<<<<< HEAD
     sql """ SET enable_vectorized_engine = true; """
+=======
+    sql """ SET enable_vectorized_engine = TRUE; """
+>>>>>>> selectdb/selectdb-cloud-release-2.0
 
     qt_sql """ select cast (1 as BIGINT) """
     qt_sql """ select cast(cast ("11.2" as double) as bigint) """

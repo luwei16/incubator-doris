@@ -136,4 +136,19 @@ TEST_F(TraceTest, TestTraceMetrics) {
     EXPECT_GE(m["test_scope_us"], 80 * 1000);
 }
 
+TEST_F(TraceTest, TestTraceStartFinish) {
+    scoped_refptr<Trace> trace(new Trace);
+    ADOPT_TRACE(trace.get());
+    TRACE_START("TraceTest");
+    usleep(1000);
+    TRACE_FINISH("TraceTest");
+    TRACE_START("TraceTest1");
+    usleep(1000);
+    TRACE_FINISH("TraceTest1");
+    TRACE_START("TraceTest");
+    usleep(1000);
+    TRACE_FINISH("TraceTest");
+    trace->DumpAccumulatedTime(&LOG(WARNING));
+}
+
 } // namespace doris

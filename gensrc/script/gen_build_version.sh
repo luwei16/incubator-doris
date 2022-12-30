@@ -204,8 +204,8 @@ EOF
 build_version_prefix="selectdb"
 build_version_major=2
 build_version_minor=0
-build_version_patch=0
-build_version_rc_version="dev"
+build_version_patch=14
+build_version_rc_version="release"
 
 if [ -f /etc/os-release ]; then
 	build_os_version=$(cat /etc/os-release | head -n2 | tr '\n' ' ')

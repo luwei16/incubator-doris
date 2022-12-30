@@ -67,7 +67,8 @@ public class CopyFromParam {
         this.fileFilterExpr = whereExpr;
     }
 
-    public void analyze(String fullDbName, TableName tableName, boolean useDeleteSign) throws AnalysisException {
+    public void analyze(String fullDbName, TableName tableName, boolean useDeleteSign, String fileType)
+            throws AnalysisException {
         if (exprList == null && fileFilterExpr == null && !useDeleteSign) {
             return;
         }
@@ -81,7 +82,8 @@ public class CopyFromParam {
             throw new AnalysisException("copy.use_delete_sign property only support unique table");
         }
 
-        // Analyze columns mentioned in the statement.
+        // Analyze table columns mentioned in the statement.
+        boolean addDeleteSign = false;
         if (targetColumns == null) {
             targetColumns = new ArrayList<>();
             for (Column col : olapTable.getBaseSchema(false)) {
@@ -89,8 +91,12 @@ public class CopyFromParam {
             }
             if (useDeleteSign) {
                 targetColumns.add(getDeleteSignColumn(olapTable).getName());
+                addDeleteSign = true;
             }
         } else {
+            if (exprList == null || targetColumns.size() != exprList.size()) {
+                ErrorReport.reportAnalysisException(ErrorCode.ERR_WRONG_VALUE_COUNT);
+            }
             Set<String> mentionedColumns = Sets.newTreeSet(String.CASE_INSENSITIVE_ORDER);
             for (String colName : targetColumns) {
                 Column col = olapTable.getColumn(colName);
@@ -101,13 +107,26 @@ public class CopyFromParam {
                     ErrorReport.reportAnalysisException(ErrorCode.ERR_FIELD_SPECIFIED_TWICE, colName);
                 }
             }
+            if (useDeleteSign && !mentionedColumns.contains(Column.DELETE_SIGN)) {
+                targetColumns.add(getDeleteSignColumn(olapTable).getName());
+                addDeleteSign = true;
+            }
         }
 
-        if (exprList == null || !getFileColumnNames()) {
-            int maxFileColumnId = getMaxFileColumnId();
-            maxFileColumnId = targetColumns.size() > maxFileColumnId ? targetColumns.size() : maxFileColumnId;
-            for (int i = 1; i <= maxFileColumnId; i++) {
-                fileColumns.add(DOLLAR + i);
+        if (!getFileColumnNames(addDeleteSign)) {
+            if (fileType == null || fileType.equalsIgnoreCase("csv")) {
+                int maxFileColumnId = getMaxFileColumnId();
+                maxFileColumnId = targetColumns.size() > maxFileColumnId ? targetColumns.size() : maxFileColumnId;
+                for (int i = 1; i <= maxFileColumnId; i++) {
+                    fileColumns.add(DOLLAR + i);
+                }
+            } else {
+                for (Column col : olapTable.getBaseSchema(false)) {
+                    fileColumns.add(col.getName());
+                }
+                if (useDeleteSign) {
+                    fileColumns.add(getDeleteSignColumn(olapTable).getName());
+                }
             }
         }
 
@@ -131,17 +150,8 @@ public class CopyFromParam {
         }
     }
 
-    private Column getDeleteSignColumn(OlapTable olapTable) throws AnalysisException {
-        for (Column column : olapTable.getFullSchema()) {
-            if (column.isDeleteSignColumn()) {
-                return column;
-            }
-        }
-        throw new AnalysisException("Can not find DeleteSignColumn for unique table");
-    }
-
     // expr use column name
-    private boolean getFileColumnNames() throws AnalysisException {
+    private boolean getFileColumnNames(boolean addDeleteSign) throws AnalysisException {
         if (exprList == null) {
             return false;
         }
@@ -160,7 +170,20 @@ public class CopyFromParam {
                 fileColumns.add(columnName);
             }
         }
+        if (addDeleteSign) {
+            exprList.add(new SlotRef(null, Column.DELETE_SIGN));
+            fileColumns.add(Column.DELETE_SIGN);
+        }
         return true;
+    }
+
+    private Column getDeleteSignColumn(OlapTable olapTable) throws AnalysisException {
+        for (Column column : olapTable.getFullSchema()) {
+            if (column.isDeleteSignColumn()) {
+                return column;
+            }
+        }
+        throw new AnalysisException("Can not find DeleteSignColumn for unique table");
     }
 
     private int getMaxFileColumnId() throws AnalysisException {

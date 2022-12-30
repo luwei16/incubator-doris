@@ -17,7 +17,7 @@ suite("test_copy_with_select") {
 
     def sql_prefix = """ copy into ${tableName} from ("""
     def sql_stage = """  from @${externalStageName}('${prefix}/customer.csv.gz')"""
-    def sql_postfix = """) properties ('file.type' = 'null', 'copy.async' = 'false');"""
+    def sql_postfix = """) properties ('file.type' = 'csv', 'file.compression' = 'gz', 'copy.async' = 'false');"""
 
     def sqls = [
             'select $1, $2, $3, $4, $5, $6, $7, $8 ' + sql_stage,
@@ -26,7 +26,7 @@ suite("test_copy_with_select") {
             'select $1, $2, $3, $4, NULL, $6, $7, NULL ' + sql_stage,
             'select $1, $2, $3, $4, $5, $6, $7, $8 ' + sql_stage + ' where $1 > 2000',
             'select $1 + 20000, $2, $3, $4, $5, $6, $7, $8 ' + sql_stage,
-            'select $1 + 30000, $2, $3, $4, $5, $6, $7, $8 ' + sql_stage + 'where $1 > 3000',
+            'select $1 + 30000, $2, $3, $4, $5, $6, $7, $8 ' + sql_stage + ' where $1 > 3000',
             'select $1, $2, $3, $4, $5, $6, $7, substring($8, 2) ' + sql_stage
     ]
 

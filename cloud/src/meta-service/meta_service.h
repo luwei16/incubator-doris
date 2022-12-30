@@ -3,6 +3,7 @@
 
 #include "gen_cpp/selectdb_cloud.pb.h"
 #include "meta-service/txn_kv.h"
+#include "rate-limiter/rate_limiter.h"
 #include "resource-manager/resource_manager.h"
 
 namespace selectdb {
@@ -10,7 +11,8 @@ namespace selectdb {
 class Transaction;
 class MetaServiceImpl : public selectdb::MetaService {
 public:
-    MetaServiceImpl(std::shared_ptr<TxnKv> txn_kv, std::shared_ptr<ResourceManager> resource_mgr);
+    MetaServiceImpl(std::shared_ptr<TxnKv> txn_kv, std::shared_ptr<ResourceManager> resource_mgr,
+                        std::shared_ptr<RateLimiter> rate_controller);
     ~MetaServiceImpl() override;
 
     void begin_txn(::google::protobuf::RpcController* controller,
@@ -212,6 +214,7 @@ private:
 private:
     std::shared_ptr<TxnKv> txn_kv_;
     std::shared_ptr<ResourceManager> resource_mgr_;
+    std::shared_ptr<RateLimiter> rate_limiter_;
 };
 
 } // namespace selectdb

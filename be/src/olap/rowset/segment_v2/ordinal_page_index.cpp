@@ -81,6 +81,7 @@ Status OrdinalIndexReader::load(bool use_page_cache, bool kept_in_memory) {
     opts.kept_in_memory = kept_in_memory;
     opts.type = INDEX_PAGE;
     opts.is_persistent = true;
+    opts.read_segmeng_index = true;
 
     // read index page
     PageHandle page_handle;

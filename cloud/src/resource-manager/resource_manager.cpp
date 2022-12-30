@@ -48,6 +48,7 @@ int ResourceManager::init() {
 
         while (it->has_next()) {
             auto [k, v] = it->next();
+            if (!it->has_next()) key0 = k;
             LOG(INFO) << "range get instance_key=" << hex(k);
             instances.emplace_back("", InstanceInfoPB {});
             auto& [instance_id, inst] = instances.back();
@@ -73,7 +74,6 @@ int ResourceManager::init() {
                       << " instance json=" << proto_to_json(inst);
 
             ++num_instances;
-            if (!it->has_next()) key0 = k;
         }
         key0.push_back('\x00'); // Update to next smallest key for iteration
     } while (it->more());

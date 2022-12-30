@@ -52,6 +52,10 @@ public:
 
     size_t bytes_appended() const override { return _bytes_appended; }
 
+    int64_t upload_cost_ms() const { return *_upload_cost_ms; }
+
+    const Path& path() const override { return _path; }
+
 private:
     Status _close();
 

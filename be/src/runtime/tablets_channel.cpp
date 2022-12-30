@@ -82,32 +82,32 @@ Status TabletsChannel::open(const PTabletWriterOpenRequest& request) {
     return Status::OK();
 }
 
-Status TabletsChannel::close(
-        LoadChannel* parent, int sender_id, int64_t backend_id, bool* finished,
-        const google::protobuf::RepeatedField<int64_t>& partition_ids,
-        google::protobuf::RepeatedPtrField<PTabletInfo>* tablet_vec,
-        google::protobuf::RepeatedPtrField<PTabletError>* tablet_errors,
-        const google::protobuf::Map<int64_t, PSlaveTabletNodes>& slave_tablet_nodes,
-        google::protobuf::Map<int64_t, PSuccessSlaveTabletNodeIds>* success_slave_tablet_node_ids,
-        const bool write_single_replica, int64_t* max_upload_speed, int64_t* min_upload_speed) {
+template <typename Request, typename Response>
+Status TabletsChannel::close(LoadChannel* parent, bool* finished, const Request& request,
+                             Response* response) {
     std::lock_guard<std::mutex> l(_lock);
     if (_state == kFinished) {
         return _close_status;
     }
+    auto sender_id = request.sender_id();
     if (_closed_senders.Get(sender_id)) {
         // Double close from one sender, just return OK
         *finished = (_num_remaining_senders == 0);
         return _close_status;
     }
     LOG(INFO) << "close tablets channel: " << _key << ", sender id: " << sender_id
-              << ", backend id: " << backend_id;
-    for (auto pid : partition_ids) {
+              << ", backend id: " << request.backend_id();
+    for (auto pid : request.partition_ids()) {
         _partition_ids.emplace(pid);
     }
     _closed_senders.Set(sender_id, true);
     _num_remaining_senders--;
     *finished = (_num_remaining_senders == 0);
     if (*finished) {
+        auto tablet_errors = response->mutable_tablet_errors();
+        auto tablet_vec = response->mutable_tablet_vec();
+        auto success_slave_tablet_node_ids = response->mutable_success_slave_tablet_node_ids();
+
         _state = kFinished;
         // All senders are closed
         // 1. close all delta writers
@@ -151,26 +151,42 @@ Status TabletsChannel::close(
             }
         }
 
-        _write_single_replica = write_single_replica;
+        _write_single_replica = request.write_single_replica();
 
+        // collect metrics
+        int64_t total_upload_size = 0;
+        int64_t total_upload_cost_ms = 0;
+        int64_t max_build_rowset_cost_ms = 0;
+        int64_t total_build_rowset_cost_ms = 0;
+        int64_t success_writers = 0;
         // 2. wait delta writers and build the tablet vector
         for (auto writer : need_wait_writers) {
             PSlaveTabletNodes slave_nodes;
-            if (write_single_replica) {
-                slave_nodes = slave_tablet_nodes.at(writer->tablet_id());
+            if (_write_single_replica) {
+                slave_nodes = request.slave_tablet_nodes().at(writer->tablet_id());
             }
             // close may return failed, but no need to handle it here.
             // tablet_vec will only contains success tablet, and then let FE judge it.
-            _close_wait(writer, tablet_vec, tablet_errors, slave_nodes, write_single_replica);
-            *min_upload_speed = *min_upload_speed > writer->min_upload_speed()
-                                       ? writer->min_upload_speed()
-                                       : *min_upload_speed;
-            *max_upload_speed = *max_upload_speed > writer->max_upload_speed()
-                                       ? *max_upload_speed
-                                       : writer->max_upload_speed();
+            _close_wait(writer, tablet_vec, tablet_errors, slave_nodes, _write_single_replica);
+            auto build_rowset_cost_ms = writer->build_rowset_cost_ms();
+            if (LIKELY(build_rowset_cost_ms > 0)) {
+                // only successful delta writer are counted
+                ++success_writers;
+                total_build_rowset_cost_ms += build_rowset_cost_ms;
+                total_upload_cost_ms += writer->upload_cost_ms();
+                total_upload_size += writer->total_data_size();
+                max_build_rowset_cost_ms = std::max(max_build_rowset_cost_ms, build_rowset_cost_ms);
+            }
+        }
+        response->set_max_build_rowset_cost_ms(max_build_rowset_cost_ms);
+        if (LIKELY(success_writers > 0)) {
+            response->set_avg_build_rowset_cost_ms(total_build_rowset_cost_ms / success_writers);
+        }
+        if (LIKELY(total_upload_cost_ms > 0)) {
+            response->set_upload_speed_bytes_s(total_upload_size * 1000 / total_upload_cost_ms);
         }
 
-        if (write_single_replica) {
+        if (_write_single_replica) {
             // The operation waiting for all slave replicas to complete must end before the timeout,
             // so that there is enough time to collect completed replica. Otherwise, the task may
             // timeout and fail even though most of the replicas are completed. Here we set 0.9
@@ -196,6 +212,14 @@ Status TabletsChannel::close(
     }
     return Status::OK();
 }
+
+template Status TabletsChannel::close<PTabletWriterAddBlockRequest, PTabletWriterAddBlockResult>(
+        LoadChannel* parent, bool* finished, const PTabletWriterAddBlockRequest& request,
+        PTabletWriterAddBlockResult* response);
+
+template Status TabletsChannel::close<PTabletWriterAddBatchRequest, PTabletWriterAddBatchResult>(
+        LoadChannel* parent, bool* finished, const PTabletWriterAddBatchRequest& request,
+        PTabletWriterAddBatchResult* response);
 
 void TabletsChannel::_close_wait(DeltaWriter* writer,
                                  google::protobuf::RepeatedPtrField<PTabletInfo>* tablet_vec,

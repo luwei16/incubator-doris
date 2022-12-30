@@ -428,12 +428,13 @@ public class TabletInvertedIndex {
         }
         long stamp = writeLock();
         try {
+            long backendId = Config.cloud_unique_id.isEmpty() ? replica.getBackendId() : -1L;
             Preconditions.checkState(tabletMetaMap.containsKey(tabletId));
-            replicaMetaTable.put(tabletId, replica.getBackendId(), replica);
+            replicaMetaTable.put(tabletId, backendId, replica);
             replicaToTabletMap.put(replica.getId(), tabletId);
-            backingReplicaMetaTable.put(replica.getBackendId(), tabletId, replica);
+            backingReplicaMetaTable.put(backendId, tabletId, replica);
             LOG.debug("add replica {} of tablet {} in backend {}",
-                    replica.getId(), tabletId, replica.getBackendId());
+                    replica.getId(), tabletId, backendId);
         } finally {
             writeUnlock(stamp);
         }

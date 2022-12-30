@@ -81,6 +81,7 @@ set(GENSRC_DIR "${BASE_DIR}/../gensrc/build/")
 set(SRC_DIR "${BASE_DIR}/src/")
 set(TEST_DIR "${CMAKE_SOURCE_DIR}/test/")
 set(OUTPUT_DIR "${BASE_DIR}/output")
+set(THIRDPARTY_SRC "$ENV{DORIS_THIRDPARTY}/src")
 
 if (APPLE)
     set(MAKE_TEST "ON")
@@ -436,6 +437,7 @@ set(DORIS_LINK_LIBS ${DORIS_LINK_LIBS}
     MetaService
     ResourceManager
     Recycler
+    RateLimiter
     -static-libstdc++
     -static-libgcc
     -lstdc++fs
@@ -494,7 +496,7 @@ if (${MAKE_TEST} STREQUAL "ON")
 endif ()
 
 # Add libs if needed, download to current dir -- ${BUILD_DIR}
-set(LDB_LID "fdb_lib_7_1_23.tar.xz")
+set(FDB_LIB "fdb_lib_7_1_23.tar.xz")
 file(GLOB RELEASE_FILE_LIST LIST_DIRECTORIES false "/etc/*release*")
 execute_process(COMMAND "cat" ${RELEASE_FILE_LIST}
                 RESULT_VARIABLE CAT_RET_CODE
@@ -504,33 +506,44 @@ if ("${CAT_RET_CONTENT}" MATCHES "UBUNTU")
     message("Ubuntu OS")
     SET(OS_RELEASE "Ubuntu")
     set(FDB_LIB_URL "https://doris-build.oss-cn-beijing.aliyuncs.com/thirdparty/fdb/ubuntu/")
-    string(APPEND FDB_LIB_URL "${LDB_LID}")
+    string(APPEND FDB_LIB_URL "${FDB_LIB}")
+    set(FDB_LIB_MD5SUM "a00fe45da95cfac4e0caffa274bb2b30")
 else()
     # If it is not ubuntu, it is regarded as centos by default
     message("Centos OS")
     SET(OS_RELEASE "Centos")
     set(FDB_LIB_URL "https://doris-build.oss-cn-beijing.aliyuncs.com/thirdparty/fdb/centos/")
-    string(APPEND FDB_LIB_URL "${LDB_LID}")
+    string(APPEND FDB_LIB_URL "${FDB_LIB}")
+    set(FDB_LIB_MD5SUM "f9839a564849c0232a351143b4340de0")
 endif()
 
-if (NOT EXISTS "${LDB_LID}")
+if (NOT EXISTS "${THIRDPARTY_SRC}/${FDB_LIB}")
     execute_process(COMMAND "curl" "${FDB_LIB_URL}"
-                            "-o" "${LDB_LID}" "-k"
+                            "-o" "${THIRDPARTY_SRC}/${FDB_LIB}" "-k"
                     RESULTS_VARIABLE DOWNLOAD_RET)
     if (NOT ${DOWNLOAD_RET} STREQUAL "0")
-        message(FATAL_ERROR "Failed to download dependency of fdb ${FDB_LIB_URL}")
-    endif ()
+        execute_process(COMMAND "rm" "-rf" "${THIRDPARTY_SRC}/${FDB_LIB}")
+        message(FATAL_ERROR "Failed to download dependency of fdb ${FDB_LIB_URL}, remove it")
+    endif () 
 endif ()
 
 # Add fdb dependencies
 if (NOT EXISTS ${THIRDPARTY_DIR}/include/foundationdb)
-    execute_process(COMMAND "tar" "xf" "${LDB_LID}" "-C" "${THIRDPARTY_DIR}/")
+    execute_process(COMMAND "md5sum" "${THIRDPARTY_SRC}/${FDB_LIB}"
+                    RESULT_VARIABLE MD5SUM_RET_CODE
+                    OUTPUT_VARIABLE MD5SUM_CONTENT)
+    if (NOT "${MD5SUM_CONTENT}" MATCHES "${FDB_LIB_MD5SUM}")
+        execute_process(COMMAND "rm" "-rf" "${THIRDPARTY_SRC}/${FDB_LIB}")
+        message(FATAL_ERROR "${THIRDPARTY_SRC}/${FDB_LIB} md5sum check failed, remove it")
+    endif ()
+    execute_process(COMMAND "tar" "xf" "${THIRDPARTY_SRC}/${FDB_LIB}" "-C" "${THIRDPARTY_DIR}/")
 endif ()
 
 add_subdirectory(${SRC_DIR}/common)
 add_subdirectory(${SRC_DIR}/gen-cpp)
 add_subdirectory(${SRC_DIR}/meta-service)
 add_subdirectory(${SRC_DIR}/recycler)
+add_subdirectory(${SRC_DIR}/rate-limiter)
 add_subdirectory(${SRC_DIR}/resource-manager)
 
 if (${MAKE_TEST} STREQUAL "ON")

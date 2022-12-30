@@ -19,6 +19,7 @@ package org.apache.doris.qe;
 
 import org.apache.doris.analysis.RedirectStatus;
 import org.apache.doris.common.ClientPool;
+import org.apache.doris.common.Config;
 import org.apache.doris.common.telemetry.Telemetry;
 import org.apache.doris.thrift.FrontendService;
 import org.apache.doris.thrift.TMasterOpRequest;
@@ -26,6 +27,7 @@ import org.apache.doris.thrift.TMasterOpResult;
 import org.apache.doris.thrift.TNetworkAddress;
 import org.apache.doris.thrift.TUniqueId;
 
+import com.google.common.base.Strings;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.context.Context;
 import io.opentelemetry.context.Scope;
@@ -105,6 +107,10 @@ public class MasterOpExecutor {
         params.setUserIp(ctx.getRemoteIP());
         params.setStmtId(ctx.getStmtId());
         params.setCurrentUserIdent(ctx.getCurrentUserIdentity().toThrift());
+
+        if (!Config.cloud_unique_id.isEmpty() && !Strings.isNullOrEmpty(ctx.getCloudCluster())) {
+            params.setCloudCluster(ctx.getCloudCluster());
+        }
 
         // query options
         params.setQueryOptions(ctx.getSessionVariable().getQueryOptionVariables());

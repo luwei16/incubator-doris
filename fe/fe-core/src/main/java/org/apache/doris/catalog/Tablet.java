@@ -145,6 +145,17 @@ public class Tablet extends MetaObject implements Writable {
         Iterator<Replica> iterator = replicas.iterator();
         while (iterator.hasNext()) {
             Replica replica = iterator.next();
+            if (!Config.cloud_unique_id.isEmpty()) {
+                if (-1 == backendId) {
+                    hasBackend = true;
+                    if (replica.getVersion() <= version) {
+                        iterator.remove();
+                        delete = true;
+                    }
+                }
+                continue;
+            }
+
             if (replica.getBackendId() == backendId) {
                 hasBackend = true;
                 if (replica.getVersion() <= version) {
@@ -158,6 +169,16 @@ public class Tablet extends MetaObject implements Writable {
     }
 
     public void addReplica(Replica replica, boolean isRestore) {
+        if (!Config.cloud_unique_id.isEmpty()) {
+            if (deleteRedundantReplica(-1, replica.getVersion())) {
+                replicas.add(replica);
+                if (!isRestore) {
+                    Env.getCurrentInvertedIndex().addReplica(id, replica);
+                }
+            }
+            return;
+        }
+
         if (deleteRedundantReplica(replica.getBackendId(), replica.getVersion())) {
             replicas.add(replica);
             if (!isRestore) {
@@ -268,6 +289,10 @@ public class Tablet extends MetaObject implements Writable {
     }
 
     public Replica getReplicaByBackendId(long backendId) {
+        if (!Config.cloud_unique_id.isEmpty() && !replicas.isEmpty()) {
+            LOG.debug("cloud mode one backend only has one replica, backendId: {}, replicas: {}", backendId, replicas);
+            return replicas.get(0);
+        }
         for (Replica replica : replicas) {
             if (replica.getBackendId() == backendId) {
                 return replica;

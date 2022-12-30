@@ -142,6 +142,8 @@ public class BrokerScanNode extends LoadScanNode {
 
     private String qualifiedUser;
 
+    private boolean needClearContext = false;
+
     protected static class ParamCreateContext {
         public BrokerFileGroup fileGroup;
         public TBrokerScanRangeParams params;
@@ -183,34 +185,26 @@ public class BrokerScanNode extends LoadScanNode {
         }
     }
 
-    public void setCloudCluster() {
-        if (Strings.isNullOrEmpty(cluster)) {
-            // try set default cluster
-            String defaultCloudCluster = Env.getCurrentEnv().getAuth()
-                    .getDefaultCloudCluster(qualifiedUser);
-            if (!Strings.isNullOrEmpty(defaultCloudCluster)) {
-                cluster = defaultCloudCluster;
-            }
-        }
+    public boolean needClearContext() {
+        return needClearContext;
+    }
 
-        // check default cluster valid.
+    public void setCloudCluster() {
+        needClearContext = false;
         if (!Strings.isNullOrEmpty(cluster)) {
+            if (ConnectContext.get() == null) {
+                LOG.info("ConnectContext is null, new context, and set cluster: {}", cluster);
+                ConnectContext ctx = new ConnectContext();
+                ctx.setThreadLocalInfo();
+                ctx.setCloudCluster(cluster);
+                needClearContext = true;
+            } else {
+                ConnectContext.get().setCloudCluster(cluster);
+            }
             boolean exist = Env.getCurrentSystemInfo().getCloudClusterNames().contains(cluster);
             if (!exist) {
+                LOG.warn("cloud cluster not exist clusterName {}", cluster);
                 cluster = null;
-            }
-        }
-
-        if (cluster == null || cluster.isEmpty()) {
-            try {
-                cluster = Env.getCurrentSystemInfo().getCloudClusterNames().stream()
-                                                    .filter(i -> !i.isEmpty()).findFirst().get();
-                if (ConnectContext.get() != null) {
-                    ConnectContext.get().setCloudCluster(cluster);
-                }
-            } catch (Exception e) {
-                LOG.warn("failed to get cluster, clusterNames={}",
-                         Env.getCurrentSystemInfo().getCloudClusterNames(), e);
             }
         }
     }
@@ -520,8 +514,9 @@ public class BrokerScanNode extends LoadScanNode {
         }
 
         if (backends.isEmpty()) {
-            throw new UserException("No available backends");
+            throw new UserException("No available backends, cluster is: " + cluster);
         }
+        Collections.shuffle(backends, random);
     }
 
     private TFileFormatType formatType(String fileFormat, String path) throws UserException {

@@ -5,6 +5,7 @@
 #include <gen_cpp/selectdb_cloud.pb.h>
 #include <gtest/gtest.h>
 
+#include <memory>
 #include <string>
 
 #include "common/config.h"
@@ -15,6 +16,7 @@
 #include "meta-service/mem_txn_kv.h"
 #include "meta-service/meta_service.h"
 #include "mock_resource_manager.h"
+#include "rate-limiter/rate_limiter.h"
 
 static const std::string instance_id = "instance_id_recycle_test";
 static constexpr int64_t table_id = 10086;
@@ -643,7 +645,8 @@ TEST(RecyclerTest, abort_timeout_txn) {
     auto txn_kv = std::dynamic_pointer_cast<TxnKv>(std::make_shared<MemTxnKv>());
     ASSERT_NE(txn_kv.get(), nullptr);
     auto rs = std::make_shared<MockResourceManager>(txn_kv);
-    auto meta_service = std::make_unique<MetaServiceImpl>(txn_kv, rs);
+    auto rl = std::make_shared<RateLimiter>();
+    auto meta_service = std::make_unique<MetaServiceImpl>(txn_kv, rs, rl);
     ASSERT_EQ(txn_kv->init(), 0);
 
     int64_t db_id = 666;
@@ -682,7 +685,8 @@ TEST(RecyclerTest, recycle_expired_txn_label) {
     auto txn_kv = std::dynamic_pointer_cast<TxnKv>(std::make_shared<MemTxnKv>());
     ASSERT_NE(txn_kv.get(), nullptr);
     auto rs = std::make_shared<MockResourceManager>(txn_kv);
-    auto meta_service = std::make_unique<MetaServiceImpl>(txn_kv, rs);
+    auto rl = std::make_shared<RateLimiter>();
+    auto meta_service = std::make_unique<MetaServiceImpl>(txn_kv, rs, rl);
     ASSERT_EQ(txn_kv->init(), 0);
 
     int64_t db_id = 888;

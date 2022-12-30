@@ -156,8 +156,9 @@ Status VNodeChannel::open_wait() {
                     }
                 }
                 _add_batches_finished = true;
-                _min_upload_speed = result.min_upload_speed();
-                _max_upload_speed = result.max_upload_speed();
+                _max_build_rowset_cost_ms = result.max_build_rowset_cost_ms();
+                _avg_build_rowset_cost_ms = result.avg_build_rowset_cost_ms();
+                _upload_speed_bytes_s = result.upload_speed_bytes_s();
             }
         } else {
             _cancel_with_msg(fmt::format("{}, add batch req success but status isn't ok, err: {}",

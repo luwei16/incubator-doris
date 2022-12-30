@@ -284,10 +284,6 @@ int SizeBasedCumulativeCompactionPolicy::pick_input_rowsets(
         input_rowsets->push_back(rowset);
     }
 
-    if (total_size >= promotion_size) {
-        return transient_size;
-    }
-
     // if there is delete version, do compaction directly
     if (last_delete_version->first != -1) {
         if (input_rowsets->size() == 1) {

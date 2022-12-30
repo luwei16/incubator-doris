@@ -48,6 +48,7 @@ import org.apache.doris.common.io.Text;
 import org.apache.doris.common.util.TimeUtils;
 import org.apache.doris.persist.gson.GsonUtils;
 import org.apache.doris.proto.OlapFile;
+import org.apache.doris.qe.ConnectContext;
 import org.apache.doris.task.AgentBatchTask;
 import org.apache.doris.task.AgentTask;
 import org.apache.doris.task.AgentTaskExecutor;
@@ -151,6 +152,15 @@ public class SchemaChangeJobV2 extends AlterJobV2 {
 
     public SchemaChangeJobV2(long jobId, long dbId, long tableId, String tableName, long timeoutMs) {
         super(jobId, JobType.SCHEMA_CHANGE, dbId, tableId, tableName, timeoutMs);
+        if (!Config.cloud_unique_id.isEmpty()) {
+            ConnectContext context = ConnectContext.get();
+            if (context != null) {
+                LOG.debug("schema change job add cloud cluster, context not null, cluster: {}",
+                        context.getCloudCluster());
+                setCloudClusterName(context.getCloudCluster());
+            }
+            LOG.debug("schema change job add cloud cluster, context {}", context);
+        }
     }
 
     public void addTabletIdMap(long partitionId, long shadowIdxId, long shadowTabletId, long originTabletId) {

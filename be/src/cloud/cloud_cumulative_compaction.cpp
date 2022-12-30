@@ -82,17 +82,17 @@ Status CloudCumulativeCompaction::prepare_compact() {
     TRACE("rowsets picked");
 
     for (auto& rs : _input_rowsets) {
-        _input_rows += rs->num_rows();
+        _input_row_num += rs->num_rows();
         _input_segments += rs->num_segments();
-        _input_data_size += rs->data_disk_size();
+        _input_rowsets_size += rs->data_disk_size();
     }
     LOG_INFO("start CloudCumulativeCompaction, tablet_id={}, range=[{}-{}]", _tablet->tablet_id(),
              _input_rowsets.front()->start_version(), _input_rowsets.back()->end_version())
             .tag("job_id", _uuid)
             .tag("input_rowsets", _input_rowsets.size())
-            .tag("input_rows", _input_rows)
+            .tag("input_rows", _input_row_num)
             .tag("input_segments", _input_segments)
-            .tag("input_data_size", _input_data_size)
+            .tag("input_data_size", _input_rowsets_size)
             .tag("tablet_max_version", _tablet->local_max_version())
             .tag("cumulative_point", _tablet->cumulative_layer_point())
             .tag("num_rowsets", _tablet->fetch_add_approximate_num_rowsets(0))
@@ -142,9 +142,9 @@ Status CloudCumulativeCompaction::execute_compact_impl() {
              duration_cast<milliseconds>(steady_clock::now() - start).count())
             .tag("job_id", _uuid)
             .tag("input_rowsets", _input_rowsets.size())
-            .tag("input_rows", _input_rows)
+            .tag("input_rows", _input_row_num)
             .tag("input_segments", _input_segments)
-            .tag("input_data_size", _input_data_size)
+            .tag("input_data_size", _input_rowsets_size)
             .tag("output_rows", _output_rowset->num_rows())
             .tag("output_segments", _output_rowset->num_segments())
             .tag("output_data_size", _output_rowset->data_disk_size())
@@ -182,9 +182,9 @@ Status CloudCumulativeCompaction::update_tablet_meta() {
     compaction_job->set_type(selectdb::TabletCompactionJobPB::CUMULATIVE);
     compaction_job->set_input_cumulative_point(input_cumulative_point);
     compaction_job->set_output_cumulative_point(new_cumulative_point);
-    compaction_job->set_num_input_rows(_input_rows);
+    compaction_job->set_num_input_rows(_input_row_num);
     compaction_job->set_num_output_rows(_output_rowset->num_rows());
-    compaction_job->set_size_input_rowsets(_input_data_size);
+    compaction_job->set_size_input_rowsets(_input_rowsets_size);
     compaction_job->set_size_output_rowsets(_output_rowset->data_disk_size());
     compaction_job->set_num_input_segments(_input_segments);
     compaction_job->set_num_output_segments(_output_rowset->num_segments());

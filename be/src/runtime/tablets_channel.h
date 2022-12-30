@@ -76,14 +76,8 @@ public:
     // If all senders are closed, close this channel, set '*finished' to true, update 'tablet_vec'
     // to include all tablets written in this channel.
     // no-op when this channel has been closed or cancelled
-    Status
-    close(LoadChannel* parent, int sender_id, int64_t backend_id, bool* finished,
-          const google::protobuf::RepeatedField<int64_t>& partition_ids,
-          google::protobuf::RepeatedPtrField<PTabletInfo>* tablet_vec,
-          google::protobuf::RepeatedPtrField<PTabletError>* tablet_error,
-          const google::protobuf::Map<int64_t, PSlaveTabletNodes>& slave_tablet_nodes,
-          google::protobuf::Map<int64_t, PSuccessSlaveTabletNodeIds>* success_slave_tablet_node_ids,
-          const bool write_single_replica, int64_t* max_upload_speed, int64_t* min_upload_speed);
+    template <typename Request, typename Response>
+    Status close(LoadChannel* parent, bool* finished, const Request& request, Response* response);
 
     // no-op when this channel has been closed or cancelled
     Status cancel();

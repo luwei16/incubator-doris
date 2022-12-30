@@ -101,10 +101,10 @@ suite("test_parquet", "p0") {
 
      def errorMsgs = [
                      "",
-                     "errCode = 2, detailMessage = some columns not found in the file",
+                     "errCode = 2, detailMessage = some cloumns not found in the file",
                      "",
                      "",
-                     "errCode = 2, detailMessage = some columns not found in the file",
+                     "errCode = 2, detailMessage = some cloumns not found in the file",
                      "",
                      "",
                      "",

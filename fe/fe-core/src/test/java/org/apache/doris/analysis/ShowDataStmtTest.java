@@ -138,7 +138,7 @@ public class ShowDataStmtTest {
 
     @Test
     public void testNormal() throws AnalysisException, UserException {
-        ShowDataStmt stmt = new ShowDataStmt(null, null);
+        ShowDataStmt stmt = new ShowDataStmt(null, null, null);
         stmt.analyze(analyzer);
         Assert.assertEquals("SHOW DATA FROM `testCluster:testDb`", stmt.toString());
         Assert.assertEquals(3, stmt.getMetaData().getColumnCount());
@@ -150,7 +150,7 @@ public class ShowDataStmtTest {
         OrderByElement orderByElementTwo = new OrderByElement(slotRefTwo, false, false);
 
         stmt = new ShowDataStmt(new TableName(InternalCatalog.INTERNAL_CATALOG_NAME, "testDb", "test_tbl"),
-                Arrays.asList(orderByElementOne, orderByElementTwo));
+                Arrays.asList(orderByElementOne, orderByElementTwo), null);
         stmt.analyze(analyzer);
         Assert.assertEquals(
                 "SHOW DATA FROM `default_cluster:testDb`.`test_tbl` ORDER BY `ReplicaCount` DESC, `Size` DESC",
@@ -158,7 +158,7 @@ public class ShowDataStmtTest {
         Assert.assertEquals(5, stmt.getMetaData().getColumnCount());
         Assert.assertEquals(true, stmt.hasTable());
 
-        stmt = new ShowDataStmt(null, Arrays.asList(orderByElementOne, orderByElementTwo));
+        stmt = new ShowDataStmt(null, Arrays.asList(orderByElementOne, orderByElementTwo), null);
         stmt.analyze(analyzer);
         Assert.assertEquals("SHOW DATA FROM `testCluster:testDb` ORDER BY `ReplicaCount` DESC, `Size` DESC",
                 stmt.toString());

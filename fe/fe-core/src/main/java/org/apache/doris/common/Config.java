@@ -754,7 +754,7 @@ public class Config extends ConfigBase {
      */
     @Deprecated
     @ConfField(mutable = false, masterOnly = true)
-    public static int async_load_task_pool_size = 10;
+    public static int async_load_task_pool_size = 50;
 
     /**
      * The pending_load task executor pool size. This pool size limits the max running pending_load tasks.
@@ -762,7 +762,7 @@ public class Config extends ConfigBase {
      * It should be less than 'max_running_txn_num_per_db'
      */
     @ConfField(mutable = false, masterOnly = true)
-    public static int async_pending_load_task_pool_size = 10;
+    public static int async_pending_load_task_pool_size = 50;
 
     /**
      * The loading_load task executor pool size. This pool size limits the max running loading_load tasks.
@@ -1784,14 +1784,17 @@ public class Config extends ConfigBase {
     @ConfField
     public static long tablet_rebalancer_interval_second = 20;
 
-    @ConfField
-    public static int balance_tablet_num_per_run = 5;
+    @ConfField(mutable = true)
+    public static double balance_tablet_percent_per_run = 0.05;
+
+    @ConfField(mutable = true)
+    public static int min_balance_tablet_num_per_run = 2;
 
     @ConfField
-    public static double cloud_rebalance_percent_threshold = 0.1;
+    public static double cloud_rebalance_percent_threshold = 0.05;
 
     @ConfField
-    public static long cloud_rebalance_number_threshold = 3;
+    public static long cloud_rebalance_number_threshold = 2;
 
     /**
      * if set to false, auth check will be disable,  in case something goes wrong with the new privilege system.
@@ -1802,7 +1805,7 @@ public class Config extends ConfigBase {
      * Default number of waiting copy jobs for the whole cluster
      */
     @ConfField
-    public static int cluster_max_waiting_copy_jobs = 20;
+    public static int cluster_max_waiting_copy_jobs = 100;
 
     /**
      * Default number of max file num for per copy into job
@@ -1824,12 +1827,6 @@ public class Config extends ConfigBase {
 
     @ConfField
     public static boolean range_desc_read_by_column_def = true;
-
-    @ConfField(mutable = false)
-    public static int cloud_copy_list_objects_version = 2;
-
-    @ConfField(mutable = true)
-    public static int meta_service_rpc_retry_times = 200;
 
     //==========================================================================
     //                    end of cloud config
@@ -1866,10 +1863,10 @@ public class Config extends ConfigBase {
     public static boolean enable_new_load_scan_node = false;
 
     @ConfField(mutable = false)
-    public static int statistic_job_scheduler_execution_interval_ms = 1000;
+    public static int statistic_job_scheduler_execution_interval_ms = 60 * 1000;
 
     @ConfField(mutable = false)
-    public static int statistic_task_scheduler_execution_interval_ms = 1000;
+    public static int statistic_task_scheduler_execution_interval_ms = 60 * 1000;
 
     /*
      * mtmv scheduler framework is still under dev, remove this config when it is graduate.
@@ -2053,5 +2050,13 @@ public class Config extends ConfigBase {
      */
     @ConfField(mutable = true, masterOnly = true)
     public static boolean enable_storage_policy = false;
+    public static int cloud_copy_list_objects_version = 2;
+
+    @ConfField(mutable = true)
+    public static int meta_service_rpc_retry_times = 200;
+
+    // 0 means no limit
+    @ConfField(mutable = true)
+    public static int cloud_max_copy_job_per_table = 10000;
 }
 

@@ -7,6 +7,7 @@
 
 #include "cloud/io/cloud_file_cache.h"
 #include "cloud/io/cloud_file_cache_settings.h"
+#include "common/status.h"
 #include "util/time.h"
 #include "vec/common/hex.h"
 #include "vec/common/sip_hash.h"
@@ -18,20 +19,24 @@ namespace io {
 
 LRUFileCache::LRUFileCache(const std::string& cache_base_path_,
                            const FileCacheSettings& cache_settings_)
-        : IFileCache(cache_base_path_, cache_settings_) {
-    initialize();
-}
+        : IFileCache(cache_base_path_, cache_settings_) {}
 
-void LRUFileCache::initialize() {
+Status LRUFileCache::initialize() {
     std::lock_guard cache_lock(_mutex);
     if (!_is_initialized) {
         if (fs::exists(_cache_base_path)) {
             load_cache_info_into_memory(cache_lock);
         } else {
-            fs::create_directories(_cache_base_path);
+            std::error_code ec;
+            fs::create_directories(_cache_base_path, ec);
+            if (ec) {
+                return Status::IOError("cannot create {}: {}", _cache_base_path,
+                                       std::strerror(ec.value()));
+            }
         }
     }
     _is_initialized = true;
+    return Status::OK();
 }
 
 void LRUFileCache::use_cell(const FileSegmentCell& cell, const TUniqueId& query_id,
@@ -292,17 +297,23 @@ LRUFileCache::FileSegmentCell* LRUFileCache::add_cell(const Key& key, bool is_pe
             << ", size: " << size << ".\nCurrent cache structure: "
             << dump_structure_unlocked(key, is_persistent, cache_lock);
 
-    FileSegmentCell cell(
-            std::make_shared<FileSegment>(offset, size, key, this, state, is_persistent), this,
-            cache_lock);
     auto& offsets = _files[file_key];
-
     if (offsets.empty()) {
         auto key_path = get_path_in_local_cache(key);
         if (!fs::exists(key_path)) {
-            fs::create_directories(key_path);
+            std::error_code ec;
+            fs::create_directories(key_path, ec);
+            if (ec) {
+                LOG(WARNING) << fmt::format("cannot create {}: {}", key_path,
+                                            std::strerror(ec.value()));
+                state = FileSegment::State::SKIP_CACHE;
+            }
         }
     }
+
+    FileSegmentCell cell(
+            std::make_shared<FileSegment>(offset, size, key, this, state, is_persistent), this,
+            cache_lock);
 
     cell.queue_iterator = queue->add(key, offset, is_persistent, size, cache_lock);
     auto [it, inserted] = offsets.insert({offset, std::move(cell)});
@@ -388,8 +399,8 @@ bool LRUFileCache::try_reserve(const Key& key, const TUniqueId& query_id, bool i
                                   file_segment->is_persistent(), file_segment_size, cache_lock);
 
             std::lock_guard segment_lock(file_segment->_mutex);
-            remove(file_segment->key(), is_persistent, file_segment->offset(), cache_lock,
-                   segment_lock);
+            remove(file_segment->key(), file_segment->is_persistent(), file_segment->offset(),
+                   cache_lock, segment_lock);
         }
     };
 

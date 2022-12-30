@@ -75,7 +75,7 @@ public class FailMsg implements Writable {
 
     public void write(DataOutput out) throws IOException {
         Text.writeString(out, cancelType.name());
-        Text.writeString(out, msg);
+        Text.writeString(out, msg == null ? "" : msg);
     }
 
     public void readFields(DataInput in) throws IOException {

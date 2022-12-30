@@ -138,6 +138,15 @@ public final class MetricRepo {
     public static ConcurrentHashMap<String, GaugeMetricImpl<Double>>
                     CLOUD_CLUSTER_GAUGE_QUERY_ERR_RATE = new ConcurrentHashMap<>();
 
+    public static ConcurrentHashMap<String, GaugeMetricImpl<Long>>
+                    CLOUD_DB_TABLE_DATA_SIZE = new ConcurrentHashMap<>();
+    public static ConcurrentHashMap<String, GaugeMetricImpl<Long>>
+                    CLOUD_DB_TABLE_ROW_COUNT = new ConcurrentHashMap<>();
+    public static ConcurrentHashMap<String, GaugeMetricImpl<Long>>
+                    CLOUD_DB_TABLE_SEGMENT_COUNT = new ConcurrentHashMap<>();
+    public static ConcurrentHashMap<String, GaugeMetricImpl<Long>>
+                    CLOUD_DB_TABLE_ROWSET_COUNT = new ConcurrentHashMap<>();
+
     public static ConcurrentHashMap<String, Histogram>
                     CLOUD_CLUSTER_HISTO_QUERY_LATENCY = new ConcurrentHashMap<>();
 
@@ -149,6 +158,72 @@ public final class MetricRepo {
     private static ScheduledThreadPoolExecutor metricTimer = ThreadPoolManager.newDaemonScheduledThreadPool(1,
             "metric-timer-pool", true);
     private static MetricCalculator metricCalculator = new MetricCalculator();
+
+    public static void registerClusterMetrics(String clusterName, String clusterId) {
+        CLOUD_CLUSTER_COUNTER_REQUEST_ALL.computeIfAbsent(clusterName, key -> {
+            LongCounterMetric counterRequestAll = new LongCounterMetric("request_total", MetricUnit.REQUESTS,
+                    "total request");
+            counterRequestAll.addLabel(new MetricLabel("cluster_id", clusterId));
+            counterRequestAll.addLabel(new MetricLabel("cluster_name", key));
+            DORIS_METRIC_REGISTER.addMetrics(counterRequestAll);
+            return counterRequestAll;
+        });
+
+        MetricRepo.CLOUD_CLUSTER_COUNTER_QUERY_ALL.computeIfAbsent(clusterName, key -> {
+            LongCounterMetric counterQueryAll = new LongCounterMetric("query_total", MetricUnit.REQUESTS,
+                    "total query");
+            counterQueryAll.addLabel(new MetricLabel("cluster_id", clusterId));
+            counterQueryAll.addLabel(new MetricLabel("cluster_name", key));
+            DORIS_METRIC_REGISTER.addMetrics(counterQueryAll);
+            return counterQueryAll;
+        });
+
+        CLOUD_CLUSTER_COUNTER_QUERY_ERR.computeIfAbsent(clusterName, key -> {
+            LongCounterMetric counterQueryErr = new LongCounterMetric("query_err", MetricUnit.REQUESTS,
+                    "total error query");
+            counterQueryErr.addLabel(new MetricLabel("cluster_id", clusterId));
+            counterQueryErr.addLabel(new MetricLabel("cluster_name", key));
+            DORIS_METRIC_REGISTER.addMetrics(counterQueryErr);
+            return counterQueryErr;
+        });
+
+        CLOUD_CLUSTER_GAUGE_QUERY_PER_SECOND.computeIfAbsent(clusterName, key -> {
+            GaugeMetricImpl<Double> gaugeQueryPerSecond = new GaugeMetricImpl<>("qps", MetricUnit.NOUNIT,
+                    "query per second");
+            gaugeQueryPerSecond.addLabel(new MetricLabel("cluster_id", clusterId));
+            gaugeQueryPerSecond.addLabel(new MetricLabel("cluster_name", clusterName));
+            gaugeQueryPerSecond.setValue(0.0);
+            DORIS_METRIC_REGISTER.addMetrics(gaugeQueryPerSecond);
+            return gaugeQueryPerSecond;
+        }).setValue(0.0);
+
+        CLOUD_CLUSTER_GAUGE_REQUEST_PER_SECOND.computeIfAbsent(clusterName, key -> {
+            GaugeMetricImpl<Double> gaugeRequestPerSecond = new GaugeMetricImpl<>("rps", MetricUnit.NOUNIT,
+                    "request per second");
+            gaugeRequestPerSecond.addLabel(new MetricLabel("cluster_id", clusterId));
+            gaugeRequestPerSecond.addLabel(new MetricLabel("cluster_name", clusterName));
+            gaugeRequestPerSecond.setValue(0.0);
+            DORIS_METRIC_REGISTER.addMetrics(gaugeRequestPerSecond);
+            return gaugeRequestPerSecond;
+        }).setValue(0.0);
+
+        CLOUD_CLUSTER_GAUGE_QUERY_ERR_RATE.computeIfAbsent(clusterName, key -> {
+            GaugeMetricImpl<Double> gaugeQueryErrRate = new GaugeMetricImpl<>("query_err_rate",
+                    MetricUnit.NOUNIT, "query error rate");
+            gaugeQueryErrRate.addLabel(new MetricLabel("cluster_id", clusterId));
+            gaugeQueryErrRate.addLabel(new MetricLabel("cluster_name", clusterName));
+            gaugeQueryErrRate.setValue(0.0);
+            DORIS_METRIC_REGISTER.addMetrics(gaugeQueryErrRate);
+            return gaugeQueryErrRate;
+        }).setValue(0.0);
+
+        CLOUD_CLUSTER_HISTO_QUERY_LATENCY.computeIfAbsent(clusterName, key -> {
+            Histogram histoQueryLatency = MetricRepo.METRIC_REGISTER.histogram(
+                    MetricRegistry.name("query", "latency", "ms",
+                            MetricRepo.SELECTDB_TAG, key));
+            return histoQueryLatency;
+        });
+    }
 
     // init() should only be called after catalog is contructed.
     public static synchronized void init() {

@@ -18,10 +18,12 @@
 #include "google/protobuf/util/json_util.h"
 #include "rapidjson/prettywriter.h"
 #include "rapidjson/schema.h"
+#include "rate-limiter/rate_limiter.h"
 
 #include <chrono>
 #include <cstddef>
 #include <cstdlib>
+#include <functional>
 #include <iomanip>
 #include <ios>
 #include <limits>
@@ -48,9 +50,12 @@ static void* run_bthread_work(void* arg) {
 }
 
 MetaServiceImpl::MetaServiceImpl(std::shared_ptr<TxnKv> txn_kv,
-                                 std::shared_ptr<ResourceManager> resource_mgr) {
+                                 std::shared_ptr<ResourceManager> resource_mgr,
+                                 std::shared_ptr<RateLimiter> rate_limiter) {
     txn_kv_ = txn_kv;
     resource_mgr_ = resource_mgr;
+    rate_limiter_ = rate_limiter;
+    rate_limiter_->init(this);
 }
 
 MetaServiceImpl::~MetaServiceImpl() {}
@@ -133,11 +138,14 @@ std::string get_instance_id(const std::shared_ptr<ResourceManager>& rc_mgr,
 }
 
 template <class Request>
-void begin_rpc(std::string_view func_name, brpc::Controller* ctrl, Request* req) {
+void begin_rpc(std::string_view func_name, brpc::Controller* ctrl, const Request* req) {
     if constexpr (std::is_same_v<Request, CreateRowsetRequest>) {
         LOG(INFO) << "begin " << func_name << " from " << ctrl->remote_side();
     } else if constexpr (std::is_same_v<Request, CreateTabletsRequest>) {
         LOG(INFO) << "begin " << func_name << " from " << ctrl->remote_side();
+    } else if constexpr (std::is_same_v<Request, GetTabletStatsRequest>) {
+        LOG(INFO) << "begin " << func_name << " from " << ctrl->remote_side()
+                  << " tablet size: " << req->tablet_idx().size();
     } else {
         LOG(INFO) << "begin " << func_name << " from " << ctrl->remote_side()
                   << " request=" << req->ShortDebugString();
@@ -172,6 +180,10 @@ void finish_rpc(std::string_view func_name, brpc::Controller* ctrl, Response* re
         }
         LOG(INFO) << "finish " << func_name << " from " << ctrl->remote_side()
                   << " response=" << res->ShortDebugString();
+    } else if constexpr (std::is_same_v<Response, GetTabletStatsResponse>) {
+        LOG(INFO) << "finish " << func_name << " from " << ctrl->remote_side()
+                  << " status=" << res->status().ShortDebugString()
+                  << " tablet size: " << res->tablet_stats().size();
     } else {
         LOG(INFO) << "finish " << func_name << " from " << ctrl->remote_side()
                   << " response=" << res->ShortDebugString();
@@ -188,15 +200,31 @@ void finish_rpc(std::string_view func_name, brpc::Controller* ctrl, Response* re
     [[maybe_unused]] MetaServiceCode code = MetaServiceCode::OK;                         \
     [[maybe_unused]] std::string msg;                                                    \
     [[maybe_unused]] std::string instance_id;                                            \
+    [[maybe_unused]] bool drop_request = false;                                          \
     std::unique_ptr<int, std::function<void(int*)>> defer_status((int*)0x01, [&](int*) { \
         response->mutable_status()->set_code(code);                                      \
         response->mutable_status()->set_msg(msg);                                        \
         finish_rpc(#func_name, ctrl, response);                                          \
         closure_guard.reset(nullptr);                                                    \
-        if (config::use_detailed_metrics && !instance_id.empty()) {                      \
+        if (config::use_detailed_metrics && !instance_id.empty() && !drop_request) {     \
             g_bvar_ms_##func_name.put(instance_id, sw.elapsed_us());                     \
         }                                                                                \
     });
+
+#define RPC_RATE_LIMIT(func_name)                                                        \
+    if (config::enable_rate_limit &&                                                     \
+            config::use_detailed_metrics && !instance_id.empty()) {                      \
+        auto rate_limiter = rate_limiter_->get_rpc_rate_limiter(#func_name);             \
+        assert(rate_limiter != nullptr);                                                 \
+        std::function<int()> get_bvar_qps = [&] {                                        \
+                    return g_bvar_ms_##func_name.get(instance_id)->qps(); };             \
+        if (!rate_limiter->get_qps_token(instance_id, get_bvar_qps)) {                   \
+            drop_request = true;                                                         \
+            code = MetaServiceCode::MAX_QPS_LIMIT;                                       \
+            msg = "reach max qps limit";                                                 \
+            return;                                                                      \
+        }                                                                                \
+    }
 
 //TODO: we need move begin/commit etc txn to TxnManager
 void MetaServiceImpl::begin_txn(::google::protobuf::RpcController* controller,
@@ -230,7 +258,7 @@ void MetaServiceImpl::begin_txn(::google::protobuf::RpcController* controller,
         msg = ss.str();
         return;
     }
-
+    RPC_RATE_LIMIT(begin_txn)
     //1. Generate version stamp for txn id
     std::unique_ptr<Transaction> txn;
     ret = txn_kv_->create_txn(&txn);
@@ -511,7 +539,7 @@ void MetaServiceImpl::precommit_txn(::google::protobuf::RpcController* controlle
         msg = ss.str();
         return;
     }
-
+    RPC_RATE_LIMIT(precommit_txn);
     std::unique_ptr<Transaction> txn;
     ret = txn_kv_->create_txn(&txn);
     if (ret != 0) {
@@ -679,6 +707,8 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
         LOG(INFO) << msg << ", cloud_unique_id=" << cloud_unique_id << " txn_id=" << txn_id;
         return;
     }
+
+    RPC_RATE_LIMIT(commit_txn)
 
     // Create a readonly txn for scan tmp rowset
     std::unique_ptr<Transaction> txn;
@@ -1116,6 +1146,7 @@ void MetaServiceImpl::abort_txn(::google::protobuf::RpcController* controller,
         return;
     }
 
+    RPC_RATE_LIMIT(abort_txn);
     std::unique_ptr<Transaction> txn;
     ret = txn_kv_->create_txn(&txn);
     if (ret != 0) {
@@ -1362,6 +1393,7 @@ void MetaServiceImpl::get_txn(::google::protobuf::RpcController* controller,
         return;
     }
 
+    RPC_RATE_LIMIT(get_txn)
     std::unique_ptr<Transaction> txn;
     ret = txn_kv_->create_txn(&txn);
     if (ret != 0) {
@@ -1445,6 +1477,7 @@ void MetaServiceImpl::get_current_max_txn_id(::google::protobuf::RpcController* 
         LOG(INFO) << msg << ", cloud_unique_id=" << request->cloud_unique_id();
         return;
     }
+    RPC_RATE_LIMIT(get_current_max_txn_id)
     std::unique_ptr<Transaction> txn;
     ret = txn_kv_->create_txn(&txn);
     if (ret != 0) {
@@ -1490,7 +1523,7 @@ void MetaServiceImpl::check_txn_conflict(::google::protobuf::RpcController* cont
         msg = ss.str();
         return;
     }
-
+    RPC_RATE_LIMIT(check_txn_conflict)
     int64_t db_id = request->db_id();
     std::string begin_txn_run_key;
     std::string begin_txn_run_val;
@@ -1595,7 +1628,7 @@ void MetaServiceImpl::get_version(::google::protobuf::RpcController* controller,
         LOG(INFO) << msg << ", cloud_unique_id=" << request->cloud_unique_id();
         return;
     }
-
+    RPC_RATE_LIMIT(get_version)
     VersionKeyInfo ver_key_info {instance_id, db_id, table_id, partition_id};
     std::string ver_key;
     version_key(ver_key_info, &ver_key);
@@ -1739,7 +1772,7 @@ void MetaServiceImpl::create_tablets(::google::protobuf::RpcController* controll
         LOG(INFO) << msg << ", cloud_unique_id=" << request->cloud_unique_id();
         return;
     }
-
+    RPC_RATE_LIMIT(create_tablets)
     for (auto& tablet_meta : request->tablet_metas()) {
         auto& meta = const_cast<doris::TabletMetaPB&>(tablet_meta);
         internal_create_tablet(code, msg, ret, meta, txn_kv_, instance_id);
@@ -1804,6 +1837,7 @@ void MetaServiceImpl::update_tablet(::google::protobuf::RpcController* controlle
         LOG(WARNING) << msg << ", cloud_unique_id=" << request->cloud_unique_id();
         return;
     }
+    RPC_RATE_LIMIT(update_tablet)
     std::unique_ptr<Transaction> txn;
     if (txn_kv_->create_txn(&txn) != 0) {
         code = MetaServiceCode::KV_TXN_CREATE_ERR;
@@ -1860,6 +1894,8 @@ void MetaServiceImpl::update_tablet_schema(::google::protobuf::RpcController* co
         return;
     }
 
+    RPC_RATE_LIMIT(update_tablet_schema)
+
     std::unique_ptr<Transaction> txn;
     if (txn_kv_->create_txn(&txn) != 0) {
         code = MetaServiceCode::KV_TXN_CREATE_ERR;
@@ -1912,7 +1948,7 @@ void MetaServiceImpl::get_tablet(::google::protobuf::RpcController* controller,
         LOG(INFO) << msg << ", cloud_unique_id=" << request->cloud_unique_id();
         return;
     }
-
+    RPC_RATE_LIMIT(get_tablet)
     std::unique_ptr<Transaction> txn;
     if (txn_kv_->create_txn(&txn) != 0) {
         code = MetaServiceCode::KV_TXN_CREATE_ERR;
@@ -1948,6 +1984,7 @@ void MetaServiceImpl::prepare_rowset(::google::protobuf::RpcController* controll
         LOG(INFO) << msg << ", cloud_unique_id=" << request->cloud_unique_id();
         return;
     }
+    RPC_RATE_LIMIT(prepare_rowset)
     // temporary == true is for loading rowset from user,
     // temporary == false is for doris internal rowset put, such as data conversion in schema change procedure.
     bool temporary = request->has_temporary() ? request->temporary() : false;
@@ -2047,6 +2084,7 @@ void MetaServiceImpl::commit_rowset(::google::protobuf::RpcController* controlle
         LOG(INFO) << msg << ", cloud_unique_id=" << request->cloud_unique_id();
         return;
     }
+    RPC_RATE_LIMIT(commit_rowset)
     // temporary == true is for loading rowset from user,
     // temporary == false is for doris internal rowset put, such as data conversion in schema change procedure.
     bool temporary = request->has_temporary() ? request->temporary() : false;
@@ -2258,7 +2296,7 @@ void MetaServiceImpl::get_rowset(::google::protobuf::RpcController* controller,
         LOG(INFO) << msg << ", cloud_unique_id=" << request->cloud_unique_id();
         return;
     }
-
+    RPC_RATE_LIMIT(get_rowset)
     int64_t tablet_id = request->idx().has_tablet_id() ? request->idx().tablet_id() : -1;
     if (tablet_id <= 0) {
         code = MetaServiceCode::INVALID_ARGUMENT;
@@ -2485,6 +2523,7 @@ void MetaServiceImpl::prepare_index(::google::protobuf::RpcController* controlle
         LOG(INFO) << msg << ", cloud_unique_id=" << request->cloud_unique_id();
         return;
     }
+    RPC_RATE_LIMIT(prepare_index)
     std::unique_ptr<Transaction> txn;
     ret = txn_kv_->create_txn(&txn);
     if (ret != 0) {
@@ -2515,6 +2554,7 @@ void MetaServiceImpl::commit_index(::google::protobuf::RpcController* controller
         LOG(INFO) << msg << ", cloud_unique_id=" << request->cloud_unique_id();
         return;
     }
+    RPC_RATE_LIMIT(commit_index)
     std::unique_ptr<Transaction> txn;
     ret = txn_kv_->create_txn(&txn);
     if (ret != 0) {
@@ -2537,6 +2577,7 @@ void MetaServiceImpl::drop_index(::google::protobuf::RpcController* controller,
         LOG(INFO) << msg << ", cloud_unique_id=" << request->cloud_unique_id();
         return;
     }
+    RPC_RATE_LIMIT(drop_index)
     std::unique_ptr<Transaction> txn;
     ret = txn_kv_->create_txn(&txn);
     if (ret != 0) {
@@ -2664,6 +2705,7 @@ void MetaServiceImpl::prepare_partition(::google::protobuf::RpcController* contr
         LOG(INFO) << msg << ", cloud_unique_id=" << request->cloud_unique_id();
         return;
     }
+    RPC_RATE_LIMIT(prepare_partition)
     std::unique_ptr<Transaction> txn;
     ret = txn_kv_->create_txn(&txn);
     if (ret != 0) {
@@ -2694,6 +2736,7 @@ void MetaServiceImpl::commit_partition(::google::protobuf::RpcController* contro
         LOG(INFO) << msg << ", cloud_unique_id=" << request->cloud_unique_id();
         return;
     }
+    RPC_RATE_LIMIT(commit_partition)
     std::unique_ptr<Transaction> txn;
     ret = txn_kv_->create_txn(&txn);
     if (ret != 0) {
@@ -2716,6 +2759,7 @@ void MetaServiceImpl::drop_partition(::google::protobuf::RpcController* controll
         LOG(INFO) << msg << ", cloud_unique_id=" << request->cloud_unique_id();
         return;
     }
+    RPC_RATE_LIMIT(drop_partition)
     std::unique_ptr<Transaction> txn;
     ret = txn_kv_->create_txn(&txn);
     if (ret != 0) {
@@ -2738,7 +2782,7 @@ void MetaServiceImpl::get_tablet_stats(::google::protobuf::RpcController* contro
         LOG(INFO) << msg << ", cloud_unique_id=" << request->cloud_unique_id();
         return;
     }
-
+    RPC_RATE_LIMIT(get_tablet_stats)
     for (auto& i : request->tablet_idx()) {
         if (!(/* i.has_db_id() && */ i.has_table_id() && i.has_index_id() && i.has_partition_id() &&
               i.has_tablet_id())) {
@@ -3212,6 +3256,7 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
         ret = res.status().code();
         msg = res.status().msg();
         response_body = res.DebugString();
+        keep_raw_body = true;
         return;
     }
 
@@ -3313,7 +3358,7 @@ void MetaServiceImpl::get_obj_store_info(google::protobuf::RpcController* contro
         LOG(INFO) << msg << ", cloud_unique_id=" << cloud_unique_id;
         return;
     }
-
+    RPC_RATE_LIMIT(get_obj_store_info)
     InstanceKeyInfo key_info {instance_id};
     std::string key;
     std::string val;
@@ -3393,7 +3438,7 @@ void MetaServiceImpl::alter_obj_store_info(google::protobuf::RpcController* cont
         LOG(INFO) << msg << ", cloud_unique_id=" << cloud_unique_id;
         return;
     }
-
+    RPC_RATE_LIMIT(alter_obj_store_info)
     InstanceKeyInfo key_info {instance_id};
     std::string key;
     std::string val;
@@ -3952,7 +3997,7 @@ void MetaServiceImpl::get_cluster(google::protobuf::RpcController* controller,
             return;
         }
     }
-
+    RPC_RATE_LIMIT(get_cluster)
     // ATTN: if the case that multiple conditions are satisfied, just use by this order:
     // cluster_id -> cluster_name -> mysql_user_name
     if (!cluster_id.empty()) {
@@ -4063,6 +4108,7 @@ void MetaServiceImpl::create_stage(::google::protobuf::RpcController* controller
         LOG(INFO) << msg << ", cloud_unique_id=" << cloud_unique_id;
         return;
     }
+    RPC_RATE_LIMIT(create_stage)
 
     if (!request->has_stage()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
@@ -4234,7 +4280,7 @@ void MetaServiceImpl::get_stage(google::protobuf::RpcController* controller,
         LOG(INFO) << msg << ", cloud_unique_id=" << cloud_unique_id;
         return;
     }
-
+    RPC_RATE_LIMIT(get_stage)
     if (!request->has_type()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
         msg = "stage type not set";
@@ -4392,15 +4438,16 @@ void MetaServiceImpl::drop_stage(google::protobuf::RpcController* controller,
     MetaServiceCode code = MetaServiceCode::OK;
     std::string msg = "OK";
     std::string instance_id;
+    bool drop_request = false;
     std::unique_ptr<int, std::function<void(int*)>> defer_status(
             (int*)0x01,
-            [&ret, &code, &msg, &response, &ctrl, &closure_guard, &sw, &instance_id](int*) {
+            [&ret, &code, &msg, &response, &ctrl, &closure_guard, &sw, &instance_id, &drop_request](int*) {
                 response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
                 LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
                           << ctrl->remote_side() << " " << msg;
                 closure_guard.reset(nullptr);
-                if (config::use_detailed_metrics && !instance_id.empty()) {
+                if (config::use_detailed_metrics && !instance_id.empty() && !drop_request) {
                     g_bvar_ms_drop_stage.put(instance_id, sw.elapsed_us());
                 }
             });
@@ -4419,6 +4466,7 @@ void MetaServiceImpl::drop_stage(google::protobuf::RpcController* controller,
         LOG(INFO) << msg << ", cloud_unique_id=" << cloud_unique_id;
         return;
     }
+    RPC_RATE_LIMIT(drop_stage)
 
     if (!request->has_type()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
@@ -4547,7 +4595,7 @@ void MetaServiceImpl::begin_copy(google::protobuf::RpcController* controller,
         LOG(INFO) << msg << ", cloud_unique_id=" << cloud_unique_id;
         return;
     }
-
+    RPC_RATE_LIMIT(begin_copy)
     std::unique_ptr<Transaction> txn;
     ret = txn_kv_->create_txn(&txn);
     if (ret != 0) {
@@ -4647,6 +4695,7 @@ void MetaServiceImpl::finish_copy(google::protobuf::RpcController* controller,
         LOG(INFO) << msg << ", cloud_unique_id=" << cloud_unique_id;
         return;
     }
+    RPC_RATE_LIMIT(finish_copy)
 
     std::unique_ptr<Transaction> txn;
     ret = txn_kv_->create_txn(&txn);
@@ -4793,6 +4842,7 @@ void MetaServiceImpl::get_copy_files(google::protobuf::RpcController* controller
         LOG(INFO) << msg << ", cloud_unique_id=" << cloud_unique_id;
         return;
     }
+    RPC_RATE_LIMIT(get_copy_files)
 
     std::unique_ptr<Transaction> txn;
     ret = txn_kv_->create_txn(&txn);
@@ -4921,5 +4971,6 @@ void notify_refresh_instance(std::shared_ptr<TxnKv> txn_kv, const std::string& i
 }
 
 #undef RPC_PREPROCESS
+#undef RPC_RATE_LIMIT
 } // namespace selectdb
 // vim: et ts=4 sw=4 cc=80:

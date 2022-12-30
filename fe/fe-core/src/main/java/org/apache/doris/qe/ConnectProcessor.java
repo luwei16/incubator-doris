@@ -293,6 +293,10 @@ public class ConnectProcessor {
     // only throw an exception when there is a problem interacting with the requesting client
     private void handleQuery() {
         MetricRepo.COUNTER_REQUEST_ALL.increase(1L);
+        if (!Config.cloud_unique_id.isEmpty() && Strings.isNullOrEmpty(ctx.cloudCluster)) {
+            ctx.setCloudCluster();
+            LOG.debug("handle Query set ctx cloud cluster, get cluster: {}", ctx.getCloudCluster());
+        }
         if (!Config.cloud_unique_id.isEmpty() && ctx.cloudCluster != null) {
             String clusterId = Env.getCurrentSystemInfo().getCloudClusterNameToId().get(ctx.cloudCluster);
             MetricRepo.CLOUD_CLUSTER_COUNTER_REQUEST_ALL.computeIfAbsent(ctx.cloudCluster, key -> {

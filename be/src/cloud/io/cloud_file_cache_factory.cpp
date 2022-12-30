@@ -17,7 +17,7 @@ FileCacheFactory& FileCacheFactory::instance() {
     return ret;
 }
 
-void FileCacheFactory::create_file_cache(const std::string& cache_base_path,
+Status FileCacheFactory::create_file_cache(const std::string& cache_base_path,
                                          const FileCacheSettings& file_cache_settings,
                                          FileCacheType type) {
     if (config::clear_file_cache) {
@@ -32,6 +32,7 @@ void FileCacheFactory::create_file_cache(const std::string& cache_base_path,
 
     std::unique_ptr<IFileCache> cache =
             std::make_unique<LRUFileCache>(cache_base_path, file_cache_settings);
+    RETURN_IF_ERROR(cache->initialize());
     std::string file_cache_type;
     switch (type) {
     case NORMAL:
@@ -48,13 +49,14 @@ void FileCacheFactory::create_file_cache(const std::string& cache_base_path,
               << " normal_element_size: " << file_cache_settings.max_elements
               << " persistent_size: " << file_cache_settings.persistent_max_size
               << " persistent_element_size: " << file_cache_settings.persistent_max_elements;
+    return Status::OK();
 }
 
-CloudFileCachePtr FileCacheFactory::getByPath(const IFileCache::Key& key) {
+CloudFileCachePtr FileCacheFactory::get_by_path(const IFileCache::Key& key) {
     return _caches[KeyHash()(key) % _caches.size()].get();
 }
 
-CloudFileCachePtr FileCacheFactory::getDisposableCache(const IFileCache::Key& key) {
+CloudFileCachePtr FileCacheFactory::get_disposable_cache(const IFileCache::Key& key) {
     if (_disposable_cache.empty()) {
         return nullptr;
     }

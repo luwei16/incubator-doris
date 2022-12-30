@@ -1,6 +1,7 @@
 
 // clang-format off
 #include "meta-service/meta_service.h"
+#include <bvar/window.h>
 
 #include "common/config.h"
 #include "common/logging.h"
@@ -10,6 +11,8 @@
 #include "meta-service/keys.h"
 #include "meta-service/mem_txn_kv.h"
 #include "meta-service/meta_server.h"
+#include "rate-limiter/rate_limiter.h"
+#include "resource-manager/resource_manager.h"
 #include "mock_resource_manager.h"
 
 #include "brpc/controller.h"
@@ -19,6 +22,8 @@
 #include <condition_variable>
 #include <cstdint>
 #include <memory>
+#include <random>
+#include <thread>
 // clang-format on
 
 int main(int argc, char** argv) {
@@ -64,7 +69,8 @@ std::unique_ptr<MetaServiceImpl> get_meta_service() {
     txn->commit();
 
     auto rs = std::make_shared<MockResourceManager>(txn_kv);
-    auto meta_service = std::make_unique<MetaServiceImpl>(txn_kv, rs);
+    auto rl = std::make_shared<RateLimiter>();
+    auto meta_service = std::make_unique<MetaServiceImpl>(txn_kv, rs, rl);
     return meta_service;
 }
 

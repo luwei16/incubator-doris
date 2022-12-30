@@ -48,6 +48,7 @@ public:
     size_t bytes_appended() const override { return _bytes_appended; }
 
     FileSystem* fs() const override { return _fs; }
+    const Path& path() const override { return _path; }
 
 private:
     int _fd = -1; // owned
@@ -56,6 +57,8 @@ private:
     size_t _bytes_appended = 0;
     bool _dirty = false;
     bool _closed = true;
+
+    Path _path;
 };
 
 } // namespace io

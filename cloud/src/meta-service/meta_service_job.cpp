@@ -30,17 +30,32 @@
     [[maybe_unused]] MetaServiceCode code = MetaServiceCode::OK;                            \
     [[maybe_unused]] std::string msg;                                                       \
     [[maybe_unused]] std::string instance_id;                                               \
+    [[maybe_unused]] bool drop_request = false;                                             \
     std::unique_ptr<int, std::function<void(int*)>> defer_status((int*)0x01, [&](int*) {    \
         response->mutable_status()->set_code(code);                                         \
         response->mutable_status()->set_msg(msg);                                           \
         LOG(INFO) << "finish " #func_name " from " << ctrl->remote_side() << " ret=" << ret \
                   << " response=" << response->ShortDebugString();                          \
         closure_guard.reset(nullptr);                                                       \
-        if (config::use_detailed_metrics && !instance_id.empty()) {                         \
+        if (config::use_detailed_metrics && !instance_id.empty() && !drop_request) {        \
             g_bvar_ms_##func_name.put(instance_id, sw.elapsed_us());                        \
         }                                                                                   \
     });
 
+#define RPC_RATE_LIMIT(func_name)                                                           \
+    if (config::enable_rate_limit &&                                                        \
+            config::use_detailed_metrics && !instance_id.empty()) {                         \
+        auto rate_limiter = rate_limiter_->get_rpc_rate_limiter(#func_name);                \
+        assert(rate_limiter != nullptr);                                                    \
+        std::function<int()> get_bvar_qps = [&] {                                           \
+                    return g_bvar_ms_##func_name.get(instance_id)->qps(); };                \
+        if (!rate_limiter->get_qps_token(instance_id, get_bvar_qps)) {                      \
+            drop_request = true;                                                            \
+            code = MetaServiceCode::MAX_QPS_LIMIT;                                          \
+            msg = "reach max qps limit";                                                    \
+            return;                                                                         \
+        }                                                                                   \
+    }
 // Empty string not is not processed
 template <typename T, size_t S>
 static inline constexpr size_t get_file_name_offset(const T (&s)[S], size_t i = S - 1) {
@@ -321,7 +336,7 @@ void MetaServiceImpl::start_tablet_job(::google::protobuf::RpcController* contro
         msg = ss.str();
         return;
     }
-
+    RPC_RATE_LIMIT(start_tablet_job)
     if (!request->has_job() ||
         (request->job().compaction().empty() && !request->job().has_schema_change())) {
         code = MetaServiceCode::INVALID_ARGUMENT;
@@ -1001,7 +1016,7 @@ void MetaServiceImpl::finish_tablet_job(::google::protobuf::RpcController* contr
         LOG(INFO) << msg;
         return;
     }
-
+    RPC_RATE_LIMIT(finish_tablet_job)
     if (!request->has_job() ||
         (request->job().compaction().empty() && !request->job().has_schema_change())) {
         code = MetaServiceCode::INVALID_ARGUMENT;
@@ -1084,6 +1099,7 @@ void MetaServiceImpl::finish_tablet_job(::google::protobuf::RpcController* contr
 }
 
 #undef RPC_PREPROCESS
+#undef RPC_RATE_LIMIT
 #undef SS
 #undef INSTANCE_LOG
 } // namespace selectdb

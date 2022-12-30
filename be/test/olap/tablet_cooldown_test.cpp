@@ -154,7 +154,7 @@ TEST_F(TabletCooldownTest, normal) {
     PUniqueId load_id;
     load_id.set_hi(0);
     load_id.set_lo(0);
-    WriteRequest write_req = {10005, 270068377, WriteType::LOAD, 20003,
+    WriteRequest write_req = {10005, 270068377, WriteType::LOAD, 20003, 0,
                               30003, load_id,   tuple_desc,      &(tuple_desc->slots())};
     DeltaWriter* delta_writer = nullptr;
     DeltaWriter::open(&write_req, &delta_writer);

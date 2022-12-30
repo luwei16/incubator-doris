@@ -18,6 +18,7 @@
 #include "olap/rowset/segment_v2/segment_writer.h"
 
 #include "cloud/io/file_writer.h"
+#include "cloud/io/cached_remote_file_writer.h"
 #include "common/logging.h" // LOG
 #include "env/env.h"        // Env
 #include "olap/data_dir.h"
@@ -379,6 +380,11 @@ Status SegmentWriter::finalize(uint64_t* segment_file_size, uint64_t* index_size
     }
     RETURN_IF_ERROR(_write_data());
     uint64_t index_offset = _file_writer->bytes_appended();
+    io::CachedRemoteFileWriter* cached_remote_file_writer =
+            dynamic_cast<io::CachedRemoteFileWriter*>(_file_writer);
+    if (cached_remote_file_writer) {
+        cached_remote_file_writer->cache_data_from_current_offset();
+    }
     RETURN_IF_ERROR(_write_ordinal_index());
     RETURN_IF_ERROR(_write_zone_map());
     RETURN_IF_ERROR(_write_bitmap_index());
@@ -441,6 +447,9 @@ Status SegmentWriter::_write_bloom_filter_index() {
 }
 
 Status SegmentWriter::_write_short_key_index() {
+    if (_short_key_index_builder == nullptr) {
+        return Status::OK();
+    }
     std::vector<Slice> body;
     PageFooterPB footer;
     RETURN_IF_ERROR(_short_key_index_builder->finalize(_row_count, &body, &footer));

@@ -685,7 +685,6 @@ void PlanFragmentExecutor::close() {
         }
 
         if (_is_report_success) {
-            std::stringstream ss;
             // Compute the _local_time_percent before pretty_print the runtime_profile
             // Before add this operation, the print out like that:
             // UNION_NODE (id=0):(Active: 56.720us, non-child: 00.00%)
@@ -693,8 +692,7 @@ void PlanFragmentExecutor::close() {
             // UNION_NODE (id=0):(Active: 56.720us, non-child: 82.53%)
             // We can easily know the exec node execute time without child time consumed.
             _runtime_state->runtime_profile()->compute_time_in_profile();
-            _runtime_state->runtime_profile()->pretty_print(&ss);
-            LOG(INFO) << ss.str();
+            _runtime_state->runtime_profile()->pretty_print(&LOG(INFO));
         }
         LOG(INFO) << "Close() fragment_instance_id="
                   << print_id(_runtime_state->fragment_instance_id());

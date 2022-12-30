@@ -380,6 +380,7 @@ struct OlapReaderStatistics {
     int64_t general_debug_ns[GENERAL_DEBUG_COUNT] = {};
 
     FileCacheStatistics file_cache_stats;
+    int64_t load_segments_timer = 0;
 };
 
 using metrics_hook = std::function<void(OlapReaderStatistics*)>;

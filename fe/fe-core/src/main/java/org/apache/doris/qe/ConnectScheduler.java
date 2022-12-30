@@ -153,6 +153,12 @@ public class ConnectScheduler {
                 continue;
             }
 
+            // In cloud mode, we don't want admin user can list root's connection,
+            // only root can list it's own connections in cloud mode
+            if (!Config.cloud_unique_id.isEmpty() && ctx.getCurrentUserIdentity().isRootUser()
+                    && !ConnectContext.get().getCurrentUserIdentity().isRootUser()) {
+                continue;
+            }
             infos.add(ctx.toThreadInfo(isFull));
         }
         return infos;

@@ -30,7 +30,7 @@ public:
 
     Status open() override;
 
-    Status close() override;
+    Status close(bool sync = true) override;
 
     Status abort() override;
 
@@ -46,8 +46,7 @@ public:
 
     FileSystemSPtr fs() const override { return _fs; }
 
-private:
-    Status _close(bool sync);
+    const Path& path() const override { return _path; }
 
 private:
     int _fd = -1; // owned
@@ -56,6 +55,8 @@ private:
     size_t _bytes_appended = 0;
     bool _dirty = false;
     bool _closed = true;
+
+    Path _path;
 };
 
 } // namespace io

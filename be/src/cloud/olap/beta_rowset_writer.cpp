@@ -292,8 +292,6 @@ Status BetaRowsetWriter::_do_compact_segments(SegCompactionCandidatesSharedPtr s
     }
     uint64_t begin = (*(segments->begin()))->id();
     uint64_t end = (*(segments->end() - 1))->id();
-    LOG(INFO) << "BetaRowsetWriter:" << this << " do segcompaction at " << segments->size()
-              << " segments. Begin:" << begin << " End:" << end;
     uint64_t begin_time = GetCurrentTimeMicros();
 
     auto schema = std::make_shared<Schema>(_context.tablet_schema->columns(),
@@ -351,7 +349,8 @@ Status BetaRowsetWriter::_do_compact_segments(SegCompactionCandidatesSharedPtr s
         for (const auto& entry : std::filesystem::directory_iterator(_context.rowset_dir)) {
             fmt::format_to(vlog_buffer, "[{}]", string(entry.path()));
         }
-        VLOG_DEBUG << "_segcompacted_point:" << _segcompacted_point
+        VLOG_DEBUG << "tablet_id:" << _context.tablet_id << " rowset_id:" << _context.rowset_id
+                   << "_segcompacted_point:" << _segcompacted_point
                    << " _num_segment:" << _num_segment << " _num_segcompacted:" << _num_segcompacted
                    << " list directory:" << fmt::to_string(vlog_buffer);
     }
@@ -359,8 +358,10 @@ Status BetaRowsetWriter::_do_compact_segments(SegCompactionCandidatesSharedPtr s
     _segcompacted_point += (end - begin + 1);
 
     uint64_t elapsed = GetCurrentTimeMicros() - begin_time;
-    LOG(INFO) << "BetaRowsetWriter:" << this << " segcompaction completed. elapsed time:" << elapsed
-              << "us. _segcompacted_point update:" << _segcompacted_point;
+    LOG(INFO) << "segcompaction completed. tablet_id:" << _context.tablet_id
+              << " rowset_id:" << _context.rowset_id << " elapsed time:" << elapsed
+              << "us. update segcompacted_point:" << _segcompacted_point
+              << " segment num:" << segments->size() << " begin:" << begin << " end:" << end;
 
     return Status::OK();
 }
@@ -376,7 +377,9 @@ void BetaRowsetWriter::compact_segments(SegCompactionCandidatesSharedPtr segment
             LOG(WARNING) << "segcompaction failed, try next time:" << status;
             return;
         default:
-            LOG(WARNING) << "segcompaction fatal, terminating the write job:" << status;
+            LOG(WARNING) << "segcompaction fatal, terminating the write job."
+                         << " tablet_id:" << _context.tablet_id
+                         << " rowset_id:" << _context.rowset_id << " status:" << status;
             // status will be checked by the next trigger of segcompaction or the final wait
             _segcompaction_status.store(OLAP_ERR_OTHER_ERROR);
         }
@@ -512,7 +515,8 @@ Status BetaRowsetWriter::_segcompaction_if_necessary() {
         SegCompactionCandidatesSharedPtr segments = std::make_shared<SegCompactionCandidates>();
         status = _get_segcompaction_candidates(segments, false);
         if (LIKELY(status.ok()) && (segments->size() > 0)) {
-            LOG(INFO) << "submit segcompaction task, segment num:" << _num_segment
+            LOG(INFO) << "submit segcompaction task, tablet_id:" << _context.tablet_id
+                      << " rowset_id:" << _context.rowset_id << " segment num:" << _num_segment
                       << ", segcompacted_point:" << _segcompacted_point;
             status = StorageEngine::instance()->submit_seg_compaction_task(this, segments);
             if (status.ok()) {
@@ -545,8 +549,9 @@ Status BetaRowsetWriter::_segcompaction_ramaining_if_necessary() {
     SegCompactionCandidatesSharedPtr segments = std::make_shared<SegCompactionCandidates>();
     status = _get_segcompaction_candidates(segments, true);
     if (LIKELY(status.ok()) && (segments->size() > 0)) {
-        LOG(INFO) << "submit segcompaction remaining task, segment num:" << _num_segment
-                  << ", segcompacted_point:" << _segcompacted_point;
+        LOG(INFO) << "submit segcompaction remaining task, tablet_id:" << _context.tablet_id
+                  << " rowset_id:" << _context.rowset_id << " segment num:" << _num_segment
+                  << " segcompacted_point:" << _segcompacted_point;
         status = StorageEngine::instance()->submit_seg_compaction_task(this, segments);
         if (status.ok()) {
             return status;
@@ -732,11 +737,7 @@ RowsetSharedPtr BetaRowsetWriter::build() {
         }
         auto s3_file_writer = dynamic_cast<io::S3FileWriter*>(file_writer.get());
         if (s3_file_writer != nullptr) {
-            int64_t cur_upload_speed = s3_file_writer->upload_speed_bytes_s();
-            _max_upload_speed =
-                    cur_upload_speed > _max_upload_speed ? cur_upload_speed : _max_upload_speed;
-            _min_upload_speed =
-                    cur_upload_speed > _min_upload_speed ? _min_upload_speed : cur_upload_speed;
+            _upload_cost_ms = s3_file_writer->upload_cost_ms();
         }
     }
     status = _wait_flying_segcompaction();
@@ -858,7 +859,6 @@ RowsetSharedPtr BetaRowsetWriter::build_tmp() {
     return rowset;
 }
 
-// TODO(some one familiar with local path and remote path)
 Status BetaRowsetWriter::_do_create_segment_writer(
         std::unique_ptr<segment_v2::SegmentWriter>* writer, bool is_segcompaction, int64_t begin,
         int64_t end, const vectorized::Block* block) {
@@ -925,6 +925,7 @@ Status BetaRowsetWriter::_create_segment_writer(std::unique_ptr<segment_v2::Segm
     size_t total_segment_num = _num_segment - _segcompacted_point + 1 + _num_segcompacted;
     if (UNLIKELY(total_segment_num > config::max_segment_num_per_rowset)) {
         LOG(ERROR) << "too many segments in rowset."
+                   << " tablet_id:" << _context.tablet_id << " rowset_id:" << _context.rowset_id
                    << " max:" << config::max_segment_num_per_rowset
                    << " _num_segment:" << _num_segment
                    << " _segcompacted_point:" << _segcompacted_point

@@ -104,20 +104,13 @@ public class CloudReplica extends Replica {
                 try {
                     Env.getCurrentEnv().checkCloudClusterPriv(cluster);
                 } catch (Exception e) {
+                    LOG.warn("get cluster by session context exception");
                     return -1;
                 }
+                LOG.debug("get cluster by session context cluster: {}", cluster);
             } else {
                 cluster = context.getCloudCluster();
-            }
-
-            if (Strings.isNullOrEmpty(cluster)) {
-                // try set default cluster
-                String defaultCloudCluster = Env.getCurrentEnv().getAuth()
-                        .getDefaultCloudCluster(context.getQualifiedUser());
-                if (!Strings.isNullOrEmpty(defaultCloudCluster)) {
-                    context.setCloudCluster(defaultCloudCluster);
-                    cluster = defaultCloudCluster;
-                }
+                LOG.debug("get cluster by context {}", cluster);
             }
         }
 
@@ -126,26 +119,10 @@ public class CloudReplica extends Replica {
             boolean exist = Env.getCurrentSystemInfo().getCloudClusterNames().contains(cluster);
             if (!exist) {
                 //can't use this default cluster, plz change another
+                LOG.warn("cluster: {} is not existed", cluster);
                 return -1;
             }
-        }
-
-        if (cluster == null || cluster.isEmpty()) {
-            try {
-                cluster = Env.getCurrentSystemInfo().getCloudClusterNames().stream()
-                                                    .filter(i -> !i.isEmpty()).findFirst().get();
-                if (ConnectContext.get() != null) {
-                    ConnectContext.get().setCloudCluster(cluster);
-                }
-            } catch (Exception e) {
-                LOG.warn("failed to get cluster, clusterNames={}",
-                         Env.getCurrentSystemInfo().getCloudClusterNames(), e);
-                return -1;
-            }
-        }
-
-        // No cluster right now
-        if (cluster == null || cluster.isEmpty()) {
+        } else {
             LOG.warn("failed to get available be, clusterName: {}", cluster);
             return -1;
         }
@@ -166,7 +143,7 @@ public class CloudReplica extends Replica {
         return hashReplicaToBe(cluster);
     }
 
-    private long hashReplicaToBe(String cluster) {
+    public long hashReplicaToBe(String cluster) {
         // TODO(luwei) list shoule be sorted
         List<Backend> clusterBes = Env.getCurrentSystemInfo().getBackendsByClusterName(cluster);
         // use alive be to exec sql

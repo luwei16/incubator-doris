@@ -68,6 +68,8 @@ bool init_glog(const char* basename) {
     FLAGS_logbufsecs = 30;
     // set roll num
     FLAGS_log_filenum_quota = config::sys_log_roll_num;
+    // set warn log roll num
+    FLAGS_warn_log_filenum_quota = config::sys_warn_log_roll_num;
 
     // set log level
     std::string& loglevel = config::sys_log_level;

@@ -184,7 +184,6 @@ struct TQueryOptions {
 
   54: optional bool enable_share_hash_table_for_broadcast_join
 }
-    
 
 // A scan range plus the parameters needed to execute that scan.
 struct TScanRangeParams {

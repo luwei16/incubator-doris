@@ -401,8 +401,12 @@ int main(int argc, char** argv) {
             exit(-1);
         }
         for (auto& cache_path : cache_paths) {
-            doris::io::FileCacheFactory::instance().create_file_cache(
+            Status st = doris::io::FileCacheFactory::instance().create_file_cache(
                     cache_path.path, cache_path.init_settings(), doris::io::FileCacheType::NORMAL);
+            if (!st) {
+                LOG(FATAL) << st.get_error_msg();
+                exit(-1);
+            }
         }
 
         if (!doris::config::disposable_file_cache_path.empty()) {
@@ -415,9 +419,13 @@ int main(int argc, char** argv) {
                 exit(-1);
             }
             for (auto& cache_path : cache_paths) {
-                doris::io::FileCacheFactory::instance().create_file_cache(
+                Status st = doris::io::FileCacheFactory::instance().create_file_cache(
                         cache_path.path, cache_path.init_settings(),
                         doris::io::FileCacheType::DISPOSABLE);
+                if (!st) {
+                    LOG(FATAL) << st.get_error_msg();
+                    exit(-1);
+                }
             }
         }
     }

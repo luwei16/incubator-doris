@@ -31,7 +31,7 @@ public:
                                   const TUniqueId& query_id) override;
 
     // init file cache
-    void initialize() override;
+    Status initialize() override;
 
     // remove the files belong to key
     void remove_if_exists(const Key& key, bool is_persistent) override;

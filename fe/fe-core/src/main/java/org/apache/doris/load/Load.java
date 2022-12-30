@@ -971,8 +971,8 @@ public class Load {
                         // columns from files like parquet files can be parsed as the type in table schema
                         slotDesc.setType(tblColumn.getType());
                         slotDesc.setColumn(new Column(realColName, tblColumn.getType()));
-                        // non-nullable column is allowed in vectorized load with parquet format
-                        slotDesc.setIsNullable(tblColumn.isAllowNull());
+                        // Now is_nullable is always true in VArrowScanner::_init_src_block
+                        slotDesc.setIsNullable(true);
                     }
                 } else {
                     if (formatType == TFileFormatType.FORMAT_JSON

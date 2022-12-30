@@ -209,6 +209,10 @@ Status Segment::_parse_footer() {
         return Status::Corruption("Bad segment file {}: failed to parse SegmentFooterPB",
                                   _file_reader->path().native());
     }
+    if (_footer.num_rows() == 0) {
+        // this is a pad segment
+        return Status::OLAPInternalError(EMPTY_SEGMENT);
+    }
     return Status::OK();
 }
 
@@ -246,6 +250,7 @@ Status Segment::load_index() {
             opts.stats = &tmp_stats;
             opts.type = INDEX_PAGE;
             opts.is_persistent = true;
+            opts.read_segmeng_index = true;
             Slice body;
             PageFooterPB footer;
             RETURN_IF_ERROR(

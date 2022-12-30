@@ -90,8 +90,8 @@ public:
         return _context.schema_change_recorder.get();
     }
 
-    int64_t max_upload_speed() const override { return _max_upload_speed; }
-    int64_t min_upload_speed() const override { return _min_upload_speed; }
+    int64_t upload_cost_ms() const override { return _upload_cost_ms; }
+    int64_t total_data_size() const override { return _total_data_size.load(std::memory_order_relaxed); }
 
     void compact_segments(SegCompactionCandidatesSharedPtr segments);
 
@@ -180,9 +180,7 @@ private:
     bool _is_pending = false;
     bool _already_built = false;
 
-
-    int64_t _max_upload_speed = 0;
-    int64_t _min_upload_speed = INT64_MAX;
+    int64_t _upload_cost_ms = 0;
 
     // ensure only one inflight segcompaction task for each rowset
     std::atomic<bool> _is_doing_segcompaction;

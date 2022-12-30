@@ -42,6 +42,10 @@ add_executable(meta_service_job_test
    meta_service_job_test.cpp
 )
 
+add_executable(rate_limiter_test
+    rate_limiter_test.cpp
+)
+
 message("Meta-service test dependencies: ${TEST_LINK_LIBS}")
 target_link_libraries(sync_point_test
     ${TEST_LINK_LIBS}
@@ -60,6 +64,10 @@ target_link_libraries(meta_service_test
 )
 
 target_link_libraries(meta_service_job_test
+    ${TEST_LINK_LIBS}
+)
+
+target_link_libraries(rate_limiter_test
     ${TEST_LINK_LIBS}
 )
 

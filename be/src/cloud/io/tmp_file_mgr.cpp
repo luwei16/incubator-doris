@@ -31,12 +31,24 @@ Status TmpFileMgr::create_tmp_file_mgrs() {
             return Status::OLAPInternalError(OLAP_ERR_INPUT_PARAMETER_ERROR);
         }
         tmp_file_mgr_config.path = map.FindMember(TMP_FILE_DIR_PATH)->value.GetString();
-        tmp_file_mgr_config.max_cache_bytes =
-                map.HasMember(MAX_CACHE_BYTES) ? map.FindMember(MAX_CACHE_BYTES)->value.GetInt64()
-                                               : 0;
-        tmp_file_mgr_config.max_upload_bytes =
-                map.HasMember(MAX_UPLOAD_BYTES) ? map.FindMember(MAX_UPLOAD_BYTES)->value.GetInt64()
-                                                : 0;
+        if (map.HasMember(MAX_CACHE_BYTES)) {
+            auto& value = map.FindMember(MAX_CACHE_BYTES)->value;
+            if (value.IsInt64()) {
+                tmp_file_mgr_config.max_cache_bytes = value.GetInt64();
+            } else {
+                LOG(WARNING) << "max_cache_bytes should be int64";
+                return Status::OLAPInternalError(OLAP_ERR_INPUT_PARAMETER_ERROR);
+            }
+        }
+        if (map.HasMember(MAX_UPLOAD_BYTES)) {
+            auto& value = map.FindMember(MAX_UPLOAD_BYTES)->value;
+            if (value.IsInt64()) {
+                tmp_file_mgr_config.max_upload_bytes = value.GetInt64();
+            } else {
+                LOG(WARNING) << "max_upload_bytes should be int64";
+                return Status::OLAPInternalError(OLAP_ERR_INPUT_PARAMETER_ERROR);
+            }
+        }
         if (tmp_file_mgr_config.max_upload_bytes <= 0) {
             LOG(WARNING) << "max_upload_bytes should not less than or equal to zero";
             return Status::OLAPInternalError(OLAP_ERR_INPUT_PARAMETER_ERROR);

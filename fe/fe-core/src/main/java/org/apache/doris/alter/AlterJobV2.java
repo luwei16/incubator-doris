@@ -27,6 +27,7 @@ import org.apache.doris.common.MetaNotFoundException;
 import org.apache.doris.common.io.Text;
 import org.apache.doris.common.io.Writable;
 import org.apache.doris.persist.gson.GsonUtils;
+import org.apache.doris.qe.ConnectContext;
 
 import com.google.gson.annotations.SerializedName;
 import org.apache.logging.log4j.LogManager;
@@ -86,6 +87,8 @@ public abstract class AlterJobV2 implements Writable {
     protected long finishedTimeMs = -1;
     @SerializedName(value = "timeoutMs")
     protected long timeoutMs = -1;
+    @SerializedName(value = "cloudClusterName")
+    protected String cloudClusterName = "";
 
     public AlterJobV2(long jobId, JobType jobType, long dbId, long tableId, String tableName, long timeoutMs) {
         this.jobId = jobId;
@@ -101,6 +104,14 @@ public abstract class AlterJobV2 implements Writable {
 
     protected AlterJobV2(JobType type) {
         this.type = type;
+    }
+
+    public String getCloudClusterName() {
+        return cloudClusterName;
+    }
+
+    public void setCloudClusterName(final String clusterName) {
+        cloudClusterName = clusterName;
     }
 
     public long getJobId() {
@@ -167,6 +178,13 @@ public abstract class AlterJobV2 implements Writable {
             return;
         }
 
+        if (!Config.cloud_unique_id.isEmpty()) {
+            LOG.debug("set context to job");
+            ConnectContext ctx = new ConnectContext();
+            ctx.setThreadLocalInfo();
+            ctx.setCloudCluster(cloudClusterName);
+        }
+
         try {
             switch (jobState) {
                 case PENDING:
@@ -186,6 +204,11 @@ public abstract class AlterJobV2 implements Writable {
         } catch (Exception e) {
             e.printStackTrace();
             LOG.warn("state {} exception {}", jobState, e.getMessage());
+        } finally {
+            if (!Config.cloud_unique_id.isEmpty()) {
+                LOG.debug("remove context from job");
+                ConnectContext.remove();
+            }
         }
     }
 

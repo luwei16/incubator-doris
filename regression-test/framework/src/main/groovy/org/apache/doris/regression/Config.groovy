@@ -93,6 +93,9 @@ class Config {
     public Integer times
     public boolean withOutLoadData
     public boolean isSmokeTest
+    public String multiClusterBes
+    public String metaServiceToken
+    public String multiClusterInstance
 
     Config() {}
 
@@ -102,7 +105,7 @@ class Config {
            String cloudUniqueId, String metaServiceHttpAddress, String recycleServiceHttpAddress, String suitePath,
            String dataPath, String realDataPath, String sf1DataPath, String cacheDataPath, String testGroups,
            String excludeGroups, String testSuites, String excludeSuites, String testDirectories, String excludeDirectories,
-           String pluginPath) {
+           String pluginPath, String multiClusterBes, String metaServiceToken, String multiClusterInstance) {
         this.defaultDb = defaultDb
         this.jdbcUrl = jdbcUrl
         this.jdbcUser = jdbcUser
@@ -129,6 +132,9 @@ class Config {
         this.testDirectories = testDirectories
         this.excludeDirectories = excludeDirectories
         this.pluginPath = pluginPath
+        this.multiClusterBes = multiClusterBes
+        this.metaServiceToken = metaServiceToken
+        this.multiClusterInstance = multiClusterInstance
     }
 
     static Config fromCommandLine(CommandLine cmd) {
@@ -229,6 +235,14 @@ class Config {
         }
         log.info("msAddr : $config.metaServiceHttpAddress, socketAddr : $config.metaServiceHttpInetSocketAddress")
 
+        config.multiClusterBes = cmd.getOptionValue(multiClusterBesOpt, config.multiClusterBes)
+        log.info("multiClusterBes is ${config.multiClusterBes}".toString())
+
+        config.metaServiceToken = cmd.getOptionValue(metaServiceTokenOpt, config.metaServiceToken)
+        log.info("metaServiceToken is ${config.metaServiceToken}".toString())
+
+        config.multiClusterInstance = cmd.getOptionValue(multiClusterInstanceOpt, config.multiClusterInstance)
+        log.info("multiClusterInstance is ${config.multiClusterInstance}".toString())
 
         config.recycleServiceHttpAddress = cmd.getOptionValue(recycleServiceHttpAddressOpt, config.recycleServiceHttpAddress)
         try {
@@ -302,6 +316,9 @@ class Config {
             configToString(obj.testDirectories),
             configToString(obj.excludeDirectories),
             configToString(obj.pluginPath),
+            configToString(obj.multiClusterBes),
+            configToString(obj.metaServiceToken),
+            configToString(obj.multiClusterInstance),
         )
 
         def declareFileNames = config.getClass()

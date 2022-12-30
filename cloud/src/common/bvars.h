@@ -30,10 +30,15 @@ public:
     }
 
     std::shared_ptr<bvar::LatencyRecorder> get(const std::string& tag) {
+        std::shared_ptr<bvar::LatencyRecorder> instance = nullptr;
         std::lock_guard<bthread::Mutex> l(mutex_);
+
         auto it = bvar_map_.find(tag);
         if (it == bvar_map_.end()) {
-            return nullptr;
+            instance = std::make_shared<bvar::LatencyRecorder>(
+                                                module_, name_ + "_" + tag);
+            bvar_map_[tag] = instance;
+            return instance;
         }
         return it->second;
 

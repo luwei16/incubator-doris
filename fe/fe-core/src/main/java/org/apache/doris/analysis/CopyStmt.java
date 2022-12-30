@@ -89,7 +89,6 @@ public class CopyStmt extends DdlStmt {
     private StageType stageType;
     @Getter
     private ObjectInfo objectInfo;
-
     private String userName;
 
     /**
@@ -164,7 +163,8 @@ public class CopyStmt extends DdlStmt {
                 copyIntoProperties.getColumnSeparator()) : null;
         String fileFormatStr = copyIntoProperties.getFileType();
         Map<String, String> dataDescProperties = copyIntoProperties.getDataDescriptionProperties();
-        copyFromParam.analyze(label.getDbName(), tableName, this.copyIntoProperties.useDeleteSign());
+        copyFromParam.analyze(db, tableName, this.copyIntoProperties.useDeleteSign(),
+                copyIntoProperties.getFileTypeIgnoreCompression());
         if (LOG.isDebugEnabled()) {
             LOG.debug("copy into params. sql: {}, fileColumns: {}, columnMappingList: {}, filter: {}",
                     getOrigStmt() != null ? getOrigStmt().originStmt : "", copyFromParam.getFileColumns(),

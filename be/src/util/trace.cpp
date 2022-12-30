@@ -162,6 +162,7 @@ void Trace::Dump(std::ostream* out, int flags) const {
 
     int64_t prev_usecs = 0;
     for (TraceEntry* e : entries) {
+        if (e->type != 0) continue;
         // Log format borrowed from glog/logging.cc
         int64_t usecs_since_prev = 0;
         if (prev_usecs != 0) {
@@ -204,7 +205,7 @@ void Trace::DumpAccumulatedTime(std::ostream* out) const {
             entries.push_back(cur);
         }
     }
-    std::map<std::string_view, int64_t> accumulated_time;
+    std::map<std::string_view, std::pair<int64_t, int64_t>> accumulated_time;
     std::map<std::string_view, int64_t> last_start_time;
     for (TraceEntry* e : entries) {
         std::string_view key(e->message(), e->message_len);
@@ -213,15 +214,19 @@ void Trace::DumpAccumulatedTime(std::ostream* out) const {
         } else if (e->type == 1) { // finishing trace entry
             if (auto it = last_start_time.find(key); it != last_start_time.end()) {
                 if (auto it1 = accumulated_time.find(key); it1 != accumulated_time.end()) {
-                    it1->second += e->timestamp_micros - it->second;
+                    auto& [acc_time, count] = it1->second;
+                    acc_time += e->timestamp_micros - it->second;
+                    ++count;
                 } else {
-                    accumulated_time[key] = e->timestamp_micros - it->second;
+                    auto& [acc_time, count] = accumulated_time[key];
+                    acc_time = e->timestamp_micros - it->second;
+                    count = 1;
                 }
             }
         }
     }
     for (auto& [k, v] : accumulated_time) {
-        *out << k << " accumulated time=" << v << "us\n";
+        *out << k << " accumulated time=" << v.first << "us, count=" << v.second << "\n";
     }
 }
 

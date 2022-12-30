@@ -120,7 +120,7 @@ Status Compaction::do_compaction(int64_t permits) {
 
 Status Compaction::do_compaction_impl(int64_t permits) {
     OlapStopWatch watch;
-
+#ifndef CLOUD_MODE
     // 1. prepare input and output parameters
     int64_t segments_num = 0;
     for (auto& rowset : _input_rowsets) {
@@ -131,6 +131,7 @@ Status Compaction::do_compaction_impl(int64_t permits) {
     TRACE_COUNTER_INCREMENT("input_rowsets_data_size", _input_rowsets_size);
     TRACE_COUNTER_INCREMENT("input_row_num", _input_row_num);
     TRACE_COUNTER_INCREMENT("input_segments_num", segments_num);
+#endif
 
     _output_version =
             Version(_input_rowsets.front()->start_version(), _input_rowsets.back()->end_version());
@@ -213,6 +214,7 @@ Status Compaction::do_compaction_impl(int64_t permits) {
     TRACE_COUNTER_INCREMENT("filtered_rows", stats.filtered_rows);
 
     _output_rowset = _output_rs_writer->build();
+    TRACE("build output_rowset finished");
     if (_output_rowset == nullptr) {
         LOG(WARNING) << "rowset writer build failed. writer version:"
                      << ", output_version=" << _output_version;
@@ -327,7 +329,7 @@ Status Compaction::do_compaction_impl(int64_t permits) {
               << "s. cumulative_compaction_policy="
               << (cumu_policy == nullptr ? "quick" : cumu_policy->name())
               << ", compact_row_per_second=" << int(_input_row_num / watch.get_elapse_second());
-#endif              
+#endif
 
     return Status::OK();
 }
@@ -419,9 +421,16 @@ Status Compaction::check_version_continuity(const std::vector<RowsetSharedPtr>& 
 
 Status Compaction::check_correctness(const Merger::Statistics& stats) {
     // 1. check row number
-    if (_input_row_num != _output_rowset->num_rows() + stats.merged_rows + stats.filtered_rows) {
+    int64_t read_rows = 0;
+    // if some segments are pad segments, `read_rows` != `_input_row_num`
+    std::vector<uint32_t> segment_num_rows;
+    for (auto& rs_reader : _input_rs_readers) {
+        rs_reader->get_segment_num_rows(&segment_num_rows);
+        for (auto n : segment_num_rows) read_rows += n;
+    }
+    if (read_rows != _output_rowset->num_rows() + stats.merged_rows + stats.filtered_rows) {
         LOG(WARNING) << "row_num does not match between cumulative input and output! "
-                     << "tablet=" << _tablet->full_name() << ", input_row_num=" << _input_row_num
+                     << "tablet=" << _tablet->full_name() << ", read_rows=" << read_rows
                      << ", merged_row_num=" << stats.merged_rows
                      << ", filtered_row_num=" << stats.filtered_rows
                      << ", output_row_num=" << _output_rowset->num_rows();

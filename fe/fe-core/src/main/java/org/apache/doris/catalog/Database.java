@@ -189,6 +189,11 @@ public class Database extends MetaObject implements Writable, DatabaseIf<Table> 
         return fullQualifiedName;
     }
 
+    public String getName() {
+        String[] strs = fullQualifiedName.split(":");
+        return strs.length == 2 ? strs[1] : strs[0];
+    }
+
     public void setNameWithLock(String newName) {
         writeLock();
         try {
@@ -337,6 +342,7 @@ public class Database extends MetaObject implements Writable, DatabaseIf<Table> 
         writeLockOrDdlException();
         try {
             String tableName = table.getName();
+            table.setQualifiedDbName(fullQualifiedName);
             if (Env.isStoredTableNamesLowerCase()) {
                 tableName = tableName.toLowerCase();
             }

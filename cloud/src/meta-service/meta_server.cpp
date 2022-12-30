@@ -8,6 +8,7 @@
 #include "meta-service/keys.h"
 #include "meta-service/mem_txn_kv.h"
 #include "meta-service/meta_service.h"
+#include "rate-limiter/rate_limiter.h"
 #include "resource-manager/resource_manager.h"
 
 #include "brpc/server.h"
@@ -20,6 +21,12 @@
 #include <random>
 #include <thread>
 // clang-format on
+
+
+namespace brpc {
+DECLARE_uint64(max_body_size);
+DECLARE_int64(socket_max_unwritten_bytes);
+} // namespace brpc
 
 namespace selectdb {
 
@@ -62,8 +69,14 @@ int MetaServer::start() {
         return -1;
     }
 
+
+    auto rate_limiter = std::make_shared<RateLimiter>();
+
+    brpc::FLAGS_max_body_size = selectdb::config::brpc_max_body_size;
+    brpc::FLAGS_socket_max_unwritten_bytes = selectdb::config::brpc_socket_max_unwritten_bytes;
+
     // Add service
-    auto meta_service = new MetaServiceImpl(txn_kv_, rc_mgr);
+    auto meta_service = new MetaServiceImpl(txn_kv_, rc_mgr, rate_limiter);
     server_->AddService(meta_service, brpc::SERVER_OWNS_SERVICE);
     // start service
     brpc::ServerOptions options;
@@ -77,6 +90,7 @@ int MetaServer::start() {
                      << ", errmsg=" << strerror_r(errno, buf, 64) << ", port=" << port;
         return -1;
     }
+
     return 0;
 }
 

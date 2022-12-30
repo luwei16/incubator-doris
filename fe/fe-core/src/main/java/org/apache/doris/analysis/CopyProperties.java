@@ -174,6 +174,10 @@ public class CopyProperties {
         return isTypeEmpty(type) ? null : type;
     }
 
+    public String getFileTypeIgnoreCompression() {
+        return properties.get(addKeyPrefix(TYPE));
+    }
+
     public String getColumnSeparator() {
         return properties.get(addKeyPrefix(COLUMN_SEPARATOR));
     }

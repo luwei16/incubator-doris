@@ -877,6 +877,9 @@ enum MetaServiceCode {
     JOB_TABLET_BUSY = 5001;
     JOB_ALREADY_SUCCESS = 5002;
 
+    // Rate limit
+    MAX_QPS_LIMIT = 6001;
+
     UNDEFINED_ERR = 1000000;
 }
 

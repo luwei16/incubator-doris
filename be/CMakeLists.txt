@@ -810,6 +810,14 @@ else()
     )
 endif()
 
+set(DORIS_LINK_LIBS ${DORIS_LINK_LIBS}
+    ${DORIS_DEPENDENCIES}
+    -static-libstdc++
+    -static-libgcc
+    -lstdc++fs
+    -lresolv
+)
+
 if (USE_JEMALLOC)
     set(MALLOCLIB jemalloc)
 else ()

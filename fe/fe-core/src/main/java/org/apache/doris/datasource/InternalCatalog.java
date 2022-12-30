@@ -217,6 +217,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
@@ -1053,11 +1054,29 @@ public class InternalCatalog implements CatalogIf<Database> {
         LOG.debug("replay update a cloud replica {}", info);
         Partition partition = olapTable.getPartition(info.getPartitionId());
         MaterializedIndex materializedIndex = partition.getIndex(info.getIndexId());
-        Tablet tablet = materializedIndex.getTablet(info.getTabletId());
-        Replica replica = tablet.getReplicaById(info.getReplicaId());
-        Preconditions.checkNotNull(replica, info);
 
-        ((CloudReplica) replica).updateClusterToBe(info.getClusterId(), info.getBeId());
+        try {
+            if (info.getTabletId() != -1) {
+                Tablet tablet = materializedIndex.getTablet(info.getTabletId());
+                Replica replica = tablet.getReplicaById(info.getReplicaId());
+                Preconditions.checkNotNull(replica, info);
+                ((CloudReplica) replica).updateClusterToBe(info.getClusterId(), info.getBeId());
+                LOG.debug("update single cloud replica cluster {} replica {} be {}", info.getClusterId(),
+                        replica.getId(), info.getBeId());
+            } else {
+                List<Long> tabletIds = info.getTabletIds();
+                for (int i = 0; i < tabletIds.size(); ++i) {
+                    Tablet tablet = materializedIndex.getTablet(tabletIds.get(i));
+                    Replica replica = tablet.getReplicas().get(0);
+                    Preconditions.checkNotNull(replica, info);
+                    LOG.debug("update cloud replica cluster {} replica {} be {}", info.getClusterId(),
+                            replica.getId(), info.getBeIds().get(i));
+                    ((CloudReplica) replica).updateClusterToBe(info.getClusterId(), info.getBeIds().get(i));
+                }
+            }
+        } catch (Exception e) {
+            LOG.warn("unexpected exception", e);
+        }
     }
 
     public void replayAddReplica(ReplicaPersistInfo info) throws MetaNotFoundException {
@@ -1083,11 +1102,22 @@ public class InternalCatalog implements CatalogIf<Database> {
     }
 
     public void replayUpdateCloudReplica(UpdateCloudReplicaInfo info) throws MetaNotFoundException {
-        Database db = (Database) getDbOrMetaException(info.getDbId());
-        OlapTable olapTable = (OlapTable) db.getTableOrMetaException(info.getTableId(), TableType.OLAP);
+        Database db = getDbNullable(info.getDbId());
+        if (db == null) {
+            LOG.warn("replay update cloud replica, unknown database {}", info.toString());
+            return;
+        }
+        OlapTable olapTable = (OlapTable) db.getTableNullable(info.getTableId());
+        if (olapTable == null) {
+            LOG.warn("replay update cloud replica, unknown table {}", info.toString());
+            return;
+        }
+
         olapTable.writeLock();
         try {
             unprotectUpdateCloudReplica(olapTable, info);
+        } catch (Exception e) {
+            LOG.warn("unexpected exception", e);
         } finally {
             olapTable.writeUnlock();
         }
@@ -3879,11 +3909,12 @@ public class InternalCatalog implements CatalogIf<Database> {
         requestBuilder.setCloudUniqueId(Config.cloud_unique_id);
         SelectdbCloud.CreateTabletsRequest createTabletsReq = requestBuilder.build();
 
-        LOG.info("send create tablets rpc, createTabletsReq: {}", createTabletsReq);
+        LOG.debug("send create tablets rpc, createTabletsReq: {}", createTabletsReq);
         SelectdbCloud.CreateTabletsResponse response;
         try {
             response = MetaServiceProxy.getInstance().createTablets(createTabletsReq);
         } catch (RpcException e) {
+            LOG.warn("failed to send create tablets rpc {}", e.getMessage());
             throw new RuntimeException(e);
         }
         LOG.info("create tablets response: {}", response);
@@ -3924,7 +3955,7 @@ public class InternalCatalog implements CatalogIf<Database> {
         try {
             response = MetaServiceProxy.getInstance().prepareIndex(indexRequest);
         } catch (RpcException e) {
-            LOG.warn("prepareIndex response: {} ", response);
+            LOG.warn("failed to prepareIndex response: {} ", response);
             throw new DdlException(e.getMessage());
         }
 
@@ -3948,7 +3979,7 @@ public class InternalCatalog implements CatalogIf<Database> {
         try {
             response = MetaServiceProxy.getInstance().commitIndex(indexRequest);
         } catch (RpcException e) {
-            LOG.warn("commitIndex response: {} ", response);
+            LOG.warn("failed to commitIndex response: {} ", response);
             throw new DdlException(e.getMessage());
         }
 
@@ -4361,5 +4392,13 @@ public class InternalCatalog implements CatalogIf<Database> {
         } catch (RpcException e) {
             throw new RuntimeException(e);
         }
+    }
+
+    public Map<String, Long> getUsedDataQuota() {
+        Map<String, Long> dbToDataSize = new TreeMap<>();
+        for (Database db : this.idToDb.values()) {
+            dbToDataSize.put(db.getName(), db.getUsedDataQuotaWithLock());
+        }
+        return dbToDataSize;
     }
 }

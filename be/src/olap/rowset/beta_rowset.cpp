@@ -126,9 +126,9 @@ Status BetaRowset::load_segments(std::vector<segment_v2::SegmentSharedPtr>* segm
         std::shared_ptr<segment_v2::Segment> segment;
         auto s = segment_v2::Segment::open(fs, seg_path, cache_path, seg_id, rowset_id(), _schema,
                                            &segment, count);
+        if (UNLIKELY(s.precise_code() == EMPTY_SEGMENT)) continue;
         if (!s.ok()) {
-            LOG(WARNING) << "failed to open segment. " << seg_path << " under rowset "
-                         << unique_id() << " : " << s.to_string();
+            LOG(WARNING) << "failed to open segment " << seg_path << " : " << s.to_string();
             return Status::OLAPInternalError(OLAP_ERR_ROWSET_LOAD_FAILED);
         }
         segments->push_back(std::move(segment));

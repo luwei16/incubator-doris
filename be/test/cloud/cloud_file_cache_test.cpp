@@ -9,10 +9,11 @@
 
 #include "common/config.h"
 #include "cloud/io/cloud_file_cache.h"
-#include "cloud/io/cloud_file_cache_profile.h"
 #include "cloud/io/cloud_file_cache_settings.h"
 #include "cloud/io/cloud_file_segment.h"
 #include "cloud/io/cloud_lru_file_cache.h"
+#include "cloud/io/s3_file_writer.h"
+#include "cloud/io/tmp_file_mgr.h"
 #include "olap/options.h"
 #include "util/slice.h"
 
@@ -84,7 +85,7 @@ TEST(LRUFileCache, init) {
         )");
     config::enable_file_cache_query_limit = true;
     std::vector<CachePath> cache_paths;
-    parse_conf_cache_paths(string, cache_paths);
+    EXPECT_TRUE(parse_conf_cache_paths(string, cache_paths));
     EXPECT_EQ(cache_paths.size(), 2);
     for (const auto& cache_path : cache_paths) {
         io::FileCacheSettings settings = cache_path.init_settings();
@@ -92,6 +93,83 @@ TEST(LRUFileCache, init) {
         EXPECT_EQ(settings.persistent_max_size, 193273528320);
         EXPECT_EQ(settings.max_query_cache_size, 38654705664);
     }
+
+    // err normal
+    std::string err_string = std::string(R"(
+        [
+        {
+            "path" : "/mnt/ssd01/clickbench/hot/be/file_cache",
+            "normal" : "193273528320",
+            "persistent" : 193273528320,
+            "query_limit" : 38654705664
+        }
+        ]
+        )");
+    cache_paths.clear();
+    EXPECT_FALSE(parse_conf_cache_paths(err_string, cache_paths));
+
+    // err persistent
+    err_string = std::string(R"(
+        [
+        {
+            "path" : "/mnt/ssd01/clickbench/hot/be/file_cache",
+            "normal" : 193273528320,
+            "persistent" : "193273528320",
+            "query_limit" : 38654705664
+        }
+        ]
+        )");
+    cache_paths.clear();
+    EXPECT_FALSE(parse_conf_cache_paths(err_string, cache_paths));
+
+    // err query_limit
+    err_string = std::string(R"(
+        [
+        {
+            "path" : "/mnt/ssd01/clickbench/hot/be/file_cache",
+            "normal" : 193273528320,
+            "persistent" : 193273528320,
+            "query_limit" : "38654705664"
+        }
+        ]
+        )");
+    cache_paths.clear();
+    EXPECT_FALSE(parse_conf_cache_paths(err_string, cache_paths));
+}
+
+TEST(TmpFileCache, init) {
+    config::tmp_file_dirs = (R"(
+        [
+        {
+            "path" : "/mnt/ssd01/clickbench/hot/be/tmp",
+            "max_cache_bytes" : "193273528320",
+            "max_upload_bytes" : 193273528320
+        }
+        ]
+        )");
+    EXPECT_FALSE(io::TmpFileMgr::create_tmp_file_mgrs());
+
+    config::tmp_file_dirs = (R"(
+        [
+        {
+            "path" : "/mnt/ssd01/clickbench/hot/be/tmp",
+            "max_cache_bytes" : 193273528320,
+            "max_upload_bytes" : "193273528320"
+        }
+        ]
+        )");
+    EXPECT_FALSE(io::TmpFileMgr::create_tmp_file_mgrs());
+
+    config::tmp_file_dirs = (R"(
+        [
+        {
+            "path" : "/mnt/ssd01/clickbench/hot/be/tmp",
+            "max_cache_bytes" : 193273528320,
+            "max_upload_bytes" : 193273528320
+        }
+        ]
+        )");
+    EXPECT_TRUE(io::TmpFileMgr::create_tmp_file_mgrs());
 }
 
 void test_file_cache(bool is_persistent) {
@@ -112,6 +190,7 @@ void test_file_cache(bool is_persistent) {
     auto key = io::IFileCache::hash("key1");
     {
         io::LRUFileCache cache(cache_base_path, settings);
+        cache.initialize();
         {
             auto holder =
                     cache.get_or_set(key, 0, 10, is_persistent, query_id); /// Add range [0, 9]
@@ -487,6 +566,7 @@ void test_file_cache(bool is_persistent) {
         /// Test LRUCache::restore().
 
         io::LRUFileCache cache2(cache_base_path, settings);
+        cache2.initialize();
         auto holder1 = cache2.get_or_set(key, 2, 28, is_persistent, query_id); /// Get [2, 29]
 
         auto segments1 = fromHolder(holder1);
