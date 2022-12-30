@@ -2764,9 +2764,17 @@ grant_stmt ::=
     {:
         RESULT = new GrantStmt(userId, null, resourcePattern, privs, ResourceTypeEnum.CLUSTER);
     :}
+    | KW_GRANT privilege_list:privs KW_ON KW_CLUSTER resource_pattern:resourcePattern KW_TO KW_ROLE STRING_LITERAL:role
+    {:
+        RESULT = new GrantStmt(null, role, resourcePattern, privs, ResourceTypeEnum.CLUSTER);
+    :}
     | KW_GRANT privilege_list:privs KW_ON KW_STAGE resource_pattern:resourcePattern KW_TO user_identity:userId
     {:
         RESULT = new GrantStmt(userId, null, resourcePattern, privs, ResourceTypeEnum.STAGE);
+    :}
+    | KW_GRANT privilege_list:privs KW_ON KW_STAGE resource_pattern:resourcePattern KW_TO KW_ROLE STRING_LITERAL:role
+    {:
+        RESULT = new GrantStmt(null, role, resourcePattern, privs, ResourceTypeEnum.STAGE);
     :}
     ;
 
@@ -2829,9 +2837,17 @@ revoke_stmt ::=
     {:
         RESULT = new RevokeStmt(userId, null, resourcePattern, privs, ResourceTypeEnum.CLUSTER);
     :}
+    | KW_REVOKE privilege_list:privs KW_ON KW_CLUSTER resource_pattern:resourcePattern KW_FROM KW_ROLE STRING_LITERAL:role
+    {:
+        RESULT = new RevokeStmt(null, role, resourcePattern, privs, ResourceTypeEnum.CLUSTER);
+    :}
     | KW_REVOKE privilege_list:privs KW_ON KW_STAGE resource_pattern:resourcePattern KW_FROM user_identity:userId
     {:
         RESULT = new RevokeStmt(userId, null, resourcePattern, privs, ResourceTypeEnum.STAGE);
+    :}
+    | KW_REVOKE privilege_list:privs KW_ON KW_STAGE resource_pattern:resourcePattern KW_FROM KW_ROLE STRING_LITERAL:role
+    {:
+        RESULT = new RevokeStmt(null, role, resourcePattern, privs, ResourceTypeEnum.STAGE);
     :}
     ;
 

@@ -33,6 +33,7 @@ import com.google.common.collect.Maps;
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -111,7 +112,18 @@ public class RoleManager implements Writable {
             return null;
         }
 
-        Map<ResourcePattern, PrivBitSet> map = existingRole.getResourcePatternToPrivs();
+        Map<ResourcePattern, PrivBitSet> map = null;
+        if (resourcePattern.isGeneralResource()) {
+            map = existingRole.getResourcePatternToPrivs();
+        } else if (resourcePattern.isClusterResource()) {
+            map = existingRole.getClusterPatternToPrivs();
+        } else {
+            // resourcePattern.isStageResource();
+            map = existingRole.getStagePatternToPrivs();
+        }
+        if (map == null) {
+            throw new DdlException(resourcePattern + " cant get map role " + role);
+        }
         PrivBitSet existingPriv = map.get(resourcePattern);
         if (existingPriv == null) {
             if (errOnNonExist) {
@@ -162,6 +174,41 @@ public class RoleManager implements Writable {
                         }
                     }, (s1, s2) -> s1 + " " + s2
                 ));
+
+            List<Map<ResourcePattern, PrivBitSet>> resourcePatterToPrivs = Arrays.asList(
+                    role.getResourcePatternToPrivs(), role.getClusterPatternToPrivs(), role.getStagePatternToPrivs());
+            resourcePatterToPrivs.forEach(r -> {
+                Map<PrivLevel, String> resourceInfoMap = r.entrySet().stream()
+                        .collect(Collectors.groupingBy(entry -> entry.getKey().getPrivLevel())).entrySet().stream()
+                        .collect(Collectors.toMap(Entry::getKey, entry -> {
+                            if (entry.getKey() == PrivLevel.GLOBAL) {
+                                return entry.getValue().stream().findFirst().map(priv -> priv.getValue().toString())
+                                    .orElse(FeConstants.null_string);
+                            } else {
+                                return entry.getValue().stream()
+                                    .map(priv -> {
+                                        if (priv.getValue().isEmpty()) {
+                                            return "";
+                                        }
+                                        return priv.getKey() + ": " + priv.getValue();
+                                    })
+                                    .collect(Collectors.joining("; "));
+                            }
+                        }));
+                resourceInfoMap.forEach((key, value) -> {
+                    String s = infoMap.putIfAbsent(key, value);
+                    if (value.isEmpty() || value.equals(s) || s == null) {
+                        return;
+                    }
+                    if (s.isEmpty()) {
+                        s = value;
+                    } else {
+                        s += " ; " + value;
+                    }
+                    infoMap.put(key, s);
+                });
+            });
+
             Stream.of(PrivLevel.GLOBAL, PrivLevel.CATALOG, PrivLevel.DATABASE, PrivLevel.TABLE, PrivLevel.RESOURCE)
                     .forEach(level -> {
                         String infoItem = infoMap.get(level);

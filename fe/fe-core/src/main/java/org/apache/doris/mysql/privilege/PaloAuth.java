@@ -931,11 +931,20 @@ public class PaloAuth implements Writable {
                 grantInternal(userIdent, null /* role */, entry.getKey(), entry.getValue().copy(),
                         false /* err on non exist */, true /* is replay */);
             }
-            for (Map.Entry<ResourcePattern, PrivBitSet> entry : role.getResourcePatternToPrivs().entrySet()) {
-                // use PrivBitSet copy to avoid same object being changed synchronously
-                grantInternal(userIdent, null /* role */, entry.getKey(), entry.getValue().copy(),
-                        false /* err on non exist */, true /* is replay */);
-            }
+            List<Map<ResourcePattern, PrivBitSet>> resourcePatterToPrivs = Arrays.asList(
+                    role.getResourcePatternToPrivs(), role.getClusterPatternToPrivs(), role.getStagePatternToPrivs());
+            resourcePatterToPrivs.forEach(r -> {
+                for (Map.Entry<ResourcePattern, PrivBitSet> entry : r.entrySet()) {
+                    // use PrivBitSet copy to avoid same object being changed synchronously
+                    try {
+                        grantInternal(userIdent, null /* role */, entry.getKey(), entry.getValue().copy(),
+                                false /* err on non exist */, true /* is replay */);
+                    } catch (DdlException e) {
+                        LOG.warn("grant resource exception ", e);
+                        throw new RuntimeException(e);
+                    }
+                }
+            });
             // add user to this role
             role.addUser(userIdent);
         } finally {
@@ -952,11 +961,20 @@ public class PaloAuth implements Writable {
             for (Map.Entry<TablePattern, PrivBitSet> entry : role.getTblPatternToPrivs().entrySet()) {
                 revokeInternal(userIdent, null, entry.getKey(), entry.getValue().copy(), false, true);
             }
+            List<Map<ResourcePattern, PrivBitSet>> resourcePatterToPrivs = Arrays.asList(
+                    role.getResourcePatternToPrivs(), role.getClusterPatternToPrivs(), role.getStagePatternToPrivs());
+            resourcePatterToPrivs.forEach(r -> {
+                for (Map.Entry<ResourcePattern, PrivBitSet> entry : r.entrySet()) {
+                    try {
+                        revokeInternal(userIdent, null, entry.getKey(), entry.getValue().copy(),
+                                false, true);
+                    } catch (DdlException e) {
+                        LOG.warn("revoke resource exception ", e);
+                        throw new RuntimeException(e);
+                    }
+                }
+            });
 
-            for (Map.Entry<ResourcePattern, PrivBitSet> entry : role.getResourcePatternToPrivs().entrySet()) {
-                revokeInternal(userIdent, null, entry.getKey(), entry.getValue().copy(),
-                        false, true);
-            }
             // drop user from this role
             role.dropUser(userIdent);
         } finally {
@@ -1126,6 +1144,16 @@ public class PaloAuth implements Writable {
                 for (UserIdentity user : existingRole.getUsers()) {
                     for (Map.Entry<ResourcePattern, PrivBitSet> entry
                             : existingRole.getResourcePatternToPrivs().entrySet()) {
+                        // copy the PrivBitSet
+                        grantPrivs(user, entry.getKey(), entry.getValue().copy(), errOnNonExist);
+                    }
+                    for (Map.Entry<ResourcePattern, PrivBitSet> entry
+                            : existingRole.getClusterPatternToPrivs().entrySet()) {
+                        // copy the PrivBitSet
+                        grantPrivs(user, entry.getKey(), entry.getValue().copy(), errOnNonExist);
+                    }
+                    for (Map.Entry<ResourcePattern, PrivBitSet> entry
+                            : existingRole.getStagePatternToPrivs().entrySet()) {
                         // copy the PrivBitSet
                         grantPrivs(user, entry.getKey(), entry.getValue().copy(), errOnNonExist);
                     }
