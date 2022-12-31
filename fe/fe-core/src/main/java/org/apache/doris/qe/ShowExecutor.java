@@ -2530,7 +2530,8 @@ public class ShowExecutor {
                 result.add(stage.getObjInfo().getBucket());
                 result.add(stage.getObjInfo().getPrefix());
                 result.add(stage.getObjInfo().getAk());
-                result.add(stage.getObjInfo().getSk());
+                // result.add(stage.getObjInfo().getSk());
+                result.add("**********");
                 result.add(stage.getObjInfo().getProvider().name());
                 Map<String, String> propertiesMap = new HashMap<>();
                 propertiesMap.putAll(stage.getPropertiesMap());
