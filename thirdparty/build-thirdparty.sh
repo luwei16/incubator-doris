@@ -48,18 +48,16 @@ usage() {
     echo "
 Usage: $0 <options>
   Optional options:
-     -j                 build thirdparty parallel
-     -c                 build only clucene thirdparty
+     -j build thirdparty parallel
+     -d build specified dependencies, space separated, e.g. -d \"re2 curl clucene\"
+     -a rebuild all dependencies
   "
     exit 1
 }
 
 if ! OPTS="$(getopt \
     -n "$0" \
-    -o '' \
-    -o 'h' \
-    -l 'help' \
-    -o 'j:c:' \
+    -o 'hj:d:a' \
     -- "$@")"; then
     usage
 fi
@@ -74,7 +72,8 @@ else
     PARALLEL="$(($(nproc) / 4 + 1))"
 fi
 
-BUILDCLUCENE=0
+BUILD_ALL=0
+DEPS=""
 
 if [[ "$#" -ne 1 ]]; then
     while true; do
@@ -83,15 +82,15 @@ if [[ "$#" -ne 1 ]]; then
             PARALLEL="$2"
             shift 2
             ;;
-        -h)
-            HELP=1
+        -d)
+            DEPS="$2"
+            shift 2
+            ;;
+        -a)
+            BUILD_ALL=1
             shift
             ;;
-        -c) 
-           BUILDCLUCENE=$2
-           shift 2 
-           ;;
-        --help)
+        -h)
             HELP=1
             shift
             ;;
@@ -114,7 +113,8 @@ fi
 
 echo "Get params:
     PARALLEL            -- ${PARALLEL}
-    BUILDCLUCENE        -- $BUILDCLUCENE
+    DEPS                -- ${DEPS}
+    BUILD_ALL           -- ${BUILD_ALL}
 "
 
 if [[ ! -f "${TP_DIR}/download-thirdparty.sh" ]]; then
@@ -131,12 +131,49 @@ fi
 
 cd "${TP_DIR}"
 
-# Download thirdparties.
-if [ $BUILDCLUCENE -gt 0 ];then
-    ${TP_DIR}/download-clucene.sh
+if [[ -f version.txt ]]; then
+    CUR_VERSION=$(grep -v "#" version.txt | awk '{print $1; exit}')
 else
-    ${TP_DIR}/download-thirdparty.sh
+    CUR_VERSION="y"
 fi
+
+if [[ -f ${TP_INSTALL_DIR}/version.txt ]]; then
+    INSTALLED_VERSION=$(grep -v "#" "${TP_INSTALL_DIR}/version.txt" | awk '{print $1; exit}')
+else
+    INSTALLED_VERSION="x"
+fi
+
+# Incremental build, remove existing src folder if needed
+if [[ -f version.txt && ${BUILD_ALL} -eq 0 && "${DEPS}" = "" ]]; then
+    NEED_REMOVE=0
+    if [[ ${INSTALLED_VERSION} != "x" ]]; then
+        VER_DIFF=$((CUR_VERSION - INSTALLED_VERSION))
+        if [[ ${VER_DIFF} -gt 0 ]]; then
+            NEED_REMOVE=1
+        fi
+    else
+            NEED_REMOVE=1
+    fi
+
+    if [[ ${NEED_REMOVE} -ne 0 ]]; then
+        mkdir src/bak/src -p
+        CNT=0
+        for i in $(grep -v "#" version.txt); do
+            if [[ ${CNT} -lt 2 ]]; then
+                CNT=$((CNT + 1))
+                continue
+            fi
+            folder=$(echo "${i}" | sed -r 's/[-_]/*/')
+            set -x
+            find src -maxdepth 1 -type d -iname "*${folder}*" -exec mv {} src/bak/{}-$(date +"%Y%m%d%H%M%S") \;
+            set +x
+        done
+    fi
+fi
+
+# Download thirdparties.
+${TP_DIR}/download-clucene.sh
+${TP_DIR}/download-thirdparty.sh
 
 export LD_LIBRARY_PATH="${TP_DIR}/installed/lib:${LD_LIBRARY_PATH}"
 
@@ -1571,10 +1608,56 @@ if [[ "$(uname -s)" == 'Darwin' ]]; then
     build_gettext
 fi
 
-if [ $BUILDCLUCENE -gt 0 ];then
-    build_clucene
-    exit 0
+####################################[ Build ]###################################
+
+# Choose what to compile
+if [[ -d ${TP_INSTALL_DIR} && "${DEPS}" != "" ]]; then
+    for i in $(echo "${DEPS}"); do
+        "build_${i}"
+    done
+    echo "Built specified dependencies: ${DEPS}"
+    exit
 fi
+
+if [[ "${CUR_VERSION}" == "${INSTALLED_VERSION}" && ${BUILD_ALL} -eq 0 ]]; then
+    echo "Installed dependencies are up to date, if you want to rebuild all dependencies, use -a option"
+    exit
+fi
+
+# Incremental build
+if [[ -f version.txt && ${BUILD_ALL} -eq 0 ]]; then
+    if [[ "${INSTALLED_VERSION}" -gt "${CUR_VERSION}" ]]; then
+        echo "Installed dependencies are up to date, if you want to downgrade, use -a or -d option to rebuild"
+        exit
+    fi
+    VER_DIFF=$((CUR_VERSION - INSTALLED_VERSION))
+    if [[ ${VER_DIFF} -lt 2 ]]; then
+        INC_BUILD_DEPS=""
+        CNT=0
+        for i in $(grep -v "#" version.txt); do
+            if [[ ${CNT} -lt 2 ]]; then
+                CNT=$((CNT + 1))
+                continue
+            fi
+            INC_BUILD_DEPS="${INC_BUILD_DEPS} ${i}"
+            "build_${i}"
+        done
+        if [[ "${INC_BUILD_DEPS}" != "" ]]; then
+            cd "${TP_DIR}"
+            echo "Incremental build done:${INC_BUILD_DEPS}"
+            cp -f version.txt "${TP_INSTALL_DIR}/version.txt"
+            exit
+        else
+            echo "Continue to full build"
+        fi
+    else
+        echo "Third party Version diff is ${VER_DIFF}, need a full rebuild"
+        # FXIME: should we set BUILD_ALL=1?
+    fi
+fi
+
+# Full build
+echo "Full build dependencies"
 
 build_libunixodbc
 build_openssl
@@ -1631,5 +1714,11 @@ build_libbacktrace
 build_sse2neon
 build_xxhash
 build_concurrentqueue
+build_clucene
+
+# Full build done
+if [[ -f version.txt ]]; then
+    cp -f version.txt ${TP_INSTALL_DIR}/version.txt
+fi
 
 echo "Finished to build all thirdparties"
