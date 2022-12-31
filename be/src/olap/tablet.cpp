@@ -558,8 +558,14 @@ Status Tablet::cloud_capture_rs_readers(const Version& version_range,
                                         std::vector<RowsetReaderSharedPtr>* rs_readers) {
     Versions version_path;
     std::shared_lock rlock(_meta_lock);
-    RETURN_IF_ERROR(
-            _timestamped_version_tracker.capture_consistent_versions(version_range, &version_path));
+    // clang-format off
+    auto st = _timestamped_version_tracker.capture_consistent_versions(version_range, &version_path);
+    if (!st.ok()) {
+        st.append(" tablet_id=" + std::to_string(tablet_id()));
+        VLOG_DEBUG << st << '\n' << [this]() { std::string json; get_compaction_status(&json); return json; }();
+        return st;
+    }
+    // clang-format on
     VLOG_DEBUG << "capture consitent versions: " << version_path;
     return capture_rs_readers(version_path, rs_readers);
 }
