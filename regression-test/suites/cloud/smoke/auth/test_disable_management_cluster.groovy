@@ -2,28 +2,50 @@ suite("test_disable_management_cluster", "smoke") {
     def host = "127.0.0.1"
     def heart_port = 10086
     def edit_log_port = 10000
+    def user1 = "regression_test_cloud_user1"
+    sql """drop user if exists ${user1}"""
 
-    def asab = try_sql """
-        ALTER SYSTEM ADD BACKEND "${host}:${heart_port}";
-    """
-    // failed: ERROR 1105 (HY000): errCode = 2, detailMessage = Unsupported operation.
-    assertEquals(asab, null)
+    // 1. change user
+    // ${user1} admin role
+    sql """create user ${user1} identified by '12345' default role 'admin'"""
 
-    def asaf = try_sql """
-        ALTER SYSTEM ADD FOLLOWER "${host}:${edit_log_port}"
-    """
-    // failed: ERROR 1105 (HY000): errCode = 2, detailMessage = Unsupported operation.
-    assertEquals(asaf, null)
+    try {
+        result = connect(user = "${user1}", password = '12345', url = context.config.jdbcUrl) {
+             sql """
+                ALTER SYSTEM ADD BACKEND "${host}:${heart_port}"
+             """
+        }
+    } catch (Exception e) {
+        assertTrue(e.getMessage().contains("Unsupported operation"), e.getMessage())
+    }
 
-    def asdb = try_sql """
-        ALTER SYSTEM DROP BACKEND "${host}:${heart_port}"
-    """
-    // failed: ERROR 1105 (HY000): errCode = 2, detailMessage = Unsupported operation.
-    assertEquals(asdb, null)
+    try {
+        result = connect(user = "${user1}", password = '12345', url = context.config.jdbcUrl) {
+             sql """
+                ALTER SYSTEM ADD FOLLOWER "${host}:${edit_log_port}"
+             """
+        }
+    } catch (Exception e) {
+        assertTrue(e.getMessage().contains("Unsupported operation"), e.getMessage())
+    }
 
-    def asdf = try_sql """
-        ALTER SYSTEM DROP FOLLOWER "${host}:${edit_log_port}"
-    """
-    // failed: ERROR 1105 (HY000): errCode = 2, detailMessage = Unsupported operation.
-    assertEquals(asdf, null)
+    try {
+        result = connect(user = "${user1}", password = '12345', url = context.config.jdbcUrl) {
+             sql """
+                ALTER SYSTEM DROP BACKEND "${host}:${heart_port}"
+             """
+        }
+    } catch (Exception e) {
+        assertTrue(e.getMessage().contains("Unsupported operation"), e.getMessage())
+    }
+
+    try {
+        result = connect(user = "${user1}", password = '12345', url = context.config.jdbcUrl) {
+             sql """
+                ALTER SYSTEM DROP FOLLOWER "${host}:${edit_log_port}"
+             """
+        }
+    } catch (Exception e) {
+        assertTrue(e.getMessage().contains("Unsupported operation"), e.getMessage())
+    }
 }

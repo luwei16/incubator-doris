@@ -28,7 +28,9 @@ public class PrivPredicate {
                     PaloPrivilege.ALTER_PRIV,
                     PaloPrivilege.CREATE_PRIV,
                     PaloPrivilege.DROP_PRIV,
-                    PaloPrivilege.USAGE_PRIV),
+                    PaloPrivilege.USAGE_PRIV,
+                    PaloPrivilege.CLUSTER_USAGE_PRIV,
+                    PaloPrivilege.STAGE_USAGE_PRIV),
             Operator.OR);
     // create/drop/alter/show user
     public static final PrivPredicate GRANT = PrivPredicate.of(PrivBitSet.of(PaloPrivilege.ADMIN_PRIV,
@@ -69,7 +71,7 @@ public class PrivPredicate {
 
     // resource usage
     public static final PrivPredicate USAGE = PrivPredicate.of(PrivBitSet.of(PaloPrivilege.ADMIN_PRIV,
-                    PaloPrivilege.USAGE_PRIV),
+                    PaloPrivilege.USAGE_PRIV, PaloPrivilege.CLUSTER_USAGE_PRIV, PaloPrivilege.STAGE_USAGE_PRIV),
             Operator.OR);
 
     // all
@@ -80,7 +82,9 @@ public class PrivPredicate {
                     PaloPrivilege.ALTER_PRIV,
                     PaloPrivilege.CREATE_PRIV,
                     PaloPrivilege.DROP_PRIV,
-                    PaloPrivilege.USAGE_PRIV),
+                    PaloPrivilege.USAGE_PRIV,
+                    PaloPrivilege.CLUSTER_USAGE_PRIV,
+                    PaloPrivilege.STAGE_USAGE_PRIV),
             Operator.OR);
 
     private PrivBitSet privs;

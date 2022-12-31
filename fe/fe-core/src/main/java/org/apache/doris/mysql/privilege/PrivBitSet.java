@@ -100,7 +100,8 @@ public class PrivBitSet implements Writable {
     }
 
     public boolean containsResourcePriv() {
-        return containsPrivs(PaloPrivilege.USAGE_PRIV);
+        return containsPrivs(PaloPrivilege.USAGE_PRIV,
+            PaloPrivilege.CLUSTER_USAGE_PRIV, PaloPrivilege.STAGE_USAGE_PRIV);
     }
 
     public boolean containsDbTablePriv() {

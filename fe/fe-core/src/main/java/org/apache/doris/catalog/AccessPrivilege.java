@@ -48,6 +48,10 @@ public enum AccessPrivilege {
         this.desc = desc;
     }
 
+    public boolean isResource() {
+        return this.flag == 12;
+    }
+
     public PrivBitSet toPaloPrivilege() {
         Preconditions.checkState(flag > 0 && flag < 13);
         switch (flag) {

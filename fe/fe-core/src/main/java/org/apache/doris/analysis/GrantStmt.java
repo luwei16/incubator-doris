@@ -67,7 +67,16 @@ public class GrantStmt extends DdlStmt {
         this.resourcePattern.setResourceType(type);
         PrivBitSet privs = PrivBitSet.of();
         for (AccessPrivilege accessPrivilege : privileges) {
-            privs.or(accessPrivilege.toPaloPrivilege());
+            if (!accessPrivilege.isResource() || type == ResourceTypeEnum.GENERAL) {
+                privs.or(accessPrivilege.toPaloPrivilege());
+                continue;
+            }
+
+            if (type == ResourceTypeEnum.CLUSTER) {
+                privs.or(PrivBitSet.of(PaloPrivilege.CLUSTER_USAGE_PRIV));
+            } else if (type == ResourceTypeEnum.STAGE) {
+                privs.or(PrivBitSet.of(PaloPrivilege.STAGE_USAGE_PRIV));
+            }
         }
         this.privileges = privs.toPrivilegeList();
     }
@@ -185,7 +194,9 @@ public class GrantStmt extends DdlStmt {
         }
 
         // Rule 6
-        if (privileges.contains(PaloPrivilege.USAGE_PRIV)) {
+        if (privileges.contains(PaloPrivilege.USAGE_PRIV)
+                || privileges.contains(PaloPrivilege.CLUSTER_USAGE_PRIV)
+                || privileges.contains(PaloPrivilege.STAGE_USAGE_PRIV)) {
             throw new AnalysisException("Can not grant/revoke USAGE_PRIV to/from database or table");
         }
     }

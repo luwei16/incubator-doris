@@ -236,13 +236,16 @@ public class UserPrivTable extends PrivTable {
                     // USAGE_PRIV is no need to degrade.
                     PrivBitSet removeUsagePriv = globalPrivEntry.privSet.copy();
                     removeUsagePriv.unset(PaloPrivilege.USAGE_PRIV.getIdx());
+                    removeUsagePriv.xor(PrivBitSet.of(PaloPrivilege.USAGE_PRIV,
+                            PaloPrivilege.CLUSTER_USAGE_PRIV, PaloPrivilege.STAGE_USAGE_PRIV));
                     CatalogPrivEntry entry = CatalogPrivEntry.create(globalPrivEntry.origUser, globalPrivEntry.origHost,
                             InternalCatalog.INTERNAL_CATALOG_NAME, globalPrivEntry.isDomain, removeUsagePriv);
                     entry.setSetByDomainResolver(false);
                     catalogPrivTable.addEntry(entry, false, false);
                     if (globalPrivEntry.privSet.containsResourcePriv()) {
                         // Should only keep the USAGE_PRIV in userPrivTable, and remove other privs and entries.
-                        globalPrivEntry.privSet.and(PrivBitSet.of(PaloPrivilege.USAGE_PRIV));
+                        globalPrivEntry.privSet.and(PrivBitSet.of(PaloPrivilege.USAGE_PRIV,
+                                PaloPrivilege.CLUSTER_USAGE_PRIV, PaloPrivilege.STAGE_USAGE_PRIV));
                     } else {
                         // Remove all other privs
                         globalPrivEntry.privSet.clean();
