@@ -78,7 +78,7 @@ Status S3FileWriter::close(bool sync) {
     _closed = true;
 
     if (sync) {
-        SCOPED_ATTACH_TASK(ExecEnv::GetInstance()->orphan_mem_tracker());
+        SCOPED_SWITCH_THREAD_MEM_TRACKER_LIMITER(ExecEnv::GetInstance()->orphan_mem_tracker());
         _handle->WaitUntilFinished();
         if (_handle->GetStatus() != Aws::Transfer::TransferStatus::COMPLETED) {
             return Status::IOError("failed to upload {}: {}", _path.native(),
