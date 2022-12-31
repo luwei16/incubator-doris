@@ -324,6 +324,10 @@ public class RuntimeProfile {
                 }
                 break;
             }
+            case TIME_MS: {
+                DebugUtil.printTimeMs(tmpValue, builder);
+                break;
+            }
             case BYTES: {
                 Pair<Double, String> pair = DebugUtil.getByteUint(tmpValue);
                 Formatter fmt = new Formatter();
