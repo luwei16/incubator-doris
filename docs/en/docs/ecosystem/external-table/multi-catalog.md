@@ -77,19 +77,69 @@ This function will be used as a supplement and enhancement to the previous exter
 > 1. hive supports version 2.3.7 and above.
 > 2. Iceberg currently only supports V1 version, V2 version will be supported soon.
 > 3. Hudi currently only supports Snapshot Query for Copy On Write tables and Read Optimized Query for Merge On Read tables. In the future, Incremental Query and Snapshot Query for Merge On Read tables will be supported soon.
+> 4. Support access to hive tables whose data stored on tencent chdfs, usage is same as common hive table.
 
 The following example is used to create a Catalog named hive to connect the specified Hive MetaStore, and provide the HDFS HA connection properties to access the corresponding files in HDFS.
 
+**Create catalog through resource**
+
+In later versions of `1.2.0`, it is recommended to create a catalog through resource.
+```sql
+CREATE RESOURCE hms_resource PROPERTIES (
+    'type'='hms',
+    'hive.metastore.uris' = 'thrift://172.21.0.1:7004',
+    'hadoop.username' = 'hive',
+    'dfs.nameservices'='your-nameservice',
+    'dfs.ha.namenodes.your-nameservice'='nn1,nn2',
+    'dfs.namenode.rpc-address.your-nameservice.nn1'='172.21.0.2:4007',
+    'dfs.namenode.rpc-address.your-nameservice.nn2'='172.21.0.3:4007',
+    'dfs.client.failover.proxy.provider.your-nameservice'='org.apache.hadoop.hdfs.server.namenode.ha.ConfiguredFailoverProxyProvider'
+);
+CREATE CATALOG hive WITH RESOURCE hms_resource;
 ```
+
+**Create catalog through properties**
+
+Version `1.2.0` creates a catalog through properties. This method will be deprecated in subsequent versions.
+```sql
 CREATE CATALOG hive PROPERTIES (
-    "type"="hms",
+    'type'='hms',
     'hive.metastore.uris' = 'thrift://172.21.0.1:7004',
     'hadoop.username' = 'hive'
-    'dfs.nameservices'='service1',
-    'dfs.ha.namenodes. service1'='nn1,nn2',
-    'dfs.namenode.rpc-address.HDFS8000871.nn1'='172.21.0.2:4007',
-    'dfs.namenode.rpc-address.HDFS8000871.nn2'='172.21.0.3:4007',
-    'dfs.client.failover.proxy.provider.HDFS8000871'='org.apache.hadoop.hdfs.server.namenode.ha.ConfiguredFailoverProxyProvider'
+    'dfs.nameservices'='your-nameservice',
+    'dfs.ha.namenodes.your-nameservice'='nn1,nn2',
+    'dfs.namenode.rpc-address.your-nameservice.nn1'='172.21.0.2:4007',
+    'dfs.namenode.rpc-address.your-nameservice.nn2'='172.21.0.3:4007',
+    'dfs.client.failover.proxy.provider.your-nameservice'='org.apache.hadoop.hdfs.server.namenode.ha.ConfiguredFailoverProxyProvider'
+);
+```
+
+If you want to connect to a Hive MetaStore with kerberos authentication, you can do like this:
+
+```sql
+-- 1.2.0+ Version
+CREATE RESOURCE hms_resource PROPERTIES (
+    'type'='hms',
+    'hive.metastore.uris' = 'thrift://172.21.0.1:7004',
+    'hive.metastore.sasl.enabled' = 'true',
+    'dfs.nameservices'='your-nameservice',
+    'dfs.namenode.rpc-address.your-nameservice.nn1'='172.21.0.2:4007',
+    'dfs.namenode.rpc-address.your-nameservice.nn2'='172.21.0.3:4007',
+    'dfs.client.failover.proxy.provider.your-nameservice'='org.apache.hadoop.hdfs.server.namenode.ha.ConfiguredFailoverProxyProvider',
+    'hadoop.security.authentication' = 'kerberos',
+    'hadoop.kerberos.keytab' = '/your-keytab-filepath/your.keytab',   
+    'hadoop.kerberos.principal' = 'your-principal@YOUR.COM',
+    'yarn.resourcemanager.address' = 'your-rm-address:your-rm-port',    
+    'yarn.resourcemanager.principal' = 'your-rm-principal/_HOST@YOUR.COM'
+);
+CREATE CATALOG hive WITH RESOURCE hms_resource;
+
+-- 1.2.0 Version
+CREATE CATALOG hive PROPERTIES (
+    'type'='hms',
+    'hive.metastore.uris' = 'thrift://172.21.0.1:7004',
+    'hadoop.kerberos.xxx' = 'xxx',
+    ...
 );
 ```
 
@@ -240,7 +290,16 @@ Query OK, 1000 rows affected (0.28 sec)
 
 The following example creates a Catalog connection named es to the specified ES and turns off node discovery.
 
-```
+```sql
+-- 1.2.0+ Version
+CREATE RESOURCE es_resource PROPERTIES (
+    "type"="es",
+    "elasticsearch.hosts"="http://192.168.120.12:29200",
+    "elasticsearch.nodes_discovery"="false"
+);
+CREATE CATALOG es WITH RESOURCE es_resource;
+
+-- 1.2.0 Version
 CREATE CATALOG es PROPERTIES (
     "type"="es",
     "elasticsearch.hosts"="http://192.168.120.12:29200",
@@ -313,7 +372,7 @@ Parameter | Description
 
 1. Create hive-site.xml
 
-    Create hive-site.xml and put it in `fe/conf` and `be/conf`.
+    Create hive-site.xml and put it in `fe/conf`.
     
     ```
     <?xml version="1.0"?>
@@ -359,16 +418,25 @@ Parameter | Description
 
 2. Restart FE and create a catalog with the `CREATE CATALOG` statement.
 
-    ```
+    HMS resource will read and analyze fe/conf/hive-site.xml
+    ```sql
+    -- 1.2.0+ Version
+    CREATE RESOURCE dlf_resource PROPERTIES (
+        "type"="hms",
+        "hive.metastore.uris" = "thrift://127.0.0.1:9083"
+    )
+    CREATE CATALOG dlf WITH RESOURCE dlf_resource;
+
+    -- 1.2.0 Version
     CREATE CATALOG dlf PROPERTIES (
         "type"="hms",
         "hive.metastore.uris" = "thrift://127.0.0.1:9083"
-    );
+    )
     ```
     
     where `type` is fixed to `hms`. The value of `hive.metastore.uris` can be filled in at will, but it will not be used in practice. But it needs to be filled in the standard hive metastore thrift uri format.
 
-After that, the metadata under DLF can be accessed like a normal Hive MetaStore.
+    After that, the metadata under DLF can be accessed like a normal Hive MetaStore.
 
 ## Column Type Mapping
 

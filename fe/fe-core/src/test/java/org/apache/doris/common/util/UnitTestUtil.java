@@ -109,7 +109,7 @@ public class UnitTestUtil {
 
         // table
         PartitionInfo partitionInfo = new SinglePartitionInfo();
-        partitionInfo.setDataProperty(partitionId, DataProperty.DEFAULT_DATA_PROPERTY);
+        partitionInfo.setDataProperty(partitionId, new DataProperty(DataProperty.DEFAULT_STORAGE_MEDIUM));
         partitionInfo.setReplicaAllocation(partitionId, new ReplicaAllocation((short) 3));
         partitionInfo.setIsInMemory(partitionId, false);
         partitionInfo.setIsPersistent(partitionId, false);

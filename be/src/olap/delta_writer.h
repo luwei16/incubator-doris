@@ -115,6 +115,7 @@ public:
     int64_t upload_cost_ms() const { return _rowset_writer->upload_cost_ms(); }
     int64_t total_data_size() const { return _rowset_writer->total_data_size(); }
     int64_t build_rowset_cost_ms() const { return _build_rowset_cost_ms; }
+    int64_t total_received_rows() const { return _total_received_rows; }
 
 private:
     DeltaWriter(WriteRequest* req, StorageEngine* storage_engine, const UniqueId& load_id,
@@ -181,6 +182,10 @@ private:
     int64_t _cur_max_version;
 
     int64_t _build_rowset_cost_ms = 0;
+    // total rows num written by DeltaWriter
+    int64_t _total_received_rows = 0;
+    // rows num merged by memtable
+    int64_t _merged_rows = 0;
 };
 
 } // namespace doris

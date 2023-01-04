@@ -54,7 +54,7 @@ public:
     /// param current_cumulative_point, current cumulative point value.
     /// return score, the result score after calculate.
     virtual void calc_cumulative_compaction_score(
-            TabletState state, const std::vector<RowsetMetaSharedPtr>& all_rowsets,
+            Tablet* tablet, TabletState state, const std::vector<RowsetMetaSharedPtr>& all_rowsets,
             int64_t current_cumulative_point, uint32_t* score) = 0;
 
     /// Pick input rowsets from candidate rowsets for compaction. This function is pure virtual function.
@@ -81,7 +81,7 @@ public:
                                          Version& last_delete_version) = 0;
 
     // CLOUD_MODE
-    virtual int64_t new_cumulative_point(const RowsetSharedPtr& output_rowset,
+    virtual int64_t new_cumulative_point(Tablet* tablet, const RowsetSharedPtr& output_rowset,
                                          Version& last_delete_version,
                                          int64_t last_cumulative_point) = 0;
 
@@ -124,17 +124,8 @@ public:
     ~SizeBasedCumulativeCompactionPolicy() {}
 
     // CLOUD_MODE
-    int64_t new_cumulative_point(const RowsetSharedPtr& output_rowset, Version& last_delete_version,
-                                 int64_t last_cumulative_point) override {
-        // if rowsets have delete version, move to the last directly.
-        // if rowsets have no delete version, check output_rowset total disk size satisfies promotion size.
-        return (output_rowset->start_version() == last_cumulative_point &&
-                (last_delete_version.first != -1 ||
-                 output_rowset->data_disk_size() >= _tablet_size_based_promotion_size ||
-                 config::always_promote_cumulative_point))
-                       ? output_rowset->end_version() + 1
-                       : last_cumulative_point;
-    }
+    int64_t new_cumulative_point(Tablet* tablet, const RowsetSharedPtr& output_rowset, Version& last_delete_version,
+                                 int64_t last_cumulative_point) override;
 
     /// SizeBased cumulative compaction policy implements calculate cumulative point function.
     /// When the first time the tablet does compact, this calculation is executed. Its main policy is to find first rowset
@@ -162,7 +153,7 @@ public:
 
     /// Num based cumulative compaction policy implements calc cumulative compaction score function.
     /// Its main policy is calculating the accumulative compaction score after current cumulative_point in tablet.
-    void calc_cumulative_compaction_score(TabletState state,
+    void calc_cumulative_compaction_score(Tablet* tablet, TabletState state,
                                           const std::vector<RowsetMetaSharedPtr>& all_rowsets,
                                           int64_t current_cumulative_point,
                                           uint32_t* score) override;
@@ -171,7 +162,8 @@ public:
 
 private:
     /// calculate promotion size using current base rowset meta size and promotion configs
-    void _calc_promotion_size(RowsetMetaSharedPtr base_rowset_meta, int64_t* promotion_size);
+    void _calc_promotion_size(Tablet* tablet, RowsetMetaSharedPtr base_rowset_meta,
+                              int64_t* promotion_size);
 
     /// calculate the disk size belong to which level, the level is divide by power of 2
     /// between cumulative_size_based_promotion_min_size_mbytes
@@ -179,7 +171,7 @@ private:
     int _level_size(const int64_t size);
 
     /// when policy calculate cumulative_compaction_score, update promotion size at the same time
-    void _refresh_tablet_size_based_promotion_size(int64_t promotion_size);
+    void _refresh_tablet_size_based_promotion_size(Tablet* tablet, int64_t promotion_size);
 
 private:
     /// cumulative compaction promotion size, unit is byte.
@@ -190,8 +182,6 @@ private:
     int64_t _size_based_promotion_min_size;
     /// lower bound size to do compaction compaction.
     int64_t _size_based_compaction_lower_bound_size;
-    /// record tablet promotion size, it is updated each time when calculate cumulative_compaction_score
-    int64_t _tablet_size_based_promotion_size;
     /// levels division of disk size, same level rowsets can do compaction
     std::vector<int64_t> _levels;
 };

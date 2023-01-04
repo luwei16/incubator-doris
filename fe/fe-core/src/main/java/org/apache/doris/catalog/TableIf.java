@@ -20,10 +20,14 @@ package org.apache.doris.catalog;
 import org.apache.doris.alter.AlterCancelException;
 import org.apache.doris.common.DdlException;
 import org.apache.doris.common.MetaNotFoundException;
-import org.apache.doris.statistics.AnalysisJob;
-import org.apache.doris.statistics.AnalysisJobInfo;
-import org.apache.doris.statistics.AnalysisJobScheduler;
+import org.apache.doris.statistics.AnalysisTaskInfo;
+import org.apache.doris.statistics.AnalysisTaskScheduler;
+import org.apache.doris.statistics.BaseAnalysisTask;
 import org.apache.doris.thrift.TTableDescriptor;
+
+import com.google.common.collect.Lists;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import java.util.Collections;
 import java.util.List;
@@ -31,6 +35,7 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 public interface TableIf {
+    Logger LOG = LogManager.getLogger(TableIf.class);
 
     void readLock();
 
@@ -72,6 +77,15 @@ public interface TableIf {
 
     List<Column> getBaseSchema();
 
+    default List<Column> getBaseSchemaOrEmpty() {
+        try {
+            return getBaseSchema();
+        } catch (Exception e) {
+            LOG.warn("failed to get base schema for table {}", getName(), e);
+            return Lists.newArrayList();
+        }
+    }
+
     List<Column> getBaseSchema(boolean full);
 
     void setNewFullSchema(List<Column> newSchema);
@@ -110,8 +124,6 @@ public interface TableIf {
     String getComment(boolean escapeQuota);
 
     TTableDescriptor toThrift();
-
-    AnalysisJob createAnalysisJob(AnalysisJobScheduler scheduler, AnalysisJobInfo info);
 
     /**
      * Doris table type.
@@ -194,5 +206,6 @@ public interface TableIf {
     default Partition getPartition(String name) {
         return null;
     }
-}
 
+    BaseAnalysisTask createAnalysisTask(AnalysisTaskScheduler scheduler, AnalysisTaskInfo info);
+}

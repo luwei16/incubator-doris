@@ -24,6 +24,9 @@ namespace config {
 // Dir of custom config file
 CONF_String(custom_config_dir, "${DORIS_HOME}/conf");
 
+// Dir of jdbc drivers
+CONF_String(jdbc_drivers_dir, "${DORIS_HOME}/jdbc_drivers");
+
 // cluster id
 CONF_Int32(cluster_id, "-1");
 // port on which BackendService is exported
@@ -67,6 +70,19 @@ CONF_Double(soft_mem_limit_frac, "0.9");
 // Turn up max. On machines with more than 16G memory, more memory buffers will be reserved for Full GC.
 // Turn down max. will use as much memory as possible.
 CONF_Int64(max_sys_mem_available_low_water_mark_bytes, "1717986918");
+
+// The size of the memory that gc wants to release each time, as a percentage of the mem limit.
+CONF_mString(process_minor_gc_size, "10%");
+CONF_mString(process_full_gc_size, "20%");
+
+// If true, when the process does not exceed the soft mem limit, the query memory will not be limited;
+// when the process memory exceeds the soft mem limit, the query with the largest ratio between the currently
+// used memory and the exec_mem_limit will be canceled.
+// If false, cancel query when the memory used exceeds exec_mem_limit, same as before.
+CONF_mBool(enable_query_memroy_overcommit, "true");
+
+// The maximum time a thread waits for a full GC. Currently only query will wait for full gc.
+CONF_mInt32(thread_wait_gc_max_milliseconds, "1000");
 
 // the port heartbeat service used
 CONF_Int32(heartbeat_service_port, "9050");
@@ -284,7 +300,7 @@ CONF_mInt64(cumulative_size_based_compaction_lower_size_mbytes, "64");
 
 // cumulative compaction policy: min and max delta file's number
 CONF_mInt64(min_cumulative_compaction_num_singleton_deltas, "5");
-CONF_mInt64(max_cumulative_compaction_num_singleton_deltas, "1000");
+CONF_mInt64(max_cumulative_compaction_num_singleton_deltas, "100");
 
 // if compaction of a tablet failed, this tablet should not be chosen to
 // compaction until this interval passes.

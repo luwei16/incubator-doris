@@ -2133,8 +2133,6 @@ load 标签清理器将每隔 `label_clean_interval_second` 运行一次以清�
 
 如果设置为true，将关闭副本修复和均衡逻辑。
 
-
-
 ### `enable_force_drop_redundant_replica`
 
 默认值：false
@@ -2412,4 +2410,33 @@ hive partition 的最大缓存数量。
 是否可以动态配置：true
 
 是否为 Master FE 节点独有的配置项：true
+
+#### `proxy_auth_magic_prefix`
+
+默认值：x@8
+
+#### `proxy_auth_enable`
+
+默认值：false
+
+#### `enable_func_pushdown`
+
+默认值：true
+
+是否可以动态配置：true
+
+是否为 Master FE 节点独有的配置项：false
+
+在ODBC、JDBC的MYSQL外部表查询时，是否将带函数的过滤条件下推到MYSQL中执行
+
+#### `jdbc_drivers_dir`
+
+默认值：`${DORIS_HOME}/jdbc_drivers`;
+
+是否可以动态配置：false
+
+是否为 Master FE 节点独有的配置项：false
+
+用于存放默认的 jdbc drivers
+
 

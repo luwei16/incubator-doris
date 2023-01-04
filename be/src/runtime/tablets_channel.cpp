@@ -118,18 +118,18 @@ Status TabletsChannel::close(LoadChannel* parent, bool* finished, const Request&
                 if (!st.ok()) {
                     LOG(WARNING) << "close tablet writer failed, tablet_id=" << tablet_id
                                  << ", transaction_id=" << _txn_id << ", err=" << st;
-#ifdef CLOUD_MODE
-                    // In NON-CLOUD mode, coordinator BE won't capture such failure, it will send `TLoadTxnCommitRequest` to FE,
-                    // `TLoadTxnCommitRequest` contains success tablets, and then FE will judge whether the load transaction is
-                    // successful or not. One benefit is that FE can ignore the failure(i.e. tablet not found) of some tablets
-                    // dropped by concurrent drop tasks.
-                    // In CLOUD mode, stream load transactions won't be committed through FE, we MUST capture this failure here
-                    // to notify the coordinator BE.
                     PTabletError* tablet_error = tablet_errors->Add();
                     tablet_error->set_tablet_id(tablet_id);
-                    tablet_error->set_msg(st.get_error_msg());
-#endif
+                    tablet_error->set_msg(st.to_string());
                     // just skip this tablet(writer) and continue to close others
+                    continue;
+                }
+                // to make sure tablet writer in `_broken_tablets` won't call `close_wait` method.
+                // `close_wait` might create the rowset and commit txn directly, and the subsequent
+                // publish version task will success, which can cause the replica inconsistency.
+                if (_broken_tablets.find(writer->tablet_id()) != _broken_tablets.end()) {
+                    LOG(WARNING) << "SHOULD NOT HAPPEN, tablet writer is broken but not cancelled"
+                                 << ", tablet_id=" << tablet_id << ", transaction_id=" << _txn_id;
                     continue;
                 }
                 need_wait_writers.insert(writer);
@@ -229,11 +229,9 @@ void TabletsChannel::_close_wait(DeltaWriter* writer,
     Status st = writer->close_wait(slave_tablet_nodes, write_single_replica);
     if (st.ok()) {
         VLOG_DEBUG << "DeltaWriter written success. tablet_id=" << writer->tablet_id();
-        if (_broken_tablets.find(writer->tablet_id()) == _broken_tablets.end()) {
-            PTabletInfo* tablet_info = tablet_vec->Add();
-            tablet_info->set_tablet_id(writer->tablet_id());
-            tablet_info->set_schema_hash(writer->schema_hash());
-        }
+        PTabletInfo* tablet_info = tablet_vec->Add();
+        tablet_info->set_tablet_id(writer->tablet_id());
+        tablet_info->set_schema_hash(writer->schema_hash());
     } else {
         LOG(WARNING) << "failed to close DeltaWriter. tablet_id=" << writer->tablet_id()
                      << ", err=" << st;
@@ -537,6 +535,7 @@ Status TabletsChannel::add_batch(const TabletWriterAddRequest& request,
             PTabletError* error = tablet_errors->Add();
             error->set_tablet_id(tablet_to_rowidxs_it.first);
             error->set_msg(err_msg);
+            tablet_writer_it->second->cancel_with_status(st);
             _broken_tablets.insert(tablet_to_rowidxs_it.first);
             // continue write to other tablet.
             // the error will return back to sender.

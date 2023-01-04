@@ -200,6 +200,9 @@ public class SessionVariable implements Serializable, Writable {
 
     //percentage of EXEC_MEM_LIMIT
     public static final String BROADCAST_HASHTABLE_MEM_LIMIT_PERCENTAGE = "broadcast_hashtable_mem_limit_percentage";
+
+    public static final String REWRITE_OR_TO_IN_PREDICATE_THRESHOLD = "rewrite_or_to_in_predicate_threshold";
+
     public static final String NEREIDS_STAR_SCHEMA_SUPPORT = "nereids_star_schema_support";
 
     public static final String NEREIDS_CBO_PENALTY_FACTOR = "nereids_cbo_penalty_factor";
@@ -244,6 +247,8 @@ public class SessionVariable implements Serializable, Writable {
 
     public static final String ENABLE_SHARE_HASH_TABLE_FOR_BROADCAST_JOIN
             = "enable_share_hash_table_for_broadcast_join";
+
+    public static final String GROUP_CONCAT_MAX_LEN = "group_concat_max_len";
 
     // session origin value
     public Map<Field, String> sessionOriginValue = new HashMap<Field, String>();
@@ -551,6 +556,9 @@ public class SessionVariable implements Serializable, Writable {
     @VariableMgr.VarAttr(name = NEREIDS_STAR_SCHEMA_SUPPORT)
     private boolean nereidsStarSchemaSupport = true;
 
+    @VariableMgr.VarAttr(name = REWRITE_OR_TO_IN_PREDICATE_THRESHOLD)
+    private int rewriteOrToInPredicateThreshold = 2;
+
     @VariableMgr.VarAttr(name = NEREIDS_CBO_PENALTY_FACTOR)
     private double nereidsCboPenaltyFactor = 0.7;
     @VariableMgr.VarAttr(name = ENABLE_NEREIDS_TRACE)
@@ -644,6 +652,9 @@ public class SessionVariable implements Serializable, Writable {
     @VariableMgr.VarAttr(name = ENABLE_SHARE_HASH_TABLE_FOR_BROADCAST_JOIN)
     public boolean enableShareHashTableForBroadcastJoin = true;
 
+    @VariableMgr.VarAttr(name = GROUP_CONCAT_MAX_LEN)
+    public long groupConcatMaxLen = 2147483646;
+
     // If this fe is in fuzzy mode, then will use initFuzzyModeVariables to generate some variables,
     // not the default value set in the code.
     public void initFuzzyModeVariables() {
@@ -663,6 +674,14 @@ public class SessionVariable implements Serializable, Writable {
 
     public void setBlockEncryptionMode(String blockEncryptionMode) {
         this.blockEncryptionMode = blockEncryptionMode;
+    }
+
+    public void setRewriteOrToInPredicateThreshold(int threshold) {
+        this.rewriteOrToInPredicateThreshold = threshold;
+    }
+
+    public int getRewriteOrToInPredicateThreshold() {
+        return rewriteOrToInPredicateThreshold;
     }
 
     public long getMaxExecMemByte() {
@@ -1216,7 +1235,7 @@ public class SessionVariable implements Serializable, Writable {
      * @return true if both nereids and vectorized engine are enabled
      */
     public boolean isEnableNereidsPlanner() {
-        return enableNereidsPlanner && enableVectorizedEngine;
+        return enableNereidsPlanner && (Config.disable_enable_vectorized_engine || enableVectorizedEngine);
     }
 
     public void setEnableNereidsPlanner(boolean enableNereidsPlanner) {

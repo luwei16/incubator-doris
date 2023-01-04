@@ -73,7 +73,7 @@ public:
 private:
     std::shared_ptr<RangePredicateParams<T>> _predicate_params;
  
-    std::string _debug_string() override {
+    std::string _debug_string() const override {
         std::string info = "RangePredicate(" + type_to_string(type()) + ")";
         return info;
     }

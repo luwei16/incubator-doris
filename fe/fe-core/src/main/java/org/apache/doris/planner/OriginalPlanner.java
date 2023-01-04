@@ -156,7 +156,8 @@ public class OriginalPlanner extends Planner {
         }
 
         if (analyzer.getContext() != null
-                && analyzer.getContext().getSessionVariable().isEnableProjection()) {
+                && analyzer.getContext().getSessionVariable().isEnableProjection()
+                && statement instanceof QueryStmt) {
             ProjectPlanner projectPlanner = new ProjectPlanner(analyzer);
             projectPlanner.projectSingleNodePlan(queryStmt.getResultExprs(), singleNodePlan);
         }

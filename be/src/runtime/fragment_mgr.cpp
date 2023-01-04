@@ -26,7 +26,6 @@
 
 #include "agent/cgroups_mgr.h"
 #include "common/object_pool.h"
-#include "common/signal_handler.h"
 #include "gen_cpp/FrontendService.h"
 #include "gen_cpp/HeartbeatService_types.h"
 #include "gen_cpp/PaloInternalService_types.h"
@@ -475,10 +474,6 @@ void FragmentMgr::_exec_actual(std::shared_ptr<FragmentExecState> exec_state, Fi
     span->SetAttribute("query_id", print_id(exec_state->query_id()));
     span->SetAttribute("instance_id", print_id(exec_state->fragment_instance_id()));
 
-    // these two are used to output query_id when be cored dump.
-    doris::signal::query_id_hi = exec_state->query_id().hi;
-    doris::signal::query_id_lo = exec_state->query_id().lo;
-
     LOG_INFO(func_name)
             .tag("query_id", exec_state->query_id())
             .tag("instance_id", exec_state->fragment_instance_id())
@@ -674,6 +669,7 @@ Status FragmentMgr::exec_plan_fragment(const TExecPlanFragmentParams& params, Fi
             }
         }
     }
+    fragments_ctx->fragment_ids.push_back(fragment_instance_id);
 
     exec_state.reset(new FragmentExecState(fragments_ctx->query_id,
                                            params.params.fragment_instance_id, params.backend_num,
@@ -784,6 +780,21 @@ Status FragmentMgr::cancel(const TUniqueId& fragment_id, const PPlanFragmentCanc
     exec_state->cancel(reason, msg);
 
     return Status::OK();
+}
+
+void FragmentMgr::cancel_query(const TUniqueId& query_id, const PPlanFragmentCancelReason& reason,
+                               const std::string& msg) {
+    std::vector<TUniqueId> cancel_fragment_ids;
+    {
+        std::lock_guard<std::mutex> lock(_lock);
+        auto ctx = _fragments_ctx_map.find(query_id);
+        if (ctx != _fragments_ctx_map.end()) {
+            cancel_fragment_ids = ctx->second->fragment_ids;
+        }
+    }
+    for (auto it : cancel_fragment_ids) {
+        cancel(it, reason, msg);
+    }
 }
 
 void FragmentMgr::cancel_worker() {

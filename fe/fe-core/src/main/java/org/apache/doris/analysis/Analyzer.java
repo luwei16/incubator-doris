@@ -140,6 +140,7 @@ public class Analyzer {
     private final Map<TupleId, Integer> currentOutputColumn = Maps.newHashMap();
     // used for Information Schema Table Scan
     private String schemaDb;
+    private String schemaCatalog;
     private String schemaWild;
     private String schemaTable; // table used in DESCRIBE Table
 
@@ -387,6 +388,10 @@ public class Analyzer {
         private final long autoBroadcastJoinThreshold;
 
         private final Map<SlotId, SlotId> equivalentSlots = Maps.newHashMap();
+
+        private final Map<String, TupleDescriptor> markTuples = Maps.newHashMap();
+
+        private final Map<TableRef, TupleId> markTupleIdByInnerRef = Maps.newHashMap();
 
         public GlobalState(Env env, ConnectContext context) {
             this.env = env;
@@ -648,6 +653,14 @@ public class Analyzer {
 
         tableRefMap.put(result.getId(), ref);
 
+        // for mark join
+        if (ref.getJoinOp() != null && ref.isMark()) {
+            TupleDescriptor markTuple = getDescTbl().createTupleDescriptor();
+            markTuple.setAliases(new String[]{ref.getMarkTupleName()}, true);
+            globalState.markTuples.put(ref.getMarkTupleName(), markTuple);
+            globalState.markTupleIdByInnerRef.put(ref, markTuple.getId());
+        }
+
         return result;
     }
 
@@ -864,7 +877,7 @@ public class Analyzer {
                                                 newTblName == null ? "table list" : newTblName.toString());
         }
 
-        Column col = d.getTable().getColumn(colName);
+        Column col = d.getTable() == null ? new Column(colName, ScalarType.BOOLEAN) : d.getTable().getColumn(colName);
         if (col == null) {
             ErrorReport.reportAnalysisException(ErrorCode.ERR_BAD_FIELD_ERROR, colName,
                                                 newTblName == null ? d.getTable().getName() : newTblName.toString());
@@ -936,7 +949,7 @@ public class Analyzer {
             }
         }
 
-        return result;
+        return result != null ? result : globalState.markTuples.get(tblName.toString());
     }
 
     private TupleDescriptor resolveColumnRef(String colName) throws AnalysisException {
@@ -1519,6 +1532,36 @@ public class Analyzer {
         return result;
     }
 
+    public List<Expr> getMarkConjuncts(TableRef ref) {
+        TupleId id = globalState.markTupleIdByInnerRef.get(ref);
+        if (id == null) {
+            return Collections.emptyList();
+        }
+        return getAllConjuncts(id);
+    }
+
+    public TupleDescriptor getMarkTuple(TableRef ref) {
+        TupleDescriptor markTuple = globalState.descTbl.getTupleDesc(globalState.markTupleIdByInnerRef.get(ref));
+        if (markTuple != null) {
+            markTuple.setIsMaterialized(true);
+            markTuple.getSlots().forEach(s -> s.setIsMaterialized(true));
+        }
+        return markTuple;
+    }
+
+    public List<Expr> getMarkConjuncts() {
+        List<Expr> exprs = Lists.newArrayList();
+        List<TupleId> markIds = Lists.newArrayList(globalState.markTupleIdByInnerRef.values());
+        for (Expr e : globalState.conjuncts.values()) {
+            List<TupleId> tupleIds = Lists.newArrayList();
+            e.getIds(tupleIds, null);
+            if (!Collections.disjoint(markIds, tupleIds)) {
+                exprs.add(e);
+            }
+        }
+        return exprs;
+    }
+
     /**
      * Get all predicates belonging to one or more tuples that have not yet been assigned
      * Since these predicates will be assigned by upper-level plan nodes in the future,
@@ -2030,6 +2073,10 @@ public class Analyzer {
         return schemaDb;
     }
 
+    public String getSchemaCatalog() {
+        return schemaCatalog;
+    }
+
     public String getSchemaTable() {
         return schemaTable;
     }
@@ -2049,10 +2096,11 @@ public class Analyzer {
     }
 
     // for Schema Table Schema like SHOW TABLES LIKE "abc%"
-    public void setSchemaInfo(String db, String table, String wild) {
+    public void setSchemaInfo(String db, String table, String wild, String catalog) {
         schemaDb = db;
         schemaTable = table;
         schemaWild = wild;
+        schemaCatalog = catalog;
     }
 
     public String getTargetDbName(FunctionName fnName) {

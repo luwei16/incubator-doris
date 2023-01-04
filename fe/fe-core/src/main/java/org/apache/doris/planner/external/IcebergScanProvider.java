@@ -17,8 +17,10 @@
 
 package org.apache.doris.planner.external;
 
+import org.apache.doris.analysis.Analyzer;
 import org.apache.doris.analysis.Expr;
 import org.apache.doris.analysis.TupleDescriptor;
+import org.apache.doris.catalog.HMSResource;
 import org.apache.doris.catalog.external.HMSExternalTable;
 import org.apache.doris.common.DdlException;
 import org.apache.doris.common.MetaNotFoundException;
@@ -26,6 +28,7 @@ import org.apache.doris.common.UserException;
 import org.apache.doris.external.iceberg.util.IcebergUtils;
 import org.apache.doris.planner.ColumnRange;
 import org.apache.doris.thrift.TFileFormatType;
+import org.apache.doris.thrift.TFileRangeDesc;
 import org.apache.doris.thrift.TIcebergDeleteFileDesc;
 import org.apache.doris.thrift.TIcebergFileDesc;
 import org.apache.doris.thrift.TTableFormatFileDesc;
@@ -59,13 +62,16 @@ import java.util.OptionalLong;
 public class IcebergScanProvider extends HiveScanProvider {
 
     private static final int MIN_DELETE_FILE_SUPPORT_VERSION = 2;
+    private final Analyzer analyzer;
 
-    public IcebergScanProvider(HMSExternalTable hmsTable, TupleDescriptor desc,
-            Map<String, ColumnRange> columnNameToRange) {
+    public IcebergScanProvider(HMSExternalTable hmsTable, Analyzer analyzer, TupleDescriptor desc,
+                               Map<String, ColumnRange> columnNameToRange) {
         super(hmsTable, desc, columnNameToRange);
+        this.analyzer = analyzer;
     }
 
-    public static void setIcebergParams(ExternalFileScanNode.ParamCreateContext context, IcebergSplit icebergSplit) {
+    public static void setIcebergParams(TFileRangeDesc rangeDesc, IcebergSplit icebergSplit)
+            throws UserException {
         TTableFormatFileDesc tableFormatFileDesc = new TTableFormatFileDesc();
         tableFormatFileDesc.setTableFormatType(icebergSplit.getTableFormatType().value());
         TIcebergFileDesc fileDesc = new TIcebergFileDesc();
@@ -99,7 +105,7 @@ public class IcebergScanProvider extends HiveScanProvider {
             }
         }
         tableFormatFileDesc.setIcebergParams(fileDesc);
-        context.params.setTableFormatParams(tableFormatFileDesc);
+        rangeDesc.setTableFormatParams(tableFormatFileDesc);
     }
 
     @Override
@@ -134,7 +140,6 @@ public class IcebergScanProvider extends HiveScanProvider {
             scan = scan.filter(predicate);
         }
         List<InputSplit> splits = new ArrayList<>();
-
         int formatVersion = ((BaseTable) table).operations().current().formatVersion();
         for (FileScanTask task : scan.planFiles()) {
             for (FileScanTask spitTask : task.split(128 * 1024 * 1024)) {
@@ -142,10 +147,11 @@ public class IcebergScanProvider extends HiveScanProvider {
                 IcebergSplit split = new IcebergSplit(new Path(dataFilePath), spitTask.start(),
                         spitTask.length(), new String[0]);
                 split.setFormatVersion(formatVersion);
-                if (formatVersion == 2) {
+                if (formatVersion >= MIN_DELETE_FILE_SUPPORT_VERSION) {
                     split.setDeleteFileFilters(getDeleteFileFilters(spitTask));
                 }
                 split.setTableFormatType(TableFormatType.ICEBERG);
+                split.setAnalyzer(analyzer);
                 splits.add(split);
             }
         }
@@ -175,14 +181,13 @@ public class IcebergScanProvider extends HiveScanProvider {
         return filters;
     }
 
-
     private org.apache.iceberg.Table getIcebergTable() throws MetaNotFoundException {
         org.apache.iceberg.hive.HiveCatalog hiveCatalog = new org.apache.iceberg.hive.HiveCatalog();
-        Configuration conf = setConfiguration();
+        Configuration conf = getConfiguration();
         hiveCatalog.setConf(conf);
         // initialize hive catalog
         Map<String, String> catalogProperties = new HashMap<>();
-        catalogProperties.put("hive.metastore.uris", getMetaStoreUrl());
+        catalogProperties.put(HMSResource.HIVE_METASTORE_URIS, getMetaStoreUrl());
         catalogProperties.put("uri", getMetaStoreUrl());
         hiveCatalog.initialize("hive", catalogProperties);
 

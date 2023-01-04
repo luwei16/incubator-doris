@@ -17,9 +17,9 @@
 
 package org.apache.doris.analysis;
 
-import org.apache.doris.backup.S3Storage;
 import org.apache.doris.catalog.Column;
 import org.apache.doris.catalog.Env;
+import org.apache.doris.catalog.S3Resource;
 import org.apache.doris.catalog.ScalarType;
 import org.apache.doris.cluster.ClusterNamespace;
 import org.apache.doris.common.AnalysisException;
@@ -211,10 +211,10 @@ public class CopyStmt extends DdlStmt {
         stageId = stagePB.getStageId();
         ObjectStoreInfoPB objInfo = stagePB.getObjInfo();
         objectInfo = new ObjectInfo(objInfo);
-        brokerProperties.put(S3Storage.S3_ENDPOINT, objInfo.getEndpoint());
-        brokerProperties.put(S3Storage.S3_REGION, objInfo.getRegion());
-        brokerProperties.put(S3Storage.S3_AK, objInfo.getAk());
-        brokerProperties.put(S3Storage.S3_SK, objInfo.getSk());
+        brokerProperties.put(S3Resource.S3_ENDPOINT, objInfo.getEndpoint());
+        brokerProperties.put(S3Resource.S3_REGION, objInfo.getRegion());
+        brokerProperties.put(S3Resource.S3_ACCESS_KEY, objInfo.getAk());
+        brokerProperties.put(S3Resource.S3_SECRET_KEY, objInfo.getSk());
         brokerProperties.put(S3_BUCKET, objInfo.getBucket());
         brokerProperties.put(S3_PREFIX, objInfo.getPrefix());
 

@@ -565,7 +565,10 @@ public:
 
     virtual bool is_bitmap() const { return false; }
 
+    // SELECTDB_CODE_BEGIN
     virtual bool is_sparse() const { return false; }
+    // SELECTDB_CODE_END
+    virtual bool is_hll() const { return false; }
 
     // true if column has null element
     virtual bool has_null() const { return false; }

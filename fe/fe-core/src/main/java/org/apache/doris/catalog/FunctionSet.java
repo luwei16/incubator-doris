@@ -655,8 +655,12 @@ public class FunctionSet<T> {
                 .put(Type.MAX_DECIMALV2_TYPE,
                         "33decimalv2_knuth_var_pop_get_valueEPN9doris_udf15FunctionContextERKNS1_9StringValE")
                 .build();
+
     public static final String HLL_HASH = "hll_hash";
     public static final String HLL_UNION = "hll_union";
+    public static final String HLL_UNION_AGG = "hll_union_agg";
+    public static final String HLL_RAW_AGG = "hll_raw_agg";
+    public static final String HLL_CARDINALITY = "hll_cardinality";
 
     private static final Map<Type, String> HLL_UPDATE_SYMBOL =
             ImmutableMap.<Type, String>builder()
@@ -2777,7 +2781,7 @@ public class FunctionSet<T> {
         addBuiltin(AggregateFunction.createAnalyticBuiltin("ntile",
                 Collections.singletonList(Type.BIGINT), Type.BIGINT, Type.BIGINT, null, null, null, null, null, true));
 
-        for (Type t : Type.getSupportedTypes()) {
+        for (Type t : Type.getTrivialTypes()) {
             if (t.isNull()) {
                 continue; // NULL is handled through type promotion.
             }

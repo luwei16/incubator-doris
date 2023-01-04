@@ -408,6 +408,7 @@ Status StreamLoadAction::_process_put(HttpRequest* http_req, StreamLoadContext* 
         RETURN_IF_ERROR(file_sink->open());
         request.__isset.path = true;
         request.fileType = TFileType::FILE_LOCAL;
+        request.__set_file_size(ctx->body_bytes);
         ctx->body_sink = file_sink;
     }
     if (!http_req->header(HTTP_COLUMNS).empty()) {
@@ -563,6 +564,13 @@ Status StreamLoadAction::_process_put(HttpRequest* http_req, StreamLoadContext* 
 
     if (!http_req->header(HTTP_HIDDEN_COLUMNS).empty()) {
         request.__set_hidden_columns(http_req->header(HTTP_HIDDEN_COLUMNS));
+    }
+    if (!http_req->header(HTTP_TRIM_DOUBLE_QUOTES).empty()) {
+        if (iequal(http_req->header(HTTP_TRIM_DOUBLE_QUOTES), "true")) {
+            request.__set_trim_double_quotes(true);
+        } else {
+            request.__set_trim_double_quotes(false);
+        }
     }
 
 #ifndef BE_TEST

@@ -190,6 +190,8 @@ public:
 
     void stop();
 
+    bool stopped() { return _stopped; }
+
     void create_cumulative_compaction(TabletSharedPtr best_tablet,
                                       std::shared_ptr<CumulativeCompaction>& cumulative_compaction);
     void create_base_compaction(TabletSharedPtr best_tablet,
@@ -351,6 +353,8 @@ private:
 
     int32_t _effective_cluster_id;
     bool _is_all_cluster_id_exist;
+
+    bool _stopped;
 
     static StorageEngine* _s_instance;
 

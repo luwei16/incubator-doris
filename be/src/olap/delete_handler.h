@@ -31,7 +31,6 @@
 namespace doris {
 
 class RowCursor;
-class Tablet;
 class TabletReader;
 class TabletSchema;
 

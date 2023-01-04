@@ -61,7 +61,7 @@ testDirectories = ""
 // this groups will not be executed
 excludeGroups = ""
 // this suites will not be executed
-excludeSuites = ""
+excludeSuites = "test_date_function,create_table_use_partition_policy"
 // this directories will not be executed
 excludeDirectories = ""
 
@@ -104,3 +104,8 @@ es_8_port=39200
 multiClusterBes = "127.0.0.1:9712:9711:be_1_id,127.0.0.1:9732:9731:be_2_id"
 metaServiceToken = "greedisgood9999"
 multiClusterInstance = "test_instance_id"
+cacheDataPath = "/tmp"
+
+s3Endpoint = "cos.ap-hongkong.myqcloud.com"
+s3BucketName = "doris-build-hk-1308700295"
+s3Region = "ap-hongkong"

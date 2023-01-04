@@ -585,8 +585,8 @@ public class Load {
             // so there will be a shadow column: '__doris_shadow_B'
             // So the final column mapping should looks like: (A, B, C, __doris_shadow_B = substitute(B));
             for (Column column : table.getFullSchema()) {
-                if (column.isNameWithPrefix(SchemaChangeHandler.SHADOW_NAME_PRFIX)) {
-                    String originCol = column.getNameWithoutPrefix(SchemaChangeHandler.SHADOW_NAME_PRFIX);
+                if (column.isNameWithPrefix(SchemaChangeHandler.SHADOW_NAME_PREFIX)) {
+                    String originCol = column.getNameWithoutPrefix(SchemaChangeHandler.SHADOW_NAME_PREFIX);
                     if (parsedColumnExprMap.containsKey(originCol)) {
                         Expr mappingExpr = parsedColumnExprMap.get(originCol);
                         if (mappingExpr != null) {
@@ -749,11 +749,11 @@ public class Load {
     public static List<ImportColumnDesc> getSchemaChangeShadowColumnDesc(Table tbl, Map<String, Expr> columnExprMap) {
         List<ImportColumnDesc> shadowColumnDescs = Lists.newArrayList();
         for (Column column : tbl.getFullSchema()) {
-            if (!column.isNameWithPrefix(SchemaChangeHandler.SHADOW_NAME_PRFIX)) {
+            if (!column.isNameWithPrefix(SchemaChangeHandler.SHADOW_NAME_PREFIX)) {
                 continue;
             }
 
-            String originCol = column.getNameWithoutPrefix(SchemaChangeHandler.SHADOW_NAME_PRFIX);
+            String originCol = column.getNameWithoutPrefix(SchemaChangeHandler.SHADOW_NAME_PREFIX);
             if (columnExprMap.containsKey(originCol)) {
                 Expr mappingExpr = columnExprMap.get(originCol);
                 if (mappingExpr != null) {
@@ -951,45 +951,20 @@ public class Load {
                 exprsByName.put(realColName, expr);
             } else {
                 SlotDescriptor slotDesc = analyzer.getDescTbl().addSlotDescriptor(srcTupleDesc);
-                // only support parquet format now
-                if (useVectorizedLoad  && formatType == TFileFormatType.FORMAT_PARQUET
-                        && tblColumn != null) {
-                    // in vectorized load
-                    // example: k1 is DATETIME in source file, and INT in schema, mapping exper is k1=year(k1)
-                    // we can not determine whether to use the type in the schema or the type inferred from expr
-                    // so use varchar type as before
-                    if (exprSrcSlotName.contains(columnName)) {
-                        // columns in expr args should be varchar type
-                        slotDesc.setType(ScalarType.createType(PrimitiveType.VARCHAR));
-                        slotDesc.setColumn(new Column(realColName, PrimitiveType.VARCHAR));
-                        excludedColumns.add(realColName);
-                        // example k1, k2 = k1 + 1, k1 is not nullable, k2 is nullable
-                        // so we can not determine columns in expr args whether not nullable or nullable
-                        // slot in expr args use nullable as before
-                        slotDesc.setIsNullable(true);
-                    } else {
-                        // columns from files like parquet files can be parsed as the type in table schema
-                        slotDesc.setType(tblColumn.getType());
-                        slotDesc.setColumn(new Column(realColName, tblColumn.getType()));
-                        // Now is_nullable is always true in VArrowScanner::_init_src_block
-                        slotDesc.setIsNullable(true);
-                    }
-                } else {
-                    if (formatType == TFileFormatType.FORMAT_JSON
+                if (formatType == TFileFormatType.FORMAT_JSON
                                 && tbl instanceof OlapTable && ((OlapTable) tbl).isDynamicSchema()) {
-                        slotDesc.setType(tblColumn.getType());
-                        slotDesc.setColumn(new Column(realColName, tblColumn.getType()));
-                        slotDesc.setIsNullable(tblColumn.isAllowNull());
-                    } else {
-                        // columns default be varchar type
-                        slotDesc.setType(ScalarType.createType(PrimitiveType.VARCHAR));
-                        slotDesc.setColumn(new Column(realColName, PrimitiveType.VARCHAR));
-                        // ISSUE A: src slot should be nullable even if the column is not nullable.
-                        // because src slot is what we read from file, not represent to real column value.
-                        // If column is not nullable, error will be thrown when filling the dest slot,
-                        // which is not nullable.
-                        slotDesc.setIsNullable(true);
-                    }
+                    slotDesc.setType(tblColumn.getType());
+                    slotDesc.setColumn(new Column(realColName, tblColumn.getType()));
+                    slotDesc.setIsNullable(tblColumn.isAllowNull());
+                } else {
+                    // columns default be varchar type
+                    slotDesc.setType(ScalarType.createType(PrimitiveType.VARCHAR));
+                    slotDesc.setColumn(new Column(realColName, PrimitiveType.VARCHAR));
+                    // ISSUE A: src slot should be nullable even if the column is not nullable.
+                    // because src slot is what we read from file, not represent to real column value.
+                    // If column is not nullable, error will be thrown when filling the dest slot,
+                    // which is not nullable.
+                    slotDesc.setIsNullable(true);
                 }
                 slotDesc.setIsMaterialized(true);
                 srcSlotIds.add(slotDesc.getId().asInt());
@@ -1087,6 +1062,17 @@ public class Load {
                     throw new AnalysisException("Don't support aggregation function in load expression");
                 }
             }
+
+            // Array type do not support cast now
+            Type exprReturnType = expr.getType();
+            if (exprReturnType.isArrayType()) {
+                Type schemaType = tbl.getColumn(entry.getKey()).getType();
+                if (exprReturnType != schemaType) {
+                    throw new AnalysisException("Don't support load from type:" + exprReturnType + " to type:"
+                            + schemaType + " for column:" + entry.getKey());
+                }
+            }
+
             exprsByName.put(entry.getKey(), expr);
         }
 

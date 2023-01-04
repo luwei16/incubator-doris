@@ -201,7 +201,7 @@ public class TypeDef implements ParseNode {
                             "Scale of decimal must between 0 and 9." + " Scale was set to: " + scale + ".");
                 }
                 // scale < precision
-                if (scale >= precision) {
+                if (scale > precision) {
                     throw new AnalysisException("Scale of decimal must be smaller than precision."
                             + " Scale is " + scale + " and precision is " + precision);
                 }
@@ -220,7 +220,7 @@ public class TypeDef implements ParseNode {
                             "Scale of decimal must not be less than 0." + " Scale was set to: " + decimal32Scale + ".");
                 }
                 // scale < precision
-                if (decimal32Scale >= decimal32Precision) {
+                if (decimal32Scale > decimal32Precision) {
                     throw new AnalysisException("Scale of decimal must be smaller than precision."
                             + " Scale is " + decimal32Scale + " and precision is " + decimal32Precision);
                 }
@@ -239,7 +239,7 @@ public class TypeDef implements ParseNode {
                             "Scale of decimal must not be less than 0." + " Scale was set to: " + decimal64Scale + ".");
                 }
                 // scale < precision
-                if (decimal64Scale >= decimal64Precision) {
+                if (decimal64Scale > decimal64Precision) {
                     throw new AnalysisException("Scale of decimal must be smaller than precision."
                             + " Scale is " + decimal64Scale + " and precision is " + decimal64Precision);
                 }
@@ -258,7 +258,7 @@ public class TypeDef implements ParseNode {
                             + decimal128Scale + ".");
                 }
                 // scale < precision
-                if (decimal128Scale >= decimal128Precision) {
+                if (decimal128Scale > decimal128Precision) {
                     throw new AnalysisException("Scale of decimal must be smaller than precision."
                             + " Scale is " + decimal128Scale + " and precision is " + decimal128Precision);
                 }

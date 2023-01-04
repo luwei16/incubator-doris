@@ -167,7 +167,7 @@ Status CloudCumulativeCompaction::update_tablet_meta() {
     // calculate new cumulative point
     int64_t input_cumulative_point = _tablet->cumulative_layer_point();
     int64_t new_cumulative_point = _tablet->cumulative_compaction_policy()->new_cumulative_point(
-            _output_rowset, _last_delete_version, input_cumulative_point);
+            _tablet.get(), _output_rowset, _last_delete_version, input_cumulative_point);
     // commit compaction job
     selectdb::TabletJobInfoPB job;
     auto idx = job.mutable_idx();

@@ -209,7 +209,10 @@ Status VFileScanner::_init_src_block(Block* block) {
             data_type = DataTypeFactory::instance().create_data_type(it->second, true);
         }
         if (data_type == nullptr) {
-            return Status::NotSupported(fmt::format("Not support arrow type:{}", slot->col_name()));
+            return Status::NotSupported("Not support data type {} for column {}",
+                                        it == _name_to_col_type.end() ? slot->type().debug_string()
+                                                                      : it->second.debug_string(),
+                                        slot->col_name());
         }
         MutableColumnPtr data_column = data_type->create_column();
         _src_block.insert(
@@ -487,11 +490,11 @@ Status VFileScanner::_get_next_reader() {
             }
             init_status = parquet_reader->init_reader(_file_col_names, _colname_to_value_range,
                                                       _push_down_expr);
-            if (_params.__isset.table_format_params &&
-                _params.table_format_params.table_format_type == "iceberg") {
+            if (range.__isset.table_format_params &&
+                range.table_format_params.table_format_type == "iceberg") {
                 IcebergTableReader* iceberg_reader = new IcebergTableReader(
-                        (GenericReader*)parquet_reader, _profile, _state, _params);
-                iceberg_reader->init_row_filters();
+                        (GenericReader*)parquet_reader, _profile, _state, _params, range);
+                RETURN_IF_ERROR(iceberg_reader->init_row_filters(range));
                 _cur_reader.reset((GenericReader*)iceberg_reader);
             } else {
                 _cur_reader.reset((GenericReader*)parquet_reader);
@@ -530,6 +533,9 @@ Status VFileScanner::_get_next_reader() {
         if (init_status.is_end_of_file()) {
             continue;
         } else if (!init_status.ok()) {
+            if (init_status.is_not_found()) {
+                return init_status;
+            }
             return Status::InternalError("failed to init reader for file {}, err: {}", range.path,
                                          init_status.get_error_msg());
         }
@@ -648,8 +654,27 @@ Status VFileScanner::_init_expr_ctxes() {
         }
     }
 
+    // set column name to default value expr map
+    for (auto slot_desc : _real_tuple_desc->slots()) {
+        if (!slot_desc->is_materialized()) {
+            continue;
+        }
+        vectorized::VExprContext* ctx = nullptr;
+        auto it = _params.default_value_of_src_slot.find(slot_desc->id());
+        if (it != std::end(_params.default_value_of_src_slot)) {
+            if (!it->second.nodes.empty()) {
+                RETURN_IF_ERROR(
+                        vectorized::VExpr::create_expr_tree(_state->obj_pool(), it->second, &ctx));
+                RETURN_IF_ERROR(ctx->prepare(_state, *_default_val_row_desc));
+                RETURN_IF_ERROR(ctx->open(_state));
+            }
+            // if expr is empty, the default value will be null
+            _col_default_value_ctx.emplace(slot_desc->col_name(), ctx);
+        }
+    }
+
     if (_is_load) {
-        // follow desc expr map and src default value expr map is only for load task.
+        // follow desc expr map is only for load task.
         bool has_slot_id_map = _params.__isset.dest_sid_to_src_sid_without_trans;
         int idx = 0;
         for (auto slot_desc : _output_tuple_desc->slots()) {
@@ -686,24 +711,6 @@ Status VFileScanner::_init_expr_ctxes() {
                                                          full_src_index_map[_src_slot_it->first]);
                     _src_slot_descs_order_by_dest.emplace_back(_src_slot_it->second);
                 }
-            }
-        }
-
-        for (auto slot_desc : _real_tuple_desc->slots()) {
-            if (!slot_desc->is_materialized()) {
-                continue;
-            }
-            vectorized::VExprContext* ctx = nullptr;
-            auto it = _params.default_value_of_src_slot.find(slot_desc->id());
-            if (it != std::end(_params.default_value_of_src_slot)) {
-                if (!it->second.nodes.empty()) {
-                    RETURN_IF_ERROR(vectorized::VExpr::create_expr_tree(_state->obj_pool(),
-                                                                        it->second, &ctx));
-                    RETURN_IF_ERROR(ctx->prepare(_state, *_default_val_row_desc));
-                    RETURN_IF_ERROR(ctx->open(_state));
-                }
-                // if expr is empty, the default value will be null
-                _col_default_value_ctx.emplace(slot_desc->col_name(), ctx);
             }
         }
     }

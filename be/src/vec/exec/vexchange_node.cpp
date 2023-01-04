@@ -36,7 +36,8 @@ VExchangeNode::VExchangeNode(ObjectPool* pool, const TPlanNode& tnode, const Des
                           std::vector<bool>(tnode.nullable_tuples.begin(),
                                             tnode.nullable_tuples.begin() +
                                                     tnode.exchange_node.input_row_tuples.size())),
-          _offset(tnode.exchange_node.__isset.offset ? tnode.exchange_node.offset : 0) {}
+          _offset(tnode.exchange_node.__isset.offset ? tnode.exchange_node.offset : 0),
+          _num_rows_skipped(0) {}
 
 Status VExchangeNode::init(const TPlanNode& tnode, RuntimeState* state) {
     RETURN_IF_ERROR(ExecNode::init(tnode, state));
@@ -126,6 +127,16 @@ Status VExchangeNode::get_next(RuntimeState* state, Block* block, bool* eos) {
     SCOPED_CONSUME_MEM_TRACKER(mem_tracker());
     auto status = _stream_recvr->get_next(block, eos);
     if (block != nullptr) {
+        if (!_is_merging) {
+            if (_num_rows_skipped + block->rows() < _offset) {
+                _num_rows_skipped += block->rows();
+                block->set_num_rows(0);
+            } else if (_num_rows_skipped < _offset) {
+                auto offset = _offset - _num_rows_skipped;
+                _num_rows_skipped = _offset;
+                block->set_num_rows(block->rows() - offset);
+            }
+        }
         if (_num_rows_returned + block->rows() < _limit) {
             _num_rows_returned += block->rows();
         } else {
@@ -137,6 +148,12 @@ Status VExchangeNode::get_next(RuntimeState* state, Block* block, bool* eos) {
     }
     RETURN_IF_ERROR(second_phase_fetch_data(state, block)); 
     return status;
+}
+
+Status VExchangeNode::collect_query_statistics(QueryStatistics* statistics) {
+    RETURN_IF_ERROR(ExecNode::collect_query_statistics(statistics));
+    statistics->merge(_sub_plan_query_statistics_recvr.get());
+    return Status::OK();
 }
 
 Status VExchangeNode::close(RuntimeState* state) {

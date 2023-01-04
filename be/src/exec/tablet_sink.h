@@ -341,6 +341,8 @@ protected:
     bool _is_closed = false;
 
     RuntimeState* _state;
+    // rows number received per tablet, tablet_id -> rows_num
+    std::vector<std::pair<int64_t, int64_t>> _tablets_received_rows;
 
     // CLOUD_MODE upload metrics
     int64_t _max_build_rowset_cost_ms = 0;
@@ -394,6 +396,11 @@ public:
     }
 
     int64_t index_id() const { return _index_id; }
+    void set_tablets_received_rows(
+            const std::vector<std::pair<int64_t, int64_t>>& tablets_received_rows, int64_t node_id);
+
+    // check whether the rows num written by different replicas is consistent
+    Status check_tablet_received_rows_consistency();
 
 private:
     friend class NodeChannel;
@@ -425,6 +432,9 @@ private:
     Status _intolerable_failure_status = Status::OK();
 
     std::unique_ptr<MemTracker> _index_channel_tracker;
+    // rows num received by DeltaWriter per tablet, tablet_id -> <node_Id, rows_num>
+    // used to verify whether the rows num received by different replicas is consistent
+    std::map<int64_t, std::vector<std::pair<int64_t, int64_t>>> _tablets_received_rows;
 };
 
 template <typename Row>

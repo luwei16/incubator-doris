@@ -688,4 +688,9 @@ public class CloudGlobalTransactionMgr implements GlobalTransactionMgrInterface 
         return 0;
     }
 
+    @Override
+    public long getAllPublishTxnNum() {
+        return 0;
+    }
+
 }

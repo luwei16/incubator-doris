@@ -67,6 +67,7 @@ PROPERTIES (
 "table_type"="mysql"
 );
 ```
+
 参数说明：
 
 | 参数           | 说明|
@@ -86,6 +87,7 @@ PROPERTIES (
 ```
 select * from mysql_table where k1 > 1000 and k3 ='term';
 ```
+由于可能存在使用数据库内部的关键字作为字段名，为解决这种状况下仍能正确查询，所以在SQL语句中，会根据各个数据库的标准自动在字段名与表名上加上转义符。例如 MYSQL(``)、PostgreSQL("")、SQLServer([])、ORACLE("")，所以此时可能会造成字段名的大小写敏感，具体可以通过explain sql，查看转义后下发到各个数据库的查询语句。
 
 ### 数据写入
 
@@ -165,16 +167,16 @@ PROPERTIES (
 |  MySQL   |  Doris   |
 | :------: | :------: |
 | BOOLEAN  | BOOLEAN  |
-|   CHAR   |   CHAR   |
-| VARCHAR  | VARCHAR  |
-|   DATE   |   DATE   |
-|  FLOAT   |  FLOAT   |
 | TINYINT  | TINYINT  |
 | SMALLINT | SMALLINT |
 |   INT    |   INT    |
 |  BIGINT  |  BIGINT  |
-|  DOUBLE  |  DOUBLE  |
+|BIGINT UNSIGNED|LARGEINT|
+| VARCHAR  | VARCHAR  |
+|   DATE   |   DATE   |
+|  FLOAT   |  FLOAT   |
 | DATETIME | DATETIME |
+|  DOUBLE  |  DOUBLE  |
 | DECIMAL  | DECIMAL  |
 
 
@@ -183,26 +185,26 @@ PROPERTIES (
 |    PostgreSQL    |  Doris   |
 | :--------------: | :------: |
 |     BOOLEAN      | BOOLEAN  |
-|       CHAR       |   CHAR   |
-|     VARCHAR      | VARCHAR  |
-|       DATE       |   DATE   |
-|       REAL       |  FLOAT   |
 |     SMALLINT     | SMALLINT |
 |       INT        |   INT    |
 |      BIGINT      |  BIGINT  |
-| DOUBLE PRECISION |  DOUBLE  |
+|     VARCHAR      | VARCHAR  |
+|       DATE       |   DATE   |
 |    TIMESTAMP     | DATETIME |
+|       REAL       |  FLOAT   |
+|      FLOAT       |  DOUBLE  |
 |     DECIMAL      | DECIMAL  |
 
 ### Oracle
 
 |  Oracle  |  Doris   |
 | :------: | :------: |
-|   CHAR   |   CHAR   |
 | VARCHAR  | VARCHAR  |
 |   DATE   | DATETIME |
 | SMALLINT | SMALLINT |
 |   INT    |   INT    |
+|   REAL   |   DOUBLE |
+|   FLOAT  |   DOUBLE |
 |  NUMBER  | DECIMAL  |
 
 
@@ -211,15 +213,15 @@ PROPERTIES (
 | SQLServer |  Doris   |
 | :-------: | :------: |
 |    BIT    | BOOLEAN  |
-|   CHAR    |   CHAR   |
-|  VARCHAR  | VARCHAR  |
-|   DATE    |   DATE   |
-|   REAL    |  FLOAT   |
 |  TINYINT  | TINYINT  |
 | SMALLINT  | SMALLINT |
 |    INT    |   INT    |
 |  BIGINT   |  BIGINT  |
+|  VARCHAR  | VARCHAR  |
+|   DATE    |   DATE   |
 | DATETIME  | DATETIME |
+|   REAL    |  FLOAT   |
+|   FLOAT   |  DOUBLE  |
 |  DECIMAL  | DECIMAL  |
 
 ### ClickHouse

@@ -146,6 +146,8 @@ public interface GlobalTransactionMgrInterface extends Writable {
 
     public long getAllRunningTxnReplicaNum();
 
+    public long getAllPublishTxnNum();
+
     public void readFields(DataInput in) throws IOException;
 
     public long getTxnNumByStatus(TransactionStatus status);

@@ -32,6 +32,7 @@ import org.apache.doris.statistics.StatsRecursiveDerive;
 import org.apache.doris.system.Backend;
 import org.apache.doris.system.SystemInfoService;
 import org.apache.doris.thrift.TExchangeNode;
+import org.apache.doris.thrift.TExplainLevel;
 import org.apache.doris.thrift.TNodeInfo;
 import org.apache.doris.thrift.TPaloNodesInfo;
 import org.apache.doris.thrift.TPlanNode;
@@ -86,6 +87,7 @@ public class ExchangeNode extends PlanNode {
         if (inputNode.getFragment().isPartitioned()) {
             limit = inputNode.limit;
         }
+        offset = inputNode.offset;
         computeTupleIds();
 
     }
@@ -162,12 +164,11 @@ public class ExchangeNode extends PlanNode {
         }
         if (mergeInfo != null) {
             msg.exchange_node.setSortInfo(mergeInfo.toThrift());
-            msg.exchange_node.setOffset(offset);
-
             if (mergeInfo.useTwoPhaseRead()) {
                 msg.exchange_node.setNodesInfo(createNodesInfo());
             }
         }
+        msg.exchange_node.setOffset(offset);
     }
 
     @Override
@@ -196,4 +197,10 @@ public class ExchangeNode extends PlanNode {
         }
         return nodesInfo;
     }
+
+    @Override
+    public String getNodeExplainString(String prefix, TExplainLevel detailLevel) {
+        return prefix + "offset: " + offset + "\n";
+    }
+
 }

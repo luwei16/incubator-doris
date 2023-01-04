@@ -1163,13 +1163,13 @@ refresh_stmt ::=
     {:
         RESULT = new RefreshTableStmt(tbl);
     :}
-    | KW_REFRESH KW_DATABASE ident:db
+    | KW_REFRESH KW_DATABASE ident:db opt_properties:properties
     {:
-        RESULT = new RefreshDbStmt(db);
+        RESULT = new RefreshDbStmt(db, properties);
     :}
-    | KW_REFRESH KW_DATABASE ident:ctl DOT ident:db
+    | KW_REFRESH KW_DATABASE ident:ctl DOT ident:db opt_properties:properties
     {:
-        RESULT = new RefreshDbStmt(ctl, db);
+        RESULT = new RefreshDbStmt(ctl, db, properties);
     :}
     | KW_REFRESH KW_MATERIALIZED KW_VIEW table_name:mv
     {:
@@ -1179,9 +1179,9 @@ refresh_stmt ::=
     {:
         RESULT = new RefreshMaterializedViewStmt(mv, MVRefreshInfo.RefreshMethod.COMPLETE);
     :}
-    | KW_REFRESH KW_CATALOG ident:catalogName
+    | KW_REFRESH KW_CATALOG ident:catalogName opt_properties:properties
     {:
-        RESULT = new RefreshCatalogStmt(catalogName);
+        RESULT = new RefreshCatalogStmt(catalogName, properties);
     :}
     ;
 
@@ -1741,6 +1741,10 @@ create_stmt ::=
     | KW_CREATE KW_CATALOG opt_if_not_exists:ifNotExists ident:catalogName opt_properties:properties
     {:
          RESULT = new CreateCatalogStmt(ifNotExists, catalogName, properties);
+    :}
+    | KW_CREATE KW_CATALOG opt_if_not_exists:ifNotExists ident:catalogName KW_WITH KW_RESOURCE ident:resourceName
+    {:
+         RESULT = new CreateCatalogStmt(ifNotExists, catalogName, resourceName);
     :}
     /* cluster */
    /* KW_CREATE KW_CLUSTER ident:name  opt_properties:properties KW_IDENTIFIED KW_BY STRING_LITERAL:password
@@ -3487,12 +3491,22 @@ show_param ::=
     /* show table status */
     | KW_TABLE KW_STATUS opt_db:db opt_wild_where
     {:
-        RESULT = new ShowTableStatusStmt(db, parser.wild, parser.where);
+        RESULT = new ShowTableStatusStmt(db, null, parser.wild, parser.where);
     :}
     /* show table status */
+    | KW_TABLE KW_STATUS from_or_in ident:ctl DOT ident:db opt_wild_where
+    {:
+        RESULT = new ShowTableStatusStmt(db, ctl, parser.wild, parser.where);
+    :}
+    /* show tables */
     | opt_full KW_TABLES opt_db:db opt_wild_where
     {:
-        RESULT = new ShowTableStmt(db, parser.isVerbose, parser.wild, parser.where);
+        RESULT = new ShowTableStmt(db, null, parser.isVerbose, parser.wild, parser.where);
+    :}
+    /* show tables */
+    | opt_full KW_TABLES from_or_in ident:ctl DOT ident:db opt_wild_where
+    {:
+        RESULT = new ShowTableStmt(db, ctl, parser.isVerbose, parser.wild, parser.where);
     :}
     /* show table id */
     | KW_TABLE INTEGER_LITERAL:tableId
@@ -3557,6 +3571,10 @@ show_param ::=
     {:
         RESULT = new ShowCreateDbStmt(db);
     :}
+    | KW_CREATE KW_CATALOG ident:catalogName
+        {:
+            RESULT = new ShowCreateCatalogStmt(catalogName);
+        :}
     /* Create Function */
     | KW_CREATE KW_FUNCTION function_name:functionName LPAREN func_args_def:args RPAREN opt_db:dbName
     {:
@@ -6933,6 +6951,8 @@ keyword ::=
     | KW_TEMPORARY:id
     {: RESULT = id; :}
     | KW_THAN:id
+    {: RESULT = id; :}
+    | KW_TIME:id
     {: RESULT = id; :}
     | KW_TIMESTAMP:id
     {: RESULT = id; :}

@@ -48,9 +48,10 @@ usage() {
     echo "
 Usage: $0 <options>
   Optional options:
-     -j build thirdparty parallel
-     -d build specified dependencies, space separated, e.g. -d \"re2 curl clucene\"
-     -a rebuild all dependencies
+     -d                 build specified dependencies, space separated, e.g. -d \"re2 curl clucene\"
+     -a                 rebuild all dependencies
+     -j                 build thirdparty parallel
+     --clean            clean the extracted data
   "
     exit 1
 }
@@ -58,6 +59,8 @@ Usage: $0 <options>
 if ! OPTS="$(getopt \
     -n "$0" \
     -o 'hj:d:a' \
+    -l 'help' \
+    -l 'clean' \
     -- "$@")"; then
     usage
 fi
@@ -94,6 +97,10 @@ if [[ "$#" -ne 1 ]]; then
             HELP=1
             shift
             ;;
+        --clean)
+            CLEAN=1
+            shift
+            ;;
         --)
             shift
             break
@@ -115,6 +122,7 @@ echo "Get params:
     PARALLEL            -- ${PARALLEL}
     DEPS                -- ${DEPS}
     BUILD_ALL           -- ${BUILD_ALL}
+    CLEAN               -- ${CLEAN}
 "
 
 if [[ ! -f "${TP_DIR}/download-thirdparty.sh" ]]; then
@@ -171,6 +179,12 @@ if [[ -f version.txt && ${BUILD_ALL} -eq 0 && "${DEPS}" = "" ]]; then
     fi
 fi
 
+if [[ "${CLEAN}" -eq 1 ]] && [[ -d "${TP_SOURCE_DIR}" ]]; then
+    echo 'Clean the extracted data ...'
+    find "${TP_SOURCE_DIR}" -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} \;
+    echo 'Success!'
+fi
+
 # Download thirdparties.
 ${TP_DIR}/download-clucene.sh
 ${TP_DIR}/download-thirdparty.sh
@@ -196,7 +210,8 @@ elif [[ "${CC}" == *clang ]]; then
     boost_toolset='clang'
     libhdfs_cxx17='-std=c++1z'
 
-    if "${CC}" -xc++ "${warning_unused_but_set_variable}" /dev/null 2>&1 | grep 'unknown warning option'; then
+    test_warning_result="$("${CC}" -xc++ "${warning_unused_but_set_variable}" /dev/null 2>&1 || true)"
+    if echo "${test_warning_result}" | grep 'unknown warning option' >/dev/null; then
         warning_unused_but_set_variable=''
     fi
 fi
@@ -898,7 +913,7 @@ build_cyrus_sasl() {
     check_if_source_exist "${CYRUS_SASL_SOURCE}"
     cd "${TP_SOURCE_DIR}/${CYRUS_SASL_SOURCE}"
 
-    CFLAGS="-fPIC" \
+    CFLAGS="-fPIC -Wno-implicit-function-declaration" \
         CPPFLAGS="-I${TP_INCLUDE_DIR}" \
         LDFLAGS="-L${TP_LIB_DIR}" \
         LIBS="-lcrypto" \
@@ -1401,7 +1416,7 @@ build_gsasl() {
         cflags='-Wno-implicit-function-declaration'
     fi
 
-    CFLAGS="${cflags}" ../configure --prefix="${TP_INSTALL_DIR}" --with-gssapi-impl=mit --enable-shared=no --with-pic --with-libidn-prefix="${TP_INSTALL_DIR}"
+    CFLAGS="${cflags} -I${TP_INCLUDE_DIR}" ../configure --prefix="${TP_INSTALL_DIR}" --with-gssapi-impl=mit --enable-shared=no --with-pic --with-libidn-prefix="${TP_INSTALL_DIR}"
 
     make -j "${PARALLEL}"
     make install

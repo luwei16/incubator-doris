@@ -81,6 +81,7 @@ suite("test_array_string_insert", "load") {
         // select the table and check whether the data is correct
         qt_select "select * from ${testTable} order by k1"
     }
-    
+
+    // case2: enable_vectorized_flag = true
     test_insert_array_string(true);
 }

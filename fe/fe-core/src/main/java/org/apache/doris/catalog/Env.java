@@ -212,12 +212,11 @@ import org.apache.doris.qe.JournalObservable;
 import org.apache.doris.qe.VariableMgr;
 import org.apache.doris.resource.Tag;
 import org.apache.doris.service.FrontendOptions;
-import org.apache.doris.statistics.AnalysisJobScheduler;
+import org.apache.doris.statistics.AnalysisManager;
 import org.apache.doris.statistics.StatisticsCache;
 import org.apache.doris.statistics.StatisticsJobManager;
 import org.apache.doris.statistics.StatisticsJobScheduler;
 import org.apache.doris.statistics.StatisticsManager;
-import org.apache.doris.statistics.StatisticsRepository;
 import org.apache.doris.statistics.StatisticsTaskScheduler;
 import org.apache.doris.system.Backend;
 import org.apache.doris.system.Frontend;
@@ -457,9 +456,7 @@ public class Env {
 
     private MTMVJobManager mtmvJobManager;
 
-    private final AnalysisJobScheduler analysisJobScheduler;
-
-    private final StatisticsCache statisticsCache;
+    private AnalysisManager analysisManager;
 
     private ExternalMetaCacheMgr extMetaCacheMgr;
 
@@ -670,8 +667,7 @@ public class Env {
         this.refreshManager = new RefreshManager();
         this.policyMgr = new PolicyMgr();
         this.mtmvJobManager = new MTMVJobManager();
-        this.analysisJobScheduler = new AnalysisJobScheduler();
-        this.statisticsCache = new StatisticsCache();
+        this.analysisManager = new AnalysisManager();
         this.extMetaCacheMgr = new ExternalMetaCacheMgr();
     }
 
@@ -1779,7 +1775,7 @@ public class Env {
     }
 
     public StatisticsCache getStatisticsCache() {
-        return statisticsCache;
+        return analysisManager.getStatisticsCache();
     }
 
     public boolean hasReplayer() {
@@ -3300,7 +3296,8 @@ public class Env {
             addTableComment(jdbcTable, sb);
             sb.append("\nPROPERTIES (\n");
             sb.append("\"resource\" = \"").append(jdbcTable.getResourceName()).append("\",\n");
-            sb.append("\"table\" = \"").append(jdbcTable.getJdbcTable()).append("\"");
+            sb.append("\"table\" = \"").append(jdbcTable.getJdbcTable()).append("\",\n");
+            sb.append("\"table_type\" = \"").append(jdbcTable.getJdbcTypeName()).append("\"");
             sb.append("\n)");
         }
 
@@ -5093,7 +5090,16 @@ public class Env {
             throw new DdlException(ErrorCode.ERR_UNKNOWN_CATALOG.formatErrorMsg(catalogName),
                     ErrorCode.ERR_UNKNOWN_CATALOG);
         }
+
+        String currentDB = ctx.getDatabase();
+        if (StringUtils.isNotEmpty(currentDB)) {
+            catalogMgr.addLastDBOfCatalog(ctx.getCurrentCatalog().getName(), currentDB);
+        }
         ctx.changeDefaultCatalog(catalogName);
+        String lastDb = catalogMgr.getLastDB(catalogName);
+        if (StringUtils.isNotEmpty(lastDb)) {
+            ctx.setDatabase(lastDb);
+        }
         if (catalogIf instanceof EsExternalCatalog) {
             ctx.setDatabase(SystemInfoService.DEFAULT_CLUSTER + ClusterNamespace.CLUSTER_DELIMITER
                     + EsExternalCatalog.DEFAULT_DB);
@@ -5954,6 +5960,7 @@ public class Env {
         return count;
     }
 
+    // SELECTDB_CODE_BEGIN
     public void createStage(CreateStageStmt stmt) throws DdlException {
         if (Config.cloud_unique_id.isEmpty()) {
             throw new DdlException("stage is only supported in cloud mode");
@@ -5969,15 +5976,17 @@ public class Env {
                 stmt.isIfExists());
     }
 
-    public AnalysisJobScheduler getAnalysisJobScheduler() {
-        return analysisJobScheduler;
-    }
+    // SELECTDB_CODE_END
 
     // TODO:
     //  1. handle partition level analysis statement properly
     //  2. support sample job
     //  3. support period job
     public void createAnalysisJob(AnalyzeStmt analyzeStmt) {
-        StatisticsRepository.createAnalysisJob(analyzeStmt);
+        analysisManager.createAnalysisJob(analyzeStmt);
+    }
+
+    public AnalysisManager getAnalysisManager() {
+        return analysisManager;
     }
 }

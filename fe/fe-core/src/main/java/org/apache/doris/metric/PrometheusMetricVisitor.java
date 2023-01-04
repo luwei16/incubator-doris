@@ -178,6 +178,10 @@ public class PrometheusMetricVisitor extends MetricVisitor {
 
     @Override
     public void visitHistogram(StringBuilder sb, String prefix, String name, Histogram histogram) {
+        // The diff between cloud and branch-1.2-lts
+        // branch-1.2-lts want to format the label, but it don't have another label except 'quantile'
+        // so it is useless
+        // cloud need to know metrics of each cluster, so add the label of cluster message.
         String fullName = prefix + name.replaceAll("\\.", "_");
         String clusterName = "UNKNOWN";
         String clusterId = "UNKNOWN";
@@ -187,10 +191,12 @@ public class PrometheusMetricVisitor extends MetricVisitor {
             fullName = fullName.substring(0, idx - 1);
             clusterId = Env.getCurrentSystemInfo().getCloudClusterNameToId().get(clusterName);
         }
+        // final String fullTag = String.join(",", tags);
         sb.append(HELP).append(fullName).append(" ").append("\n");
         sb.append(TYPE).append(fullName).append(" ").append("summary\n");
-
+        // String delimiter = tags.isEmpty() ? "" : ",";
         Snapshot snapshot = histogram.getSnapshot();
+        // SELECTDB_CODE_BEGIN
         sb.append(fullName).append("{cluster_id=\"").append(clusterId).append("\", ")
                         .append("cluster_name=\"").append(clusterName).append("\", ")
                         .append("quantile=\"0.75\"} ").append(snapshot.get75thPercentile()).append("\n");
@@ -212,6 +218,7 @@ public class PrometheusMetricVisitor extends MetricVisitor {
         sb.append(fullName).append("_count").append("{cluster_id=\"").append(clusterId).append("\", ")
                         .append("cluster_name=\"").append(clusterName).append("\"} ")
                         .append(histogram.getCount()).append("\n");
+        // SELECTDB_CODE_END
         return;
     }
 

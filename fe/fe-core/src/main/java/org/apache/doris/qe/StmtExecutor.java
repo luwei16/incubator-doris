@@ -423,8 +423,11 @@ public class StmtExecutor implements ProfileWriter {
 
         plannerProfile.setQueryBeginTime();
         context.setStmtId(STMT_ID_GENERATOR.incrementAndGet());
-
         context.setQueryId(queryId);
+        // set isQuery first otherwise this state will be lost if some error occurs
+        if (parsedStmt instanceof QueryStmt || parsedStmt instanceof LogicalPlanAdapter) {
+            context.getState().setIsQuery(true);
+        }
 
         try {
             if (context.isTxnModel() && !(parsedStmt instanceof InsertStmt)
@@ -480,7 +483,6 @@ public class StmtExecutor implements ProfileWriter {
             }
 
             if (parsedStmt instanceof QueryStmt || parsedStmt instanceof LogicalPlanAdapter) {
-                context.getState().setIsQuery(true);
                 if (!parsedStmt.isExplain()) {
                     // sql/sqlHash block
                     try {
@@ -1106,6 +1108,18 @@ public class StmtExecutor implements ProfileWriter {
             handleCacheStmt(cacheAnalyzer, channel, (SelectStmt) queryStmt);
             return;
         }
+
+        // handle select .. from xx  limit 0
+        if (parsedStmt instanceof SelectStmt) {
+            SelectStmt parsedSelectStmt = (SelectStmt) parsedStmt;
+            if (parsedSelectStmt.getLimit() == 0) {
+                LOG.info("ignore handle limit 0 ,sql:{}", parsedSelectStmt.toSql());
+                sendFields(queryStmt.getColLabels(), exprToType(queryStmt.getResultExprs()));
+                context.getState().setEof();
+                return;
+            }
+        }
+
         sendResult(isOutfileQuery, false, queryStmt, channel, null, null);
     }
 
@@ -1138,12 +1152,19 @@ public class StmtExecutor implements ProfileWriter {
         Span fetchResultSpan = context.getTracer().spanBuilder("fetch result").setParent(Context.current()).startSpan();
         try (Scope scope = fetchResultSpan.makeCurrent()) {
             while (true) {
+                // register the fetch result time.
+                plannerProfile.setTempStartTime();
                 batch = coord.getNext();
+                plannerProfile.freshFetchResultConsumeTime();
+
                 // for outfile query, there will be only one empty batch send back with eos flag
                 if (batch.getBatch() != null) {
                     if (cacheAnalyzer != null) {
                         cacheAnalyzer.copyRowBatch(batch);
                     }
+
+                    // register send field result time.
+                    plannerProfile.setTempStartTime();
                     // For some language driver, getting error packet after fields packet
                     // will be recognized as a success result
                     // so We need to send fields after first batch arrived
@@ -1158,6 +1179,7 @@ public class StmtExecutor implements ProfileWriter {
                     for (ByteBuffer row : batch.getBatch().getRows()) {
                         channel.sendOnePacket(row);
                     }
+                    plannerProfile.freshWriteResultConsumeTime();
                     context.updateReturnRows(batch.getBatch().getRows().size());
                 }
                 if (batch.isEos()) {
@@ -1811,7 +1833,7 @@ public class StmtExecutor implements ProfileWriter {
         if (!statisticsForAuditLog.hasScanRows()) {
             statisticsForAuditLog.setScanRows(0L);
         }
-        if (statisticsForAuditLog.hasReturnedRows()) {
+        if (!statisticsForAuditLog.hasReturnedRows()) {
             statisticsForAuditLog.setReturnedRows(0L);
         }
         if (!statisticsForAuditLog.hasCpuMs()) {
