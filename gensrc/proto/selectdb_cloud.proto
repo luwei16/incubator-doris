@@ -657,9 +657,11 @@ message AlterInstanceRequest {
         UNKNOWN        = 0;
         DROP           = 1;
         REFRESH        = 2;
+        RENAME         = 3;
     }
     optional string instance_id = 1;
     optional Operation op = 2;
+    optional string name = 3;
 }
 
 message AlterInstanceResponse {

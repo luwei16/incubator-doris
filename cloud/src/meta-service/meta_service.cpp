@@ -3087,6 +3087,25 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
         return;
     }
 
+    if (unresolved_path == "rename_instance") {
+        AlterInstanceRequest r;
+        auto st = google::protobuf::util::JsonStringToMessage(request_body, &r);
+        if (!st.ok()) {
+            msg = "failed to AlterInstanceRequest, error: " + st.message().ToString();
+            ret = MetaServiceCode::PROTOBUF_PARSE_ERR;
+            response_body = msg;
+            LOG(WARNING) << msg;
+            return;
+        }
+        r.set_op(AlterInstanceRequest::RENAME);
+        AlterInstanceResponse res;
+        alter_instance(cntl, &r, &res, nullptr);
+        ret = res.status().code();
+        msg = res.status().msg();
+        response_body = msg;
+        return;
+    }
+
     if (unresolved_path == "drop_instance") {
         AlterInstanceRequest r;
         auto st = google::protobuf::util::JsonStringToMessage(request_body, &r);
@@ -3708,7 +3727,64 @@ void MetaServiceImpl::alter_instance(google::protobuf::RpcController* controller
     std::pair<MetaServiceCode, std::string> ret;
     switch (request->op()) {
     case AlterInstanceRequest::DROP: {
-        ret = drop_instance(request);
+        ret = alter_instance(request, [&request](const std::string& val) {
+            InstanceInfoPB instance;
+            std::string msg;
+            if (!instance.ParseFromString(val)) {
+                msg = "failed to parse InstanceInfoPB";
+                LOG(WARNING) << msg;
+                return std::make_pair(MetaServiceCode::PROTOBUF_PARSE_ERR, msg);
+            }
+
+            // check instance doesn't have any cluster.
+            if (instance.clusters_size() != 0) {
+                msg = "failed to drop instance, instance has clusters";
+                LOG(WARNING) << msg;
+                return std::make_pair(MetaServiceCode::INVALID_ARGUMENT, msg);
+            }
+
+            instance.set_status(InstanceInfoPB::DELETED);
+            instance.set_mtime(duration_cast<seconds>(system_clock::now().time_since_epoch()).count());
+
+            std::string ret = instance.SerializeAsString();
+            if (val.empty()) {
+                msg = "failed to serialize";
+                LOG(ERROR) << msg;
+                return std::make_pair(MetaServiceCode::PROTOBUF_SERIALIZE_ERR, msg);
+            }
+            LOG(INFO) << "put instance_id=" << request->instance_id()
+                      << "drop instance json=" << proto_to_json(instance);
+            return std::make_pair(MetaServiceCode::OK, ret);
+        });
+    } break;
+    case AlterInstanceRequest::RENAME: {
+        ret = alter_instance(request, [&request](const std::string& val) {
+            std::string msg;
+            std::string name = request->has_name() ? request->name() : "";
+            if (name.empty()) {
+                msg = "rename instance name, but not set";
+                LOG(WARNING) << msg;
+                return std::make_pair(MetaServiceCode::INVALID_ARGUMENT, msg);
+            }
+
+            InstanceInfoPB instance;
+            if (!instance.ParseFromString(val)) {
+                msg = "failed to parse InstanceInfoPB";
+                LOG(WARNING) << msg;
+                return std::make_pair(MetaServiceCode::PROTOBUF_PARSE_ERR, msg);
+            }
+            instance.set_name(name);
+
+            std::string ret = instance.SerializeAsString();
+            if (val.empty()) {
+                msg = "failed to serialize";
+                LOG(ERROR) << msg;
+                return std::make_pair(MetaServiceCode::PROTOBUF_SERIALIZE_ERR, msg);
+            }
+            LOG(INFO) << "put instance_id=" << request->instance_id()
+                      << "rename instance json=" << proto_to_json(instance);
+            return std::make_pair(MetaServiceCode::OK, ret);
+        });
     } break;
     case AlterInstanceRequest::REFRESH: {
         ret = resource_mgr_->refresh_instance(request->instance_id());
@@ -3733,8 +3809,9 @@ void MetaServiceImpl::alter_instance(google::protobuf::RpcController* controller
     }
 }
 
-std::pair<MetaServiceCode, std::string> MetaServiceImpl::drop_instance(
-        const selectdb::AlterInstanceRequest* request) {
+std::pair<MetaServiceCode, std::string> MetaServiceImpl::alter_instance(
+        const selectdb::AlterInstanceRequest* request,
+        std::function<std::pair<MetaServiceCode, std::string>(const std::string&)> action) {
     int ret = 0;
     MetaServiceCode code = MetaServiceCode::OK;
     std::string msg = "OK";
@@ -3769,33 +3846,12 @@ std::pair<MetaServiceCode, std::string> MetaServiceImpl::drop_instance(
         LOG(WARNING) << msg << " ret=" << ret;
         return std::make_pair(code, msg);
     }
-
-    InstanceInfoPB instance;
-    if (!instance.ParseFromString(val)) {
-        msg = "failed to parse InstanceInfoPB";
-        LOG(WARNING) << msg;
-        return std::make_pair(MetaServiceCode::PROTOBUF_PARSE_ERR, msg);
+    LOG(INFO) << "alter instance key=" << hex(key);
+    auto r = action(val);
+    if (r.first != MetaServiceCode::OK) {
+        return r;
     }
-
-    // check instance doesn't have any cluster.
-    if (instance.clusters_size() != 0) {
-        msg = "failed to drop instance, instance has clusters";
-        LOG(WARNING) << msg;
-        return std::make_pair(MetaServiceCode::INVALID_ARGUMENT, msg);
-    }
-
-    instance.set_status(InstanceInfoPB::DELETED);
-    instance.set_mtime(duration_cast<seconds>(system_clock::now().time_since_epoch()).count());
-
-    val = instance.SerializeAsString();
-    if (val.empty()) {
-        msg = "failed to serialize";
-        LOG(ERROR) << msg;
-        return std::make_pair(MetaServiceCode::PROTOBUF_SERIALIZE_ERR, msg);
-    }
-    LOG(INFO) << "put instance_id=" << request->instance_id() << " instance_key=" << hex(key)
-              << "drop instance json=" << proto_to_json(instance);
-
+    val = r.second;
     txn->put(key, val);
     ret = txn->commit();
     if (ret != 0) {

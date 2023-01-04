@@ -208,8 +208,9 @@ private:
     std::pair<MetaServiceCode, std::string> create_instance(
             const ::selectdb::AlterInstanceRequest* request);
 
-    std::pair<MetaServiceCode, std::string> drop_instance(
-            const ::selectdb::AlterInstanceRequest* request);
+    std::pair<MetaServiceCode, std::string> alter_instance(
+            const ::selectdb::AlterInstanceRequest* request,
+            std::function<std::pair<MetaServiceCode, std::string>(const std::string&)> action);
 
 private:
     std::shared_ptr<TxnKv> txn_kv_;
