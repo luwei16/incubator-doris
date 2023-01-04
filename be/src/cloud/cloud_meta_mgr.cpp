@@ -149,7 +149,9 @@ Status CloudMetaMgr::sync_tablet_rowsets(Tablet* tablet) {
         std::lock_guard wlock(tablet->get_header_lock());
         if (stats.base_compaction_cnt() < tablet->base_compaction_cnt() ||
             stats.cumulative_compaction_cnt() < tablet->cumulative_compaction_cnt() ||
-            resp_max_version < tablet->local_max_version()) {
+            (resp_max_version < tablet->local_max_version() &&
+             stats.base_compaction_cnt() == tablet->base_compaction_cnt() &&
+             stats.cumulative_compaction_cnt() == tablet->cumulative_compaction_cnt())) {
             // stale request, ignore
             LOG_WARNING("stale get rowset meta request")
                     .tag("resp_base_compaction_cnt", stats.base_compaction_cnt())
@@ -347,6 +349,8 @@ Status CloudMetaMgr::prepare_tablet_job(const selectdb::TabletJobInfoPB& job) {
             return Status::OLAPInternalError(JOB_ALREADY_SUCCESS);
         } else if (res.status().code() == selectdb::MetaServiceCode::STALE_TABLET_CACHE) {
             return Status::OLAPInternalError(STALE_TABLET_CACHE);
+        } else if (res.status().code() == selectdb::MetaServiceCode::TABLET_NOT_FOUND) {
+            Status::NotFound("failed to prepare_tablet_job: {}", res.status().msg());
         } else if (res.status().code() == selectdb::KV_TXN_CONFLICT) {
             continue;
         }
@@ -377,6 +381,8 @@ Status CloudMetaMgr::commit_tablet_job(const selectdb::TabletJobInfoPB& job,
             return Status::OK();
         } else if (res.status().code() == selectdb::MetaServiceCode::JOB_ALREADY_SUCCESS) {
             return Status::OLAPInternalError(JOB_ALREADY_SUCCESS);
+        } else if (res.status().code() == selectdb::MetaServiceCode::TABLET_NOT_FOUND) {
+            Status::NotFound("failed to commit_tablet_job: {}", res.status().msg());
         } else if (res.status().code() == selectdb::KV_TXN_CONFLICT) {
             continue;
         }

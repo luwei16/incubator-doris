@@ -128,8 +128,8 @@ void start_compaction_job(MetaServiceCode& code, std::string& msg, std::stringst
     std::string stats_val;
     ret = txn->get(stats_key, &stats_val);
     if (ret != 0) {
-        code = ret == 1 ? MetaServiceCode::UNDEFINED_ERR : MetaServiceCode::KV_TXN_GET_ERR;
-        SS << (ret == 1 ? "internal error" : "get kv error") << " when get tablet stats, "
+        code = ret == 1 ? MetaServiceCode::TABLET_NOT_FOUND : MetaServiceCode::KV_TXN_GET_ERR;
+        SS << (ret == 1 ? "not found" : "get kv error") << " when get tablet stats, "
            << " tablet_id=" << tablet_id << " key=" << hex(stats_key) << " ret=" << ret;
         msg = ss.str();
         return;
@@ -270,7 +270,7 @@ void start_schema_change_job(MetaServiceCode& code, std::string& msg, std::strin
            << " instance_id=" << instance_id << " tablet_id=" << new_tablet_id
            << " key=" << hex(new_tablet_key) << " ret=" << ret;
         msg = ss.str();
-        code = ret == 1 ? MetaServiceCode::UNDEFINED_ERR : MetaServiceCode::KV_TXN_GET_ERR;
+        code = ret == 1 ? MetaServiceCode::TABLET_NOT_FOUND : MetaServiceCode::KV_TXN_GET_ERR;
         return;
     }
     if (!new_tablet_meta.ParseFromString(new_tablet_val)) {
@@ -524,8 +524,8 @@ void process_compaction_job(MetaServiceCode& code, std::string& msg, std::string
     INSTANCE_LOG(INFO) << "get tablet stats, tablet_id=" << tablet_id << " key=" << hex(stats_key)
                        << " ret=" << ret;
     if (ret != 0) {
-        code = ret == 1 ? MetaServiceCode::UNDEFINED_ERR : MetaServiceCode::KV_TXN_GET_ERR;
-        SS << (ret == 1 ? "internal error" : "get kv error") << " tablet_id=" << tablet_id
+        code = ret == 1 ? MetaServiceCode::TABLET_NOT_FOUND : MetaServiceCode::KV_TXN_GET_ERR;
+        SS << (ret == 1 ? "not found" : "get kv error") << " tablet_id=" << tablet_id
            << " key=" << hex(stats_key) << " ret=" << ret;
         msg = ss.str();
         return;
@@ -772,7 +772,7 @@ void process_schema_change_job(MetaServiceCode& code, std::string& msg, std::str
            << " instance_id=" << instance_id << " tablet_id=" << new_tablet_id
            << " key=" << hex(new_tablet_key) << " ret=" << ret;
         msg = ss.str();
-        code = ret == 1 ? MetaServiceCode::UNDEFINED_ERR : MetaServiceCode::KV_TXN_GET_ERR;
+        code = ret == 1 ? MetaServiceCode::TABLET_NOT_FOUND : MetaServiceCode::KV_TXN_GET_ERR;
         return;
     }
     if (!new_tablet_meta.ParseFromString(new_tablet_val)) {
@@ -941,8 +941,8 @@ void process_schema_change_job(MetaServiceCode& code, std::string& msg, std::str
     INSTANCE_LOG(INFO) << "get tablet stats, tablet_id=" << new_tablet_id
                        << " key=" << hex(stats_key) << " ret=" << ret;
     if (ret != 0) {
-        code = ret == 1 ? MetaServiceCode::UNDEFINED_ERR : MetaServiceCode::KV_TXN_GET_ERR;
-        SS << (ret == 1 ? "internal error" : "get kv error") << " tablet_id=" << new_tablet_id
+        code = ret == 1 ? MetaServiceCode::TABLET_NOT_FOUND : MetaServiceCode::KV_TXN_GET_ERR;
+        SS << (ret == 1 ? "not found" : "get kv error") << " tablet_id=" << new_tablet_id
            << " key=" << hex(stats_key) << " ret=" << ret;
         msg = ss.str();
         return;

@@ -106,6 +106,9 @@ Status CloudBaseCompaction::prepare_compact() {
     if (st.precise_code() == STALE_TABLET_CACHE) {
         // set last_sync_time to 0 to force sync tablet next time
         _tablet->set_last_sync_time(0);
+    } else if (st.is_not_found()) {
+        // tablet not found
+        cloud::tablet_mgr()->erase_tablet(_tablet->tablet_id());
     }
     return st;
 }
