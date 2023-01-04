@@ -1,12 +1,12 @@
 import groovy.json.JsonOutput
 import org.codehaus.groovy.runtime.IOGroovyMethods
 
-suite("test_recycler_index") {
+suite("test_recycler_inverted_index") {
     // create table
     def token = "greedisgood9999"
     def instanceId = context.config.instanceId;
     def cloudUniqueId = context.config.cloudUniqueId;
-    def tableName = 'test_recycler_index'
+    def tableName = 'test_recycler_inverted_index'
 
     sql """ DROP TABLE IF EXISTS ${tableName} FORCE"""
     sql """
@@ -48,14 +48,12 @@ suite("test_recycler_index") {
         DISTRIBUTED BY HASH(`lo_orderkey`) BUCKETS 4;
     """
 
-    // create indexes
-
     // load data
     def columns = """lo_orderkey,lo_linenumber,lo_custkey,lo_partkey,lo_suppkey,lo_orderdate,lo_orderpriority, 
                     lo_shippriority,lo_quantity,lo_extendedprice,lo_ordtotalprice,lo_discount, 
                     lo_revenue,lo_supplycost,lo_tax,lo_commitdate,lo_shipmode,lo_dummy"""
 
-    for (i = 0; i < 7; i++) {
+    for (int index = 0; index < 2; index++) {
         streamLoad {
             table tableName
 
@@ -69,7 +67,7 @@ suite("test_recycler_index") {
             set 'columns', columns
             // relate to ${DORIS_HOME}/regression-test/data/demo/streamload_input.csv.
             // also, you can stream load a http stream, e.g. http://xxx/some.csv
-            file """${context.sf1DataPath}/ssb/sf1/lineorder.tbl.split01.gz"""
+            file """${context.sf1DataPath}/ssb/sf0.1/lineorder.tbl.gz"""
 
             time 10000 // limit inflight 10s
 
@@ -88,7 +86,10 @@ suite("test_recycler_index") {
                 assertTrue(json.NumberLoadedRows > 0 && json.LoadBytes > 0)
             }
         }
+        logger.info("index:${index}")
     }
+
+    qt_sql """ select count(*) from ${tableName} """
 
     String[][] tabletInfoList = sql """ show tablets from ${tableName}; """
     logger.info("tabletInfoList:${tabletInfoList}")
