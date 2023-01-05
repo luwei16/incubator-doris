@@ -258,7 +258,7 @@ if [ ! -f ${DORIS_THIRDPARTY}/installed/lib/libic.a ] || [ ! -d $DORIS_THIRDPART
     rm -rf ${DORIS_THIRDPARTY}/installed/include/CLucene.h
     rm -rf ${DORIS_THIRDPARTY}/installed/include/CLucene
     rm -rf ${DORIS_THIRDPARTY}/installed/lib64/libclucene-*
-    ${DORIS_THIRDPARTY}/build-thirdparty.sh -j $PARALLEL -c 1
+    ${DORIS_THIRDPARTY}/build-thirdparty.sh -j $PARALLEL -d clucene
 else
     md5=`md5sum "$DORIS_THIRDPARTY/src/$CLUCENE_NAME"`
     if [ "$md5" != "$CLUCENE_MD5SUM  $DORIS_THIRDPARTY/src/$CLUCENE_NAME" ]; then
@@ -266,7 +266,7 @@ else
         rm -rf ${DORIS_THIRDPARTY}/installed/include/CLucene
         rm -rf ${DORIS_THIRDPARTY}/installed/lib64/libclucene-*
         rm -rf ${DORIS_THIRDPARTY}/src/$CLUCENE_NAME
-        ${DORIS_THIRDPARTY}/build-thirdparty.sh -j $PARALLEL -c 1
+        ${DORIS_THIRDPARTY}/build-thirdparty.sh -j $PARALLEL -d clucene
     fi
 fi
 
