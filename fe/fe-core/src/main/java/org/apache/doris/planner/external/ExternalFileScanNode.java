@@ -205,7 +205,7 @@ public class ExternalFileScanNode extends ExternalScanNode {
             backendPolicy.init();
         } else {
             setCloudCluster();
-            backendPolicy.init(cluster);
+            backendPolicy.cloudInit();
         }
         numNodes = backendPolicy.numBackends();
 

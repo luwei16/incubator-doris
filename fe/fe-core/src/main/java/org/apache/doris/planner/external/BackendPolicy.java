@@ -26,6 +26,7 @@ import org.apache.doris.resource.Tag;
 import org.apache.doris.system.Backend;
 import org.apache.doris.system.BeSelectionPolicy;
 
+import com.google.common.base.Strings;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 import org.apache.logging.log4j.LogManager;
@@ -66,8 +67,14 @@ public class BackendPolicy {
         }
     }
 
-    public void init(String cluster) throws UserException {
-        if (cluster == null || cluster.isEmpty()) {
+    public void cloudInit() throws UserException {
+        if (ConnectContext.get() == null) {
+            LOG.warn("connect context is null");
+            throw new UserException("connect context is null");
+        }
+
+        String cluster = ConnectContext.get().getCloudCluster();
+        if (Strings.isNullOrEmpty(cluster)) {
             LOG.warn("failed to get available be, clusterName: {}", cluster);
             throw new UserException("failed to get available be, clusterName: " + cluster);
         }
