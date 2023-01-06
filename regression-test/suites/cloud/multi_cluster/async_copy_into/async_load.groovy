@@ -156,6 +156,7 @@ suite("async_load") {
 
     sql "use @regression_cluster_name0"
     result  = sql "show clusters"
+    sql """ set enable_profile = true; """
 
     def before_cluster0_query_scan_rows = get_be_metric(ipList[0], httpPortList[0], "query_scan_rows");
     log.info("before_cluster0_query_scan_rows : ${before_cluster0_query_scan_rows}".toString())

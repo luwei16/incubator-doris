@@ -66,6 +66,24 @@ public class BackendPolicy {
         }
     }
 
+    public void init(String cluster) throws UserException {
+        if (cluster == null || cluster.isEmpty()) {
+            LOG.warn("failed to get available be, clusterName: {}", cluster);
+            throw new UserException("failed to get available be, clusterName: " + cluster);
+        }
+
+        List<Backend> clusterBes = Env.getCurrentSystemInfo().getBackendsByClusterName(cluster);
+        for (Backend be : clusterBes) {
+            if (be.isAlive()) {
+                backends.add(be);
+            }
+        }
+
+        if (backends.isEmpty()) {
+            throw new UserException("No available backends, cluster is: " + cluster);
+        }
+    }
+
     public Backend getNextBe() {
         Backend selectedBackend = backends.get(nextBe++);
         nextBe = nextBe % backends.size();

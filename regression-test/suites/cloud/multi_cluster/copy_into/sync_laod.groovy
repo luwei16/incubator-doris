@@ -66,6 +66,7 @@ suite("sync_load") {
 
     sql "use @regression_cluster_name1"
     result  = sql "show clusters"
+    sql """ set enable_profile = true; """
 
     def before_cluster0_load_rows = get_be_metric(ipList[0], httpPortList[0], "load_rows");
     log.info("before_cluster0_load_rows : ${before_cluster0_load_rows}".toString())

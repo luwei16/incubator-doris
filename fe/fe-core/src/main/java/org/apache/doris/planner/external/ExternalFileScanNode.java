@@ -32,6 +32,7 @@ import org.apache.doris.analysis.TupleDescriptor;
 import org.apache.doris.analysis.UserIdentity;
 import org.apache.doris.catalog.AggregateType;
 import org.apache.doris.catalog.Column;
+import org.apache.doris.catalog.Env;
 import org.apache.doris.catalog.FunctionGenTable;
 import org.apache.doris.catalog.FunctionSet;
 import org.apache.doris.catalog.PrimitiveType;
@@ -43,6 +44,7 @@ import org.apache.doris.common.Config;
 import org.apache.doris.common.UserException;
 import org.apache.doris.load.BrokerFileGroup;
 import org.apache.doris.planner.PlanNodeId;
+import org.apache.doris.qe.ConnectContext;
 import org.apache.doris.rewrite.ExprRewriter;
 import org.apache.doris.statistics.StatisticalType;
 import org.apache.doris.tablefunction.ExternalFileTableValuedFunction;
@@ -59,6 +61,7 @@ import org.apache.doris.thrift.TScanRangeLocations;
 import org.apache.doris.thrift.TUniqueId;
 
 import com.google.common.base.Preconditions;
+import com.google.common.base.Strings;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import org.apache.logging.log4j.LogManager;
@@ -125,6 +128,12 @@ public class ExternalFileScanNode extends ExternalScanNode {
     private long totalPartitionNum = 0;
     private long readPartitionNum = 0;
 
+    private String cluster;
+
+    private String qualifiedUser;
+
+    private boolean needClearContext = false;
+
     /**
      * External file scan node for:
      * 1. Query hms table
@@ -132,6 +141,12 @@ public class ExternalFileScanNode extends ExternalScanNode {
      */
     public ExternalFileScanNode(PlanNodeId id, TupleDescriptor desc) {
         super(id, desc, "EXTERNAL_FILE_SCAN_NODE", StatisticalType.FILE_SCAN_NODE);
+    }
+
+    public ExternalFileScanNode(PlanNodeId id, TupleDescriptor desc, String cluster, String qualifiedUser) {
+        this(id, desc);
+        this.cluster = cluster;
+        this.qualifiedUser = qualifiedUser;
     }
 
     // Only for broker load job.
@@ -186,10 +201,39 @@ public class ExternalFileScanNode extends ExternalScanNode {
                 throw new UserException("Unknown type: " + type);
         }
 
-        backendPolicy.init();
+        if (Config.cloud_unique_id.isEmpty()) {
+            backendPolicy.init();
+        } else {
+            setCloudCluster();
+            backendPolicy.init(cluster);
+        }
         numNodes = backendPolicy.numBackends();
 
         initParamCreateContexts(analyzer);
+    }
+
+    public boolean needClearContext() {
+        return needClearContext;
+    }
+
+    public void setCloudCluster() {
+        needClearContext = false;
+        if (!Strings.isNullOrEmpty(cluster)) {
+            if (ConnectContext.get() == null) {
+                LOG.info("ConnectContext is null, new context, and set cluster: {}", cluster);
+                ConnectContext ctx = new ConnectContext();
+                ctx.setThreadLocalInfo();
+                ctx.setCloudCluster(cluster);
+                needClearContext = true;
+            } else {
+                ConnectContext.get().setCloudCluster(cluster);
+            }
+            boolean exist = Env.getCurrentSystemInfo().getCloudClusterNames().contains(cluster);
+            if (!exist) {
+                LOG.warn("cloud cluster not exist clusterName {}", cluster);
+                cluster = null;
+            }
+        }
     }
 
     private void initHMSExternalTable(HMSExternalTable hmsTable) throws UserException {

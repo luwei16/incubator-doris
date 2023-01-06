@@ -178,7 +178,12 @@ public class LoadingTaskPlanner {
         ScanNode scanNode;
         boolean useNewScanNode = Config.enable_new_load_scan_node || useNewLoadScanNode;
         if (useNewScanNode) {
-            scanNode = new ExternalFileScanNode(new PlanNodeId(nextNodeId++), scanTupleDesc);
+            if (Config.cloud_unique_id.isEmpty()) {
+                scanNode = new ExternalFileScanNode(new PlanNodeId(nextNodeId++), scanTupleDesc);
+            } else {
+                scanNode = new ExternalFileScanNode(new PlanNodeId(nextNodeId++), scanTupleDesc,
+                                                    cluster, qualifiedUser);
+            }
             ((ExternalFileScanNode) scanNode).setLoadInfo(loadJobId, txnId, table, brokerDesc, fileGroups,
                     fileStatusesList, filesAdded, strictMode, loadParallelism, userInfo);
         } else {
@@ -214,9 +219,15 @@ public class LoadingTaskPlanner {
         } finally {
             // connectContext is a thread local variable, so you must claar
             // context to avoid it from containing old cluster information
-            if (!Config.cloud_unique_id.isEmpty() && scanNode instanceof BrokerScanNode) {
-                if (((BrokerScanNode) scanNode).needClearContext()) {
-                    ConnectContext.remove();
+            if (!Config.cloud_unique_id.isEmpty()) {
+                if (scanNode instanceof BrokerScanNode) {
+                    if (((BrokerScanNode) scanNode).needClearContext()) {
+                        ConnectContext.remove();
+                    }
+                } else if (scanNode instanceof ExternalFileScanNode) {
+                    if (((ExternalFileScanNode) scanNode).needClearContext()) {
+                        ConnectContext.remove();
+                    }
                 }
             }
         }

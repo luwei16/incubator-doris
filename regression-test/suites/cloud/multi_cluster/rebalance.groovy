@@ -121,6 +121,8 @@ suite("rebalance") {
                   "regression_cluster_name0", "regression_cluster_id0");
     sleep(120000)
 
+    sql """ use @regression_cluster_name0 """
+
     result = sql """ ADMIN SHOW REPLICA DISTRIBUTION FROM table100; """
     assertEquals(result.size(), 2);
 
