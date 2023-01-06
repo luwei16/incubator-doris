@@ -17,7 +17,7 @@ suite("smoke_test_copy_with_select","smoke") {
 
     def sql_prefix = """ copy into ${tableName} from ("""
     def sql_stage = """  from @${externalStageName}('${prefix}/customer.tbl.gz')"""
-    def sql_postfix = """) properties ('file.type' = 'null', 'file.compression' = 'gz', 'copy.async' = 'false');"""
+    def sql_postfix = """) properties ('file.type' = 'csv', 'file.compression' = 'gz', 'copy.async' = 'false');"""
 
     def sqls = [
             'select $1, $2, $3, $4, $5, $6, $7, $8 ' + sql_stage,
