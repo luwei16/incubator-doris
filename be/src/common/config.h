@@ -967,8 +967,8 @@ CONF_Validator(s3_client_http_scheme, [](const std::string& config) -> bool {
     return config == "http" || config == "https";
 });
 
-// temporary config for regression-test
-CONF_Bool(always_promote_cumulative_point, "false");
+// enable injection point in regression-test
+CONF_mBool(enable_injection_point, "false");
 
 } // namespace config
 

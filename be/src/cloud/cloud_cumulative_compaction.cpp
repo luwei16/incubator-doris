@@ -3,6 +3,7 @@
 #include "cloud/utils.h"
 #include "common/config.h"
 #include "common/logging.h"
+#include "common/sync_point.h"
 #include "gen_cpp/selectdb_cloud.pb.h"
 #include "util/defer_op.h"
 #include "util/trace.h"
@@ -331,6 +332,7 @@ void CloudCumulativeCompaction::update_cumulative_point(int64_t base_compaction_
 }
 
 void CloudCumulativeCompaction::do_lease() {
+    TEST_INJECTION_POINT_RETURN_WITH_VOID("CloudCumulativeCompaction::do_lease");
     selectdb::TabletJobInfoPB job;
     auto idx = job.mutable_idx();
     idx->set_tablet_id(_tablet->tablet_id());

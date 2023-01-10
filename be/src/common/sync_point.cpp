@@ -7,12 +7,13 @@
 #include <atomic>
 #include <condition_variable>
 #include <functional>
-#include <mutex>
 #include <random>
 #include <string>
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
+
+#include "util/lock.h"
 
 namespace doris {
 
@@ -20,14 +21,14 @@ struct SyncPoint::Data { // impl
 public:
   Data() : enabled_(false) { }
   virtual ~Data() {}
-  void process(const std::string& point, void* cb_arg);
+  void process(const std::string& point, std::vector<std::any>&& cb_args);
   void load_dependency(const std::vector<SyncPointPair>& dependencies);
   void load_dependency_and_markers(
                                 const std::vector<SyncPointPair>& dependencies,
                                 const std::vector<SyncPointPair>& markers);
   bool predecessors_all_cleared(const std::string& point);
   void set_call_back(const std::string& point,
-                    const std::function<void(void*)>& callback);
+                    const std::function<void(std::vector<std::any>&&)>& callback);
   void clear_call_back(const std::string& point);
   void clear_all_call_backs();
   void enable_processing();
@@ -39,11 +40,11 @@ private:
   // successor/predecessor map loaded from load_dependency
   std::unordered_map<std::string, std::vector<std::string>> successors_;
   std::unordered_map<std::string, std::vector<std::string>> predecessors_;
-  std::unordered_map<std::string, std::function<void(void*)>> callbacks_;
+  std::unordered_map<std::string, std::function<void(std::vector<std::any>&&)>> callbacks_;
   std::unordered_map<std::string, std::vector<std::string>> markers_;
   std::unordered_map<std::string, std::thread::id> marked_thread_id_;
-  std::mutex mutex_;
-  std::condition_variable cv_;
+  doris::Mutex mutex_;
+  doris::ConditionVariable cv_;
   // sync points that have been passed through
   std::unordered_set<std::string> cleared_points_;
   std::atomic<bool> enabled_;
@@ -69,7 +70,7 @@ void SyncPoint::load_dependency_and_markers(
   impl_->load_dependency_and_markers(dependencies, markers);
 }
 void SyncPoint::set_call_back(const std::string& point,
-                              const std::function<void(void*)>& callback) {
+                              const std::function<void(std::vector<std::any>&&)>& callback) {
   impl_->set_call_back(point, callback);
 }
 void SyncPoint::clear_call_back(const std::string& point) {
@@ -87,8 +88,8 @@ void SyncPoint::disable_processing() {
 void SyncPoint::clear_trace() {
   impl_->clear_trace();
 }
-void SyncPoint::process(const std::string& point, void* cb_arg) {
-  impl_->process(point, cb_arg);
+void SyncPoint::process(const std::string& point, std::vector<std::any>&& cb_arg) {
+  impl_->process(point, std::move(cb_arg));
 }
 
 // =============================================================================
@@ -97,7 +98,7 @@ void SyncPoint::process(const std::string& point, void* cb_arg) {
 
 void SyncPoint::Data::load_dependency(
                                const std::vector<SyncPointPair>& dependencies) {
-  std::lock_guard<std::mutex> lock(mutex_);
+  std::lock_guard lock(mutex_);
   successors_.clear();
   predecessors_.clear();
   cleared_points_.clear();
@@ -114,7 +115,7 @@ void SyncPoint::Data::load_dependency(
 void SyncPoint::Data::load_dependency_and_markers(
                                 const std::vector<SyncPointPair>& dependencies,
                                 const std::vector<SyncPointPair>& markers) {
-  std::lock_guard<std::mutex> lock(mutex_);
+  std::lock_guard lock(mutex_);
   successors_.clear();
   predecessors_.clear();
   cleared_points_.clear();
@@ -142,26 +143,20 @@ bool SyncPoint::Data::predecessors_all_cleared(const std::string& point) {
 }
 
 void SyncPoint::Data::clear_call_back(const std::string& point) {
-  std::unique_lock<std::mutex> lock(mutex_);
-  while (num_callbacks_running_ > 0) {
-    cv_.wait(lock);
-  }
+  std::unique_lock lock(mutex_);
   callbacks_.erase(point);
 }
 
 void SyncPoint::Data::clear_all_call_backs() {
-  std::unique_lock<std::mutex> lock(mutex_);
-  while (num_callbacks_running_ > 0) {
-    cv_.wait(lock);
-  }
+  std::unique_lock lock(mutex_);
   callbacks_.clear();
 }
 
-void SyncPoint::Data::process(const std::string& point, void* cb_arg) {
+void SyncPoint::Data::process(const std::string& point, std::vector<std::any>&& cb_arg) {
   if (!enabled_) {
     return;
   }
-  std::unique_lock<std::mutex> lock(mutex_);
+  std::unique_lock lock(mutex_);
   auto thread_id = std::this_thread::get_id();
   auto marker_iter = markers_.find(point);
   // if current sync point is a marker
@@ -184,8 +179,9 @@ void SyncPoint::Data::process(const std::string& point, void* cb_arg) {
   auto callback_pair = callbacks_.find(point);
   if (callback_pair != callbacks_.end()) {
     num_callbacks_running_++;
+    auto callback = callback_pair->second; 
     mutex_.unlock();
-    callback_pair->second(cb_arg);
+    callback(std::move(cb_arg));
     mutex_.lock();
     num_callbacks_running_--;
   }
@@ -201,13 +197,13 @@ bool SyncPoint::Data::disable_by_marker(const std::string& point,
 }
 
 void SyncPoint::Data::set_call_back(const std::string& point,
-                                  const std::function<void(void*)>& callback) {
-  std::lock_guard<std::mutex> lock(mutex_);
+                                  const std::function<void(std::vector<std::any>&&)>& callback) {
+  std::lock_guard lock(mutex_);
   callbacks_[point] = callback;
 }
 
 void SyncPoint::Data::clear_trace() {
-  std::lock_guard<std::mutex> lock(mutex_);
+  std::lock_guard lock(mutex_);
   cleared_points_.clear();
 }
 

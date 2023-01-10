@@ -13,10 +13,7 @@ DataDir* cloud_data_dir() {
 }
 
 MetaMgr* meta_mgr() {
-#ifdef BE_TEST
-    MetaMgr* ret;
-#endif
-    TEST_SYNC_POINT_RETURN_WITH_VALUE("meta_mgr", &ret);
+    TEST_SYNC_POINT_RETURN_WITH_VALUE("meta_mgr", (MetaMgr*)nullptr);
     return StorageEngine::instance()->meta_mgr();
 }
 

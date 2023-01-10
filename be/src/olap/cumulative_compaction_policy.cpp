@@ -354,14 +354,16 @@ int SizeBasedCumulativeCompactionPolicy::_level_size(const int64_t size) {
     return 0;
 }
 
-int64_t SizeBasedCumulativeCompactionPolicy::new_cumulative_point(Tablet* tablet,
-        const RowsetSharedPtr& output_rowset, Version& last_delete_version, int64_t last_cumulative_point) {
+int64_t SizeBasedCumulativeCompactionPolicy::new_cumulative_point(
+        Tablet* tablet, const RowsetSharedPtr& output_rowset, Version& last_delete_version,
+        int64_t last_cumulative_point) {
+    TEST_INJECTION_POINT_RETURN_WITH_VALUE("new_cumulative_point", int64_t(0), output_rowset.get(),
+                                           last_cumulative_point);
     // if rowsets have delete version, move to the last directly.
     // if rowsets have no delete version, check output_rowset total disk size satisfies promotion size.
     return (output_rowset->start_version() == last_cumulative_point &&
             (last_delete_version.first != -1 ||
-             output_rowset->data_disk_size() >= tablet->cumulative_promotion_size() ||
-             config::always_promote_cumulative_point))
+             output_rowset->data_disk_size() >= tablet->cumulative_promotion_size()))
                    ? output_rowset->end_version() + 1
                    : last_cumulative_point;
 }

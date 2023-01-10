@@ -17,7 +17,7 @@ public:
     ~MockMetaMgr() override = default;
 
     Status get_tablet_meta(int64_t tablet_id, TabletMetaSharedPtr* tablet_meta) override {
-        TEST_SYNC_POINT_CALLBACK("MockMetaMgr::get_tablet_meta", nullptr);
+        TEST_SYNC_POINT_CALLBACK("MockMetaMgr::get_tablet_meta", {});
         auto tablet_meta1 = std::make_shared<TabletMeta>();
         tablet_meta1->_tablet_id = tablet_id;
         *tablet_meta = std::move(tablet_meta1);
@@ -34,16 +34,15 @@ TEST(CloudTabletMgrTest, normal) {
 
     MockMetaMgr mock_meta_mgr;
     bool cache_missed;
-    {
-        sp->set_call_back("CloudTabletMgr::get_tablet",
-                          [&cache_missed](void* handle) { cache_missed = (handle == nullptr); });
 
-        sp->set_call_back("meta_mgr", [&mock_meta_mgr](void* ret) {
-            *reinterpret_cast<MetaMgr**>(ret) = &mock_meta_mgr;
-        });
-        sp->set_call_back("meta_mgr::pred",
-                          [](void* pred) { *reinterpret_cast<bool*>(pred) = true; });
-    }
+    sp->set_call_back("CloudTabletMgr::get_tablet", [&cache_missed](auto&& args) {
+        cache_missed = (try_any_cast<Cache::Handle*>(args[0]) == nullptr);
+    });
+    sp->set_call_back("meta_mgr", [&mock_meta_mgr](auto&& args) {
+        auto pair = try_any_cast<std::pair<MetaMgr*, bool>*>(args.back());
+        pair->second = true;
+        pair->first = &mock_meta_mgr;
+    });
 
     config::tablet_cache_capacity = 1;
     config::tablet_cache_shards = 1;
@@ -92,18 +91,17 @@ TEST(CloudTabletMgrTest, concurrent) {
 
     MockMetaMgr mock_meta_mgr;
     int load_tablet_cnt = 0;
-    {
-        sp->set_call_back("meta_mgr", [&mock_meta_mgr](void* ret) {
-            *reinterpret_cast<MetaMgr**>(ret) = &mock_meta_mgr;
-        });
-        sp->set_call_back("meta_mgr::pred",
-                          [](void* pred) { *reinterpret_cast<bool*>(pred) = true; });
 
-        sp->set_call_back("MockMetaMgr::get_tablet_meta", [&load_tablet_cnt](void* _) {
-            ++load_tablet_cnt;
-            std::this_thread::sleep_for(std::chrono::seconds(1));
-        });
-    }
+    sp->set_call_back("meta_mgr", [&mock_meta_mgr](auto&& args) {
+        auto pair = try_any_cast<std::pair<MetaMgr*, bool>*>(args.back());
+        pair->second = true;
+        pair->first = &mock_meta_mgr;
+    });
+    sp->set_call_back("MockMetaMgr::get_tablet_meta", [&load_tablet_cnt](auto&& args) {
+        ++load_tablet_cnt;
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+    });
+
     config::tablet_cache_capacity = 1;
     config::tablet_cache_shards = 1;
     CloudTabletMgr tablet_mgr;

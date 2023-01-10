@@ -19,6 +19,7 @@
 
 #include <string>
 
+#include "common/sync_point.h"
 #include "olap/rowset/rowset.h"
 #include "olap/rowset/rowset_meta.h"
 #include "olap/tablet.h"
@@ -124,7 +125,8 @@ public:
     ~SizeBasedCumulativeCompactionPolicy() {}
 
     // CLOUD_MODE
-    int64_t new_cumulative_point(Tablet* tablet, const RowsetSharedPtr& output_rowset, Version& last_delete_version,
+    int64_t new_cumulative_point(Tablet* tablet, const RowsetSharedPtr& output_rowset,
+                                 Version& last_delete_version,
                                  int64_t last_cumulative_point) override;
 
     /// SizeBased cumulative compaction policy implements calculate cumulative point function.

@@ -21,6 +21,7 @@
 
 #include "cloud/utils.h"
 #include "common/status.h"
+#include "common/sync_point.h"
 #include "gutil/strings/substitute.h"
 #include "olap/rowset/rowset.h"
 #include "olap/rowset/rowset_meta.h"
@@ -110,6 +111,7 @@ Status Compaction::quick_rowsets_compact() {
 
 Status Compaction::do_compaction(int64_t permits) {
     TRACE("start to do compaction");
+    TEST_INJECTION_POINT_RETURN_WITH_VALUE("Compaction::do_compaction", Status());
     _tablet->data_dir()->disks_compaction_score_increment(permits);
     _tablet->data_dir()->disks_compaction_num_increment(1);
     Status st = do_compaction_impl(permits);

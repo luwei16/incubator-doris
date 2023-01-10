@@ -56,4 +56,5 @@ add_library(Webserver STATIC
   action/check_tablet_segment_action.cpp
   action/version_action.cpp
   action/pad_segment_action.cpp
+  action/injection_point_action.cpp
 )

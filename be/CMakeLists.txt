@@ -518,6 +518,10 @@ if (CLOUD_MODE)
     set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -DCLOUD_MODE")
 endif()
 
+if (ENABLE_INJECTION_POINT)
+    set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -DENABLE_INJECTION_POINT")
+endif()
+
 # Enable memory tracker, which allows BE to limit the memory of tasks such as query, load,
 # and compaction,and observe the memory of BE through be_ip:http_port/MemTracker.
 # Adding the option `USE_MEM_TRACKER=OFF sh build.sh` when compiling can turn off the memory tracker,

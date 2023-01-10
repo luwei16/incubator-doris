@@ -3,26 +3,52 @@ import org.codehaus.groovy.runtime.IOGroovyMethods
 suite("test_compaction_with_alter_table_column") {
     def tableName = "test_compaction_with_alter_table_column"
 
-    try {
-        //BackendId,Cluster,IP,HeartbeatPort,BePort,HttpPort,BrpcPort,LastStartTime,LastHeartbeat,Alive,SystemDecommissioned,ClusterDecommissioned,TabletNum,DataUsedCapacity,AvailCapacity,TotalCapacity,UsedPct,MaxDiskUsedPct,RemoteUsedCapacity,Tag,ErrMsg,Version,Status
-        String[][] backends = sql """ show backends; """
-        assertTrue(backends.size() > 0)
-        def backendId_to_backendIP = [:]
-        def backendId_to_backendHttpPort = [:]
-        def cluster_to_backendId = [:]
-        for (String[] backend in backends) {
-            backendId_to_backendIP.put(backend[0], backend[2])
-            backendId_to_backendHttpPort.put(backend[0], backend[5])
-            def tagJson = parseJson(backend[19])
-            if (!cluster_to_backendId.containsKey(tagJson.cloud_cluster_name)) {
-                cluster_to_backendId.put(tagJson.cloud_cluster_name, backend[0])
-            }
+    //BackendId,Cluster,IP,HeartbeatPort,BePort,HttpPort,BrpcPort,LastStartTime,LastHeartbeat,Alive,SystemDecommissioned,ClusterDecommissioned,TabletNum,DataUsedCapacity,AvailCapacity,TotalCapacity,UsedPct,MaxDiskUsedPct,RemoteUsedCapacity,Tag,ErrMsg,Version,Status
+    String[][] backends = sql """ show backends; """
+    assertTrue(backends.size() > 0)
+    def backendId_to_backendIP = [:]
+    def backendId_to_backendHttpPort = [:]
+    def cluster_to_backendId = [:]
+    for (String[] backend in backends) {
+        backendId_to_backendIP.put(backend[0], backend[2])
+        backendId_to_backendHttpPort.put(backend[0], backend[5])
+        def tagJson = parseJson(backend[19])
+        if (!cluster_to_backendId.containsKey(tagJson.cloud_cluster_name)) {
+            cluster_to_backendId.put(tagJson.cloud_cluster_name, backend[0])
         }
-        assertTrue(cluster_to_backendId.size() >= 2)
-        def cluster0 = cluster_to_backendId.keySet()[0]
-        def cluster1 = cluster_to_backendId.keySet()[1]
-        def backend_id0 = cluster_to_backendId.get(cluster0)
-        def backend_id1 = cluster_to_backendId.get(cluster1)
+    }
+    assertTrue(cluster_to_backendId.size() >= 2)
+    def cluster0 = cluster_to_backendId.keySet()[0]
+    def cluster1 = cluster_to_backendId.keySet()[1]
+    def backend_id0 = cluster_to_backendId.get(cluster0)
+    def backend_id1 = cluster_to_backendId.get(cluster1)
+    
+    def updateBeConf = { backend_ip, backend_http_port, key, value ->
+        String command = "curl -X POST http://${backend_ip}:${backend_http_port}/api/update_config?${key}=${value}"
+        logger.info(command)
+        process = command.execute()
+        code = process.waitFor()
+        assertEquals(code, 0)
+    }
+    def injectionPoint = { backend_ip, backend_http_port, args ->
+        String command = "curl -X GET http://${backend_ip}:${backend_http_port}/api/injection_point/${args}"
+        logger.info(command)
+        process = command.execute()
+        code = process.waitFor()
+        assertEquals(0, code)
+        out = process.getText()
+        assertEquals("OK", out)
+    }
+
+    try {
+        updateBeConf(backendId_to_backendIP.get(backend_id0), backendId_to_backendHttpPort.get(backend_id0),
+            "disable_auto_compaction", "true");
+        updateBeConf(backendId_to_backendIP.get(backend_id1), backendId_to_backendHttpPort.get(backend_id1),
+            "disable_auto_compaction", "true");
+        injectionPoint(backendId_to_backendIP.get(backend_id0), backendId_to_backendHttpPort.get(backend_id0),
+            "apply_suite/test_compaction");
+        injectionPoint(backendId_to_backendIP.get(backend_id1), backendId_to_backendHttpPort.get(backend_id1),
+            "apply_suite/test_compaction");
 
         sql """ DROP TABLE IF EXISTS ${tableName}; """
         sql """
@@ -33,15 +59,7 @@ suite("test_compaction_with_alter_table_column") {
             ) ENGINE=OLAP
             AGGREGATE KEY(`id`, `name`)
             COMMENT 'OLAP'
-            DISTRIBUTED BY HASH(`id`) BUCKETS 1
-            PROPERTIES (
-                "replication_allocation" = "tag.location.default: 1",
-                "in_memory" = "false",
-                "persistent" = "false",
-                "storage_format" = "V2",
-                "light_schema_change" = "true",
-                "disable_auto_compaction" = "true"
-            );
+            DISTRIBUTED BY HASH(`id`) BUCKETS 1;
         """
 
         //TabletId,ReplicaId,BackendId,SchemaHash,Version,LstSuccessVersion,LstFailedVersion,LstFailedTime,LocalDataSize,RemoteDataSize,RowCount,State,LstConsistencyCheckTime,CheckVersion,VersionCount,PathHash,MetaUrl,CompactionStatus
@@ -124,7 +142,7 @@ suite("test_compaction_with_alter_table_column") {
         }
 
         // cluster0 do base compaction
-        sql """ use @${cluster0}; """
+        sql """ use @`${cluster0}`; """
         sql """ INSERT INTO ${tableName} VALUES (1, "a", 100); """
         sql """ INSERT INTO ${tableName} VALUES (1, "a", 100); """
         sql """ INSERT INTO ${tableName} VALUES (1, "a", 100); """
@@ -185,5 +203,13 @@ suite("test_compaction_with_alter_table_column") {
 
     } finally {
         try_sql("DROP TABLE IF EXISTS ${tableName}")
+        injectionPoint(backendId_to_backendIP.get(backend_id0), backendId_to_backendHttpPort.get(backend_id0),
+            "clear/all");
+        injectionPoint(backendId_to_backendIP.get(backend_id1), backendId_to_backendHttpPort.get(backend_id1),
+            "clear/all");
+        updateBeConf(backendId_to_backendIP.get(backend_id0), backendId_to_backendHttpPort.get(backend_id0),
+            "disable_auto_compaction", "false");
+        updateBeConf(backendId_to_backendIP.get(backend_id1), backendId_to_backendHttpPort.get(backend_id1),
+            "disable_auto_compaction", "false");
     }    
 }

@@ -47,6 +47,11 @@
 #include "runtime/load_path_mgr.h"
 #include "util/doris_metrics.h"
 
+#ifdef ENABLE_INJECTION_POINT
+#include "common/sync_point.h"
+#include "http/action/injection_point_action.h"
+#endif
+
 namespace doris {
 
 HttpService::HttpService(ExecEnv* env, int port, int num_threads)
@@ -247,6 +252,14 @@ Status HttpService::cloud_start() {
     ResetRPCChannelAction* reset_rpc_channel_action = _pool.add(new ResetRPCChannelAction(_env));
     _ev_http_server->register_handler(HttpMethod::GET, "/api/reset_rpc_channel/{endpoints}",
                                       reset_rpc_channel_action);
+
+#ifdef ENABLE_INJECTION_POINT
+    InjectionPointAction::register_suites();
+    SyncPoint::get_instance()->enable_processing();
+    InjectionPointAction* injection_point_action = _pool.add(new InjectionPointAction);
+    _ev_http_server->register_handler(HttpMethod::GET, "/api/injection_point/{op}/{name}",
+                                      injection_point_action);
+#endif
 
     // data repair actions
     PadSegmentAction* pad_segment_action = _pool.add(new PadSegmentAction);
