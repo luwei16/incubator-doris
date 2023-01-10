@@ -502,6 +502,10 @@ public class DataDescription {
         return fileFormat;
     }
 
+    public void setCompressType(TFileCompressType compressType) {
+        this.compressType = compressType;
+    }
+
     public TFileCompressType getCompressType() {
         return compressType;
     }

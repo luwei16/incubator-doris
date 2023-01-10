@@ -22,6 +22,7 @@
 #include <rapidjson/stringbuffer.h>
 #include <rapidjson/writer.h>
 
+#include "exec/decompressor.h"
 #include "vec/exec/format/generic_reader.h"
 namespace doris {
 
@@ -52,6 +53,7 @@ public:
                              std::vector<TypeDescriptor>* col_types) override;
 
 private:
+    Status _create_decompressor();
     Status _get_range_params();
     Status _open_file_reader();
     Status _open_line_reader();
@@ -110,6 +112,7 @@ private:
     std::shared_ptr<FileReader> _file_reader_s;
     FileReader* _real_file_reader;
     std::unique_ptr<LineReader> _line_reader;
+    std::unique_ptr<Decompressor> _decompressor;
     bool _reader_eof;
 
     // When we fetch range doesn't start from 0 will always skip the first line
@@ -144,6 +147,8 @@ private:
     std::unordered_map<std::string, int> _name_map;
 
     bool* _scanner_eof;
+    TFileFormatType::type _file_format_type;
+    TFileCompressType::type _file_compress_type;
 
     RuntimeProfile::Counter* _bytes_read_counter;
     RuntimeProfile::Counter* _read_timer;

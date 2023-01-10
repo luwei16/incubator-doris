@@ -2,7 +2,7 @@ import org.codehaus.groovy.runtime.IOGroovyMethods
 
 suite("test_internal_stage") {
     // Internal and external stage cross use
-    def tableNamExternal = "customer_external_stage"
+    def tableNamExternal = "customer_internal_stage"
     def externalStageName = "internal_external_stage_cross_use"
     try {
         sql """ DROP TABLE IF EXISTS ${tableNamExternal}; """
@@ -110,12 +110,10 @@ suite("test_internal_stage") {
         qt_sql " SELECT COUNT(*) FROM ${tableName}; "
 
         // copy with invalid file
-        // line 5: str cast to int
+        // line 5: str cast to int, 'C_ACCTBAL' is NULL in ${tableName}, NOT NULL in ${tableName2}
         // line 6: empty str
         // line 7: add a | in the end
         // line 8: add two | in the end
-        // line 9: lack one column
-        // line 10:  lack two columns
         fileName = "internal_customer_partial_error.csv"
         filePath = "${context.config.dataPath}/cloud/copy_into/" + fileName
         uploadFile(fileName, filePath)

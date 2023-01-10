@@ -178,6 +178,10 @@ public class CopyProperties {
         return properties.get(addKeyPrefix(TYPE));
     }
 
+    public String getCompression() {
+        return properties.get(addKeyPrefix(COMPRESSION));
+    }
+
     public String getColumnSeparator() {
         return properties.get(addKeyPrefix(COLUMN_SEPARATOR));
     }

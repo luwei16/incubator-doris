@@ -31,6 +31,7 @@ import org.apache.doris.mysql.privilege.PrivPredicate;
 import org.apache.doris.qe.ConnectContext;
 import org.apache.doris.qe.SessionVariable;
 import org.apache.doris.qe.ShowResultSetMetaData;
+import org.apache.doris.thrift.TFileCompressType;
 
 import com.google.common.collect.Lists;
 import com.selectdb.cloud.proto.SelectdbCloud.ObjectStoreInfoPB;
@@ -174,6 +175,7 @@ public class CopyStmt extends DdlStmt {
                 copyFromParam.getFileColumns(), separator, fileFormatStr, null, false,
                 copyFromParam.getColumnMappingList(), copyFromParam.getFileFilterExpr(), null, MergeType.APPEND, null,
                 null, dataDescProperties);
+        dataDescription.setCompressType(parseCompressType(copyIntoProperties.getCompression()));
         // analyze data description
         if (checkAuth) {
             dataDescription.analyze(db);
@@ -280,5 +282,22 @@ public class CopyStmt extends DdlStmt {
 
     public Map<String, String> getOptHints() {
         return optHints;
+    }
+
+    private TFileCompressType parseCompressType(String compress) {
+        if (StringUtils.isEmpty(compress)) {
+            return TFileCompressType.PLAIN;
+        } else if (compress.equalsIgnoreCase("gz")) {
+            return TFileCompressType.GZ;
+        } else if (compress.equalsIgnoreCase("bz2")) {
+            return TFileCompressType.BZ2;
+        } else if (compress.equalsIgnoreCase("lz4")) {
+            return TFileCompressType.LZ4FRAME;
+        } else if (compress.equalsIgnoreCase("lzo")) {
+            return TFileCompressType.LZO;
+        } else if (compress.equalsIgnoreCase("deflate")) {
+            return TFileCompressType.DEFLATE;
+        }
+        return TFileCompressType.UNKNOWN;
     }
 }

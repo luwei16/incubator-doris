@@ -47,7 +47,7 @@ suite("test_external_stage") {
         qt_sql " SELECT COUNT(*) FROM ${tableName}; "
 
         // copy into with force
-        result = sql " copy into ${tableName} from @${externalStageName}('${prefix}/customer.csv.gz') properties ('copy.async' = 'false', 'copy.force'='true'); "
+        result = sql " copy into ${tableName} from @${externalStageName}('${prefix}/customer.csv.gz') properties ('file.type' = 'csv', 'file.compression' = 'gz', 'copy.async' = 'false', 'copy.force'='true'); "
         logger.info("copy result: " + result)
         assertTrue(result.size() == 1)
         assertTrue(result[0].size() == 8)
