@@ -78,11 +78,8 @@ suite("test_select_stddev_variance_window") {
     }
     // Not Vectorized
     sql """ set enable_vectorized_engine = true """
-<<<<<<< HEAD
 
     sql "sync"
-=======
->>>>>>> selectdb/selectdb-cloud-release-2.0
 
     qt_select_default  "select k1, stddev_pop(k2) over (partition by k6 order by k1 rows between 3 preceding and unbounded following) from  ${tableName} order by k1;"
     qt_select_default  "select k1, stddev_pop(k2) over (partition by k6 order by k1 rows between 3 preceding and 1 preceding) from   ${tableName} order by k1;"

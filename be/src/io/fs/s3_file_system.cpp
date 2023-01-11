@@ -39,7 +39,6 @@
 #include "io/fs/remote_file_system.h"
 #include "io/fs/s3_file_reader.h"
 #include "io/fs/s3_file_writer.h"
-<<<<<<< HEAD
 #include "olap/olap_common.h"
 #include "util/async_io.h"
 #include "util/string_util.h"

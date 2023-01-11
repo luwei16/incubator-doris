@@ -22,14 +22,10 @@ Expect: varchar(32)
 Type before bug fix: varchar(*)
 */
  suite("test_view_varchar_length") {
-<<<<<<< HEAD
      def tableName = "t_view_varchar_length";
      def viewName = "v_test_view_varchar_length";
 
      sql """ DROP TABLE IF EXISTS ${tableName} """
-=======
-     sql """ DROP TABLE IF EXISTS t_test_view_varchar_length """
->>>>>>> selectdb/selectdb-cloud-release-2.0
      sql """
          CREATE TABLE IF NOT EXISTS ${tableName} (
              `id` int,
