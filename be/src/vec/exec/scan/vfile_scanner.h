@@ -25,6 +25,7 @@
 #include "runtime/tuple.h"
 #include "vec/exec/format/generic_reader.h"
 #include "vec/exec/scan/vscanner.h"
+#include "vec/common/object_util.h"
 
 namespace doris::vectorized {
 
@@ -118,6 +119,9 @@ protected:
     Block _src_block;
 
     VExprContext* _push_down_expr = nullptr;
+    bool _is_dynamic_schema = false;
+    // for tracing dynamic schema
+    std::unique_ptr<vectorized::object_util::FullBaseSchemaView> _full_base_schema_view;
 
 private:
     RuntimeProfile::Counter* _get_block_timer = nullptr;
@@ -136,6 +140,7 @@ private:
     Status _pre_filter_src_block();
     Status _convert_to_output_block(Block* block);
     Status _generate_fill_columns();
+    Status _handle_dynamic_block(Block* block);
 
     void _reset_counter() {
         _counter.num_rows_unselected = 0;

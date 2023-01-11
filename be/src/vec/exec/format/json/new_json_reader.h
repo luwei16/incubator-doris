@@ -24,6 +24,12 @@
 
 #include "exec/decompressor.h"
 #include "vec/exec/format/generic_reader.h"
+
+// dynamic table
+#include "vec/common/object_util.h"
+#include "vec/json/json_parser.h"
+#include "vec/json/parse2column.h"
+
 namespace doris {
 
 class FileReader;
@@ -34,12 +40,16 @@ class SlotDescriptor;
 namespace vectorized {
 
 struct ScannerCounter;
+template <typename ParserImpl>
+class JSONDataParser;
+class SimdJSONParser;
 
 class NewJsonReader : public GenericReader {
 public:
     NewJsonReader(RuntimeState* state, RuntimeProfile* profile, ScannerCounter* counter,
                   const TFileScanRangeParams& params, const TFileRangeDesc& range,
-                  const std::vector<SlotDescriptor*>& file_slot_descs, bool* scanner_eof);
+                  const std::vector<SlotDescriptor*>& file_slot_descs, bool* scanner_eof,
+                  bool is_dynamic_schema = false);
 
     NewJsonReader(RuntimeProfile* profile, const TFileScanRangeParams& params,
                   const TFileRangeDesc& range, const std::vector<SlotDescriptor*>& file_slot_descs);
@@ -66,6 +76,10 @@ private:
     Status _vhandle_simple_json(std::vector<MutableColumnPtr>& columns,
                                 const std::vector<SlotDescriptor*>& slot_descs, bool* is_empty_row,
                                 bool* eof);
+
+    Status _vhandle_dynamic_json(std::vector<MutableColumnPtr>& columns,
+                                 const std::vector<SlotDescriptor*>& slot_descs, bool* is_empty_row,
+                                 bool* eof);
 
     Status _vhandle_flat_array_complex_json(std::vector<MutableColumnPtr>& columns,
                                             const std::vector<SlotDescriptor*>& slot_descs,
@@ -153,6 +167,9 @@ private:
     RuntimeProfile::Counter* _bytes_read_counter;
     RuntimeProfile::Counter* _read_timer;
     RuntimeProfile::Counter* _file_read_timer;
+
+    bool _is_dynamic_schema = false;
+    std::unique_ptr<vectorized::JSONDataParser<vectorized::SimdJSONParser>> _json_parser;
 };
 } // namespace vectorized
 } // namespace doris
