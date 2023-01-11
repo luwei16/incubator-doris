@@ -314,7 +314,7 @@ suite("test_stream_load", "p0") {
     sql """truncate table ${tableName3}"""
     sql """sync"""
 
-    // load part of columns
+    // load part of columns. NOTE: Load result is different from Doris
     streamLoad {
         table "${tableName3}"
 
@@ -330,10 +330,12 @@ suite("test_stream_load", "p0") {
             }
             log.info("Stream load result: ${result}".toString())
             def json = parseJson(result)
-            assertEquals("fail", json.Status.toLowerCase())
-            assertEquals(0, json.NumberLoadedRows)
+            assertEquals("success", json.Status.toLowerCase())
+            assertEquals(2500, json.NumberLoadedRows)
         }
     }
+    sql """truncate table ${tableName3}"""
+    sql """sync"""
 
     // load with skip 2 columns, with gzip
     streamLoad {
