@@ -1048,6 +1048,11 @@ public class PaloAuth implements Writable {
             writeUnlock();
         }
 
+        if (Config.cloud_unique_id.isEmpty()) {
+            LOG.info("run in non-cloud mode, does not need notify Ms");
+            return;
+        }
+
         String reason = String.format("drop user notify to meta service, userName [%s], userId [%s]",
                 mysqlUserName, toDropMysqlUserId);
         LOG.info(reason);
