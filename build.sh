@@ -246,10 +246,10 @@ if [[ ! -f "${DORIS_THIRDPARTY}/installed/lib/libbacktrace.a" ]]; then
 fi
 # For soft upgrade, to minimize complaints of build issues, enable it by default in the future
 if [[ -z "${ENABLE_INCREMENTAL_THIRD_PARTY_BUILD}" ]]; then
-    ENABLE_INCREMENTAL_THIRD_PARTY_BUILD="OFF"
+    ENABLE_INCREMENTAL_THIRD_PARTY_BUILD="ON"
 fi
 if [[ "${ENABLE_INCREMENTAL_THIRD_PARTY_BUILD}" == "ON" ]]; then
-    "${DORIS_THIRDPARTY}/build-thirdparty.sh" -j "${PARALLEL}"
+    "${DORIS_THIRDPARTY}/build-thirdparty.sh" -i -j "${PARALLEL}"
 fi
 
 # check clucene md5, if it changes, rebuild

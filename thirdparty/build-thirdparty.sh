@@ -58,7 +58,7 @@ Usage: $0 <options>
 
 if ! OPTS="$(getopt \
     -n "$0" \
-    -o 'hj:d:a' \
+    -o 'hj:d:ai' \
     -l 'help' \
     -l 'clean' \
     -- "$@")"; then
@@ -75,8 +75,9 @@ else
     PARALLEL="$(($(nproc) / 4 + 1))"
 fi
 
-BUILD_ALL=0
+BUILD_ALL=1
 DEPS=""
+INCREMENTAL_BUILD=0
 
 if [[ "$#" -ne 1 ]]; then
     while true; do
@@ -87,10 +88,16 @@ if [[ "$#" -ne 1 ]]; then
             ;;
         -d)
             DEPS="$2"
+            BUILD_ALL=0
             shift 2
             ;;
         -a)
             BUILD_ALL=1
+            shift
+            ;;
+        -i)
+            INCREMENTAL_BUILD=1
+            BUILD_ALL=0
             shift
             ;;
         -h)
@@ -122,6 +129,7 @@ echo "Get params:
     PARALLEL            -- ${PARALLEL}
     DEPS                -- ${DEPS}
     BUILD_ALL           -- ${BUILD_ALL}
+    INCREMENTAL_BUILD   -- ${INCREMENTAL_BUILD}
     CLEAN               -- ${CLEAN}
 "
 
@@ -152,7 +160,7 @@ else
 fi
 
 # Incremental build, remove existing src folder if needed
-if [[ -f version.txt && ${BUILD_ALL} -eq 0 && "${DEPS}" = "" ]]; then
+if [[ -f version.txt && ${INCREMENTAL_BUILD} -eq 1 ]]; then
     NEED_REMOVE=0
     if [[ ${INSTALLED_VERSION} != "x" ]]; then
         VER_DIFF=$((CUR_VERSION - INSTALLED_VERSION))
@@ -179,11 +187,20 @@ if [[ -f version.txt && ${BUILD_ALL} -eq 0 && "${DEPS}" = "" ]]; then
     fi
 fi
 
-if [[ "${CLEAN}" -eq 1 ]] && [[ -d "${TP_SOURCE_DIR}" ]]; then
+if [[ "${CLEAN}" -eq 1 ]] && [[ -d "${TP_SOURCE_DIR}" ]] && [[ ${BUILD_ALL} -eq 1 ]]; then
     echo 'Clean the extracted data ...'
     find "${TP_SOURCE_DIR}" -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} \;
     echo 'Success!'
+elif [[ "${CLEAN}" -eq 1 ]] && [[ "${DEPS}" != "" ]]; then
+    for i in $(echo "${DEPS}"); do
+        echo 'Clean the extracted data: ${i}'
+        folder=$(echo "${i}" | sed -r 's/[-_]/*/')
+        set -x
+        find "${TP_SOURCE_DIR}" -maxdepth 1 -type d -iname "*${folder}*" -exec rm -rf {} \;
+        set +x
+    done
 fi
+
 
 # Download thirdparties.
 ${TP_DIR}/download-clucene.sh
@@ -1625,7 +1642,7 @@ fi
 
 ####################################[ Build ]###################################
 
-# Choose what to compile
+# Choose what to build
 if [[ -d ${TP_INSTALL_DIR} && "${DEPS}" != "" ]]; then
     for i in $(echo "${DEPS}"); do
         "build_${i}"
@@ -1640,7 +1657,7 @@ if [[ "${CUR_VERSION}" == "${INSTALLED_VERSION}" && ${BUILD_ALL} -eq 0 ]]; then
 fi
 
 # Incremental build
-if [[ -f version.txt && ${BUILD_ALL} -eq 0 ]]; then
+if [[ -f version.txt && ${INCREMENTAL_BUILD} -eq 1 ]]; then
     if [[ "${INSTALLED_VERSION}" -gt "${CUR_VERSION}" ]]; then
         echo "Installed dependencies are up to date, if you want to downgrade, use -a or -d option to rebuild"
         exit
