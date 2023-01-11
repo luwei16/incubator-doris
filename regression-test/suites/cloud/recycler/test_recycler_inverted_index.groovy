@@ -102,12 +102,12 @@ suite("test_recycler_inverted_index") {
     // drop table
     sql """ DROP TABLE IF EXISTS ${tableName} FORCE"""
 
-    int retry = 60
+    int retry = 20
     boolean success = false
     // recycle data
     do {
         triggerRecycle(token, instanceId)
-        Thread.sleep(10000) // 1min
+        Thread.sleep(10000)
         if (checkRecycleTable(token, instanceId, cloudUniqueId, tableName, tabletIdSet)) {
             success = true
             break
