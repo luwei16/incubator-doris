@@ -1856,7 +1856,7 @@ public class Config extends ConfigBase {
     public static int statement_submitter_threads_num = 64;
 
     @ConfField(mutable = false)
-    public static int topn_two_phase_limit_threshold = 4096;
+    public static int topn_two_phase_limit_threshold = 0;
 
     @ConfField(mutable = false)
     public static int statistic_job_scheduler_execution_interval_ms = 60 * 1000;
