@@ -16,6 +16,7 @@
 // under the License.
 
 #include "scanner_scheduler.h"
+#include <cstddef>
 
 #include "common/config.h"
 #include "util/async_io.h"
@@ -25,6 +26,7 @@
 #include "util/thread.h"
 #include "util/threadpool.h"
 #include "vec/core/block.h"
+#include "vec/exec/scan/new_olap_scanner.h"
 #include "vec/exec/scan/vscanner.h"
 #include "vec/exprs/vexpr.h"
 #include "vfile_scanner.h"
@@ -140,54 +142,60 @@ void ScannerScheduler::_schedule_scanners(ScannerContext* ctx) {
     }
 
     ctx->update_num_running(this_run.size(), -1);
-#if !defined(USE_BTHREAD_SCANNER)
-    // Submit scanners to thread pool
-    // TODO(cmy): How to handle this "nice"?
     int nice = 1;
     auto iter = this_run.begin();
-    ctx->incr_num_scanner_scheduling(this_run.size());
-    if (ctx->thread_token != nullptr) {
-        while (iter != this_run.end()) {
-            (*iter)->start_wait_worker_timer();
-            auto s = ctx->thread_token->submit_func(
-                    [this, scanner = *iter, ctx] { this->_scanner_scan(this, ctx, scanner); });
-            if (s.ok()) {
-                this_run.erase(iter++);
-            } else {
-                ctx->set_status_on_error(s);
-                break;
+    auto sumbit_to_thread_pool = [&] {
+        // Submit scanners to thread pool
+        // TODO(cmy): How to handle this "nice"?
+        ctx->incr_num_scanner_scheduling(this_run.size());
+        if (ctx->thread_token != nullptr) {
+            while (iter != this_run.end()) {
+                (*iter)->start_wait_worker_timer();
+                auto s = ctx->thread_token->submit_func(
+                        [this, scanner = *iter, ctx] { this->_scanner_scan(this, ctx, scanner); });
+                if (s.ok()) {
+                    this_run.erase(iter++);
+                } else {
+                    ctx->set_status_on_error(s);
+                    break;
+                }
             }
-        }
-    } else {
-        while (iter != this_run.end()) {
-            PriorityThreadPool::Task task;
-            task.work_function = [this, scanner = *iter, ctx] {
-                this->_scanner_scan(this, ctx, scanner);
-            };
-            task.priority = nice;
-            task.queue_id = (*iter)->queue_id();
-            (*iter)->start_wait_worker_timer();
+        } else {
+            while (iter != this_run.end()) {
+                PriorityThreadPool::Task task;
+                task.work_function = [this, scanner = *iter, ctx] {
+                    this->_scanner_scan(this, ctx, scanner);
+                };
+                task.priority = nice;
+                task.queue_id = (*iter)->queue_id();
+                (*iter)->start_wait_worker_timer();
 
-            TabletStorageType type = (*iter)->get_storage_type();
-            bool ret = false;
-            if (type == TabletStorageType::STORAGE_TYPE_LOCAL) {
-                ret = _local_scan_thread_pool->offer(task);
-            } else {
-                ret = _remote_scan_thread_pool->offer(task);
-            }
-            if (ret) {
-                this_run.erase(iter++);
-            } else {
-                ctx->set_status_on_error(
-                        Status::InternalError("failed to submit scanner to scanner pool"));
-                break;
+                TabletStorageType type = (*iter)->get_storage_type();
+                bool ret = false;
+                if (type == TabletStorageType::STORAGE_TYPE_LOCAL) {
+                    ret = _local_scan_thread_pool->offer(task);
+                } else {
+                    ret = _remote_scan_thread_pool->offer(task);
+                }
+                if (ret) {
+                    this_run.erase(iter++);
+                } else {
+                    ctx->set_status_on_error(
+                            Status::InternalError("failed to submit scanner to scanner pool"));
+                    break;
+                }
             }
         }
-    }
+    };
+#if !defined(USE_BTHREAD_SCANNER)
+    sumbit_to_thread_pool();
 #else
-    int nice = 1;
+    // Only OlapScanner uses bthread scanner
+    // Todo: Make other scanners support bthread scanner
+    if (dynamic_cast<NewOlapScanner*>(*iter) == nullptr) {
+        return sumbit_to_thread_pool();
+    }
     auto cur_span = opentelemetry::trace::Tracer::GetCurrentSpan();
-    auto iter = this_run.begin();
     ctx->incr_num_scanner_scheduling(this_run.size());
     while (iter != this_run.end()) {
         (*iter)->start_wait_worker_timer();
@@ -225,11 +233,17 @@ void ScannerScheduler::_schedule_scanners(ScannerContext* ctx) {
 
 void ScannerScheduler::_scanner_scan(ScannerScheduler* scheduler, ScannerContext* ctx,
                                      VScanner* scanner) {
+    auto tracker_config = [&] {
+        SCOPED_ATTACH_TASK(scanner->runtime_state());
+        SCOPED_CONSUME_MEM_TRACKER(scanner->runtime_state()->scanner_mem_tracker());
+        Thread::set_self_name("_scanner_scan");
+    };
 #if !defined(USE_BTHREAD_SCANNER)
-    SCOPED_ATTACH_TASK(scanner->runtime_state());
-    SCOPED_CONSUME_MEM_TRACKER(scanner->runtime_state()->scanner_mem_tracker());
-    Thread::set_self_name("_scanner_scan");
+    tracker_config();
 #endif
+    if (dynamic_cast<NewOlapScanner*>(scanner) == nullptr) {
+        tracker_config();
+    }
     scanner->update_wait_worker_timer();
     scanner->start_scan_cpu_timer();
     Status status = Status::OK();
