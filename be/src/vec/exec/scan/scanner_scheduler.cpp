@@ -240,10 +240,11 @@ void ScannerScheduler::_scanner_scan(ScannerScheduler* scheduler, ScannerContext
     };
 #if !defined(USE_BTHREAD_SCANNER)
     tracker_config();
-#endif
+#else
     if (dynamic_cast<NewOlapScanner*>(scanner) == nullptr) {
         tracker_config();
     }
+#endif
     scanner->update_wait_worker_timer();
     scanner->start_scan_cpu_timer();
     Status status = Status::OK();
