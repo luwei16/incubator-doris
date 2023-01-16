@@ -28,6 +28,7 @@
 #include <map>
 #include <set>
 
+#include "cloud/utils.h"
 #include "common/status.h"
 #include "env/env.h"
 #include "gen_cpp/Types_constants.h"
@@ -72,8 +73,13 @@ Status SnapshotManager::make_snapshot(const TSnapshotRequest& request, string* s
         return Status::OLAPInternalError(OLAP_ERR_INPUT_PARAMETER_ERROR);
     }
 
+#ifdef CLOUD_MODE
+    TabletSharedPtr ref_tablet;
+    cloud::tablet_mgr()->get_tablet(request.tablet_id, &ref_tablet);
+#else
     TabletSharedPtr ref_tablet =
             StorageEngine::instance()->tablet_manager()->get_tablet(request.tablet_id);
+#endif
     if (ref_tablet == nullptr) {
         LOG(WARNING) << "failed to get tablet. tablet=" << request.tablet_id;
         return Status::OLAPInternalError(OLAP_ERR_TABLE_NOT_FOUND);

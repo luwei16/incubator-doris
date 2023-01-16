@@ -429,7 +429,7 @@ Status VFileResultWriter::_close_file_writer(bool done, bool only_close) {
         COUNTER_UPDATE(_written_data_bytes, _current_written_bytes);
         _vfile_writer.reset(nullptr);
     } else if (_file_writer_impl) {
-        _file_writer_impl->close();
+        RETURN_IF_ERROR(_file_writer_impl->close());
     }
 
     if (only_close) {

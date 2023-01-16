@@ -19,6 +19,7 @@
 
 #include <string>
 
+#include "cloud/utils.h"
 #include "common/utils.h"
 #include "exprs/expr_context.h"
 #include "gen_cpp/PaloInternalService_types.h"
@@ -72,7 +73,11 @@ Status OlapScanner::prepare(
     _version = strtoul(scan_range.version.c_str(), nullptr, 10);
     {
         std::string err;
+#ifdef CLOUD_MODE
+        cloud::tablet_mgr()->get_tablet(tablet_id, &_tablet);
+#else
         _tablet = StorageEngine::instance()->tablet_manager()->get_tablet(tablet_id, true, &err);
+#endif
         if (_tablet.get() == nullptr) {
             std::stringstream ss;
             ss << "failed to get tablet. tablet_id=" << tablet_id

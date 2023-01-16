@@ -71,8 +71,10 @@ Status S3Writer::open() {
     } else if (response.GetError().GetResponseCode() == Aws::Http::HttpResponseCode::NOT_FOUND) {
         return Status::OK();
     } else {
-        return Status::InternalError("Error: [{}:{}] at {}", response.GetError().GetExceptionName(),
+        return Status::InternalError("Error: [{}:{}, responseCode:{}] at {}",
+                                     response.GetError().GetExceptionName(),
                                      response.GetError().GetMessage(),
+                                     static_cast<int>(response.GetError().GetResponseCode()),
                                      BackendOptions::get_localhost());
     }
 }
@@ -130,8 +132,10 @@ Status S3Writer::_sync() {
     if (response.IsSuccess()) {
         return Status::OK();
     } else {
-        return Status::InternalError("Error: [{}:{}] at {}", response.GetError().GetExceptionName(),
+        return Status::InternalError("Error: [{}:{}, responseCode:{}] at {}",
+                                     response.GetError().GetExceptionName(),
                                      response.GetError().GetMessage(),
+                                     static_cast<int>(response.GetError().GetResponseCode()),
                                      BackendOptions::get_localhost());
     }
 }

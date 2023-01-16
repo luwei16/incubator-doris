@@ -23,6 +23,7 @@
 #include <utility>
 
 #include "agent/cgroups_mgr.h"
+#include "cloud/utils.h"
 #include "common/logging.h"
 #include "common/resource_tls.h"
 #include "exprs/expr.h"
@@ -920,8 +921,13 @@ Status OlapScanNode::start_scan_thread(RuntimeState* state) {
         auto tablet_id = scan_range->tablet_id;
         int32_t schema_hash = strtoul(scan_range->schema_hash.c_str(), nullptr, 10);
         std::string err;
+#ifdef CLOUD_MODE
+        TabletSharedPtr tablet;
+        cloud::tablet_mgr()->get_tablet(tablet_id, &tablet);
+#else
         TabletSharedPtr tablet =
                 StorageEngine::instance()->tablet_manager()->get_tablet(tablet_id, true, &err);
+#endif
         if (tablet == nullptr) {
             std::stringstream ss;
             ss << "failed to get tablet: " << tablet_id << " with schema hash: " << schema_hash
