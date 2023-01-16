@@ -160,7 +160,6 @@ void NewOlapScanner::set_compound_filters(
     _compound_filters = compound_filters;
 }
 
-// it will be called under tablet read lock because capture rs readers need
 Status NewOlapScanner::_init_tablet_reader_params(
         const std::vector<OlapScanRange*>& key_ranges, const std::vector<TCondition>& filters,
         const FilterPredicates& filter_predicates,
@@ -245,7 +244,11 @@ Status NewOlapScanner::_init_tablet_reader_params(
                             _tablet_reader_params.function_filters.begin()));
 
     if (!_state->skip_delete_predicate()) {
-        auto& delete_preds = _tablet->delete_predicates();
+        std::vector<RowsetMetaSharedPtr> delete_preds;
+        {
+            std::shared_lock rlock(_tablet->get_header_lock());
+            delete_preds = _tablet->delete_predicates();
+        }
         std::copy(delete_preds.cbegin(), delete_preds.cend(),
                   std::inserter(_tablet_reader_params.delete_predicates,
                                 _tablet_reader_params.delete_predicates.begin()));
