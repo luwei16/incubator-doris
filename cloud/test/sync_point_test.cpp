@@ -293,7 +293,7 @@ void test_return_point() {
         }
     );
 
-    int ret = foo_return_with_value();
+    [[maybe_unused]]int ret = foo_return_with_value();
     assert(ret == 10086);
   }
 

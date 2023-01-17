@@ -202,5 +202,123 @@ std::string proto_to_json(const ::google::protobuf::Message& msg, bool add_white
     return json;
 }
 
+std::vector<std::string_view> split_string(const std::string_view& str, int n) {
+    std::vector<std::string_view> substrings;
+
+    for (size_t i = 0; i < str.size(); i += n) {
+        substrings.push_back(str.substr(i, n));
+    }
+
+    return substrings;
+}
+
+int remove(const std::string& key, Transaction* txn) {
+    std::string key0 = key;
+    selectdb::encode_int64(0, &key0);
+    std::string key1 = key;
+    selectdb::encode_int64(std::numeric_limits<int64_t>::max(), &key1);
+    VLOG_DEBUG << "remove key_start=" << hex(key0) << " key_end=" << hex(key1);
+    txn->remove(key0, key1);
+    auto ret = txn->commit();
+    if (ret != 0) {
+        std::string msg = ret == -1 ? "KV_TXN_CONFLICT" : "KV_TXN_COMMIT_ERR";
+        LOG(WARNING) << fmt::format("failed to commit kv txn, ret={}, reason={}", ret, msg);
+        return -1;
+    }
+    return 0;
+}
+
+int get(const std::string& key, Transaction* txn, google::protobuf::Message* pb) {
+    int ret = 0;
+    if (txn == nullptr) {
+        LOG(WARNING) << "not give txn";
+        return -1;
+    }
+
+    // give a key prefix, range get key
+    std::string key0 = key;
+    selectdb::encode_int64(0, &key0);
+    std::string key1 = key;
+    selectdb::encode_int64(std::numeric_limits<int64_t>::max(), &key1);
+    std::unique_ptr<RangeGetIterator> it;
+    butil::IOBuf merge;
+    do {
+        ret = txn->get(key0, key1, &it);
+        if (ret != 0) {
+            LOG(WARNING) << "internal error, failed to get instance, ret=" << ret;
+            return -1;
+        }
+
+        while (it->has_next()) {
+            auto [k, v] = it->next();
+            if (!it->has_next()) {
+                key0 = k;
+            }
+            // merge value to string
+            merge.append(v.data(), v.size());
+        }
+        key0.push_back('\x00'); // Update to next smallest key for iteration
+    } while (it->more());
+
+    butil::IOBufAsZeroCopyInputStream merge_stream(merge);
+    if (merge.size() == 0) {
+        LOG(INFO) << "not found key=" << hex(key);
+        return 1;
+    }
+
+    // string to PB
+    if (!pb->ParseFromZeroCopyStream(&merge_stream)) {
+        LOG(WARNING) << "value deserialize to pb err" << typeid(pb).name();
+        return -1;
+    }
+
+    return 0;
+}
+
+int put(const std::string& key, Transaction* txn,
+        const google::protobuf::Message& pb, size_t value_limit) {
+    assert(value_limit > 0 && value_limit <= 90 * 1000);
+    int ret = 0;
+    if (txn == nullptr) {
+        LOG(WARNING) << "not give txn";
+        return -1;
+    }
+
+    std::string value;
+    if (!pb.SerializeToString(&value)) {
+        LOG(WARNING) << "failed to serialize pb to string";
+        return -1;
+    }
+
+    // after test, if > 99946, fdb commit error, code=2103 msg=Value length exceeds limit
+    // const int value_limit = 90 * 1000;
+    auto split_vec = split_string(value, value_limit);
+    // LOG(INFO) << "value.size=" << value.size() << " vec=" << split_vec.size();
+    // generate key suffix
+    std::vector<std::string> keys;
+    keys.reserve(split_vec.size());
+    for (int i = 0; i < split_vec.size(); i++) {
+        keys.emplace_back(key);
+        selectdb::encode_int64(i, &keys.back());
+        txn->put(keys.back(), split_vec.at(i));
+        VLOG_DEBUG << "put key=" << hex(keys.back()) << " i=" << i;
+    }
+    // remove not need key, [split_vec.size, max_int_64)
+    std::string remove_key0 = key;
+    selectdb::encode_int64(split_vec.size(), &remove_key0);
+    std::string remove_key1 = key;
+    selectdb::encode_int64(std::numeric_limits<int64_t>::max(), &remove_key1);
+    VLOG_DEBUG << "remove key_start=" << hex(remove_key0) << " key_end=" << hex(remove_key1);
+    txn->remove(remove_key0, remove_key1);
+
+    ret = txn->commit();
+    if (ret != 0) {
+        std::string msg = ret == -1 ? "KV_TXN_CONFLICT" : "KV_TXN_COMMIT_ERR";
+        LOG(WARNING) << fmt::format("failed to commit kv txn, ret={}, reason={}", ret, msg);
+        return -1;
+    }
+    return 0;
+}
+
 } // namespace selectdb
 // vim: et tw=100 ts=4 sw=4 cc=80:
