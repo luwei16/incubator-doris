@@ -270,7 +270,7 @@ CONF_Bool(enable_vectorized_alter_table, "true");
 // whether check compaction checksum
 CONF_mBool(enable_compaction_checksum, "false");
 // whether enable vertical compaction
-CONF_mBool(enable_vertical_compaction, "false");
+CONF_mBool(enable_vertical_compaction, "true");
 // In vertical compaction, column number for every group
 CONF_mInt32(vertical_compaction_num_columns_per_group, "5");
 // In vertical compaction, max memory usage for row_source_buffer
