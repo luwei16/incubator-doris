@@ -1925,10 +1925,16 @@ Status Tablet::create_initial_rowset(const int64_t req_version) {
     return res;
 }
 
+Status Tablet::create_vertical_rowset_writer(
+        RowsetWriterContext& context, std::unique_ptr<RowsetWriter>* rowset_writer) {
+    _init_context_common_fields(context);
+    return RowsetFactory::create_rowset_writer(context, true, rowset_writer);
+}
+
 Status Tablet::create_rowset_writer(RowsetWriterContext& context,
                                     std::unique_ptr<RowsetWriter>* rowset_writer) {
     _init_context_common_fields(context);
-    return RowsetFactory::create_rowset_writer(context, rowset_writer);
+    return RowsetFactory::create_rowset_writer(context, false, rowset_writer);
 }
 
 void Tablet::_init_context_common_fields(RowsetWriterContext& context) {

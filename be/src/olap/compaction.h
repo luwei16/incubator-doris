@@ -53,6 +53,10 @@ public:
     virtual Status prepare_compact() = 0;
     Status execute_compact();
     virtual Status execute_compact_impl() = 0;
+#ifdef BE_TEST
+    void set_input_rowset(const std::vector<RowsetSharedPtr>& rowsets);
+    RowsetSharedPtr output_rowset();
+#endif
 
 protected:
     virtual Status pick_rowsets_to_compact() = 0;
@@ -73,6 +77,9 @@ protected:
     Status find_longest_consecutive_version(std::vector<RowsetSharedPtr>* rowsets,
                                             std::vector<Version>* missing_version);
     int64_t get_compaction_permits();
+
+    bool should_vertical_compaction();
+    int64_t get_avg_segment_rows();
 
 protected:
     // the root tracker for this compaction

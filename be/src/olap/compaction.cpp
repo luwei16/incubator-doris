@@ -26,6 +26,7 @@
 #include "olap/rowset/rowset.h"
 #include "olap/rowset/rowset_meta.h"
 #include "olap/rowset/segment_v2/inverted_index_compaction.h"
+#include "olap/task/engine_checksum_task.h"
 #include "olap/tablet.h"
 #include "util/time.h"
 #include "util/trace.h"
@@ -109,14 +110,52 @@ Status Compaction::quick_rowsets_compact() {
     return Status::OK();
 }
 
+bool Compaction::should_vertical_compaction() {
+    if (!config::enable_vertical_compaction) {
+        return false;
+    }
+    if (config::enable_index_compaction) {
+        return false;
+    }
+    if (_tablet->enable_unique_key_merge_on_write()) {
+        return false;
+    }
+    return true;
+}
+
+int64_t Compaction::get_avg_segment_rows() {
+    // take care of empty rowset
+    // input_rowsets_size is total disk_size of input_rowset, this size is the
+    // final size after codec and compress, so expect dest segment file size
+    // in disk is config::max_segment_size_in_vertical_compaction
+    return config::max_segment_size_in_vertical_compaction / (_input_rowsets_size / (_input_row_num + 1) + 1);
+}
+
 Status Compaction::do_compaction(int64_t permits) {
     TRACE("start to do compaction");
     TEST_INJECTION_POINT_RETURN_WITH_VALUE("Compaction::do_compaction", Status());
+    uint32_t checksum_before;
+    uint32_t checksum_after;
+    if (config::enable_compaction_checksum) {
+        EngineChecksumTask checksum_task(_tablet->tablet_id(), _tablet->schema_hash(),
+                                         _input_rowsets.back()->end_version(), &checksum_before);
+        checksum_task.execute();
+    }
     _tablet->data_dir()->disks_compaction_score_increment(permits);
     _tablet->data_dir()->disks_compaction_num_increment(1);
     Status st = do_compaction_impl(permits);
     _tablet->data_dir()->disks_compaction_score_increment(-permits);
     _tablet->data_dir()->disks_compaction_num_increment(-1);
+    if (config::enable_compaction_checksum) {
+        EngineChecksumTask checksum_task(_tablet->tablet_id(), _tablet->schema_hash(),
+                                         _input_rowsets.back()->end_version(), &checksum_after);
+        checksum_task.execute();
+        if (checksum_before != checksum_after) {
+            LOG(WARNING) << "Compaction tablet=" << _tablet->tablet_id()
+                         << " checksum not consistent"
+                         << ", before=" << checksum_before << ", checksum_after=" << checksum_after;
+        }
+    }
     return st;
 }
 
@@ -146,6 +185,8 @@ Status Compaction::do_compaction_impl(int64_t permits) {
 
     LOG(INFO) << "start " << merge_type << compaction_name() << ". tablet=" << _tablet->full_name()
               << ", output_version=" << _output_version << ", permits: " << permits;
+    
+    bool vertical_compaction = should_vertical_compaction();
     // get cur schema if rowset schema exist, rowset schema must be newer than tablet schema
     std::vector<RowsetMetaSharedPtr> rowset_metas(_input_rowsets.size());
     std::transform(_input_rowsets.begin(), _input_rowsets.end(), rowset_metas.begin(),
@@ -179,7 +220,11 @@ Status Compaction::do_compaction_impl(int64_t permits) {
             }
         }
     }
-    RETURN_IF_ERROR(_tablet->create_rowset_writer(context, &_output_rs_writer));
+    if (vertical_compaction) {
+        RETURN_IF_ERROR(_tablet->create_vertical_rowset_writer(context, &_output_rs_writer));
+    } else {
+        RETURN_IF_ERROR(_tablet->create_rowset_writer(context, &_output_rs_writer));
+    }
 #ifdef CLOUD_MODE
     RETURN_IF_ERROR(cloud::meta_mgr()->prepare_rowset(_output_rs_writer->rowset_meta(), true));
 #endif
@@ -198,8 +243,14 @@ Status Compaction::do_compaction_impl(int64_t permits) {
     }
 
     if (use_vectorized_compaction) {
-        res = Merger::vmerge_rowsets(_tablet, compaction_type(), cur_tablet_schema,
+        if (vertical_compaction) {
+            res = Merger::vertical_merge_rowsets(_tablet, compaction_type(), cur_tablet_schema,
+                        _input_rs_readers, _output_rs_writer.get(),
+                        get_avg_segment_rows(), &stats);
+        } else {
+            res = Merger::vmerge_rowsets(_tablet, compaction_type(), cur_tablet_schema,
                                      _input_rs_readers, _output_rs_writer.get(), &stats);
+        }
     } else {
         res = Merger::merge_rowsets(_tablet, compaction_type(), cur_tablet_schema,
                                     _input_rs_readers, _output_rs_writer.get(), &stats);
@@ -322,6 +373,7 @@ Status Compaction::do_compaction_impl(int64_t permits) {
 
     auto cumu_policy = _tablet->cumulative_compaction_policy();
     LOG(INFO) << "succeed to do " << merge_type << compaction_name()
+              << ", is_vertical=" << vertical_compaction
               << ". tablet=" << _tablet->full_name() << ", output_version=" << _output_version
               << ", current_max_version=" << current_max_version
               << ", disk=" << _tablet->data_dir()->path() << ", segments=" << segments_num
@@ -448,5 +500,15 @@ int64_t Compaction::get_compaction_permits() {
     }
     return permits;
 }
+
+#ifdef BE_TEST
+void Compaction::set_input_rowset(const std::vector<RowsetSharedPtr>& rowsets) {
+    _input_rowsets = rowsets;
+}
+
+RowsetSharedPtr Compaction::output_rowset() {
+    return _output_rowset;
+}
+#endif
 
 } // namespace doris

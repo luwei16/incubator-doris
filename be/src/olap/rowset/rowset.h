@@ -163,6 +163,7 @@ public:
     int64_t oldest_write_timestamp() const { return rowset_meta()->oldest_write_timestamp(); }
     int64_t newest_write_timestamp() const { return rowset_meta()->newest_write_timestamp(); }
     KeysType keys_type() { return _schema->keys_type(); }
+    bool is_segments_overlapping() const { return rowset_meta()->is_segments_overlapping(); }
 
     // remove all files in this rowset
     // TODO should we rename the method to remove_files() to be more specific?

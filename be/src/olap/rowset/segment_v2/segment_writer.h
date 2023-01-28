@@ -70,7 +70,9 @@ public:
                            uint32_t max_row_per_segment, const SegmentWriterOptions& opts);
     ~SegmentWriter();
 
-    Status init(const vectorized::Block* block);
+    Status init(const vectorized::Block* block = nullptr);
+    // for vertical compaction
+    Status init(const std::vector<uint32_t>& col_ids, bool has_key, const vectorized::Block* block = nullptr);
 
     template <typename RowType>
     Status append_row(const RowType& row);
@@ -81,11 +83,14 @@ public:
 
     uint64_t estimate_segment_size();
 
-    uint32_t num_rows_written() const { return _row_count; }
+    uint32_t num_rows_written() const { return _num_rows_written; }
+    uint32_t row_count() const { return _row_count; }
 
     Status finalize(uint64_t* segment_file_size, uint64_t* index_size);
+    Status finalize_columns(uint64_t* index_size);
+    Status finalize_footer(uint64_t* segment_file_size);
 
-    static void init_column_meta(ColumnMetaPB* meta, uint32_t* column_id,
+    static void init_column_meta(ColumnMetaPB* meta, uint32_t column_id,
                                  const TabletColumn& column, TabletSchemaSPtr tablet_schema);
 
     uint32_t get_segment_id() const { return _segment_id; }
@@ -99,9 +104,9 @@ public:
 private:
     Status _create_writers_with_block(
             const vectorized::Block* block,
-            std::function<Status(const TabletColumn&)> writer_creator);
+            std::function<Status(uint32_t, const TabletColumn&)> writer_creator);
     Status _create_writers(
-            std::function<Status(const TabletColumn&)> writer_creator);
+            std::function<Status(uint32_t, const TabletColumn&)> writer_creator);
     DISALLOW_COPY_AND_ASSIGN(SegmentWriter);
     Status _write_data();
     Status _write_ordinal_index();
@@ -113,6 +118,7 @@ private:
     Status _write_primary_key_index();
     Status _write_footer();
     Status _write_raw_data(const std::vector<Slice>& slices);
+    void _reset_column_writers();
     std::string _encode_keys(const std::vector<vectorized::IOlapColumnDataAccessor*>& key_columns,
                              size_t pos, bool null_first = true);
 
@@ -132,13 +138,21 @@ private:
     std::unique_ptr<PrimaryKeyIndexBuilder> _primary_key_index_builder;
     std::vector<std::unique_ptr<ColumnWriter>> _column_writers;
     std::unique_ptr<MemTracker> _mem_tracker;
-    uint32_t _row_count = 0;
 
-    vectorized::OlapBlockDataConvertor _olap_data_convertor;
+    std::unique_ptr<vectorized::OlapBlockDataConvertor> _olap_data_convertor;
     // used for building short key index or primary key index during vectorized write.
     std::vector<const KeyCoder*> _key_coders;
     std::vector<uint16_t> _key_index_size;
     size_t _short_key_row_pos = 0;
+
+    std::vector<uint32_t> _column_ids;
+    bool _has_key = true;
+    // _num_rows_written means row count already written in this current column group
+    uint32_t _num_rows_written = 0;
+    // _row_count means total row count of this segment
+    // In vertical compaction row count is recorded when key columns group finish
+    // and _num_rows_written will be updated in value column group
+    uint32_t _row_count = 0;
 };
 
 } // namespace segment_v2

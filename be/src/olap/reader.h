@@ -114,6 +114,8 @@ public:
         size_t read_orderby_key_limit = 0;
         // filter_block arguments
         vectorized::VExprContext** filter_block_vconjunct_ctx_ptr = nullptr;
+        // for vertical compaction
+        bool is_key_column_group = false; 
 
         void check_validation() const;
 
@@ -147,7 +149,7 @@ public:
         return Status::OLAPInternalError(OLAP_ERR_READER_INITIALIZE_ERROR);
     }
 
-    uint64_t merged_rows() const { return _merged_rows; }
+    virtual uint64_t merged_rows() const { return _merged_rows; }
 
     uint64_t filtered_rows() const {
         return _stats.rows_del_filtered + _stats.rows_del_by_bitmap +
