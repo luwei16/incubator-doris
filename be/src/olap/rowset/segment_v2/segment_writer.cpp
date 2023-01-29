@@ -196,7 +196,6 @@ Status SegmentWriter::_create_writers(
 Status SegmentWriter::_create_writers_with_block(
         const vectorized::Block* block,
         std::function<Status(uint32_t, const TabletColumn&)> create_column_writer) {
-    DCHECK(_tablet_schema->is_dynamic_schema());
     // generate writers from schema and extended schema info
     _olap_data_convertor->reserve(block->columns());
     // new columns added, query column info from Master
