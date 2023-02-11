@@ -2086,5 +2086,11 @@ public class Config extends ConfigBase {
 
     @ConfField(mutable = true)
     public static int sts_duration = 3600;
+
+    /**
+     * intervals between be status checks for CloudUpgradeMgr
+     */
+    @ConfField(mutable = true)
+    public static int cloud_upgrade_mgr_interval_second = 15;
 }
 

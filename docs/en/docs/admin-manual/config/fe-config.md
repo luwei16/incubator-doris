@@ -5,7 +5,7 @@
 }
 ---
 
-<!-- 
+<!--
 Licensed to the Apache Software Foundation (ASF) under one
 or more contributor license agreements.  See the NOTICE file
 distributed with this work for additional information
@@ -80,7 +80,7 @@ There are two ways to configure FE configuration items:
     **Configuration items modified in this way will become invalid after the FE process restarts.**
 
     For more help on this command, you can view it through the `HELP ADMIN SET CONFIG;` command.
-    
+
 3. Dynamic configuration via HTTP protocol
 
     For details, please refer to [Set Config Action](../http-actions/fe/set-config-action.md)
@@ -130,7 +130,7 @@ IsMutable：true
 
 MasterOnly：true
 
-Used to limit the maximum number of partitions that can be created when creating a dynamic partition table,  to avoid creating too many partitions at one time. The number is determined by "start" and "end" in the dynamic partition parameters.. 
+Used to limit the maximum number of partitions that can be created when creating a dynamic partition table,  to avoid creating too many partitions at one time. The number is determined by "start" and "end" in the dynamic partition parameters..
 
 <version since="1.2.0">
 
@@ -262,7 +262,7 @@ IsMutable：true
 
 MasterOnly：true
 
-Used to set the default database replica quota. To set the quota size of a single database, you can use: 
+Used to set the default database replica quota. To set the quota size of a single database, you can use:
 
 ```
 Set the database replica quota
@@ -457,7 +457,7 @@ IsMutable：true
 
 MasterOnly：true
 
-As long as one BE is down, Routine Load cannot be automatically restored 
+As long as one BE is down, Routine Load cannot be automatically restored
 
 ### check_java_version
 
@@ -668,7 +668,7 @@ IsMutable：true
 
 MasterOnly：true
 
-Valid only if use PartitionRebalancer. If this changed, cached moves will be cleared 
+Valid only if use PartitionRebalancer. If this changed, cached moves will be cleared
 
 ### tablet_rebalancer_type
 
@@ -686,7 +686,7 @@ IsMutable：true
 
 MasterOnly：true
 
-if the number of balancing tablets in TabletScheduler exceed max_balancing_tablets, no more balance check 
+if the number of balancing tablets in TabletScheduler exceed max_balancing_tablets, no more balance check
 
 ### max_scheduling_tablets
 
@@ -778,7 +778,7 @@ if this is set to true
 
 - all pending load job will failed when call begin txn api
 -  all prepare load job will failed when call commit txn api
--  all committed load job will waiting to be published 
+-  all committed load job will waiting to be published
 
 ### catalog_try_lock_timeout_ms
 
@@ -810,11 +810,11 @@ Default：false
 
 IsMutable：true
 
-If set to true, Planner will try to select replica of tablet on same host as this Frontend. This may reduce network transmission in following case: 
+If set to true, Planner will try to select replica of tablet on same host as this Frontend. This may reduce network transmission in following case:
 
--  N hosts with N Backends and N Frontends deployed. 
-- The data has N replicas. 
--  High concurrency queries are syyuyuient to all Frontends evenly 
+-  N hosts with N Backends and N Frontends deployed.
+- The data has N replicas.
+-  High concurrency queries are syyuyuient to all Frontends evenly
 -  In this case, all Frontends can only use local replicas to do the query. If you want to allow fallback to nonlocal replicas when no local replicas available, set enable_local_replica_selection_fallback to true.
 
 ### enable_local_replica_selection_fallback
@@ -857,7 +857,7 @@ Default：300（5min）
 
 update interval of tablet stat , All frontends will get tablet stat from all backends at each interval
 
-### storage_flood_stage_usage_percent  
+### storage_flood_stage_usage_percent
 
 Default：95 （95%）
 
@@ -870,14 +870,14 @@ MasterOnly：true
 Default：
 
 	storage_flood_stage_usage_percent  : 95  (95%)
-	
+
 	storage_flood_stage_left_capacity_bytes :  1 * 1024 * 1024 * 1024 (1GB)
 
 IsMutable：true
 
 MasterOnly：true
 
-If capacity of disk reach the 'storage_flood_stage_usage_percent' and  'storage_flood_stage_left_capacity_bytes', the following operation will be rejected: 
+If capacity of disk reach the 'storage_flood_stage_usage_percent' and  'storage_flood_stage_left_capacity_bytes', the following operation will be rejected:
 
 1. load job
 2. restore job
@@ -949,9 +949,9 @@ Default：disable
 
  Set to true if you deploy Palo using thirdparty deploy manager Valid options are:
 
-- disable:    no deploy manager 
--  k8s:        Kubernetes 
-- ambari:     Ambari 
+- disable:    no deploy manager
+-  k8s:        Kubernetes
+- ambari:     Ambari
 - local:      Local File (for test or Boxer2 BCC version)
 
 ### enable_token_check
@@ -974,7 +974,7 @@ Default：10000
 
 IsMutable：true
 
-Limit on the number of expr children of an expr tree.  Exceed this limit may cause long analysis time while holding database read lock.  
+Limit on the number of expr children of an expr tree.  Exceed this limit may cause long analysis time while holding database read lock.
 
 ### proxy_auth_magic_prefix
 
@@ -988,7 +988,7 @@ Default：false
 
 Default：1000 （ms）
 
-The default user resource publishing timeout 
+The default user resource publishing timeout
 
 ### disable_colocate_balance
 
@@ -999,10 +999,10 @@ IsMutable：true
 MasterOnly：true
 
 This configs can set to true to disable the automatic colocate tables's relocate and balance.  If 'disable_colocate_balance' is set to true,   ColocateTableBalancer will not relocate and balance colocate tables.
-      **Attention**: 
+      **Attention**:
 
-- Under normal circumstances, there is no need to turn off balance at all. 
--  Because once the balance is turned off, the unstable colocate table may not be restored 
+- Under normal circumstances, there is no need to turn off balance at all.
+-  Because once the balance is turned off, the unstable colocate table may not be restored
 -  Eventually the colocate plan cannot be used when querying.
 
 ### query_colocate_join_memory_limit_penalty_factor
@@ -1011,7 +1011,7 @@ Default：1
 
 IsMutable：true
 
-colocote join PlanFragment instance的memory_limit = exec_mem_limit / min (query_colocate_join_memory_limit_penalty_factor, instance_num) 
+colocote join PlanFragment instance的memory_limit = exec_mem_limit / min (query_colocate_join_memory_limit_penalty_factor, instance_num)
 
 ### max_connection_scheduler_threads_num
 
@@ -1114,7 +1114,7 @@ IsMutable：true
 
 MasterOnly：true
 
-Maximal concurrency of broker scanners.  
+Maximal concurrency of broker scanners.
 
 ### min_bytes_per_broker_scanner
 
@@ -1124,7 +1124,7 @@ IsMutable：true
 
 MasterOnly：true
 
-Minimum bytes that a single broker scanner will read.  
+Minimum bytes that a single broker scanner will read.
 
 ### catalog_trash_expire_second
 
@@ -1156,7 +1156,7 @@ IsMutable：true
 
 MasterOnly：true
 
-If a backend is down for *max_backend_down_time_second*, a BACKEND_DOWN event will be triggered. 
+If a backend is down for *max_backend_down_time_second*, a BACKEND_DOWN event will be triggered.
 
 ### alter_table_timeout_second
 
@@ -1166,7 +1166,7 @@ IsMutable：true
 
 MasterOnly：true
 
-Maximal timeout of ALTER TABLE request. Set long enough to fit your table data size. 
+Maximal timeout of ALTER TABLE request. Set long enough to fit your table data size.
 
 ### capacity_used_percent_high_water
 
@@ -1180,7 +1180,7 @@ The high water of disk capacity used percent. This is used for calculating load 
 
 ### clone_distribution_balance_threshold
 
-Default：0.2 
+Default：0.2
 
 IsMutable：true
 
@@ -1190,18 +1190,18 @@ Balance threshold of num of replicas in Backends.
 
 ### clone_capacity_balance_threshold
 
-Default：0.2  
+Default：0.2
 
 IsMutable：true
 
 MasterOnly：true
 
 Balance threshold of data size in BE.
-      The balance algorithm is: 
+      The balance algorithm is:
 
 1. Calculate the average used capacity(AUC) of the entire cluster. (total data size / total backends num)
-2. The high water level is (AUC * (1 + clone_capacity_balance_threshold)) 
-3. The low water level is (AUC * (1 - clone_capacity_balance_threshold)) 
+2. The high water level is (AUC * (1 + clone_capacity_balance_threshold))
+3. The low water level is (AUC * (1 - clone_capacity_balance_threshold))
 4. The Clone checker will try to move replica from high water level BE to low water level BE.
 
 ### replica_delay_recovery_second
@@ -1224,7 +1224,7 @@ MasterOnly：true
 
 HIGH priority clone job's delay trigger time.
 
-### clone_normal_priority_delay_second 
+### clone_normal_priority_delay_second
 
 Default：300 （5min）
 
@@ -1242,7 +1242,7 @@ IsMutable：true
 
 MasterOnly：true
 
-LOW priority clone job's delay trigger time. A clone job contains a tablet which need to be cloned(recovery or migration).  If the priority is LOW, it will be delayed *clone_low_priority_delay_second*  after the job creation and then be executed.  This is to avoid a large number of clone jobs running at same time only because a host is down for a short time. 
+LOW priority clone job's delay trigger time. A clone job contains a tablet which need to be cloned(recovery or migration).  If the priority is LOW, it will be delayed *clone_low_priority_delay_second*  after the job creation and then be executed.  This is to avoid a large number of clone jobs running at same time only because a host is down for a short time.
  **NOTICE** that this config(and *clone_normal_priority_delay_second* as well)  will not work if it's smaller then *clone_checker_interval_second*
 
 ### clone_max_job_num
@@ -1607,7 +1607,7 @@ Maximal wait seconds for straggler node in load
            if (current_time - t1) > 300s, then palo will treat C as a failure node
            will call transaction manager to commit the transaction and tell transaction manager
            that C is failed
-     
+
       This is also used when waiting for publish tasks
       this parameter is the default value for all job and the DBA could specify it for separate job
 
@@ -1973,7 +1973,7 @@ audit_log_dir：
 
 Default：90
 
-Maximal FE audit log files to be kept within an audit_log_roll_interval. 
+Maximal FE audit log files to be kept within an audit_log_roll_interval.
 
 ### audit_log_modules
 
@@ -2379,3 +2379,12 @@ MasterOnly：false
 The default dir to put jdbc drivers.
 
 
+#### `cloud_upgrade_mgr_interval_second`
+
+Default：15
+
+IsMutable：true
+
+MasterOnly：true
+
+Interval between be status check in CloudUpradeMgr. Unit: second

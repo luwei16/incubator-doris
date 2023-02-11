@@ -393,12 +393,19 @@ public class SystemInfoService {
                               .collect(Collectors.toList());
         LOG.debug("after deduplication toAdd={} toDel={}", toAdd, toDel);
 
+        List existedHosts = idToBackendRef.values().stream().map(i -> i.getHost()).collect(Collectors.toList());
         for (Backend be : toAdd) {
             setBackendOwner(be, DEFAULT_CLUSTER);
             Env.getCurrentEnv().getEditLog().logAddBackend(be);
             LOG.info("added cloud backend={} ", be);
             // backends is changed, regenerated tablet number metrics
             MetricRepo.generateBackendsTabletMetrics();
+
+            String host = be.getHost();
+            if (existedHosts.contains(host)) {
+                /* When smooth upgrading, a new BE process will start on the existed node */
+                handleNewBeOnSameNode(be);
+            }
         }
         for (Backend be : toDel) {
             Env.getCurrentEnv().getEditLog().logDropBackend(be);
@@ -426,6 +433,15 @@ public class SystemInfoService {
         idToReportVersionRef = newIdToReportVersion;
 
         updateCloudClusterMap(toAdd, toDel);
+    }
+
+    private void handleNewBeOnSameNode(Backend be) {
+        try {
+            // TODO: trigger tablet migration to be be
+            Env.getCurrentEnv().getCloudUpgradeMgr().registerWaterShedTxnId(be.getId());
+        } catch (AnalysisException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     // for test

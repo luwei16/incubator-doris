@@ -6,7 +6,7 @@
 
 ---
 
-<!-- 
+<!--
 Licensed to the Apache Software Foundation (ASF) under one
 or more contributor license agreements.  See the NOTICE file
 distributed with this work for additional information
@@ -872,8 +872,8 @@ tablet 状态更新间隔
 
 如果磁盘容量达到 `storage_flood_stage_usage_percent` 和 `storage_flood_stage_left_capacity_bytes`      以下操作将被拒绝：
 
-1. load 作业      
-2. restore 工作 
+1. load 作业
+2. restore 工作
 
 ### `storage_high_watermark_usage_percent`
 
@@ -925,7 +925,7 @@ tablet 状态更新间隔
 
 默认值：{
             hadoop_configs : 'mapred.job.priority=NORMAL;mapred.job.map.capacity=50;mapred.job.reduce.capacity=50;mapred.hce.replace.streaming=false;abaci.long.stored.job=true;dce.shuffle.enable=false;dfs.client.authserver.force_stop=true;dfs.client.auth.method=0'
-        } 
+        }
 
 ### dpp_config_str
 
@@ -2439,4 +2439,12 @@ hive partition 的最大缓存数量。
 
 用于存放默认的 jdbc drivers
 
+#### `cloud_upgrade_mgr_interval_second`
 
+默认值：15
+
+是否可以动态配置：true
+
+是否为 Master FE 节点独有的配置项：true
+
+CloudUpradeMgr 查询be状态的时间间隔，单位:秒

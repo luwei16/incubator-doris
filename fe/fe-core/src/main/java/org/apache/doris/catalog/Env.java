@@ -248,6 +248,7 @@ import com.google.common.collect.Queues;
 import com.selectdb.cloud.catalog.CloudClusterChecker;
 import com.selectdb.cloud.catalog.CloudReplica;
 import com.selectdb.cloud.catalog.CloudTabletRebalancer;
+import com.selectdb.cloud.catalog.CloudUpgradeMgr;
 import com.selectdb.cloud.proto.SelectdbCloud;
 import com.selectdb.cloud.proto.SelectdbCloud.NodeInfoPB;
 import com.selectdb.cloud.proto.SelectdbCloud.StagePB;
@@ -453,6 +454,8 @@ public class Env {
     private RefreshManager refreshManager;
 
     private PolicyMgr policyMgr;
+
+    private CloudUpgradeMgr upgradeMgr;
 
     private MTMVJobManager mtmvJobManager;
 
@@ -669,6 +672,9 @@ public class Env {
         this.mtmvJobManager = new MTMVJobManager();
         this.analysisManager = new AnalysisManager();
         this.extMetaCacheMgr = new ExternalMetaCacheMgr();
+        if (Config.isCloudMode()) {
+            this.upgradeMgr = new CloudUpgradeMgr();
+        }
     }
 
     public static void destroyCheckpoint() {
@@ -4179,6 +4185,10 @@ public class Env {
 
     public PolicyMgr getPolicyMgr() {
         return this.policyMgr;
+    }
+
+    public CloudUpgradeMgr getCloudUpgradeMgr() {
+        return this.upgradeMgr;
     }
 
     public void setMaster(MasterInfo info) {

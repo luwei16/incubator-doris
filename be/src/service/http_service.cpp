@@ -46,6 +46,7 @@
 #include "runtime/exec_env.h"
 #include "runtime/load_path_mgr.h"
 #include "util/doris_metrics.h"
+#include "http/action/shrink_mem_action.h"
 
 #ifdef ENABLE_INJECTION_POINT
 #include "common/sync_point.h"
@@ -264,6 +265,10 @@ Status HttpService::cloud_start() {
     // data repair actions
     PadSegmentAction* pad_segment_action = _pool.add(new PadSegmentAction);
     _ev_http_server->register_handler(HttpMethod::GET, "/api/pad_segment", pad_segment_action);
+
+    // shrink memory for starting co-exist process during upgrade
+    ShrinkMemAction* shrink_mem_action = _pool.add(new ShrinkMemAction(_env));
+    _ev_http_server->register_handler(HttpMethod::GET, "/api/shrink_mem", shrink_mem_action);
 
     _ev_http_server->start();
     return Status::OK();

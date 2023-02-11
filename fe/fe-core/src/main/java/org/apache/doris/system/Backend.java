@@ -261,6 +261,10 @@ public class Backend implements Writable {
         this.backendStatus.isLoadDisabled = isLoadDisabled;
     }
 
+    public void setActive(boolean isActive) {
+        this.backendStatus.isActive = isActive;
+    }
+
     // for test only
     public void updateOnce(int bePort, int httpPort, int beRpcPort) {
         if (this.bePort != bePort) {
@@ -785,6 +789,8 @@ public class Backend implements Writable {
         public volatile boolean isQueryDisabled = false;
         @SerializedName("isLoadDisabled")
         public volatile boolean isLoadDisabled = false;
+        @SerializedName("isActive")
+        public volatile boolean isActive = false;
     }
 
     public Tag getLocationTag() {

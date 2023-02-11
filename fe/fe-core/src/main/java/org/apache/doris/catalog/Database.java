@@ -404,6 +404,10 @@ public class Database extends MetaObject implements Writable, DatabaseIf<Table> 
         return new ArrayList<>(idToTable.values());
     }
 
+    public List<Long> getTableIds() {
+        return new ArrayList<>(idToTable.keySet());
+    }
+
     // tables must get read or write table in fixed order to avoid potential dead lock
     public List<Table> getTablesOnIdOrder() {
         return idToTable.values().stream()
