@@ -23,13 +23,10 @@ namespace doris {
 class ExecEnv;
 class ShrinkMemAction : public HttpHandler {
 public:
-    explicit ShrinkMemAction(ExecEnv* exec_env);
+    explicit ShrinkMemAction() {}
 
     virtual ~ShrinkMemAction() {}
 
     void handle(HttpRequest* req) override;
-
-private:
-    ExecEnv* _exec_env;
 };
 } // namespace doris

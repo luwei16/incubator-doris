@@ -27,7 +27,6 @@
 #include "util/mem_info.h"
 
 namespace doris {
-ShrinkMemAction::ShrinkMemAction(ExecEnv* exec_env) : _exec_env(exec_env) {}
 void ShrinkMemAction::handle(HttpRequest* req) {
     LOG(INFO) << "begin shrink memory";
     /* this interface might be ready for cloud in the near future
