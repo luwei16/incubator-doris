@@ -35,6 +35,7 @@ ParquetReader::ParquetReader(RuntimeProfile* profile, const TFileScanRangeParams
         : _profile(profile),
           _scan_params(params),
           _scan_range(range),
+          _batch_size(batch_size),
           _range_start_offset(range.start_offset),
           _range_size(range.size),
           _ctz(ctz) {
