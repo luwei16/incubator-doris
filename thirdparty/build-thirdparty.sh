@@ -1757,6 +1757,7 @@ build_concurrentqueue
 build_clucene
 
 # Full build done
+cd "${TP_DIR}"
 if [[ -f version.txt ]]; then
     cp -f version.txt ${TP_INSTALL_DIR}/version.txt
 fi
