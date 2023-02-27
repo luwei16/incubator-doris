@@ -109,3 +109,21 @@ cacheDataPath = "/tmp"
 s3Endpoint = "cos.ap-hongkong.myqcloud.com"
 s3BucketName = "doris-build-hk-1308700295"
 s3Region = "ap-hongkong"
+
+// stage iam test
+stageIamEndpoint = ""
+stageIamRegion = ""
+stageIamBucket = ""
+
+// used for oss and obs, which does not support external id. Create role (or agency) and use for all instances.
+stageIamRole = ""
+stageIamArn = ""
+
+// used for cos and s3, which support external id.
+// this is policy arn for s3
+stageIamPolicy = "smoke_test_policy"
+stageIamAk = ""
+stageIamSk = ""
+
+// used for cos, which sdk does not return arn, so construct arn by user id.
+stageIamUserId = ""

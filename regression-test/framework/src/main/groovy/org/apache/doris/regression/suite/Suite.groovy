@@ -349,9 +349,13 @@ class Suite implements GroovyInterceptable {
 
     String getProvider() {
         String s3Endpoint = context.config.otherConfigs.get("s3Endpoint")
+        return getProvider(s3Endpoint)
+    }
+
+    String getProvider(String endpoint) {
         def providers = ["cos", "oss", "s3", "obs", "bos"]
         for (final def provider in providers) {
-            if (s3Endpoint.containsIgnoreCase(provider)) {
+            if (endpoint.containsIgnoreCase(provider)) {
                 return provider
             }
         }

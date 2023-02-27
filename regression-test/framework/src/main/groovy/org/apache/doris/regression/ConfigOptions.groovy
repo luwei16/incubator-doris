@@ -69,6 +69,15 @@ class ConfigOptions {
     static Option multiClusterBesOpt
     static Option metaServiceTokenOpt
     static Option multiClusterInstanceOpt
+    static Option stageIamEndpointOpt
+    static Option stageIamRegionOpt
+    static Option stageIamBucketOpt
+    static Option stageIamPolicyOpt
+    static Option stageIamRoleOpt
+    static Option stageIamArnOpt
+    static Option stageIamAkOpt
+    static Option stageIamSkOpt
+    static Option stageIamUserIdOpt
 
     static CommandLine initCommands(String[] args) {
         helpOption = Option.builder("h")
@@ -394,6 +403,51 @@ class ConfigOptions {
                 .hasArg(false)
                 .desc("multi cluster instance")
                 .build()
+        stageIamEndpointOpt = Option.builder("stageIamEndpoint")
+                .required(false)
+                .hasArg(false)
+                .desc("stage iam endpoint")
+                .build()
+        stageIamRegionOpt = Option.builder("stageIamRegion")
+                .required(false)
+                .hasArg(false)
+                .desc("stage iam region")
+                .build()
+        stageIamBucketOpt = Option.builder("stageIamBucket")
+                .required(false)
+                .hasArg(false)
+                .desc("stage iam bucket")
+                .build()
+        stageIamPolicyOpt = Option.builder("stageIamPolicy")
+                .required(false)
+                .hasArg(false)
+                .desc("stage iam policy")
+                .build()
+        stageIamRoleOpt = Option.builder("stageIamRole")
+                .required(false)
+                .hasArg(false)
+                .desc("stage iam role")
+                .build()
+        stageIamArnOpt = Option.builder("stageIamArn")
+                .required(false)
+                .hasArg(false)
+                .desc("stage iam arn")
+                .build()
+        stageIamAkOpt = Option.builder("stageIamAk")
+                .required(false)
+                .hasArg(false)
+                .desc("stage iam ak")
+                .build()
+        stageIamSkOpt = Option.builder("stageIamSk")
+                .required(false)
+                .hasArg(false)
+                .desc("stage iam sk")
+                .build()
+        stageIamUserIdOpt = Option.builder("stageIamUserId")
+                .required(false)
+                .hasArg(false)
+                .desc("stage iam user id")
+                .build()
 
         Options options = new Options()
                 .addOption(helpOption)
@@ -433,6 +487,16 @@ class ConfigOptions {
                 .addOption(multiClusterBesOpt)
                 .addOption(metaServiceTokenOpt)
                 .addOption(multiClusterInstanceOpt)
+                .addOption(stageIamEndpointOpt)
+                .addOption(stageIamRegionOpt)
+                .addOption(stageIamBucketOpt)
+                .addOption(stageIamPolicyOpt)
+                .addOption(stageIamRoleOpt)
+                .addOption(stageIamArnOpt)
+                .addOption(stageIamAkOpt)
+                .addOption(stageIamSkOpt)
+                .addOption(stageIamUserIdOpt)
+
 
         CommandLine cmd = new DefaultParser().parse(options, args, true)
         if (cmd.hasOption(helpOption)) {

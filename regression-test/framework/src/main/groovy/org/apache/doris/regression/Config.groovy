@@ -97,6 +97,16 @@ class Config {
     public String metaServiceToken
     public String multiClusterInstance
 
+    public String stageIamEndpoint
+    public String stageIamRegion
+    public String stageIamBucket
+    public String stageIamPolicy
+    public String stageIamRole
+    public String stageIamArn
+    public String stageIamAk
+    public String stageIamSk
+    public String stageIamUserId
+
     Config() {}
 
     Config(String defaultDb, String jdbcUrl, String jdbcUser, String jdbcPassword,
@@ -105,7 +115,9 @@ class Config {
            String cloudUniqueId, String metaServiceHttpAddress, String recycleServiceHttpAddress, String suitePath,
            String dataPath, String realDataPath, String sf1DataPath, String cacheDataPath, String testGroups,
            String excludeGroups, String testSuites, String excludeSuites, String testDirectories, String excludeDirectories,
-           String pluginPath, String multiClusterBes, String metaServiceToken, String multiClusterInstance) {
+           String pluginPath, String multiClusterBes, String metaServiceToken, String multiClusterInstance,
+           String stageIamEndpoint, String stageIamRegion, String stageIamBucket, String stageIamPolicy,
+           String stageIamRole, String stageIamArn, String stageIamAk, String stageIamSk, String stageIamUserId) {
         this.defaultDb = defaultDb
         this.jdbcUrl = jdbcUrl
         this.jdbcUser = jdbcUser
@@ -135,6 +147,15 @@ class Config {
         this.multiClusterBes = multiClusterBes
         this.metaServiceToken = metaServiceToken
         this.multiClusterInstance = multiClusterInstance
+        this.stageIamEndpoint = stageIamEndpoint
+        this.stageIamRegion = stageIamRegion
+        this.stageIamBucket = stageIamBucket
+        this.stageIamPolicy = stageIamPolicy
+        this.stageIamRole = stageIamRole
+        this.stageIamArn = stageIamArn
+        this.stageIamAk = stageIamAk
+        this.stageIamSk = stageIamSk
+        this.stageIamUserId = stageIamUserId
     }
 
     static Config fromCommandLine(CommandLine cmd) {
@@ -244,6 +265,25 @@ class Config {
         config.multiClusterInstance = cmd.getOptionValue(multiClusterInstanceOpt, config.multiClusterInstance)
         log.info("multiClusterInstance is ${config.multiClusterInstance}".toString())
 
+        config.stageIamEndpoint = cmd.getOptionValue(stageIamEndpointOpt, config.stageIamEndpoint)
+        log.info("stageIamEndpoint is ${config.stageIamEndpoint}".toString())
+        config.stageIamRegion = cmd.getOptionValue(stageIamRegionOpt, config.stageIamRegion)
+        log.info("stageIamRegion is ${config.stageIamRegion}".toString())
+        config.stageIamBucket = cmd.getOptionValue(stageIamBucketOpt, config.stageIamBucket)
+        log.info("stageIamBucket is ${config.stageIamBucket}".toString())
+        config.stageIamPolicy = cmd.getOptionValue(stageIamPolicyOpt, config.stageIamPolicy)
+        log.info("stageIamPolicy is ${config.stageIamPolicy}".toString())
+        config.stageIamRole = cmd.getOptionValue(stageIamRoleOpt, config.stageIamRole)
+        log.info("stageIamRole is ${config.stageIamRole}".toString())
+        config.stageIamArn = cmd.getOptionValue(stageIamArnOpt, config.stageIamArn)
+        log.info("stageIamArn is ${config.stageIamArn}".toString())
+        config.stageIamAk = cmd.getOptionValue(stageIamAkOpt, config.stageIamAk)
+        log.info("stageIamAk is ${config.stageIamAk}".toString())
+        config.stageIamSk = cmd.getOptionValue(stageIamSkOpt, config.stageIamSk)
+        log.info("stageIamSk is ${config.stageIamSk}".toString())
+        config.stageIamUserId = cmd.getOptionValue(stageIamUserIdOpt, config.stageIamUserId)
+        log.info("stageIamUserId is ${config.stageIamUserId}".toString())
+
         config.recycleServiceHttpAddress = cmd.getOptionValue(recycleServiceHttpAddressOpt, config.recycleServiceHttpAddress)
         try {
             Inet4Address host = Inet4Address.getByName(config.recycleServiceHttpAddress.split(":")[0]) as Inet4Address
@@ -319,6 +359,15 @@ class Config {
             configToString(obj.multiClusterBes),
             configToString(obj.metaServiceToken),
             configToString(obj.multiClusterInstance),
+            configToString(obj.stageIamEndpoint),
+            configToString(obj.stageIamRegion),
+            configToString(obj.stageIamBucket),
+            configToString(obj.stageIamPolicy),
+            configToString(obj.stageIamRole),
+            configToString(obj.stageIamArn),
+            configToString(obj.stageIamAk),
+            configToString(obj.stageIamSk),
+            configToString(obj.stageIamUserId),
         )
 
         def declareFileNames = config.getClass()
