@@ -69,7 +69,9 @@ public class SystemHandler extends AlterHandler {
     @Override
     protected void runAfterCatalogReady() {
         super.runAfterCatalogReady();
-        runAlterJobV2();
+        if (Config.cloud_unique_id.isEmpty()) {
+            runAlterJobV2();
+        }
     }
 
     // check all decommissioned backends, if there is no available tablet on that backend, drop it.

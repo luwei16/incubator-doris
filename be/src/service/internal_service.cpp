@@ -19,16 +19,23 @@
 
 #include <butil/iobuf.h>
 
+#include <algorithm>
 #include <memory>
 #include <string>
 
+#include "cloud/cloud_tablet_mgr.h"
+#include "cloud/io/cloud_file_cache_factory.h"
 #include "cloud/utils.h"
 #include "common/config.h"
 #include "common/consts.h"
 #include "gen_cpp/BackendService.h"
 #include "gen_cpp/internal_service.pb.h"
 #include "http/http_client.h"
+#include "olap/rowset/beta_rowset.h"
 #include "olap/rowset/rowset_factory.h"
+#include "olap/rowset/rowset_meta.h"
+#include "olap/rowset/segment_v2/column_reader.h"
+#include "olap/segment_loader.h"
 #include "olap/storage_engine.h"
 #include "olap/tablet.h"
 #include "runtime/buffer_control_block.h"
@@ -42,7 +49,9 @@
 #include "runtime/runtime_state.h"
 #include "runtime/thread_context.h"
 #include "service/brpc.h"
+#include "util/async_io.h"
 #include "util/brpc_client_cache.h"
+#include "util/defer_op.h"
 #include "util/md5.h"
 #include "util/proto_util.h"
 #include "util/ref_count_closure.h"
@@ -53,6 +62,8 @@
 #include "util/thrift_util.h"
 #include "util/uid_util.h"
 #include "util/defer_op.h"
+#include "vec/core/block.h"
+#include "vec/data_types/data_type_string.h"
 #include "vec/exec/format/csv/csv_reader.h"
 #include "vec/exec/format/generic_reader.h"
 #include "vec/exec/format/json/new_json_reader.h"
@@ -1206,6 +1217,44 @@ void PInternalServiceImpl::multiget_data(google::protobuf::RpcController* contro
     Status st = _multi_get(request, response); 
     st.to_protobuf(response->mutable_status());
     LOG(INFO) << "multiget_data finished, cost(us):" << watch.elapsed_time() / 1000;
+}
+
+void PInternalServiceImpl::get_file_cache_meta_by_tablet_id(
+        google::protobuf::RpcController* controller, const PGetFileCacheMetaRequest* request,
+        PGetFileCacheMetaResponse* response, google::protobuf::Closure* done) {
+    brpc::ClosureGuard closure_guard(done);
+    std::array<bool, 2> flag {false, true};
+    std::for_each(
+            request->tablet_ids().cbegin(), request->tablet_ids().cend(), [&](int64_t tablet_id) {
+                TabletSharedPtr tablet;
+                cloud::tablet_mgr()->get_tablet(tablet_id, &tablet);
+                auto rowsets = tablet->get_snapshot_rowset();
+                std::for_each(rowsets.cbegin(), rowsets.cend(), [&](RowsetSharedPtr rowset) {
+                    std::string rowset_id = rowset->rowset_id().to_string();
+                    for (int64_t segment_id = 0; segment_id < rowset->num_segments();
+                         segment_id++) {
+                        std::string file_name = fmt::format("{}_{}.dat", rowset_id, segment_id);
+                        auto cache_key = io::IFileCache::hash(file_name);
+                        auto cache = io::FileCacheFactory::instance().get_by_path(cache_key);
+                        for (bool is_persistent : flag) {
+                            auto segments_meta =
+                                    cache->get_hot_segments_meta(cache_key, is_persistent);
+                            std::for_each(segments_meta.cbegin(), segments_meta.cend(),
+                                          [&](const auto& pair) {
+                                              FileCacheSegmentMeta* meta =
+                                                      response->add_file_cache_segment_metas();
+                                              meta->set_tablet_id(tablet_id);
+                                              meta->set_rowset_id(rowset_id);
+                                              meta->set_segment_id(segment_id);
+                                              meta->set_is_persistent(is_persistent);
+                                              meta->set_file_name(file_name);
+                                              meta->set_offset(pair.first);
+                                              meta->set_size(pair.second);
+                                          });
+                        }
+                    }
+                });
+            });
 }
 
 } // namespace doris

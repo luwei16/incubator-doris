@@ -70,11 +70,13 @@ public class CloudClusterChecker extends MasterDaemon {
         toAddClusterIds.forEach(
                 addId -> {
                     LOG.debug("begin to add clusterId: {}", addId);
+                    /*
                     List<Backend> toAdd = new ArrayList<>();
                     for (SelectdbCloud.NodeInfoPB node : remoteClusterIdToPB.get(addId).getNodesList()) {
                         Backend b = new Backend(Env.getCurrentEnv().getNextId(), node.getIp(), node.getHeartbeatPort());
                         toAdd.add(b);
                     }
+                    */
                     // Attach tag to BEs
                     Map<String, String> newTagMap = Tag.DEFAULT_BACKEND_TAG.toMap();
                     String clusterName = remoteClusterIdToPB.get(addId).getClusterName();
@@ -82,7 +84,14 @@ public class CloudClusterChecker extends MasterDaemon {
                     newTagMap.put(Tag.CLOUD_CLUSTER_NAME, clusterName);
                     newTagMap.put(Tag.CLOUD_CLUSTER_ID, clusterId);
                     MetricRepo.registerClusterMetrics(clusterName, clusterId);
-                    toAdd.forEach(i -> i.setTagMap(newTagMap));
+                    //toAdd.forEach(i -> i.setTagMap(newTagMap));
+                    List<Backend> toAdd = new ArrayList<>();
+                    for (SelectdbCloud.NodeInfoPB node : remoteClusterIdToPB.get(addId).getNodesList()) {
+                        Backend b = new Backend(Env.getCurrentEnv().getNextId(), node.getIp(), node.getHeartbeatPort());
+                        newTagMap.put(Tag.CLOUD_UNIQUE_ID, node.getCloudUniqueId());
+                        b.setTagMap(newTagMap);
+                        toAdd.add(b);
+                    }
                     Env.getCurrentSystemInfo().updateCloudBackends(toAdd, new ArrayList<>());
                 }
         );
@@ -110,6 +119,25 @@ public class CloudClusterChecker extends MasterDaemon {
                     Env.getCurrentSystemInfo().dropCluster(delId, delClusterName);
                 }
         );
+    }
+
+    private void updateStatus(List<Backend> currentBes, List<SelectdbCloud.NodeInfoPB> expectedBes) {
+        Map<String, Backend> currentMap = new HashMap<>();
+        for (Backend be : currentBes) {
+            String endpoint = be.getHost() + ":" + be.getHeartbeatPort();
+            currentMap.put(endpoint, be);
+        }
+
+        for (SelectdbCloud.NodeInfoPB node : expectedBes) {
+            String endpoint = node.getIp() + ":" + node.getHeartbeatPort();
+            SelectdbCloud.NodeStatusPB status = node.getStatus();
+            Backend be = currentMap.get(endpoint);
+
+            if (status == SelectdbCloud.NodeStatusPB.NODE_STATUS_DECOMMISSION) {
+                LOG.info("decommissioned backend: {} status: {}", be, status);
+                be.setDecommissioned(true);
+            }
+        }
     }
 
     private void checkDiffNode(Map<String, ClusterPB> remoteClusterIdToPB,
@@ -146,6 +174,13 @@ public class CloudClusterChecker extends MasterDaemon {
             LOG.info("get cloud cluster, clusterId={} local nodes={} remote nodes={}", cid,
                     currentBeEndpoints, remoteBeEndpoints);
 
+            updateStatus(currentBes, expectedBes);
+
+            // Attach tag to BEs
+            Map<String, String> newTagMap = Tag.DEFAULT_BACKEND_TAG.toMap();
+            newTagMap.put(Tag.CLOUD_CLUSTER_NAME, remoteClusterIdToPB.get(cid).getClusterName());
+            newTagMap.put(Tag.CLOUD_CLUSTER_ID, remoteClusterIdToPB.get(cid).getClusterId());
+
             diffNodes(toAdd, toDel, () -> {
                 Map<String, Backend> currentMap = new HashMap<>();
                 for (Backend be : currentBes) {
@@ -158,6 +193,8 @@ public class CloudClusterChecker extends MasterDaemon {
                 for (SelectdbCloud.NodeInfoPB node : expectedBes) {
                     String endpoint = node.getIp() + ":" + node.getHeartbeatPort();
                     Backend b = new Backend(Env.getCurrentEnv().getNextId(), node.getIp(), node.getHeartbeatPort());
+                    newTagMap.put(Tag.CLOUD_UNIQUE_ID, node.getCloudUniqueId());
+                    b.setTagMap(newTagMap);
                     nodeMap.put(endpoint, b);
                 }
                 return nodeMap;
@@ -170,11 +207,6 @@ public class CloudClusterChecker extends MasterDaemon {
                 continue;
             }
 
-            // Attach tag to BEs
-            Map<String, String> newTagMap = Tag.DEFAULT_BACKEND_TAG.toMap();
-            newTagMap.put(Tag.CLOUD_CLUSTER_NAME, remoteClusterIdToPB.get(cid).getClusterName());
-            newTagMap.put(Tag.CLOUD_CLUSTER_ID, remoteClusterIdToPB.get(cid).getClusterId());
-            toAdd.forEach(i -> i.setTagMap(newTagMap));
             Env.getCurrentSystemInfo().updateCloudBackends(toAdd, toDel);
         }
     }

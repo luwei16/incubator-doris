@@ -45,12 +45,19 @@ public:
 
     size_t get_file_segments_num(bool is_persistent) const override;
 
+    std::vector<std::pair<size_t, size_t>> get_hot_segments_meta(
+            const Key& key, bool is_persistent, uint64_t limit_hour = 24) const override;
+
 private:
     struct FileSegmentCell {
         FileSegmentSPtr file_segment;
 
         /// Iterator is put here on first reservation attempt, if successful.
         std::optional<LRUQueue::Iterator> queue_iterator;
+
+        mutable std::chrono::steady_clock::time_point atime;
+
+        void update_atime() const { atime = std::chrono::steady_clock::now(); }
 
         /// Pointer to file segment is always hold by the cache itself.
         /// Apart from pointer in cache, it can be hold by cache users, when they call
@@ -64,7 +71,8 @@ private:
 
         FileSegmentCell(FileSegmentCell&& other) noexcept
                 : file_segment(std::move(other.file_segment)),
-                  queue_iterator(other.queue_iterator) {}
+                  queue_iterator(other.queue_iterator),
+                  atime(other.atime) {}
 
         FileSegmentCell& operator=(const FileSegmentCell&) = delete;
         FileSegmentCell(const FileSegmentCell&) = delete;

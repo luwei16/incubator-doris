@@ -3187,6 +3187,25 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
         return;
     }
 
+    if (unresolved_path == "decommission_node") {
+        AlterClusterRequest r;
+        auto st = google::protobuf::util::JsonStringToMessage(request_body, &r);
+        if (!st.ok()) {
+            msg = "failed to parse AlterClusterRequest, error: " + st.message().ToString();
+            ret = MetaServiceCode::PROTOBUF_PARSE_ERR;
+            response_body = msg;
+            LOG(WARNING) << msg;
+            return;
+        }
+        r.set_op(AlterClusterRequest::DECOMMISSION_NODE);
+        AlterClusterResponse res;
+        alter_cluster(cntl, &r, &res, nullptr);
+        ret = res.status().code();
+        msg = res.status().msg();
+        response_body = msg;
+        return;
+    }
+
     // This is useful for debuggin
     if (unresolved_path == "get_cluster") {
         GetClusterRequest r;
@@ -4002,6 +4021,101 @@ void MetaServiceImpl::alter_cluster(google::protobuf::RpcController* controller,
             to_del.emplace_back(std::move(node));
         }
         msg = resource_mgr_->modify_nodes(instance_id, to_add, to_del);
+    } break;
+    case AlterClusterRequest::DECOMMISSION_NODE: {
+        resource_mgr_->check_cluster_params_valid(request->cluster(), &msg, false);
+        if (msg != "") {
+            LOG(INFO) << msg;
+            break;
+        }
+
+        std::string be_unique_id = (request->cluster().nodes())[0].cloud_unique_id();
+        std::vector<NodeInfo> nodes;
+        std::string err = resource_mgr_->get_node(be_unique_id, &nodes);
+        if (!err.empty()) {
+            LOG(INFO) << "failed to check instance info, err=" << err;
+            msg = err;
+            break;
+        }
+
+        std::vector<NodeInfo> decomission_nodes;
+        for (auto& node : nodes) {
+            for (auto req_node : request->cluster().nodes()) {
+                std::string endpoint =
+                        node.node_info.ip() + ":" + std::to_string(node.node_info.heartbeat_port());
+                std::string req_endpoint =
+                        req_node.ip() + ":" + std::to_string(req_node.heartbeat_port());
+                if (endpoint == req_endpoint) {
+                    decomission_nodes.push_back(node);
+                    node.node_info.set_status(NodeStatusPB::NODE_STATUS_DECOMMISSION);
+                }
+            }
+        }
+
+        {
+            std::vector<NodeInfo> to_add;
+            std::vector<NodeInfo>& to_del = decomission_nodes;
+            msg = resource_mgr_->modify_nodes(instance_id, to_add, to_del);
+        }
+        {
+            std::vector<NodeInfo>& to_add = decomission_nodes;
+            std::vector<NodeInfo> to_del;
+            for (auto& node : to_add) {
+                node.node_info.set_status(NodeStatusPB::NODE_STATUS_DECOMMISSION);
+                LOG(INFO) << "decomission node, " << "size: " << to_add.size()
+                          << " " << node.node_info.DebugString()
+                          << " " << node.cluster_id
+                          << " " << node.cluster_name;
+            }
+            msg = resource_mgr_->modify_nodes(instance_id, to_add, to_del);
+        }
+    } break;
+    case AlterClusterRequest::NOTIFY_DECOMMISSIONED: {
+        resource_mgr_->check_cluster_params_valid(request->cluster(), &msg, false);
+        if (msg != "") {
+            LOG(INFO) << msg;
+            break;
+        }
+
+        std::string be_unique_id = (request->cluster().nodes())[0].cloud_unique_id();
+        std::vector<NodeInfo> nodes;
+        std::string err = resource_mgr_->get_node(be_unique_id, &nodes);
+        if (!err.empty()) {
+            LOG(INFO) << "failed to check instance info, err=" << err;
+            msg = err;
+            break;
+        }
+
+        std::vector<NodeInfo> decomission_nodes;
+        for (auto& node : nodes) {
+            for (auto req_node : request->cluster().nodes()) {
+                std::string endpoint =
+                        node.node_info.ip() + ":" + std::to_string(node.node_info.heartbeat_port());
+                std::string req_endpoint =
+                        req_node.ip() + ":" + std::to_string(req_node.heartbeat_port());
+                if (endpoint == req_endpoint) {
+                    decomission_nodes.push_back(node);
+                }
+            }
+        }
+
+        {
+            std::vector<NodeInfo> to_add;
+            std::vector<NodeInfo>& to_del = decomission_nodes;
+            msg = resource_mgr_->modify_nodes(instance_id, to_add, to_del);
+        }
+        {
+            std::vector<NodeInfo>& to_add = decomission_nodes;
+            std::vector<NodeInfo> to_del;
+            for (auto& node : to_add) {
+                node.node_info.set_status(NodeStatusPB::NODE_STATUS_DECOMMISSIONED);
+                LOG(INFO) << "notify node decomissioned, " << " size: " << to_add.size()
+                          << " " << node.node_info.DebugString()
+                          << " " << node.cluster_id
+                          << " " << node.cluster_name;
+            }
+            msg = resource_mgr_->modify_nodes(instance_id, to_add, to_del);
+        }
     } break;
     case AlterClusterRequest::RENAME_CLUSTER: {
         msg = resource_mgr_->update_cluster(

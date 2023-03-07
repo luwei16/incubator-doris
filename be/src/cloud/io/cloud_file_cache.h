@@ -78,6 +78,9 @@ public:
 
     virtual size_t get_file_segments_num(bool is_persistent) const = 0;
 
+    virtual std::vector<std::pair<size_t, size_t>> get_hot_segments_meta(
+            const Key& key, bool is_persistent, uint64_t limit_hour = 24) const = 0;
+
     IFileCache& operator=(const IFileCache&) = delete;
     IFileCache(const IFileCache&) = delete;
 

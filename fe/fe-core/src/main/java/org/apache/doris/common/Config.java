@@ -2087,6 +2087,9 @@ public class Config extends ConfigBase {
     @ConfField(mutable = true)
     public static int sts_duration = 3600;
 
+    @ConfField(mutable = true)
+    public static boolean preheating_enabled = false;
+
     /**
      * intervals between be status checks for CloudUpgradeMgr
      */

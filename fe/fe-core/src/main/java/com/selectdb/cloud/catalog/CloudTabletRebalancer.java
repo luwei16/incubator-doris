@@ -17,6 +17,9 @@
 
 package com.selectdb.cloud.catalog;
 
+import com.selectdb.cloud.proto.SelectdbCloud;
+import com.selectdb.cloud.rpc.MetaServiceProxy;
+
 import org.apache.doris.catalog.Database;
 import org.apache.doris.catalog.Env;
 import org.apache.doris.catalog.MaterializedIndex;
@@ -27,11 +30,18 @@ import org.apache.doris.catalog.Replica;
 import org.apache.doris.catalog.Table;
 import org.apache.doris.catalog.TableIf.TableType;
 import org.apache.doris.catalog.Tablet;
+import org.apache.doris.common.ClientPool;
 import org.apache.doris.common.Config;
 import org.apache.doris.common.util.MasterDaemon;
 import org.apache.doris.persist.UpdateCloudReplicaInfo;
+import org.apache.doris.rpc.RpcException;
 import org.apache.doris.system.Backend;
 import org.apache.doris.system.SystemInfoService;
+import org.apache.doris.thrift.BackendService;
+import org.apache.doris.thrift.TNetworkAddress;
+import org.apache.doris.thrift.TPreCacheAsyncRequest;
+import org.apache.doris.thrift.TPreCacheAsyncResponse;
+import org.apache.doris.thrift.TStatusCode;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -50,6 +60,8 @@ public class CloudTabletRebalancer extends MasterDaemon {
 
     // partitionId -> indexId -> be -> tablet
     private Map<Long, Map<Long, Map<Long, List<Tablet>>>> partitionToTablets;
+
+    private Map<Long, Long> beToDecommissionedTime = new HashMap<Long, Long>();
 
     private Random rand = new Random();
 
@@ -78,7 +90,8 @@ public class CloudTabletRebalancer extends MasterDaemon {
 
         // build cluster to backend info
         SystemInfoService systemInfoService = Env.getCurrentSystemInfo();
-        for (Long beId : systemInfoService.getBackendIds(true)) {
+        for (Long beId : systemInfoService.getBackendIds(false)) {
+            LOG.info("lw test beid {}", beId);
             Backend be = systemInfoService.getBackend(beId);
             clusterToBes.putIfAbsent(be.getCloudClusterName(), new ArrayList<Long>());
             clusterToBes.get(be.getCloudClusterName()).add(beId);
@@ -124,7 +137,56 @@ public class CloudTabletRebalancer extends MasterDaemon {
             }
         }
 
+        checkDecommissionState(clusterToBes);
+
         LOG.info("finished to rebalancer. cost: {} ms", (System.currentTimeMillis() - start));
+    }
+
+    public void checkDecommissionState(Map<String, List<Long>> clusterToBes) {
+        for (Map.Entry<String, List<Long>> entry : clusterToBes.entrySet()) {
+            List<Long> beList = entry.getValue();
+            for (long beId : beList) {
+                long tabletNum = beToTabletsGlobal.get(beId) == null ? 0 : beToTabletsGlobal.get(beId).size();
+                Backend backend = Env.getCurrentSystemInfo().getBackend(beId);
+                if (backend.isDecommissioned() && tabletNum == 0) {
+                    if (!beToDecommissionedTime.containsKey(beId)) {
+                        SelectdbCloud.AlterClusterRequest.Builder builder =
+                                SelectdbCloud.AlterClusterRequest.newBuilder();
+                        builder.setCloudUniqueId(Config.cloud_unique_id);
+                        builder.setOp(SelectdbCloud.AlterClusterRequest.Operation.NOTIFY_DECOMMISSIONED);
+
+                        SelectdbCloud.ClusterPB.Builder clusterBuilder =
+                                SelectdbCloud.ClusterPB.newBuilder();
+                        clusterBuilder.setClusterName(backend.getCloudClusterName());
+                        clusterBuilder.setClusterId(backend.getCloudClusterId());
+                        clusterBuilder.setType(SelectdbCloud.ClusterPB.Type.COMPUTE);
+
+                        SelectdbCloud.NodeInfoPB.Builder nodeBuilder =
+                                SelectdbCloud.NodeInfoPB.newBuilder();
+                        nodeBuilder.setIp(backend.getHost());
+                        nodeBuilder.setHeartbeatPort(backend.getHeartbeatPort());
+                        nodeBuilder.setCloudUniqueId(backend.getCloudUniqueId());
+                        nodeBuilder.setStatus(SelectdbCloud.NodeStatusPB.NODE_STATUS_DECOMMISSIONED);
+
+                        clusterBuilder.addNodes(nodeBuilder);
+                        builder.setCluster(clusterBuilder);
+
+                        SelectdbCloud.AlterClusterResponse response;
+                        try {
+                            response = MetaServiceProxy.getInstance().alterCluster(builder.build());
+                            if (response.getStatus().getCode() != SelectdbCloud.MetaServiceCode.OK) {
+                                LOG.warn("notify decommission response: {}", response);
+                            }
+                            LOG.info("notify decommission response: {} ", response);
+                        } catch (RpcException e) {
+                            LOG.info("failed to notify decommission {}", e);
+                            return;
+                        }
+                        beToDecommissionedTime.put(beId, System.currentTimeMillis() / 1000);
+                    }
+                }
+            }
+        }
     }
 
     private void completeRouteInfo() {
@@ -240,76 +302,122 @@ public class CloudTabletRebalancer extends MasterDaemon {
         }
 
         long totalTabletsNum = 0;
+        long beNum = 0;
         for (Long be : bes) {
             long tabletNum = beToTablets.get(be) == null ? 0 : beToTablets.get(be).size();
+            Backend backend = Env.getCurrentSystemInfo().getBackend(be);
+            if (!backend.isDecommissioned()) {
+                beNum++;
+            }
             totalTabletsNum += tabletNum;
         }
-        long avgNum = totalTabletsNum / bes.size();
+        long avgNum = totalTabletsNum / beNum;
         long transferNum = Math.max(Math.round(avgNum * Config.balance_tablet_percent_per_run),
                                     Config.min_balance_tablet_num_per_run);
 
         for (int i = 0; i < transferNum; i++) {
-            long minBe = bes.get(0);
-            long maxBe = bes.get(0);
+            long destBe = bes.get(0);
+            long srcBe = bes.get(0);
 
             long minTabletsNum = Long.MAX_VALUE;
             long maxTabletsNum = 0;
-            long beNum = bes.size();
+            boolean srcDecommissioned = false;
 
             for (Long be : bes) {
                 long tabletNum = beToTablets.get(be) == null ? 0 : beToTablets.get(be).size();
                 if (tabletNum > maxTabletsNum) {
-                    maxBe = be;
+                    srcBe = be;
                     maxTabletsNum = tabletNum;
                 }
 
-                if (tabletNum < minTabletsNum) {
-                    minBe = be;
+                Backend backend = Env.getCurrentSystemInfo().getBackend(be);
+                if (tabletNum < minTabletsNum && !backend.isDecommissioned()) {
+                    destBe = be;
                     minTabletsNum = tabletNum;
                 }
             }
 
-            if ((maxTabletsNum < avgNum * (1 + Config.cloud_rebalance_percent_threshold)
-                    && minTabletsNum > avgNum * (1 - Config.cloud_rebalance_percent_threshold))
-                    || minTabletsNum > maxTabletsNum - Config.cloud_rebalance_number_threshold) {
-                return;
+            for (Long be : bes) {
+                long tabletNum = beToTablets.get(be) == null ? 0 : beToTablets.get(be).size();
+                Backend backend = Env.getCurrentSystemInfo().getBackend(be);
+                if (backend.isDecommissioned() && tabletNum > 0) {
+                    srcBe = be;
+                    srcDecommissioned = true;
+                    break;
+                }
             }
 
-            int randomIndex = rand.nextInt(beToTablets.get(maxBe).size());
-            Tablet pickedTablet = beToTablets.get(maxBe).get(randomIndex);
+            if (!srcDecommissioned) {
+                if ((maxTabletsNum < avgNum * (1 + Config.cloud_rebalance_percent_threshold)
+                        && minTabletsNum > avgNum * (1 - Config.cloud_rebalance_percent_threshold))
+                        || minTabletsNum > maxTabletsNum - Config.cloud_rebalance_number_threshold) {
+                    return;
+                }
+            }
+
+            int randomIndex = rand.nextInt(beToTablets.get(srcBe).size());
+            Tablet pickedTablet = beToTablets.get(srcBe).get(randomIndex);
             CloudReplica cloudReplica = (CloudReplica) pickedTablet.getReplicas().get(0);
 
             if (isGlobal) {
                 // update clusterToBackens
                 long maxBeSize = partitionToTablets.get(cloudReplica.getPartitionId())
-                        .get(cloudReplica.getIndexId()).get(maxBe).size();
+                        .get(cloudReplica.getIndexId()).get(srcBe).size();
                 long minBeSize = partitionToTablets.get(cloudReplica.getPartitionId())
-                        .get(cloudReplica.getIndexId()).get(minBe).size();
+                        .get(cloudReplica.getIndexId()).get(destBe).size();
                 if (minBeSize >= maxBeSize) {
                     return;
                 }
-                cloudReplica.updateClusterToBe(clusterId, minBe);
-                LOG.info("cloud be rebalancer transfer {} from to {} cluster {}", pickedTablet.getId(), maxBe, minBe,
-                        clusterId, minTabletsNum, maxTabletsNum, beNum, totalTabletsNum);
+                cloudReplica.updateClusterToBe(clusterId, destBe);
+                LOG.info("transfer {} from {} to {}, cluster {} minNum {} maxNum {} beNum {} totalTabletsNum {}",
+                         pickedTablet.getId(), srcBe, destBe, clusterId,
+                         minTabletsNum, maxTabletsNum, beNum, totalTabletsNum);
 
-                beToTabletsGlobal.get(maxBe).remove(randomIndex);
-                beToTabletsGlobal.putIfAbsent(minBe, new ArrayList<Tablet>());
-                beToTabletsGlobal.get(minBe).add(pickedTablet);
+                beToTabletsGlobal.get(srcBe).remove(randomIndex);
+                beToTabletsGlobal.putIfAbsent(destBe, new ArrayList<Tablet>());
+                beToTabletsGlobal.get(destBe).add(pickedTablet);
             } else {
                 indexBalanced = false;
-
                 // update clusterToBackens
-                cloudReplica.updateClusterToBe(clusterId, minBe);
-                LOG.info("cloud rebalancer transfer {} from to {} cluster {}", pickedTablet.getId(), maxBe, minBe,
-                        clusterId, minTabletsNum, maxTabletsNum, beNum, totalTabletsNum);
+                cloudReplica.updateClusterToBe(clusterId, destBe);
+                LOG.info("transfer {} from {} to {} cluster {} minNum {} maxNum {} beNum {} totalTabletsNum {} ",
+                         pickedTablet.getId(), srcBe, destBe, clusterId,
+                         minTabletsNum, maxTabletsNum, beNum, totalTabletsNum);
 
-                beToTabletsGlobal.get(maxBe).remove(randomIndex);
-                beToTabletsGlobal.putIfAbsent(minBe, new ArrayList<Tablet>());
-                beToTabletsGlobal.get(minBe).add(pickedTablet);
+                beToTabletsGlobal.get(srcBe).remove(randomIndex);
+                beToTabletsGlobal.putIfAbsent(destBe, new ArrayList<Tablet>());
+                beToTabletsGlobal.get(destBe).add(pickedTablet);
 
-                beToTablets.get(maxBe).remove(randomIndex);
-                beToTablets.putIfAbsent(minBe, new ArrayList<Tablet>());
-                beToTablets.get(minBe).add(pickedTablet);
+                beToTablets.get(srcBe).remove(randomIndex);
+                beToTablets.putIfAbsent(destBe, new ArrayList<Tablet>());
+                beToTablets.get(destBe).add(pickedTablet);
+            }
+
+            if (Config.preheating_enabled) {
+                BackendService.Client client = null;
+                TNetworkAddress address = null;
+                Backend srcBackend = Env.getCurrentSystemInfo().getBackend(srcBe);
+                Backend destBackend = Env.getCurrentSystemInfo().getBackend(destBe);
+                try {
+                    address = new TNetworkAddress(destBackend.getHost(), destBackend.getBePort());
+                    client = ClientPool.backendPool.borrowObject(address);
+                    TPreCacheAsyncRequest req = new TPreCacheAsyncRequest();
+                    req.setHost(srcBackend.getHost());
+                    req.setBrpcPort(srcBackend.getBrpcPort());
+                    List<Long> tablets = new ArrayList<Long>();
+                    tablets.add(pickedTablet.getId());
+                    req.setTabletIds(tablets);
+                    TPreCacheAsyncResponse result = client.preCacheAsync(req);
+                    if (result.getStatus().getStatusCode() != TStatusCode.OK) {
+                        LOG.warn("pre cache failed status {} {}", result.getStatus().getStatusCode(),
+                                result.getStatus().getErrorMsgs());
+                    } else {
+                        LOG.info("pre cache succ status {} {}", result.getStatus().getStatusCode(),
+                                result.getStatus().getErrorMsgs());
+                    }
+                } catch (Exception e) {
+                    LOG.warn("task exec error. backend[{}]", destBackend.getId(), e);
+                }
             }
 
             Database db = Env.getCurrentInternalCatalog().getDbNullable(cloudReplica.getDbId());
@@ -330,7 +438,7 @@ public class CloudTabletRebalancer extends MasterDaemon {
 
                 UpdateCloudReplicaInfo info = new UpdateCloudReplicaInfo(cloudReplica.getDbId(),
                         cloudReplica.getTableId(), cloudReplica.getPartitionId(), cloudReplica.getIndexId(),
-                        pickedTablet.getId(), cloudReplica.getId(), clusterId, minBe);
+                        pickedTablet.getId(), cloudReplica.getId(), clusterId, destBe);
                 Env.getCurrentEnv().getEditLog().logUpdateCloudReplica(info);
             } finally {
                 table.readUnlock();

@@ -2500,4 +2500,12 @@ int64_t Tablet::get_cloud_cumu_compaction_score() {
     return _approximate_cumu_num_rowsets.load(std::memory_order_relaxed);
 }
 
+std::vector<RowsetSharedPtr> Tablet::get_snapshot_rowset() const {
+    std::shared_lock rdlock(_meta_lock);
+    std::vector<RowsetSharedPtr> rowsets;
+    std::transform(_rs_version_map.cbegin(), _rs_version_map.cend(), std::back_inserter(rowsets),
+                   [](auto& kv) { return kv.second; });
+    return rowsets;
+}
+
 } // namespace doris

@@ -45,6 +45,8 @@ import org.apache.doris.thrift.TFetchDataResult;
 import org.apache.doris.thrift.TFinishTaskRequest;
 import org.apache.doris.thrift.THeartbeatResult;
 import org.apache.doris.thrift.TMasterInfo;
+import org.apache.doris.thrift.TPreCacheAsyncRequest;
+import org.apache.doris.thrift.TPreCacheAsyncResponse;
 import org.apache.doris.thrift.TRoutineLoadTask;
 import org.apache.doris.thrift.TScanBatchResult;
 import org.apache.doris.thrift.TScanCloseParams;
@@ -301,6 +303,11 @@ public class MockedBackendFactory {
         @Override
         public TCheckStorageFormatResult checkStorageFormat() throws TException {
             return new TCheckStorageFormatResult();
+        }
+
+        @Override
+        public TPreCacheAsyncResponse preCacheAsync(TPreCacheAsyncRequest request) throws TException {
+            return new TPreCacheAsyncResponse();
         }
     }
 

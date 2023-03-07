@@ -193,6 +193,10 @@ public class Backend implements Writable {
         return tagMap.getOrDefault(Tag.CLOUD_CLUSTER_ID, "");
     }
 
+    public String getCloudUniqueId() {
+        return tagMap.getOrDefault(Tag.CLOUD_UNIQUE_ID, "");
+    }
+
     public void setId(long id) {
         this.id = id;
     }

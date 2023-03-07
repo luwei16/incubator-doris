@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <atomic>
 #include <cstddef>
 #include <mutex>
@@ -165,6 +166,7 @@ public:
 
     const std::vector<RowsetMetaSharedPtr>& all_rs_metas() const;
     std::vector<RowsetMetaSharedPtr>& all_mutable_rs_metas();
+    std::map<std::string, RowsetMetaSharedPtr> snapshot_rs_metas() const;
     Status add_rs_meta(const RowsetMetaSharedPtr& rs_meta);
     void delete_rs_meta_by_version(const Version& version,
                                    std::vector<RowsetMetaSharedPtr>* deleted_rs_metas);
@@ -583,6 +585,15 @@ inline bool TabletMeta::all_beta() const {
         }
     }
     return true;
+}
+
+inline std::map<std::string, RowsetMetaSharedPtr> TabletMeta::snapshot_rs_metas() const {
+    std::shared_lock rlock(_meta_lock);
+    std::map<std::string, RowsetMetaSharedPtr> id_to_rowset_meta_map;
+    std::for_each(_rs_metas.cbegin(), _rs_metas.cend(), [&](const auto& rowset_meta) {
+        id_to_rowset_meta_map[rowset_meta->rowset_id().to_string()] = rowset_meta;
+    });
+    return id_to_rowset_meta_map;
 }
 
 // Only for unit test now.

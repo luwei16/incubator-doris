@@ -55,6 +55,7 @@ void LRUFileCache::use_cell(const FileSegmentCell& cell, const TUniqueId& query_
     DCHECK(cell.queue_iterator);
     /// Move to the end of the queue. The iterator remains valid.
     queue->move_to_end(*cell.queue_iterator, cache_lock);
+    cell.update_atime();
 }
 
 LRUFileCache::FileSegmentCell* LRUFileCache::get_cell(
@@ -756,6 +757,7 @@ LRUFileCache::FileSegmentCell::FileSegmentCell(FileSegmentSPtr file_segment_, LR
         DCHECK(false) << "Can create cell with either EMPTY, DOWNLOADED, SKIP_CACHE state, got: "
                       << FileSegment::state_to_string(file_segment->_download_state);
     }
+    atime = std::chrono::steady_clock::now();
 }
 
 IFileCache::LRUQueue::Iterator IFileCache::LRUQueue::add(
@@ -819,6 +821,24 @@ std::string LRUFileCache::dump_structure_unlocked(const Key& key, bool is_persis
 
     result << "\n\nQueue: " << _queue.to_string(cache_lock);
     return result.str();
+}
+
+std::vector<std::pair<size_t, size_t>> LRUFileCache::get_hot_segments_meta(
+        const Key& key, bool is_persistent, uint64_t limit_hour) const {
+    auto now = std::chrono::steady_clock::now();
+    std::lock_guard cache_lock(_mutex);
+    std::vector<std::pair<size_t, size_t>> segments_meta;
+    auto file_key = std::make_pair(key, is_persistent);
+    if (auto iter = _files.find(file_key); iter != _files.end()) {
+        for (auto& pair : _files.find(file_key)->second) {
+            if (static_cast<uint64_t>(
+                        std::chrono::duration_cast<std::chrono::hours>(now - pair.second.atime)
+                                .count()) < limit_hour) {
+                segments_meta.push_back(std::make_pair(pair.first, pair.second.size()));
+            }
+        }
+    }
+    return segments_meta;
 }
 
 } // namespace io

@@ -684,7 +684,9 @@ std::string ResourceManager::modify_nodes(const std::string& instance_id,
         uint64_t time =
                 std::chrono::duration_cast<std::chrono::seconds>(now_time.time_since_epoch())
                         .count();
-        node.set_ctime(time);
+        if (!node.has_ctime()) {
+            node.set_ctime(time);
+        }
         node.set_mtime(time);
         copied_original_cluster.CopyFrom(c);
         auto& change_cluster = const_cast<std::decay_t<decltype(c)>&>(c);

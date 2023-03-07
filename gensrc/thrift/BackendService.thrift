@@ -120,6 +120,16 @@ struct TCheckStorageFormatResult {
     2: optional list<i64> v2_tablets;
 }
 
+struct TPreCacheAsyncRequest {
+    1: required string host
+    2: required i32 brpc_port
+    3: required list<i64> tablet_ids
+}
+
+struct TPreCacheAsyncResponse {
+    1: required Status.TStatus status
+}
+
 service BackendService {
     // Called by coord to start asynchronous execution of plan fragment in backend.
     // Returns as soon as all incoming data streams have been set up.
@@ -177,4 +187,6 @@ service BackendService {
 
     // check tablet rowset type
     TCheckStorageFormatResult check_storage_format();
+
+    TPreCacheAsyncResponse pre_cache_async(1: TPreCacheAsyncRequest request);
 }

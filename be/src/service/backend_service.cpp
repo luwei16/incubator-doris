@@ -18,14 +18,21 @@
 #include "service/backend_service.h"
 
 #include <arrow/record_batch.h>
+#include <gen_cpp/internal_service.pb.h>
 #include <gperftools/heap-profiler.h>
 #include <thrift/concurrency/ThreadFactory.h>
 #include <thrift/processor/TMultiplexedProcessor.h>
 #include <thrift/protocol/TDebugProtocol.h>
 
+#include <algorithm>
+#include <iterator>
 #include <map>
 #include <memory>
 
+#include "cloud/cloud_tablet_mgr.h"
+#include "cloud/io/cloud_file_cache_downloader.h"
+#include "cloud/io/file_reader.h"
+#include "cloud/utils.cpp"
 #include "common/config.h"
 #include "common/logging.h"
 #include "common/status.h"
@@ -34,7 +41,9 @@
 #include "gen_cpp/TDorisExternalService.h"
 #include "gen_cpp/Types_types.h"
 #include "gutil/strings/substitute.h"
+#include "olap/rowset/beta_rowset.h"
 #include "olap/storage_engine.h"
+#include "olap/tablet.h"
 #include "runtime/data_stream_mgr.h"
 #include "runtime/descriptors.h"
 #include "runtime/exec_env.h"
@@ -49,9 +58,11 @@
 #include "service/backend_options.h"
 #include "util/arrow/row_batch.h"
 #include "util/blocking_queue.hpp"
+#include "util/brpc_client_cache.h"
 #include "util/debug_util.h"
 #include "util/doris_metrics.h"
 #include "util/network_util.h"
+#include "util/slice.h"
 #include "util/thrift_server.h"
 #include "util/thrift_util.h"
 #include "util/uid_util.h"
@@ -372,4 +383,38 @@ void BackendService::clean_trash() {
 void BackendService::check_storage_format(TCheckStorageFormatResult& result) {
     StorageEngine::instance()->tablet_manager()->get_all_tablets_storage_format(&result);
 }
+
+void BackendService::pre_cache_async(TPreCacheAsyncResponse& response,
+                                     const TPreCacheAsyncRequest& request) {
+    LOG(INFO) << "lw test pre cache async begin";
+    std::string brpc_addr = fmt::format("{}:{}", request.host, request.brpc_port);
+    Status st = Status::OK();
+    TStatus t_status;
+    std::shared_ptr<PBackendService_Stub> brpc_stub =
+            _exec_env->brpc_internal_client_cache()->get_new_client_no_cache(brpc_addr);
+    brpc::Controller cntl;
+    PGetFileCacheMetaRequest brpc_request;
+    std::for_each(request.tablet_ids.cbegin(), request.tablet_ids.cend(),
+                  [&](int64_t tablet_id) { brpc_request.add_tablet_ids(tablet_id); });
+    PGetFileCacheMetaResponse brpc_response;
+    brpc_stub->get_file_cache_meta_by_tablet_id(&cntl, &brpc_request, &brpc_response, nullptr);
+    LOG(INFO) << "lw test pre cache async 1111";
+    if (!cntl.Failed()) {
+        LOG(INFO) << "lw test pre cache async 2222";
+        std::vector<FileCacheSegmentMeta> metas;
+        std::transform(brpc_response.file_cache_segment_metas().cbegin(),
+                       brpc_response.file_cache_segment_metas().cend(), std::back_inserter(metas),
+                       [](const FileCacheSegmentMeta& meta) { return meta; });
+        LOG(INFO) << "lw test pre cache async 3333";
+        io::FileCacheSegmentDownloader::instance()->submit_download_task(std::move(brpc_addr),
+                                                                         std::move(metas));
+        LOG(INFO) << "lw test pre cache async 4444";
+    } else {
+        st = Status::RpcError("{} isn't connected", brpc_addr);
+    }
+    st.to_thrift(&t_status);
+    response.status = t_status;
+    LOG(INFO) << "lw test pre cache async end";
+}
+
 } // namespace doris

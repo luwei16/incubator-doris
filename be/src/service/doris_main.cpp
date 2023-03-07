@@ -39,6 +39,7 @@
 
 #include "agent/heartbeat_server.h"
 #include "agent/topic_subscriber.h"
+#include "cloud/io/cloud_file_cache_downloader.h"
 #include "cloud/io/cloud_file_cache_factory.h"
 #include "cloud/io/cloud_file_cache_settings.h"
 #include "cloud/io/local_file_system.h"
@@ -462,6 +463,8 @@ int main(int argc, char** argv) {
     // start all background threads of storage engine.
     // SHOULD be called after exec env is initialized.
     EXIT_IF_ERROR(engine->cloud_start_bg_threads());
+
+    doris::io::FileCacheSegmentS3Downloader::create_preheating_s3_downloader();
 #else
     EXIT_IF_ERROR(engine->start_bg_threads());
 #endif

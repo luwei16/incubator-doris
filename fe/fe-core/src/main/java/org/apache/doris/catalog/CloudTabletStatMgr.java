@@ -103,7 +103,7 @@ public class CloudTabletStatMgr extends MasterDaemon {
             try {
                 resp = getTabletStats(req);
             } catch (RpcException e) {
-                LOG.info("lw test get exception {} ", e);
+                LOG.info("get tablet stats exception {} ", e);
                 continue;
             }
 

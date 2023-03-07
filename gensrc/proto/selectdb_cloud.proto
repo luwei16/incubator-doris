@@ -106,6 +106,8 @@ enum NodeStatusPB {
     NODE_STATUS_UNKNOWN = 0;
     NODE_STATUS_RUNNING = 1;
     NODE_STATUS_SHUTDOWN = 2;
+    NODE_STATUS_DECOMMISSION = 3;
+    NODE_STATUS_DECOMMISSIONED = 4;
 }
 
 message ObjectStoreInfoPB {
@@ -717,6 +719,8 @@ message AlterClusterRequest {
         DROP_NODE      = 4;
         RENAME_CLUSTER = 5;
         UPDATE_CLUSTER_MYSQL_USER_NAME = 6; // just for update cluster's mysql_user_name
+        DECOMMISSION_NODE = 7;
+        NOTIFY_DECOMMISSIONED = 8;
     }
     optional string instance_id = 1;
     optional string cloud_unique_id = 2; // For auth

@@ -270,6 +270,8 @@ public:
 
     bool check_rowset_segment();
 
+    virtual std::string segment_file_path(int segment_id) = 0;
+
 protected:
     friend class RowsetFactory;
 

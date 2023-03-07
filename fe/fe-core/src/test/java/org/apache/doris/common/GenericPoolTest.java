@@ -33,6 +33,8 @@ import org.apache.doris.thrift.TExportTaskRequest;
 import org.apache.doris.thrift.TFetchDataParams;
 import org.apache.doris.thrift.TFetchDataResult;
 import org.apache.doris.thrift.TNetworkAddress;
+import org.apache.doris.thrift.TPreCacheAsyncRequest;
+import org.apache.doris.thrift.TPreCacheAsyncResponse;
 import org.apache.doris.thrift.TResultBatch;
 import org.apache.doris.thrift.TRoutineLoadTask;
 import org.apache.doris.thrift.TScanBatchResult;
@@ -229,6 +231,11 @@ public class GenericPoolTest {
         @Override
         public TCheckStorageFormatResult checkStorageFormat() throws TException {
             return new TCheckStorageFormatResult();
+        }
+
+        @Override
+        public TPreCacheAsyncResponse preCacheAsync(TPreCacheAsyncRequest request) throws TException {
+            return new TPreCacheAsyncResponse();
         }
     }
 

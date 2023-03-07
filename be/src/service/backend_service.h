@@ -57,6 +57,8 @@ class TExportTaskRequest;
 class TExportStatusResult;
 class TStreamLoadRecordResult;
 class TDiskTrashInfo;
+class TPreCacheAsyncResponse;
+class TPreCacheAsyncRequest;
 
 // This class just forward rpc for actual handler
 // make this class because we can bind multiple service on single point
@@ -135,6 +137,9 @@ public:
     virtual void clean_trash() override;
 
     virtual void check_storage_format(TCheckStorageFormatResult& result) override;
+
+    void pre_cache_async(TPreCacheAsyncResponse& response,
+                         const TPreCacheAsyncRequest& request) override;
 
 private:
     Status start_plan_fragment_execution(const TExecPlanFragmentParams& exec_params);

@@ -419,6 +419,8 @@ public:
 
     RowsetSharedPtr get_rowset(const RowsetId& rowset_id);
 
+    std::vector<RowsetSharedPtr> get_snapshot_rowset() const;
+
 private:
     Status _init_once_action();
     void _print_missed_versions(const std::vector<Version>& missed_versions) const;

@@ -568,6 +568,24 @@ message PFetchTableSchemaResult {
   repeated PTypeDesc column_types = 4;
 };
 
+message PGetFileCacheMetaRequest {
+    repeated int64 tablet_ids = 1; 
+}
+
+message FileCacheSegmentMeta {
+    required int64 tablet_id = 1;
+    required string rowset_id = 2;
+    required int64 segment_id = 3;
+    required string file_name = 4;
+    required bool is_persistent = 5;
+    required int64 offset = 6;
+    required int64 size = 7;
+}
+
+message PGetFileCacheMetaResponse {
+    repeated FileCacheSegmentMeta file_cache_segment_metas = 1;
+}
+
 service PBackendService {
     rpc transmit_data(PTransmitDataParams) returns (PTransmitDataResult);
     rpc transmit_data_by_http(PEmptyRequest) returns (PTransmitDataResult);
@@ -603,5 +621,6 @@ service PBackendService {
     rpc response_slave_tablet_pull_rowset(PTabletWriteSlaveDoneRequest) returns (PTabletWriteSlaveDoneResult);
     rpc fetch_table_schema(PFetchTableSchemaRequest) returns (PFetchTableSchemaResult);
     rpc multiget_data(PMultiGetRequest) returns (PMultiGetResponse);
+    rpc get_file_cache_meta_by_tablet_id(PGetFileCacheMetaRequest) returns (PGetFileCacheMetaResponse);
 };
 

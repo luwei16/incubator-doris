@@ -632,6 +632,41 @@ class Suite implements GroovyInterceptable {
         }
     }
 
+    def d_node = { be_unique_id, ip, port, cluster_name, cluster_id ->
+        def jsonOutput = new JsonOutput()
+        def clusterInfo = [
+                     type: "COMPUTE",
+                     cluster_name : cluster_name,
+                     cluster_id : cluster_id,
+                     nodes: [
+                         [
+                             cloud_unique_id: be_unique_id,
+                             ip: ip,
+                             heartbeat_port: port
+                         ],
+                     ]
+                 ]
+        def map = [instance_id: "${instance_id}", cluster: clusterInfo]
+        def js = jsonOutput.toJson(map)
+        log.info("decommission node req: ${js} ".toString())
+
+        def add_cluster_api = { request_body, check_func ->
+            httpTest {
+                endpoint context.config.metaServiceHttpAddress
+                uri "/MetaService/http/decommission_node?token=${token}"
+                body request_body
+                check check_func
+            }
+        }
+
+        add_cluster_api.call(js) {
+            respCode, body ->
+                log.info("decommission node resp: ${body} ${respCode}".toString())
+                def json = parseJson(body)
+                assertTrue(json.code.equalsIgnoreCase("OK") || json.code.equalsIgnoreCase("ALREADY_EXISTED"))
+        }
+    }
+
 }
 
 

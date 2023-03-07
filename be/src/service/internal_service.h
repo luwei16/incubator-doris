@@ -194,6 +194,12 @@ private:
                                      int64_t txn_id, int64_t tablet_id, int64_t node_id,
                                      bool is_succeed);
     Status _multi_get(const PMultiGetRequest *request, PMultiGetResponse * response);
+
+    void get_file_cache_meta_by_tablet_id(google::protobuf::RpcController* controller,
+                                          const PGetFileCacheMetaRequest* request,
+                                          PGetFileCacheMetaResponse* response,
+                                          google::protobuf::Closure* done) override;
+
 private:
     ExecEnv* _exec_env;
     PriorityThreadPool _tablet_worker_pool;
