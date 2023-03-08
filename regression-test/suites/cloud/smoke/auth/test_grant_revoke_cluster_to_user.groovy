@@ -8,11 +8,11 @@ suite("smoke_test_grant_revoke_cluster_to_user", "smoke") {
 
     // 1. change user
     // ${user1} admin role
-    sql """create user ${user1} identified by '12345' default role 'admin'"""
+    sql """create user ${user1} identified by 'Cloud12345' default role 'admin'"""
     order_qt_show_user1_grants1 """show grants for '${user1}'"""
 
     // ${user2} not admin role
-    sql """create user ${user2} identified by '12345'"""
+    sql """create user ${user2} identified by 'Cloud12345'"""
     // for use default_cluster:regression_test
     sql """grant select_priv on *.*.* to ${user2}"""
     order_qt_show_user2_grants2 """show grants for '${user2}'"""
@@ -23,13 +23,13 @@ suite("smoke_test_grant_revoke_cluster_to_user", "smoke") {
     def result
 
     // admin role user can grant cluster to use
-    result = connect(user = "${user1}", password = '12345', url = context.config.jdbcUrl) {
+    result = connect(user = "${user1}", password = 'Cloud12345', url = context.config.jdbcUrl) {
             sql """GRANT USAGE_PRIV ON CLUSTER '${cluster1}' TO '${user1}'"""
     }
 
     // general user can't grant cluster to use
     try {
-        result = connect(user = "${user2}", password = '12345', url = context.config.jdbcUrl) {
+        result = connect(user = "${user2}", password = 'Cloud12345', url = context.config.jdbcUrl) {
              sql """GRANT USAGE_PRIV ON CLUSTER '${cluster1}' TO '${user1}'"""
         }
     } catch (Exception e) {
@@ -39,14 +39,14 @@ suite("smoke_test_grant_revoke_cluster_to_user", "smoke") {
     // grant GRANT_PRIV to general user, he can grant cluster to other user.
     sql """grant GRANT_PRIV on *.*.* to ${user2}"""
 
-    result = connect(user = "${user2}", password = '12345', url = context.config.jdbcUrl) {
+    result = connect(user = "${user2}", password = 'Cloud12345', url = context.config.jdbcUrl) {
             sql """GRANT USAGE_PRIV ON CLUSTER '${cluster1}' TO '${user2}'"""
     }
     order_qt_show_user3_grants3 """show grants for '${user2}'"""
 
     // 3. revoke cluster
     // admin role user can revoke cluster
-    result = connect(user = "${user1}", password = '12345', url = context.config.jdbcUrl) {
+    result = connect(user = "${user1}", password = 'Cloud12345', url = context.config.jdbcUrl) {
             sql """REVOKE USAGE_PRIV ON CLUSTER '${cluster1}' FROM '${user1}'"""
     }
 
@@ -55,7 +55,7 @@ suite("smoke_test_grant_revoke_cluster_to_user", "smoke") {
 
     // general user can't revoke cluster
     try {
-        result = connect(user = "${user2}", password = '12345', url = context.config.jdbcUrl) {
+        result = connect(user = "${user2}", password = 'Cloud12345', url = context.config.jdbcUrl) {
              sql """REVOKE USAGE_PRIV ON CLUSTER '${cluster1}' FROM '${user2}'"""
         }
     } catch (Exception e) {

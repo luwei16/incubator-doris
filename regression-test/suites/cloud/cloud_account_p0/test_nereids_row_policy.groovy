@@ -79,7 +79,7 @@ suite("test_cloud_nereids_row_policy", "account") {
 
     // create user
     sql "DROP USER IF EXISTS ${user}"
-    sql "CREATE USER ${user} IDENTIFIED BY '123456'"
+    sql "CREATE USER ${user} IDENTIFIED BY 'Cloud123456'"
     sql "GRANT SELECT_PRIV ON internal.${dbName}.${tableName} TO ${user}"
     sql """SET PROPERTY FOR '${user}' 'default_cloud_cluster' = '${validCluster}'"""
 

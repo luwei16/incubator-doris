@@ -5,8 +5,8 @@ suite("smoke_test_disable_show_system_info_not_root", "smoke") {
     try_sql("DROP USER ${user}")
     sql """DROP DATABASE IF EXISTS ${dbName}"""
     sql """CREATE DATABASE ${dbName}"""
-    sql """CREATE USER '${user}' IDENTIFIED BY '123456' DEFAULT ROLE '${role}'"""
-    def result1 = connect(user=user, password='123456', url=context.config.jdbcUrl) {
+    sql """CREATE USER '${user}' IDENTIFIED BY 'Cloud123456' DEFAULT ROLE '${role}'"""
+    def result1 = connect(user=user, password='Cloud123456', url=context.config.jdbcUrl) {
         try_sql """show backends"""
     }
     // failed: ERROR 1227 (42000): errCode = 2, detailMessage = Access denied; you need (at least one of) the OPERATOR privilege(s) for this operation

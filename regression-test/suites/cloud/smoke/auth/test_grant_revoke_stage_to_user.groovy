@@ -10,7 +10,7 @@ suite("smoke_test_grant_revoke_stage_to_user", "smoke") {
     assertEquals(fail1, null)
 
     try_sql("DROP USER ${user1}")
-    sql """CREATE USER '${user1}' IDENTIFIED BY '123456' DEFAULT ROLE '${role}'"""
+    sql """CREATE USER '${user1}' IDENTIFIED BY 'Cloud123456' DEFAULT ROLE '${role}'"""
 
     def succ1 = try_sql """
         GRANT USAGE_PRIV ON STAGE ${stage1} TO ${user1};
@@ -18,7 +18,7 @@ suite("smoke_test_grant_revoke_stage_to_user", "smoke") {
     // OK
     assertEquals(succ1.size(), 1)
 
-    def result1 = connect(user=user1, password='123456', url=context.config.jdbcUrl) {
+    def result1 = connect(user=user1, password='Cloud123456', url=context.config.jdbcUrl) {
         def sg = try_sql """show grants"""
         assertEquals(sg.size(), 1)
     }

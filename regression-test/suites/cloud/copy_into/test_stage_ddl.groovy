@@ -95,14 +95,14 @@ suite("test_stage_ddl") {
 
         /**------ drop internal stage ------**/
         // create user
-        sql """create user ${user} identified by '12345'"""
+        sql """create user ${user} identified by 'Cloud12345'"""
         // upload file
         def remote = user
-        uploadFile(user, "12345", remote, filePath)
+        uploadFile(user, "Cloud12345", remote, filePath)
         // drop user
         sql """DROP USER ${user}"""
         // create user again
-        sql """create user ${user} identified by '12345'"""
+        sql """create user ${user} identified by 'Cloud12345'"""
         // create table and grant
         sql """
         CREATE TABLE IF NOT EXISTS regression_test.test (
@@ -116,7 +116,7 @@ suite("test_stage_ddl") {
         GRANT LOAD_PRIV ON *.*.* TO '${user}'@'%';
         """
         // copy into
-        def result = connect(user=user, password='12345', url=context.config.jdbcUrl) {
+        def result = connect(user=user, password='Cloud12345', url=context.config.jdbcUrl) {
             def result1 = sql """COPY INTO regression_test.test FROM @~('${remote}') properties('copy.async'='false')"""
             assertTrue(result1.size() == 1)
             assertTrue(result1[0].size() == 8)

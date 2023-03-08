@@ -44,7 +44,7 @@ public final class GlobalVariable {
     public static final String PERFORMANCE_SCHEMA = "performance_schema";
     public static final String DEFAULT_PASSWORD_LIFETIME = "default_password_lifetime";
     public static final String PASSWORD_HISTORY = "password_history";
-    public static final String VALIDATE_PASSWORD_POLICY = "validate_password_policy";
+    // public static final String VALIDATE_PASSWORD_POLICY = "validate_password_policy";
 
     public static final long VALIDATE_PASSWORD_POLICY_DISABLED = 0;
     public static final long VALIDATE_PASSWORD_POLICY_STRONG = 2;
@@ -93,8 +93,8 @@ public final class GlobalVariable {
     public static int passwordHistory = 0;
     // 0: DISABLED
     // 2: STRONG
-    @VariableMgr.VarAttr(name = VALIDATE_PASSWORD_POLICY, flag = VariableMgr.GLOBAL)
-    public static long validatePasswordPolicy = 0;
+    // @VariableMgr.VarAttr(name = VALIDATE_PASSWORD_POLICY, flag = VariableMgr.GLOBAL)
+    public static long validatePasswordPolicy = 2;
 
     // Don't allow create instance.
     private GlobalVariable() {

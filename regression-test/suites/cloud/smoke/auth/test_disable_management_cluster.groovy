@@ -7,10 +7,10 @@ suite("test_disable_management_cluster", "smoke") {
 
     // 1. change user
     // ${user1} admin role
-    sql """create user ${user1} identified by '12345' default role 'admin'"""
+    sql """create user ${user1} identified by 'Cloud12345' default role 'admin'"""
 
     try {
-        result = connect(user = "${user1}", password = '12345', url = context.config.jdbcUrl) {
+        result = connect(user = "${user1}", password = 'Cloud12345', url = context.config.jdbcUrl) {
              sql """
                 ALTER SYSTEM ADD BACKEND "${host}:${heart_port}"
              """
@@ -20,7 +20,7 @@ suite("test_disable_management_cluster", "smoke") {
     }
 
     try {
-        result = connect(user = "${user1}", password = '12345', url = context.config.jdbcUrl) {
+        result = connect(user = "${user1}", password = 'Cloud12345', url = context.config.jdbcUrl) {
              sql """
                 ALTER SYSTEM ADD FOLLOWER "${host}:${edit_log_port}"
              """
@@ -30,7 +30,7 @@ suite("test_disable_management_cluster", "smoke") {
     }
 
     try {
-        result = connect(user = "${user1}", password = '12345', url = context.config.jdbcUrl) {
+        result = connect(user = "${user1}", password = 'Cloud12345', url = context.config.jdbcUrl) {
              sql """
                 ALTER SYSTEM DROP BACKEND "${host}:${heart_port}"
              """
@@ -40,7 +40,7 @@ suite("test_disable_management_cluster", "smoke") {
     }
 
     try {
-        result = connect(user = "${user1}", password = '12345', url = context.config.jdbcUrl) {
+        result = connect(user = "${user1}", password = 'Cloud12345', url = context.config.jdbcUrl) {
              sql """
                 ALTER SYSTEM DROP FOLLOWER "${host}:${edit_log_port}"
              """

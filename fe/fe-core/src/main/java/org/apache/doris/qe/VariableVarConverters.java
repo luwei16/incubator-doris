@@ -46,8 +46,8 @@ public class VariableVarConverters {
         converters.put(SessionVariable.SQL_MODE, sqlModeConverter);
         RuntimeFilterTypeConverter runtimeFilterTypeConverter = new RuntimeFilterTypeConverter();
         converters.put(SessionVariable.RUNTIME_FILTER_TYPE, runtimeFilterTypeConverter);
-        ValidatePasswordPolicyConverter validatePasswordPolicyConverter = new ValidatePasswordPolicyConverter();
-        converters.put(GlobalVariable.VALIDATE_PASSWORD_POLICY, validatePasswordPolicyConverter);
+        // ValidatePasswordPolicyConverter validatePasswordPolicyConverter = new ValidatePasswordPolicyConverter();
+        // converters.put(GlobalVariable.VALIDATE_PASSWORD_POLICY, validatePasswordPolicyConverter);
     }
 
     public static Boolean hasConverter(String varName) {

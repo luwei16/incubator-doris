@@ -65,10 +65,10 @@ suite("test_hive_other", "p0") {
 
         // test user's grants on external catalog
         sql """drop user if exists ext_catalog_user"""
-        sql """create user ext_catalog_user identified by '12345'"""
+        sql """create user ext_catalog_user identified by 'Cloud12345'"""
         sql """grant all on internal.${context.config.defaultDb}.* to ext_catalog_user"""
         sql """grant all on ${catalog_name}.*.* to ext_catalog_user"""
-        connect(user = 'ext_catalog_user', password = '12345', url = context.config.jdbcUrl) {
+        connect(user = 'ext_catalog_user', password = 'Cloud12345', url = context.config.jdbcUrl) {
             order_qt_ext_catalog_grants """show databases from ${catalog_name}"""
         }
         sql """drop user ext_catalog_user"""

@@ -76,7 +76,7 @@ suite("test_nereids_row_policy") {
     
     // create user
     sql "DROP USER IF EXISTS ${user}"
-    sql "CREATE USER ${user} IDENTIFIED BY '123456'"
+    sql "CREATE USER ${user} IDENTIFIED BY 'Cloud123456'"
     sql "GRANT SELECT_PRIV ON internal.${dbName}.${tableName} TO ${user}"
 
 
