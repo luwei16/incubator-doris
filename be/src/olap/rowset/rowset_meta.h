@@ -186,15 +186,17 @@ public:
 
     void set_num_rows(int64_t num_rows) { _rowset_meta_pb.set_num_rows(num_rows); }
 
-    size_t total_disk_size() const { return _rowset_meta_pb.total_disk_size(); }
+    int64_t total_disk_size() const { return _rowset_meta_pb.total_disk_size(); }
 
-    void set_total_disk_size(size_t total_disk_size) {
+    void set_total_disk_size(int64_t total_disk_size) {
+        DCHECK(total_disk_size >= 0) << "suspicious data size: " << total_disk_size;
         _rowset_meta_pb.set_total_disk_size(total_disk_size);
     }
 
-    size_t data_disk_size() const { return _rowset_meta_pb.data_disk_size(); }
+    int64_t data_disk_size() const { return _rowset_meta_pb.data_disk_size(); }
 
-    void set_data_disk_size(size_t data_disk_size) {
+    void set_data_disk_size(int64_t data_disk_size) {
+        DCHECK(data_disk_size >= 0) << "suspicious data size: " << data_disk_size;
         _rowset_meta_pb.set_data_disk_size(data_disk_size);
     }
 
@@ -361,6 +363,16 @@ public:
     }
 
     TabletSchemaSPtr tablet_schema() { return _schema; }
+
+    void add_segment_file_size(int64_t size) { _rowset_meta_pb.add_segment_file_size(size); }
+
+    int64_t get_segment_file_size(int idx) const {
+        DCHECK(_rowset_meta_pb.segment_file_size_size() == 0 ||
+               _rowset_meta_pb.segment_file_size_size() > idx);
+        return _rowset_meta_pb.segment_file_size_size() != 0
+                       ? _rowset_meta_pb.segment_file_size(idx)
+                       : 0;
+    }
 
 private:
     bool _deserialize_from_pb(const std::string& value) {

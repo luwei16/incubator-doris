@@ -80,7 +80,7 @@ protected:
 
     bool should_vertical_compaction();
     int64_t get_avg_segment_rows();
-
+    void file_cache_garbage_collection();
 protected:
     // the root tracker for this compaction
     std::shared_ptr<MemTrackerLimiter> _mem_tracker;

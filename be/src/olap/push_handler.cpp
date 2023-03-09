@@ -61,6 +61,8 @@ Status PushHandler::cloud_process_streaming_ingestion(const TabletSharedPtr& tab
     load_id.set_lo(0);
     std::unique_ptr<RowsetWriter> rowset_writer;
     RowsetWriterContext context;
+    context.is_persistent = tablet->is_persistent();
+    context.ttl_seconds = tablet->ttl_seconds();
     context.txn_id = request.transaction_id;
     context.load_id = load_id;
     context.rowset_state = PREPARED;
@@ -233,6 +235,8 @@ Status PushHandler::_convert_v2(TabletSharedPtr cur_tablet, RowsetSharedPtr* cur
         // set this value to OVERLAP_UNKNOWN
         std::unique_ptr<RowsetWriter> rowset_writer;
         RowsetWriterContext context;
+        context.is_persistent = cur_tablet->is_persistent();
+        context.ttl_seconds = cur_tablet->ttl_seconds();
         context.txn_id = _request.transaction_id;
         context.load_id = load_id;
         context.rowset_state = PREPARED;
@@ -391,6 +395,8 @@ Status PushHandler::_convert(TabletSharedPtr cur_tablet, RowsetSharedPtr* cur_ro
         // 2. init RowsetBuilder of cur_tablet for current push
         std::unique_ptr<RowsetWriter> rowset_writer;
         RowsetWriterContext context;
+        context.is_persistent = cur_tablet->is_persistent();
+        context.ttl_seconds = cur_tablet->ttl_seconds();
         context.txn_id = _request.transaction_id;
         context.load_id = load_id;
         context.rowset_state = PREPARED;

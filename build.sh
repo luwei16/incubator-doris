@@ -549,7 +549,7 @@ function build_ui() {
 # FE UI must be built before building FE
 # We don't need ui on cloud mode
 if [[ "${BUILD_FE}" -eq 1 ]]; then
-    if [[ "${BUILD_UI}" = "ON" ]] || [[ "${CLOUD_MODE}" != "ON" ]]; then
+    if [[ "${BUILD_UI}" = "ON" ]] || [[ "${CLOUD_MODE}" != "ON" ]] && [[ "${CLOUD_MODE}" != "1" ]]; then
         build_ui
     fi
 fi

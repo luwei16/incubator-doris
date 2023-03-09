@@ -107,6 +107,8 @@ Status BetaRowsetWriter::init(const RowsetWriterContext& rowset_writer_context) 
     _rowset_meta->set_segments_overlap(_context.segments_overlap);
     _rowset_meta->set_txn_id(_context.txn_id);
     _rowset_meta->set_txn_expiration(_context.txn_expiration);
+    _file_cache_ttl_seconds = _context.ttl_seconds;
+    _file_cache_is_persistent = _context.is_persistent;
     if (_context.rowset_state == PREPARED || _context.rowset_state == COMMITTED) {
         _is_pending = true;
         _rowset_meta->set_load_id(_context.load_id);
@@ -114,6 +116,7 @@ Status BetaRowsetWriter::init(const RowsetWriterContext& rowset_writer_context) 
         _rowset_meta->set_version(_context.version);
         _rowset_meta->set_oldest_write_timestamp(_context.oldest_write_timestamp);
         _rowset_meta->set_newest_write_timestamp(_context.newest_write_timestamp);
+        _create_time = _context.newest_write_timestamp;
     }
     _rowset_meta->set_tablet_uid(_context.tablet_uid);
     _rowset_meta->set_tablet_schema(_context.tablet_schema);
@@ -402,7 +405,7 @@ Status BetaRowsetWriter::_load_noncompacted_segments(
         auto seg_path =
                 BetaRowset::segment_file_path(_context.rowset_dir, _context.rowset_id, seg_id);
         std::shared_ptr<segment_v2::Segment> segment;
-        auto s = segment_v2::Segment::open(fs, seg_path, seg_id, rowset_id(),
+        auto s = segment_v2::Segment::open(fs, seg_path, seg_id, rowset_meta(),
                                            _context.tablet_schema, &segment);
         if (!s.ok()) {
             LOG(WARNING) << "failed to open segment. " << seg_path << ":" << s.to_string();
@@ -881,7 +884,13 @@ Status BetaRowsetWriter::_do_create_segment_writer(
         return Status::OLAPInternalError(OLAP_ERR_INIT_FAILED);
     }
     io::FileWriterPtr file_writer;
-    Status st = fs->create_file(path, &file_writer);
+    io::IOState io_state;
+    io_state.expiration_time = _file_cache_is_persistent ? INT64_MAX
+                               : _file_cache_ttl_seconds == 0
+                                       ? 0
+                                       : _create_time + _file_cache_ttl_seconds;
+    io_state.is_cold_data = !_is_hot_data;
+    Status st = fs->create_file(path, &file_writer, &io_state);
     if (!st.ok()) {
         LOG(WARNING) << "failed to create writable file. path=" << path
                      << ", err: " << st.get_error_msg();

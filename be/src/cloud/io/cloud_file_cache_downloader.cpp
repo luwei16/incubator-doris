@@ -5,6 +5,7 @@
 #include <fmt/core.h>
 #include <gen_cpp/internal_service.pb.h>
 
+#include "cloud/io/cloud_file_cache.h"
 #include "cloud/io/cloud_file_cache_factory.h"
 #include "cloud/io/cloud_file_segment.h"
 #include "cloud/io/s3_file_system.h"
@@ -40,7 +41,8 @@ void FileCacheSegmentDownloader::polling_download_task() {
 }
 
 void FileCacheSegmentS3Downloader::download_segments(
-        const std::string& brpc_addr [[unused]], const std::vector<FileCacheSegmentMeta>& metas) {
+        const std::string& brpc_addr [[maybe_unused]],
+        const std::vector<FileCacheSegmentMeta>& metas) {
     std::for_each(metas.cbegin(), metas.cend(), [this](const FileCacheSegmentMeta& meta) {
         TabletSharedPtr tablet;
         cloud::tablet_mgr()->get_tablet(meta.tablet_id(), &tablet);
@@ -49,13 +51,26 @@ void FileCacheSegmentS3Downloader::download_segments(
             iter != id_to_rowset_meta_map.end()) {
             IFileCache::Key cache_key = IFileCache::hash(meta.file_name());
             CloudFileCachePtr cache = FileCacheFactory::instance().get_by_path(cache_key);
-            FileSegmentsHolder holder = cache->get_or_set(cache_key, meta.offset(), meta.size(),
-                                                          meta.is_persistent(), TUniqueId());
+            CacheContext context;
+            switch (meta.cache_type()) {
+                case FileCacheType::TTL:
+                    context.cache_type = CacheType::TTL;
+                    break;
+                case FileCacheType::INDEX:
+                    context.cache_type = CacheType::INDEX;
+                    break;
+                default:
+                    context.cache_type = CacheType::NORMAL;
+            }
+            context.expiration_time = meta.expiration_time();
+            FileSegmentsHolder holder =
+                    cache->get_or_set(cache_key, meta.offset(), meta.size(), context);
             DCHECK(holder.file_segments.size() == 1);
             auto file_segment = holder.file_segments.front();
             if (file_segment->state() == FileSegment::State::EMPTY &&
                 file_segment->get_or_set_downloader() == FileSegment::get_caller_id()) {
-                S3FileSystem* s3_file_system = dynamic_cast<S3FileSystem*>(iter->second->fs().get());
+                S3FileSystem* s3_file_system =
+                        dynamic_cast<S3FileSystem*>(iter->second->fs().get());
                 size_t cur_download_size, next_download_size;
                 do {
                     cur_download_size = _cur_download_file;
@@ -67,20 +82,19 @@ void FileCacheSegmentS3Downloader::download_segments(
                 if (!transfer_manager) {
                     return;
                 }
-                auto download_callback =
-                        [this, file_segment,
-                         meta](const Aws::Transfer::TransferHandle* handle) {
-                            if (handle->GetStatus() == Aws::Transfer::TransferStatus::NOT_STARTED ||
-                                handle->GetStatus() == Aws::Transfer::TransferStatus::IN_PROGRESS) {
-                                return; // not finish
-                            }
-                            if (handle->GetStatus() == Aws::Transfer::TransferStatus::COMPLETED) {
-                                file_segment->finalize_write();
-                            } else {
-                                LOG(WARNING) << "s3 download error " << handle->GetStatus();
-                            }
-                            _cur_download_file--;
-                        };
+                auto download_callback = [this, file_segment,
+                                          meta](const Aws::Transfer::TransferHandle* handle) {
+                    if (handle->GetStatus() == Aws::Transfer::TransferStatus::NOT_STARTED ||
+                        handle->GetStatus() == Aws::Transfer::TransferStatus::IN_PROGRESS) {
+                        return; // not finish
+                    }
+                    if (handle->GetStatus() == Aws::Transfer::TransferStatus::COMPLETED) {
+                        file_segment->finalize_write();
+                    } else {
+                        LOG(WARNING) << "s3 download error " << handle->GetStatus();
+                    }
+                    _cur_download_file--;
+                };
                 std::string download_file = file_segment->get_path_in_local_cache();
                 auto createFileFn = [=]() {
                     return Aws::New<Aws::FStream>(meta.file_name().c_str(), download_file.c_str(),

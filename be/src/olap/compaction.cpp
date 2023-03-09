@@ -19,18 +19,19 @@
 
 #include <gen_cpp/olap_file.pb.h>
 
+#include "cloud/io/cloud_file_cache_factory.h"
 #include "cloud/utils.h"
 #include "common/status.h"
 #include "common/sync_point.h"
 #include "gutil/strings/substitute.h"
 #include "olap/rowset/rowset.h"
 #include "olap/rowset/rowset_meta.h"
+#include "olap/rowset/beta_rowset_writer.h"
 #include "olap/rowset/segment_v2/inverted_index_compaction.h"
 #include "olap/task/engine_checksum_task.h"
 #include "olap/tablet.h"
 #include "util/time.h"
 #include "util/trace.h"
-
 using std::vector;
 
 namespace doris {
@@ -196,6 +197,11 @@ Status Compaction::do_compaction_impl(int64_t permits) {
 
     // construct output rowset writer
     RowsetWriterContext context;
+    std::for_each(_input_rowsets.cbegin(), _input_rowsets.cend(), [&](const RowsetSharedPtr& rowset) {
+        context.is_hot_data = context.is_hot_data || rowset->is_hot();
+    });
+    context.is_persistent = _tablet->is_persistent();
+    context.ttl_seconds = _tablet->ttl_seconds();
     context.txn_id = boost::uuids::hash_value(UUIDGenerator::instance()->next_uuid()) &
                      std::numeric_limits<int64_t>::max(); // MUST be positive
     context.txn_expiration = _expiration;
@@ -236,9 +242,8 @@ Status Compaction::do_compaction_impl(int64_t permits) {
     // The test results show that merger is low-memory-footprint, there is no need to tracker its mem pool
     Merger::Statistics stats;
     Status res;
-    if ( context.skip_inverted_index.size() > 0 ||
-        (_tablet->keys_type() == KeysType::UNIQUE_KEYS &&
-         _tablet->enable_unique_key_merge_on_write())) {
+    if (context.skip_inverted_index.size() > 0 || (_tablet->keys_type() == KeysType::UNIQUE_KEYS &&
+                                                   _tablet->enable_unique_key_merge_on_write())) {
         stats.rowid_conversion = &_rowid_conversion;
     }
 
@@ -499,6 +504,18 @@ int64_t Compaction::get_compaction_permits() {
         permits += rowset->rowset_meta()->get_compaction_score();
     }
     return permits;
+}
+
+void Compaction::file_cache_garbage_collection() {
+    if (_output_rs_writer) {
+        auto* beta_rowset_writer = dynamic_cast<BetaRowsetWriter*>(_output_rs_writer.get());
+        DCHECK(beta_rowset_writer);
+        for (auto& file_writer : beta_rowset_writer->get_file_writers()) {
+            auto file_key = io::IFileCache::hash(file_writer->path().filename().native());
+            auto file_cache = io::FileCacheFactory::instance().get_by_path(file_key);
+            file_cache->remove_if_cached(file_key);
+        }
+    }
 }
 
 #ifdef BE_TEST

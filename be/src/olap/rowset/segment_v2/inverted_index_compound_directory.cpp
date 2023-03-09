@@ -438,11 +438,10 @@ void DorisCompoundDirectory::FSIndexInput::readInternal(uint8_t* b, const int32_
         handle->_fpos = _pos;
     }
 
-    // bufferLength = _read(handle->fhandle, b, len); // 2004.10.31:SF 1037836
-    // if (bufferLength == 0) {
+    io::IOState state;
     Slice result {b, (size_t)len};
     size_t bytes_read = 0;
-    if (!handle->reader->read_at(_pos, result, &bytes_read).ok()) {
+    if (!handle->reader->read_at(_pos, result, &bytes_read, &state).ok()) {
         _CLTHROWA(CL_ERR_IO, "read past EOF");
     }
     bufferLength = len; // TODO xk read should return size

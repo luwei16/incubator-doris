@@ -44,18 +44,16 @@ Status parse_conf_store_paths(const std::string& config_path, std::vector<StoreP
 
 struct CachePath {
     io::FileCacheSettings init_settings() const;
-    CachePath(std::string path, int64_t normal_bytes, int64_t persistent_bytes,
-              int64_t query_limit_bytes)
+    CachePath(std::string path, int64_t total_bytes, int64_t query_limit_bytes)
             : path(std::move(path)),
-              normal_bytes(normal_bytes),
-              persistent_bytes(persistent_bytes),
+              total_bytes(total_bytes),
               query_limit_bytes(query_limit_bytes) {}
     std::string path;
-    int64_t normal_bytes = 0;
-    int64_t persistent_bytes = 0;
+    int64_t total_bytes = 0;
     int64_t query_limit_bytes = 0;
 };
 Status parse_conf_cache_paths(const std::string& config_path, std::vector<CachePath>& path);
+Status parse_conf_rm_paths(const std::string& config_path, std::vector<std::string>& path);
 
 struct EngineOptions {
     // list paths that tablet will be put into.

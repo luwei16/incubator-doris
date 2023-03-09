@@ -135,7 +135,7 @@ Status BetaRowsetReader::get_segment_iterators(RowsetReaderContext* read_context
                     single_column_block_predicate);
         }
     }
-    
+
     if (read_context->all_compound_predicates != nullptr) {
         _read_options.all_compound_column_predicates.insert(
                 _read_options.all_compound_column_predicates.end(),
@@ -185,18 +185,23 @@ Status BetaRowsetReader::get_segment_iterators(RowsetReaderContext* read_context
     _read_options.io_ctx.reader_type = read_context->reader_type;
 
     _read_options.kept_in_memory = read_context->kept_in_memory;
-    _read_options.is_persistent = read_context->is_persistent;
     _read_options.runtime_state = read_context->runtime_state;
     _read_options.output_columns = read_context->output_columns;
+
+    _read_options.expiration_time = _read_options.is_persistent ? INT64_MAX :
+                    read_context->ttl_seconds == 0 ? 0 : _rowset->rowset_meta()->newest_write_timestamp() + read_context->ttl_seconds;
+    if (_read_options.expiration_time <= UnixSeconds()) {
+        _read_options.expiration_time = 0;
+    }
 
     {
         SCOPED_RAW_TIMER(&_stats->load_segments_timer);
         // load segments
+        // use cache is true when do vertica compaction
         bool should_use_cache = use_cache || read_context->reader_type == ReaderType::READER_QUERY;
         RETURN_NOT_OK(SegmentLoader::instance()->load_segments(_rowset, &_segment_cache_handle,
-                                                           should_use_cache));
+                                                               should_use_cache));
     }
-
     // create iterator for each segment
     std::vector<std::unique_ptr<RowwiseIterator>> seg_iterators;
     for (auto& seg_ptr : _segment_cache_handle.get_segments()) {

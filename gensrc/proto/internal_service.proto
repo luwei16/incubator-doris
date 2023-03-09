@@ -572,14 +572,21 @@ message PGetFileCacheMetaRequest {
     repeated int64 tablet_ids = 1; 
 }
 
+enum FileCacheType {
+    TTL = 0;
+    INDEX = 1;
+    NORMAL = 2;
+}
+
 message FileCacheSegmentMeta {
     required int64 tablet_id = 1;
     required string rowset_id = 2;
     required int64 segment_id = 3;
     required string file_name = 4;
-    required bool is_persistent = 5;
-    required int64 offset = 6;
-    required int64 size = 7;
+    required int64 offset = 5;
+    required int64 size = 6;
+    required FileCacheType cache_type = 7;
+    required int64 expiration_time = 8;
 }
 
 message PGetFileCacheMetaResponse {

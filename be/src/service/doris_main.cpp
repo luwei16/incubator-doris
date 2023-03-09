@@ -43,6 +43,7 @@
 #include "cloud/io/cloud_file_cache_factory.h"
 #include "cloud/io/cloud_file_cache_settings.h"
 #include "cloud/io/local_file_system.h"
+#include "cloud/io/s3_file_write_bufferpool.h"
 #include "cloud/io/tmp_file_mgr.h"
 #include "common/config.h"
 #include "common/daemon.h"
@@ -394,6 +395,7 @@ int main(int argc, char** argv) {
     daemon.start();
 
     if (doris::config::enable_file_cache) {
+        std::unordered_set<std::string> cache_path_set;
         std::vector<doris::CachePath> cache_paths;
         olap_res = doris::parse_conf_cache_paths(doris::config::file_cache_path, cache_paths);
         if (!olap_res) {
@@ -402,33 +404,27 @@ int main(int argc, char** argv) {
             exit(-1);
         }
         for (auto& cache_path : cache_paths) {
+            if (cache_path_set.find(cache_path.path) != cache_path_set.end()) {
+                LOG(FATAL) << fmt::format("cache path {} is duplicate", cache_path.path);
+                exit(-1);
+            }
             Status st = doris::io::FileCacheFactory::instance().create_file_cache(
-                    cache_path.path, cache_path.init_settings(), doris::io::FileCacheType::NORMAL);
+                    cache_path.path, cache_path.init_settings());
             if (!st) {
                 LOG(FATAL) << st.get_error_msg();
                 exit(-1);
             }
         }
-
-        if (!doris::config::disposable_file_cache_path.empty()) {
-            cache_paths.clear();
-            olap_res = doris::parse_conf_cache_paths(doris::config::disposable_file_cache_path,
-                                                     cache_paths);
-            if (!olap_res) {
-                LOG(FATAL) << "parse config disposable file cache path failed, path="
-                           << doris::config::disposable_file_cache_path;
-                exit(-1);
-            }
-            for (auto& cache_path : cache_paths) {
-                Status st = doris::io::FileCacheFactory::instance().create_file_cache(
-                        cache_path.path, cache_path.init_settings(),
-                        doris::io::FileCacheType::DISPOSABLE);
-                if (!st) {
-                    LOG(FATAL) << st.get_error_msg();
-                    exit(-1);
-                }
-            }
+        std::vector<std::string> rm_paths;
+        olap_res = doris::parse_conf_rm_paths(doris::config::disposable_file_cache_path, rm_paths);
+        if (!olap_res) {
+            LOG(FATAL) << "parse config disposable_file_cache_path path failed, path="
+                       << doris::config::disposable_file_cache_path;
+            exit(-1);
         }
+        std::for_each(rm_paths.begin(), rm_paths.end(), [](const std::string& path) {
+            doris::io::global_local_filesystem()->delete_directory(path);
+        });
     }
 
     doris::ResourceTls::init();
@@ -508,6 +504,9 @@ int main(int argc, char** argv) {
     // 3. http service
     doris::HttpService http_service(exec_env, doris::config::webserver_port,
                                     doris::config::webserver_num_workers);
+
+    // construct s3 file buffer pool to reduce the cost of lazy loading
+    doris::io::S3FileBufferPool::GetInstance();
 #ifdef CLOUD_MODE
     status = http_service.cloud_start();
 #else

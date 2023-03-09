@@ -18,13 +18,9 @@
 #pragma once
 
 #include "cloud/io/cloud_file_cache.h"
-#include "cloud/io/cloud_file_cache_fwd.h"
-#include "cloud/io/cloud_file_cache_profile.h"
-#include "cloud/io/cloud_file_segment.h"
 #include "cloud/io/file_reader.h"
 #include "cloud/io/path.h"
-#include "cloud/io/s3_file_system.h"
-#include "gutil/macros.h"
+#include "cloud/io/file_system.h"
 
 namespace doris {
 namespace io {
@@ -56,16 +52,16 @@ private:
     FileReaderSPtr _remote_file_reader;
     IFileCache::Key _cache_key;
     CloudFileCachePtr _cache;
-    CloudFileCachePtr _disposable_cache;
 
 private:
     struct ReadStatistics {
-        bool hit_cache = false;
+        bool hit_cache = true;
+        bool skip_cache = false;
         int64_t bytes_read = 0;
-        int64_t bytes_read_from_file_cache = 0;
-        int64_t bytes_write_in_file_cache = 0;
-        int64_t write_in_file_cache = 0;
-        int64_t bytes_skip_cache = 0;
+        int64_t bytes_write_into_file_cache = 0;
+        int64_t remote_read_timer = 0;
+        int64_t local_read_timer = 0;
+        int64_t local_write_timer = 0;
     };
     void _update_state(const ReadStatistics& stats, IOState* state) const;
     metrics_hook _metrics;
