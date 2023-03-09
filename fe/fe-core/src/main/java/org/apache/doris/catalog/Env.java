@@ -4195,6 +4195,10 @@ public class Env {
         return this.upgradeMgr;
     }
 
+    public CloudTabletRebalancer getCloudTabletRebalancer() {
+        return this.cloudTabletRebalancer;
+    }
+
     public void setMaster(MasterInfo info) {
         this.masterIp = info.getIp();
         this.masterHttpPort = info.getHttpPort();

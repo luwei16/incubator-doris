@@ -397,7 +397,8 @@ public class SystemInfoService {
                               .collect(Collectors.toList());
         LOG.debug("after deduplication toAdd={} toDel={}", toAdd, toDel);
 
-        List existedHosts = idToBackendRef.values().stream().map(i -> i.getHost()).collect(Collectors.toList());
+        Map<String, List<Backend>> existedHostToBeList = idToBackendRef.values().stream().collect(Collectors.groupingBy(
+                Backend::getHost));
         for (Backend be : toAdd) {
             setBackendOwner(be, DEFAULT_CLUSTER);
             Env.getCurrentEnv().getEditLog().logAddBackend(be);
@@ -406,9 +407,15 @@ public class SystemInfoService {
             MetricRepo.generateBackendsTabletMetrics();
 
             String host = be.getHost();
-            if (existedHosts.contains(host)) {
+            if (existedHostToBeList.keySet().contains(host)) {
                 /* When smooth upgrading, a new BE process will start on the existed node */
-                handleNewBeOnSameNode(be);
+                int beNum = existedHostToBeList.get(host).size();
+                Backend colocatedBe = existedHostToBeList.get(host).get(0);
+                if (beNum != 1) {
+                    LOG.warn("find {} co-located BEs, select the first one {} as migration src", beNum,
+                            colocatedBe.getId());
+                }
+                handleNewBeOnSameNode(colocatedBe, be);
             }
         }
         for (Backend be : toDel) {
@@ -439,13 +446,9 @@ public class SystemInfoService {
         updateCloudClusterMap(toAdd, toDel);
     }
 
-    private void handleNewBeOnSameNode(Backend be) {
-        try {
-            // TODO: trigger tablet migration to be be
-            Env.getCurrentEnv().getCloudUpgradeMgr().registerWaterShedTxnId(be.getId());
-        } catch (AnalysisException e) {
-            throw new RuntimeException(e);
-        }
+    private void handleNewBeOnSameNode(Backend oldBe, Backend newBe) {
+        LOG.info("new BE {} starts on the same node as existing BE {}", newBe.getId(), oldBe.getId());
+        Env.getCurrentEnv().getCloudTabletRebalancer().addTabletMigrationTask(oldBe.getId(), newBe.getId());
     }
 
     // for test

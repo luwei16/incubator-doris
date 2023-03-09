@@ -110,7 +110,7 @@ public class CloudUpgradeMgr extends MasterDaemon {
         return mergedList;
     }
 
-    private void setBeStateInactive(long beId) {
+    public void setBeStateInactive(long beId) {
         Backend be = Env.getCurrentSystemInfo().getBackend(beId);
         if (be == null) {
             LOG.warn("cannot get be {} to set inactive state", beId);

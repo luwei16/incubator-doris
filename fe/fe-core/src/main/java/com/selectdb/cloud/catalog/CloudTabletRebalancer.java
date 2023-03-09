@@ -30,8 +30,10 @@ import org.apache.doris.catalog.Replica;
 import org.apache.doris.catalog.Table;
 import org.apache.doris.catalog.TableIf.TableType;
 import org.apache.doris.catalog.Tablet;
+import org.apache.doris.common.AnalysisException;
 import org.apache.doris.common.ClientPool;
 import org.apache.doris.common.Config;
+import org.apache.doris.common.Pair;
 import org.apache.doris.common.util.MasterDaemon;
 import org.apache.doris.persist.UpdateCloudReplicaInfo;
 import org.apache.doris.rpc.RpcException;
@@ -50,6 +52,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.concurrent.LinkedBlockingQueue;
 
 public class CloudTabletRebalancer extends MasterDaemon {
     private static final Logger LOG = LogManager.getLogger(CloudTabletRebalancer.class);
@@ -66,6 +69,8 @@ public class CloudTabletRebalancer extends MasterDaemon {
     private Random rand = new Random();
 
     private boolean indexBalanced = true;
+
+    private LinkedBlockingQueue<Pair<Long, Long>> tabletsMigrateTasks = new LinkedBlockingQueue<Pair<Long, Long>>();
 
     public CloudTabletRebalancer() {
         super("cloud tablet rebalancer", Config.tablet_rebalancer_interval_second * 1000);
@@ -107,6 +112,17 @@ public class CloudTabletRebalancer extends MasterDaemon {
 
         // Statistics cluster to be mapping information
         statRouteInfo();
+
+        Pair<Long, Long> pair;
+        while (!tabletsMigrateTasks.isEmpty()) {
+            try {
+                pair = tabletsMigrateTasks.take();
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
+            }
+            LOG.info("begin tablets migration from be {} to be {}", pair.first, pair.second);
+            migrateTablets(pair.first, pair.second);
+        }
 
         for (Map.Entry<Long, List<Tablet>> entry : beToTabletsGlobal.entrySet()) {
             LOG.info("before index balance be {} tablet num {}", entry.getKey(), entry.getValue().size());
@@ -443,6 +459,64 @@ public class CloudTabletRebalancer extends MasterDaemon {
             } finally {
                 table.readUnlock();
             }
+        }
+    }
+
+    public void addTabletMigrationTask(Long srcBe, Long dstBe) {
+        tabletsMigrateTasks.offer(Pair.of(srcBe, dstBe));
+    }
+
+    /* Migrate tablet replicas from srcBe to dstBe
+     * replica location info will be updated in both master and follower FEs.
+     */
+    private void migrateTablets(Long srcBe, Long dstBe) {
+        // get tablets
+        List<Tablet> tablets = beToTabletsGlobal.get(srcBe);
+        SystemInfoService systemInfoService = Env.getCurrentSystemInfo();
+        if (tablets.isEmpty()) {
+            // srcBe does not have any tablets, set inactive
+            Env.getCurrentEnv().getCloudUpgradeMgr().setBeStateInactive(srcBe);
+            return;
+        }
+        for (Tablet tablet : tablets) {
+            // get replica
+            CloudReplica cloudReplica = (CloudReplica) tablet.getReplicas().get(0);
+            String clusterId = systemInfoService.getBackend(srcBe).getCloudClusterId();
+            String clusterName = systemInfoService.getBackend(srcBe).getCloudClusterName();
+            // update replica location info
+            cloudReplica.updateClusterToBe(clusterId, dstBe);
+            LOG.info("cloud be migrate tablet {} from srcBe={} to dstBe={}, clusterId={}, clusterName={}",
+                    tablet.getId(), srcBe, dstBe, clusterId, clusterName);
+
+            // populate to followers
+            Database db = Env.getCurrentInternalCatalog().getDbNullable(cloudReplica.getDbId());
+            if (db == null) {
+                LOG.error("get null db from replica, tabletId={}, partitionId={}, beId={}",
+                        cloudReplica.getTableId(), cloudReplica.getPartitionId(), cloudReplica.getBackendId());
+                continue;
+            }
+            OlapTable table = (OlapTable) db.getTableNullable(cloudReplica.getTableId());
+            if (table == null) {
+                continue;
+            }
+
+            table.readLock();
+            try {
+                if (db.getTableNullable(cloudReplica.getTableId()) == null) {
+                    continue;
+                }
+                UpdateCloudReplicaInfo info = new UpdateCloudReplicaInfo(cloudReplica.getDbId(),
+                        cloudReplica.getTableId(), cloudReplica.getPartitionId(), cloudReplica.getIndexId(),
+                        tablet.getId(), cloudReplica.getId(), clusterId, dstBe);
+                Env.getCurrentEnv().getEditLog().logUpdateCloudReplica(info);
+            } finally {
+                table.readUnlock();
+            }
+        }
+        try {
+            Env.getCurrentEnv().getCloudUpgradeMgr().registerWaterShedTxnId(srcBe);
+        } catch (AnalysisException e) {
+            throw new RuntimeException(e);
         }
     }
 }
