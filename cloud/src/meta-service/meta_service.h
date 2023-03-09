@@ -220,7 +220,7 @@ private:
 
     std::pair<MetaServiceCode, std::string> alter_instance(
             const ::selectdb::AlterInstanceRequest* request,
-            std::function<std::pair<MetaServiceCode, std::string>(const std::string&)> action);
+            std::function<std::pair<MetaServiceCode, std::string>(InstanceInfoPB*)> action);
 
 private:
     std::shared_ptr<TxnKv> txn_kv_;

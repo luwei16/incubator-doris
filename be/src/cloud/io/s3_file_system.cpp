@@ -41,6 +41,7 @@
 #include "gutil/strings/stringpiece.h"
 #include "olap/olap_common.h"
 #include "util/async_io.h"
+#include "util/s3_util.h"
 #include "util/string_util.h"
 
 namespace doris {
@@ -101,9 +102,21 @@ std::shared_ptr<Aws::Transfer::TransferManager> S3FileSystem::get_transfer_manag
                    const std::shared_ptr<const Aws::Transfer::TransferHandle>& handle) {
                     handle->Callback();
                 };
+        if (sse_enabled()) {
+            transfer_config.putObjectTemplate.WithServerSideEncryption(Aws::S3::Model::ServerSideEncryption::AES256);
+            transfer_config.createMultipartUploadTemplate.WithServerSideEncryption(Aws::S3::Model::ServerSideEncryption::AES256);
+        }
         _transfer_manager = Aws::Transfer::TransferManager::Create(transfer_config);
     }
     return _transfer_manager;
+}
+
+void S3FileSystem::reset_transfer_manager() {
+    std::shared_ptr<Aws::Transfer::TransferManager> transfer_manager;
+    {
+        std::lock_guard lock(_client_mu);
+        _transfer_manager.swap(transfer_manager);
+    }
 }
 
 Status S3FileSystem::upload(const Path& local_path, const Path& dest_path) {
@@ -179,7 +192,7 @@ Status S3FileSystem::create_file(const Path& path, FileWriterPtr* writer, IOStat
     auto fs_path = Path(_s3_conf.endpoint) / _s3_conf.bucket / key;
     *writer = std::make_unique<S3FileWriter>(
             std::move(fs_path), std::move(key), _s3_conf.bucket, _client,
-            std::static_pointer_cast<S3FileSystem>(shared_from_this()), io_state);
+            std::static_pointer_cast<S3FileSystem>(shared_from_this()), io_state, sse_enabled());
     return (*writer)->open();
 }
 

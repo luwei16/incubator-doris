@@ -45,7 +45,7 @@ class TmpFileMgr;
 class S3FileWriter final : public FileWriter {
 public:
     S3FileWriter(Path path, std::string key, std::string bucket, std::shared_ptr<Aws::S3::S3Client>,
-                 std::shared_ptr<S3FileSystem> fs, IOState* state);
+                 std::shared_ptr<S3FileSystem> fs, IOState* state, bool sse_enabled);
     ~S3FileWriter() override;
 
     Status open() override;
@@ -91,6 +91,7 @@ private:
 
     std::string _bucket;
     std::string _key;
+    bool _sse_enabled = false;
     bool _closed = true;
     bool _opened = false;
 

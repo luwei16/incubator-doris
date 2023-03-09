@@ -50,6 +50,7 @@ struct S3Conf {
     int max_connections = -1;
     int request_timeout_ms = -1;
     int connect_timeout_ms = -1;
+    bool sse_enabled = false;
 
     std::string to_string() const;
 };

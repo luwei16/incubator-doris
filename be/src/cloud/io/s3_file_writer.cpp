@@ -45,11 +45,12 @@ using Aws::S3::S3Client;
 
 S3FileWriter::S3FileWriter(Path path, std::string key, std::string bucket,
                            std::shared_ptr<S3Client> client, std::shared_ptr<S3FileSystem> fs,
-                           IOState* state)
+                           IOState* state, bool sse_enabled)
         : _path(std::move(path)),
           _fs(std::move(fs)),
           _bucket(std::move(bucket)),
           _key(std::move(key)),
+          _sse_enabled(sse_enabled),
           _upload_cost_ms(std::make_shared<int64_t>(0)),
           _client(std::move(client)),
           _expiration_time(state ? state->expiration_time : 0),
@@ -70,6 +71,9 @@ Status S3FileWriter::open() {
     CreateMultipartUploadRequest create_request;
     create_request.WithBucket(_bucket).WithKey(_key);
     create_request.SetContentType("text/plain");
+    if (_sse_enabled) {
+        create_request.WithServerSideEncryption(Aws::S3::Model::ServerSideEncryption::AES256);
+    }
 
     auto outcome = _client->CreateMultipartUpload(create_request);
 

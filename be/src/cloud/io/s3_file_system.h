@@ -83,11 +83,17 @@ public:
 
     std::shared_ptr<Aws::Transfer::TransferManager> get_transfer_manager();
 
+    void reset_transfer_manager();
+
     // Guarded by external lock.
     void set_ak(const std::string& ak) { _s3_conf.ak = ak; }
 
     // Guarded by external lock.
     void set_sk(const std::string& sk) { _s3_conf.sk = sk; }
+
+    void set_sse_enabled(bool enable_sse) { _s3_conf.sse_enabled = enable_sse; }
+
+    bool sse_enabled() const { return _s3_conf.sse_enabled; }
 
     const S3Conf& s3_conf() { return _s3_conf; }
 

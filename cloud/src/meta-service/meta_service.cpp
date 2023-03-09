@@ -3113,6 +3113,25 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
         return;
     }
 
+    if (unresolved_path == "enable_instance_sse") {
+        AlterInstanceRequest r;
+        auto st = google::protobuf::util::JsonStringToMessage(request_body, &r);
+        if (!st.ok()) {
+            msg = "failed to AlterInstanceRequest, error: " + st.message().ToString();
+            ret = MetaServiceCode::PROTOBUF_PARSE_ERR;
+            response_body = msg;
+            LOG(WARNING) << msg;
+            return;
+        }
+        r.set_op(AlterInstanceRequest::ENABLE_SSE);
+        AlterInstanceResponse res;
+        alter_instance(cntl, &r, &res, nullptr);
+        ret = res.status().code();
+        msg = res.status().msg();
+        response_body = msg;
+        return;
+    }
+
     if (unresolved_path == "drop_instance") {
         AlterInstanceRequest r;
         auto st = google::protobuf::util::JsonStringToMessage(request_body, &r);
@@ -3613,6 +3632,7 @@ void MetaServiceImpl::alter_obj_store_info(google::protobuf::RpcController* cont
         last_item.set_external_endpoint(external_endpoint);
         last_item.set_region(region);
         last_item.set_provider(obj.provider());
+        last_item.set_sse_enabled(instance.sse_enabled());
         instance.add_obj_info()->CopyFrom(last_item);
     } break;
     default: {
@@ -3687,6 +3707,7 @@ void MetaServiceImpl::create_instance(google::protobuf::RpcController* controlle
     instance.set_user_id(request->has_user_id() ? request->user_id() : "");
     instance.set_name(request->has_name() ? request->name() : "");
     instance.set_status(InstanceInfoPB::NORMAL);
+    instance.set_sse_enabled(request->sse_enabled());
     auto obj_info = instance.add_obj_info();
     obj_info->set_ak(ak);
     obj_info->set_sk(sk);
@@ -3704,6 +3725,7 @@ void MetaServiceImpl::create_instance(google::protobuf::RpcController* controlle
             std::chrono::duration_cast<std::chrono::seconds>(now_time.time_since_epoch()).count();
     obj_info->set_ctime(time);
     obj_info->set_mtime(time);
+    obj_info->set_sse_enabled(instance.sse_enabled());
     if (request->has_ram_user()) {
         instance.mutable_ram_user()->CopyFrom(request->ram_user());
     }
@@ -3786,38 +3808,31 @@ void MetaServiceImpl::alter_instance(google::protobuf::RpcController* controller
     std::pair<MetaServiceCode, std::string> ret;
     switch (request->op()) {
     case AlterInstanceRequest::DROP: {
-        ret = alter_instance(request, [&request](const std::string& val) {
-            InstanceInfoPB instance;
+        ret = alter_instance(request, [&request](InstanceInfoPB* instance) {
             std::string msg;
-            if (!instance.ParseFromString(val)) {
-                msg = "failed to parse InstanceInfoPB";
-                LOG(WARNING) << msg;
-                return std::make_pair(MetaServiceCode::PROTOBUF_PARSE_ERR, msg);
-            }
-
             // check instance doesn't have any cluster.
-            if (instance.clusters_size() != 0) {
+            if (instance->clusters_size() != 0) {
                 msg = "failed to drop instance, instance has clusters";
                 LOG(WARNING) << msg;
                 return std::make_pair(MetaServiceCode::INVALID_ARGUMENT, msg);
             }
 
-            instance.set_status(InstanceInfoPB::DELETED);
-            instance.set_mtime(duration_cast<seconds>(system_clock::now().time_since_epoch()).count());
+            instance->set_status(InstanceInfoPB::DELETED);
+            instance->set_mtime(duration_cast<seconds>(system_clock::now().time_since_epoch()).count());
 
-            std::string ret = instance.SerializeAsString();
-            if (val.empty()) {
+            std::string ret = instance->SerializeAsString();
+            if (ret.empty()) {
                 msg = "failed to serialize";
                 LOG(ERROR) << msg;
                 return std::make_pair(MetaServiceCode::PROTOBUF_SERIALIZE_ERR, msg);
             }
             LOG(INFO) << "put instance_id=" << request->instance_id()
-                      << "drop instance json=" << proto_to_json(instance);
+                      << "drop instance json=" << proto_to_json(*instance);
             return std::make_pair(MetaServiceCode::OK, ret);
         });
     } break;
     case AlterInstanceRequest::RENAME: {
-        ret = alter_instance(request, [&request](const std::string& val) {
+        ret = alter_instance(request, [&request](InstanceInfoPB* instance) {
             std::string msg;
             std::string name = request->has_name() ? request->name() : "";
             if (name.empty()) {
@@ -3825,23 +3840,42 @@ void MetaServiceImpl::alter_instance(google::protobuf::RpcController* controller
                 LOG(WARNING) << msg;
                 return std::make_pair(MetaServiceCode::INVALID_ARGUMENT, msg);
             }
+            instance->set_name(name);
 
-            InstanceInfoPB instance;
-            if (!instance.ParseFromString(val)) {
-                msg = "failed to parse InstanceInfoPB";
-                LOG(WARNING) << msg;
-                return std::make_pair(MetaServiceCode::PROTOBUF_PARSE_ERR, msg);
-            }
-            instance.set_name(name);
-
-            std::string ret = instance.SerializeAsString();
-            if (val.empty()) {
+            std::string ret = instance->SerializeAsString();
+            if (ret.empty()) {
                 msg = "failed to serialize";
                 LOG(ERROR) << msg;
                 return std::make_pair(MetaServiceCode::PROTOBUF_SERIALIZE_ERR, msg);
             }
             LOG(INFO) << "put instance_id=" << request->instance_id()
-                      << "rename instance json=" << proto_to_json(instance);
+                      << "rename instance json=" << proto_to_json(*instance);
+            return std::make_pair(MetaServiceCode::OK, ret);
+        });
+    } break;
+    case AlterInstanceRequest::ENABLE_SSE: {
+        ret = alter_instance(request, [&request](InstanceInfoPB* instance) {
+            std::string msg;
+            if (instance->sse_enabled()) {
+                msg = "failed to enable sse, instance has enabled sse";
+                LOG(WARNING) << msg;
+                return std::make_pair(MetaServiceCode::INVALID_ARGUMENT, msg);
+            }
+            instance->set_sse_enabled(true);
+            instance->set_mtime(duration_cast<seconds>(system_clock::now().time_since_epoch()).count());
+
+
+            for (auto& obj_info: *(instance->mutable_obj_info())) {
+                obj_info.set_sse_enabled(true);
+            }
+            std::string ret = instance->SerializeAsString();
+            if (ret.empty()) {
+                msg = "failed to serialize";
+                LOG(ERROR) << msg;
+                return std::make_pair(MetaServiceCode::PROTOBUF_SERIALIZE_ERR, msg);
+            }
+            LOG(INFO) << "put instance_id=" << request->instance_id()
+                      << "instance enable sse json=" << proto_to_json(*instance);
             return std::make_pair(MetaServiceCode::OK, ret);
         });
     } break;
@@ -3870,7 +3904,7 @@ void MetaServiceImpl::alter_instance(google::protobuf::RpcController* controller
 
 std::pair<MetaServiceCode, std::string> MetaServiceImpl::alter_instance(
         const selectdb::AlterInstanceRequest* request,
-        std::function<std::pair<MetaServiceCode, std::string>(const std::string&)> action) {
+        std::function<std::pair<MetaServiceCode, std::string>(InstanceInfoPB*)> action) {
     int ret = 0;
     MetaServiceCode code = MetaServiceCode::OK;
     std::string msg = "OK";
@@ -3906,7 +3940,14 @@ std::pair<MetaServiceCode, std::string> MetaServiceImpl::alter_instance(
         return std::make_pair(code, msg);
     }
     LOG(INFO) << "alter instance key=" << hex(key);
-    auto r = action(val);
+    InstanceInfoPB instance;
+    if (!instance.ParseFromString(val)) {
+        msg = "failed to parse InstanceInfoPB";
+        code = MetaServiceCode::PROTOBUF_PARSE_ERR;
+        LOG(WARNING) << msg;
+        return std::make_pair(code, msg);
+    }
+    auto r = action(&instance);
     if (r.first != MetaServiceCode::OK) {
         return r;
     }
