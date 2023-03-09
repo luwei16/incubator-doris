@@ -3995,6 +3995,7 @@ void MetaServiceImpl::alter_cluster(google::protobuf::RpcController* controller,
                              ? Role::SQL_SERVER
                              : (request->cluster().type() == ClusterPB::COMPUTE ? Role::COMPUTE_NODE
                                                                                 : Role::UNDEFINED));
+            node.node_info.set_status(NodeStatusPB::NODE_STATUS_RUNNING);
             to_add.emplace_back(std::move(node));
         }
         msg = resource_mgr_->modify_nodes(instance_id, to_add, to_del);
@@ -4047,7 +4048,7 @@ void MetaServiceImpl::alter_cluster(google::protobuf::RpcController* controller,
                         req_node.ip() + ":" + std::to_string(req_node.heartbeat_port());
                 if (endpoint == req_endpoint) {
                     decomission_nodes.push_back(node);
-                    node.node_info.set_status(NodeStatusPB::NODE_STATUS_DECOMMISSION);
+                    node.node_info.set_status(NodeStatusPB::NODE_STATUS_DECOMMISSIONING);
                 }
             }
         }
@@ -4061,7 +4062,7 @@ void MetaServiceImpl::alter_cluster(google::protobuf::RpcController* controller,
             std::vector<NodeInfo>& to_add = decomission_nodes;
             std::vector<NodeInfo> to_del;
             for (auto& node : to_add) {
-                node.node_info.set_status(NodeStatusPB::NODE_STATUS_DECOMMISSION);
+                node.node_info.set_status(NodeStatusPB::NODE_STATUS_DECOMMISSIONING);
                 LOG(INFO) << "decomission node, " << "size: " << to_add.size()
                           << " " << node.node_info.DebugString()
                           << " " << node.cluster_id

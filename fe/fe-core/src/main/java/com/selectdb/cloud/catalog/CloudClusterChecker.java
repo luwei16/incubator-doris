@@ -134,7 +134,7 @@ public class CloudClusterChecker extends MasterDaemon {
             SelectdbCloud.NodeStatusPB status = node.getStatus();
             Backend be = currentMap.get(endpoint);
 
-            if (status == SelectdbCloud.NodeStatusPB.NODE_STATUS_DECOMMISSION) {
+            if (status == SelectdbCloud.NodeStatusPB.NODE_STATUS_DECOMMISSIONING) {
                 LOG.info("decommissioned backend: {} status: {}", be, status);
                 be.setDecommissioned(true);
             }
