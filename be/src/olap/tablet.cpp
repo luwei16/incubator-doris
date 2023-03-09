@@ -592,7 +592,7 @@ Status Tablet::cloud_sync_meta() {
             for (int seg_id = 0; seg_id < rs->num_segments(); ++seg_id) {
                 int64_t new_expiration_time = new_ttl_seconds + rs->rowset_meta()->newest_write_timestamp();
                 new_expiration_time = new_expiration_time > cur_time? new_expiration_time : 0;
-                auto file_key = io::IFileCache::hash(
+                auto file_key = io::CloudFileCache::hash(
                         io::Path(rs->segment_file_path(seg_id)).filename().native());
                 auto file_cache = io::FileCacheFactory::instance().get_by_path(file_key);
                 file_cache->modify_expiration_time(file_key, new_expiration_time);
@@ -606,7 +606,7 @@ Status Tablet::cloud_sync_meta() {
         for (auto& [_, rs] : _rs_version_map) {
             for (int seg_id = 0; seg_id < rs->num_segments(); ++seg_id) {
                 int64_t new_expiration_time = new_is_persistent ? INT64_MAX : 0;
-                auto file_key = io::IFileCache::hash(
+                auto file_key = io::CloudFileCache::hash(
                         io::Path(rs->segment_file_path(seg_id)).filename().native());
                 auto file_cache = io::FileCacheFactory::instance().get_by_path(file_key);
                 file_cache->modify_expiration_time(file_key, new_expiration_time);
@@ -763,7 +763,7 @@ int Tablet::cloud_delete_expired_stale_rowsets() {
         for (auto& v_ts : version_path->timestamped_versions()) {
             auto rs = _stale_rs_version_map[v_ts->version()];
             for (int seg_id = 0; seg_id < rs->num_segments(); ++seg_id) {
-                auto file_key = io::IFileCache::hash(
+                auto file_key = io::CloudFileCache::hash(
                         io::Path(rs->segment_file_path(seg_id)).filename().native());
                 auto file_cache = io::FileCacheFactory::instance().get_by_path(file_key);
                 file_cache->remove_if_cached(file_key);

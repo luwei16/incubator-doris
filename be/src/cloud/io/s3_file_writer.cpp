@@ -64,7 +64,7 @@ S3FileWriter::~S3FileWriter() {
 Status S3FileWriter::open() {
     VLOG_DEBUG << "S3FileWriter::open, path: " << _path.native();
     if (config::enable_file_cache) {
-        _cache_key = IFileCache::hash(_path.filename().native());
+        _cache_key = CloudFileCache::hash(_path.filename().native());
         _cache = FileCacheFactory::instance().get_by_path(_cache_key);
     }
     CreateMultipartUploadRequest create_request;

@@ -36,7 +36,7 @@ namespace io {
 CachedRemoteFileReader::CachedRemoteFileReader(FileReaderSPtr remote_file_reader,
                                                metrics_hook metrics)
         : _remote_file_reader(std::move(remote_file_reader)), _metrics(metrics) {
-    _cache_key = IFileCache::hash(path().filename().native());
+    _cache_key = CloudFileCache::hash(path().filename().native());
     _cache = FileCacheFactory::instance().get_by_path(_cache_key);
 }
 

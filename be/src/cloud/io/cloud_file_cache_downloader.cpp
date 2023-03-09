@@ -49,7 +49,7 @@ void FileCacheSegmentS3Downloader::download_segments(
         auto id_to_rowset_meta_map = tablet->tablet_meta()->snapshot_rs_metas();
         if (auto iter = id_to_rowset_meta_map.find(meta.rowset_id());
             iter != id_to_rowset_meta_map.end()) {
-            IFileCache::Key cache_key = IFileCache::hash(meta.file_name());
+            Key cache_key = CloudFileCache::hash(meta.file_name());
             CloudFileCachePtr cache = FileCacheFactory::instance().get_by_path(cache_key);
             CacheContext context;
             switch (meta.cache_type()) {

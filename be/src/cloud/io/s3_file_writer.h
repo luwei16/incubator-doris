@@ -108,7 +108,7 @@ private:
     std::mutex _completed_lock;
     std::vector<std::shared_ptr<Aws::S3::Model::CompletedPart>> _completed_parts;
 
-    IFileCache::Key _cache_key;
+    Key _cache_key;
     CloudFileCachePtr _cache;
 
     WaitGroup _wait;

@@ -32,7 +32,6 @@
 #include <memory>
 
 #include "cloud/io/cached_remote_file_reader.h"
-#include "cloud/io/cached_remote_file_writer.h"
 #include "cloud/io/local_file_system.h"
 #include "cloud/io/remote_file_system.h"
 #include "cloud/io/s3_file_reader.h"

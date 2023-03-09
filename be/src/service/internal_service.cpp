@@ -1253,7 +1253,7 @@ void PInternalServiceImpl::get_file_cache_meta_by_tablet_id(
                     for (int64_t segment_id = 0; segment_id < rowset->num_segments();
                          segment_id++) {
                         std::string file_name = fmt::format("{}_{}.dat", rowset_id, segment_id);
-                        auto cache_key = io::IFileCache::hash(file_name);
+                        auto cache_key = io::CloudFileCache::hash(file_name);
                         auto cache = io::FileCacheFactory::instance().get_by_path(cache_key);
 
                         auto segments_meta = cache->get_hot_segments_meta(cache_key);

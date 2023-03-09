@@ -30,15 +30,13 @@ set(IO_FILES
     io/s3_file_system.cpp
     io/s3_file_writer.cpp
     io/cloud_file_segment.cpp
-    io/cloud_lru_file_cache.cpp
     io/cloud_file_cache.cpp
     io/cloud_file_cache_factory.cpp
     io/cached_remote_file_reader.cpp
     io/cloud_file_cache_profile.cpp
     io/tmp_file_mgr.cpp
-    io/cached_remote_file_writer.cpp
-    io/cloud_file_cache_downloader.cpp
     io/s3_file_write_bufferpool.cpp
+    io/cloud_file_cache_downloader.cpp
 )
 
 set(OLAP_FILES

@@ -17,15 +17,15 @@ public:
     Status create_file_cache(const std::string& cache_base_path,
                              const FileCacheSettings& file_cache_settings);
 
-    CloudFileCachePtr get_by_path(const IFileCache::Key& key);
-    std::vector<IFileCache::QueryContextHolderPtr> get_query_context_holders(
+    CloudFileCachePtr get_by_path(const Key& key);
+    std::vector<CloudFileCache::QueryContextHolderPtr> get_query_context_holders(
             const TUniqueId& query_id);
     FileCacheFactory() = default;
     FileCacheFactory& operator=(const FileCacheFactory&) = delete;
     FileCacheFactory(const FileCacheFactory&) = delete;
 
 private:
-    std::vector<std::unique_ptr<IFileCache>> _caches;
+    std::vector<std::unique_ptr<CloudFileCache>> _caches;
 };
 
 } // namespace io

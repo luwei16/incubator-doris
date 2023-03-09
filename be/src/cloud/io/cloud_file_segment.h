@@ -5,24 +5,23 @@
 #include <memory>
 #include <mutex>
 
-#include "cloud/io/cloud_file_cache.h"
 #include "cloud/io/file_reader.h"
 #include "cloud/io/file_writer.h"
+#include "cloud/io/cloud_file_cache_fwd.h"
 #include "common/status.h"
 
 namespace doris {
 namespace io {
-
+class CloudFileCache;
 class FileSegment;
 using FileSegmentSPtr = std::shared_ptr<FileSegment>;
 using FileSegments = std::list<FileSegmentSPtr>;
 
 class FileSegment {
-    friend class LRUFileCache;
+    friend class CloudFileCache;
     friend struct FileSegmentsHolder;
 
 public:
-    using Key = IFileCache::Key;
     using LocalWriterPtr = std::unique_ptr<FileWriter>;
     using LocalReaderPtr = std::shared_ptr<FileReader>;
 
@@ -43,7 +42,7 @@ public:
         SKIP_CACHE,
     };
 
-    FileSegment(size_t offset, size_t size, const Key& key, IFileCache* cache, State download_state,
+    FileSegment(size_t offset, size_t size, const Key& key, CloudFileCache* cache, State download_state,
                 CacheType cache_type, int64_t expiration_time);
 
     ~FileSegment() = default;
@@ -164,7 +163,7 @@ private:
     mutable std::mutex _download_mutex;
 
     Key _file_key;
-    IFileCache* _cache;
+    CloudFileCache* _cache;
 
     std::atomic<bool> _is_downloaded {false};
     CacheType _cache_type;

@@ -455,7 +455,7 @@ private:
     cctz::time_zone _timezone_obj;
 
     TUniqueId _query_id;
-    std::vector<io::IFileCache::QueryContextHolderPtr> _query_contexts;
+    std::vector<io::CloudFileCache::QueryContextHolderPtr> _query_contexts;
     TUniqueId _fragment_instance_id;
     TQueryOptions _query_options;
     ExecEnv* _exec_env = nullptr;

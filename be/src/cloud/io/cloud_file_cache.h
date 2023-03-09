@@ -2,29 +2,22 @@
 
 #include <bvar/bvar.h>
 
+#include <array>
+#include <chrono>
 #include <list>
+#include <map>
 #include <memory>
+#include <optional>
+#include <thread>
 #include <unordered_map>
 
 #include "cloud/io/cloud_file_cache_fwd.h"
+#include "cloud/io/cloud_file_segment.h"
 #include "cloud/io/file_reader.h"
 #include "common/config.h"
 
 namespace doris {
 namespace io {
-class FileSegment;
-using FileSegmentSPtr = std::shared_ptr<FileSegment>;
-using FileSegments = std::list<FileSegmentSPtr>;
-struct FileSegmentsHolder;
-struct ReadSettings;
-
-// default 1 : 17 : 2
-enum CacheType {
-    INDEX,
-    NORMAL,
-    DISPOSABLE,
-    TTL,
-};
 
 struct CacheContext {
     static CacheContext create(IOState* state) {
@@ -52,31 +45,26 @@ struct CacheContext {
 /**
  * Local cache for remote filesystem files, represented as a set of non-overlapping file segments.
  */
-class IFileCache {
+class CloudFileCache {
     friend class FileSegment;
     friend struct FileSegmentsHolder;
 
 public:
-    struct Key {
-        uint128_t key;
-        std::string to_string() const;
-
-        Key() = default;
-        explicit Key(const uint128_t& key_) : key(key_) {}
-
-        bool operator==(const Key& other) const { return key == other.key; }
-    };
-
     struct KeyHash {
         std::size_t operator()(const Key& k) const { return UInt128Hash()(k.key); }
     };
 
-    IFileCache(const std::string& cache_base_path, const FileCacheSettings& cache_settings);
+    CloudFileCache(const std::string& cache_base_path, const FileCacheSettings& cache_settings);
 
-    virtual ~IFileCache() = default;
+    ~CloudFileCache() {
+        _close = true;
+        if (_cache_background_thread.joinable()) {
+            _cache_background_thread.join();
+        }
+    }
 
     /// Restore cache from local filesystem.
-    virtual Status initialize() = 0;
+    Status initialize();
 
     /// Cache capacity in bytes.
     size_t capacity() const { return _total_size; }
@@ -101,33 +89,32 @@ public:
      * As long as pointers to returned file segments are hold
      * it is guaranteed that these file segments are not removed from cache.
      */
-    virtual FileSegmentsHolder get_or_set(const Key& key, size_t offset, size_t size,
-                                          const CacheContext& context) = 0;
+    FileSegmentsHolder get_or_set(const Key& key, size_t offset, size_t size,
+                                  const CacheContext& context);
 
     /// For debug.
-    virtual std::string dump_structure(const Key& key) = 0;
+    std::string dump_structure(const Key& key);
 
-    virtual size_t get_used_cache_size(CacheType type) const = 0;
+    size_t get_used_cache_size(CacheType type) const;
 
-    virtual size_t get_file_segments_num(CacheType type) const = 0;
+    size_t get_file_segments_num(CacheType type) const;
 
-    virtual void change_cache_type(const Key& key, size_t offset, CacheType new_type) = 0;
+    void change_cache_type(const Key& key, size_t offset, CacheType new_type);
 
     static std::string cache_type_to_string(CacheType type);
     static CacheType string_to_cache_type(const std::string& str);
 
-    virtual void remove_if_cached(const IFileCache::Key&) = 0;
-    virtual void modify_expiration_time(const IFileCache::Key&, int64_t new_expiration_time) = 0;
+    void remove_if_cached(const Key&);
+    void modify_expiration_time(const Key&, int64_t new_expiration_time);
 
-    virtual std::vector<std::tuple<size_t, size_t, CacheType, int64_t>> get_hot_segments_meta(
-            const Key& key) const = 0;
-    virtual void reset_range(const IFileCache::Key&, size_t offset, size_t old_size,
-                             size_t new_size) = 0;
+    void reset_range(const Key&, size_t offset, size_t old_size, size_t new_size);
+    std::vector<std::tuple<size_t, size_t, CacheType, int64_t>> get_hot_segments_meta(
+            const Key& key) const;
 
-    IFileCache& operator=(const IFileCache&) = delete;
-    IFileCache(const IFileCache&) = delete;
+    CloudFileCache& operator=(const CloudFileCache&) = delete;
+    CloudFileCache(const CloudFileCache&) = delete;
 
-protected:
+private:
     std::string _cache_base_path;
     size_t _total_size = 0;
     size_t _max_file_segment_size = 0;
@@ -141,11 +128,11 @@ protected:
     std::shared_ptr<bvar::Status<size_t>> _cur_size_metrics;
     std::shared_ptr<bvar::Status<size_t>> _cur_ttl_cache_size_metrics;
 
-    virtual bool try_reserve(const Key& key, const CacheContext& context, size_t offset,
-                             size_t size, std::lock_guard<std::mutex>& cache_lock) = 0;
+    bool try_reserve(const Key& key, const CacheContext& context, size_t offset, size_t size,
+                     std::lock_guard<std::mutex>& cache_lock);
 
-    virtual void remove(FileSegmentSPtr file_segment, std::lock_guard<std::mutex>& cache_lock,
-                        std::lock_guard<std::mutex>& segment_lock) = 0;
+    void remove(FileSegmentSPtr file_segment, std::lock_guard<std::mutex>& cache_lock,
+                std::lock_guard<std::mutex>& segment_lock);
 
     struct LRUQueue {
         LRUQueue() = default;
@@ -199,7 +186,7 @@ protected:
 
         void remove_all(std::lock_guard<std::mutex>& cache_lock);
 
-        Iterator get(const IFileCache::Key& key, size_t offset,
+        Iterator get(const Key& key, size_t offset,
                      std::lock_guard<std::mutex>& /* cache_lock */) const;
 
         int64_t get_hot_data_interval() const { return hot_data_interval; }
@@ -210,6 +197,40 @@ protected:
         std::unordered_map<std::pair<Key, size_t>, Iterator, HashFileKeyAndOffset> map;
         size_t cache_size {0};
         int64_t hot_data_interval {0};
+    };
+
+    struct FileSegmentCell {
+        FileSegmentSPtr file_segment;
+        CacheType cache_type;
+
+        /// Iterator is put here on first reservation attempt, if successful.
+        std::optional<LRUQueue::Iterator> queue_iterator;
+
+        mutable int64_t atime {0};
+        void update_atime() const {
+            atime = std::chrono::duration_cast<std::chrono::seconds>(
+                            std::chrono::steady_clock::now().time_since_epoch())
+                            .count();
+        }
+
+        /// Pointer to file segment is always hold by the cache itself.
+        /// Apart from pointer in cache, it can be hold by cache users, when they call
+        /// getorSet(), but cache users always hold it via FileSegmentsHolder.
+        bool releasable() const { return file_segment.unique(); }
+
+        size_t size() const { return file_segment->_segment_range.size(); }
+
+        FileSegmentCell(FileSegmentSPtr file_segment, CacheType cache_type,
+                        std::lock_guard<std::mutex>& cache_lock);
+
+        FileSegmentCell(FileSegmentCell&& other) noexcept
+                : file_segment(std::move(other.file_segment)),
+                  cache_type(other.cache_type),
+                  queue_iterator(other.queue_iterator),
+                  atime(other.atime) {}
+
+        FileSegmentCell& operator=(const FileSegmentCell&) = delete;
+        FileSegmentCell(const FileSegmentCell&) = delete;
     };
 
     using AccessKeyAndOffset = std::tuple<Key, size_t>;
@@ -258,11 +279,89 @@ protected:
     QueryContextPtr get_or_set_query_context(const TUniqueId& query_id,
                                              std::lock_guard<std::mutex>&);
 
+    using FileSegmentsByOffset = std::map<size_t, FileSegmentCell>;
+    struct HashCachedFileKey {
+        std::size_t operator()(const Key& k) const { return KeyHash()(k); }
+    };
+    using CachedFiles = std::unordered_map<Key, FileSegmentsByOffset, HashCachedFileKey>;
+
+    CachedFiles _files;
+    size_t _cur_cache_size = 0;
+    std::multimap<int64_t, Key> _time_to_key;
+    std::unordered_map<Key, int64_t, HashCachedFileKey> _key_to_time;
+    LRUQueue _index_queue;
+    LRUQueue _normal_queue;
+    LRUQueue _disposable_queue;
+
+    LRUQueue& get_queue(CacheType type);
+    const LRUQueue& get_queue(CacheType type) const;
+
+    FileSegments get_impl(const Key& key, const CacheContext& context,
+                          const FileSegment::Range& range, std::lock_guard<std::mutex>& cache_lock);
+
+    FileSegmentCell* get_cell(const Key& key, size_t offset,
+                              std::lock_guard<std::mutex>& cache_lock);
+
+    FileSegmentCell* add_cell(const Key& key, const CacheContext& context, size_t offset,
+                              size_t size, FileSegment::State state,
+                              std::lock_guard<std::mutex>& cache_lock);
+
+    void use_cell(const FileSegmentCell& cell, FileSegments& result, bool not_need_move,
+                  std::lock_guard<std::mutex>& cache_lock);
+
+    bool try_reserve_for_lru(const Key& key, QueryContextPtr query_context,
+                             const CacheContext& context, size_t offset, size_t size,
+                             std::lock_guard<std::mutex>& cache_lock);
+
+    std::vector<CacheType> get_other_cache_type(CacheType cur_cache_type);
+
+    bool try_reserve_from_other_queue(CacheType cur_cache_type, size_t offset, int64_t cur_time,
+                                      std::lock_guard<std::mutex>& cache_lock);
+
+    CacheType get_dowgrade_cache_type(CacheType cur_cache_type) const;
+
+    bool try_reserve_for_ttl(size_t size, std::lock_guard<std::mutex>& cache_lock);
+
+    size_t get_available_cache_size(CacheType type) const;
+
+    Status load_cache_info_into_memory(std::lock_guard<std::mutex>& cache_lock);
+
+    FileSegments split_range_into_cells(const Key& key, const CacheContext& context, size_t offset,
+                                        size_t size, FileSegment::State state,
+                                        std::lock_guard<std::mutex>& cache_lock);
+
+    std::string dump_structure_unlocked(const Key& key, std::lock_guard<std::mutex>& cache_lock);
+
+    void fill_holes_with_empty_file_segments(FileSegments& file_segments, const Key& key,
+                                             const CacheContext& context,
+                                             const FileSegment::Range& range,
+                                             std::lock_guard<std::mutex>& cache_lock);
+
+    size_t get_used_cache_size_unlocked(CacheType type,
+                                        std::lock_guard<std::mutex>& cache_lock) const;
+
+    size_t get_available_cache_size_unlocked(CacheType type,
+                                             std::lock_guard<std::mutex>& cache_lock) const;
+
+    size_t get_file_segments_num_unlocked(CacheType type,
+                                          std::lock_guard<std::mutex>& cache_lock) const;
+
+    bool need_to_move(CacheType cell_type, CacheType query_type) const;
+
+    bool remove_if_ttl_file_unlock(const Key& file_key, bool remove_directly,
+                                   std::lock_guard<std::mutex>&);
+
+    void run_background_operation();
+
+    std::atomic_bool _close {false};
+    std::thread _cache_background_thread;
+
 public:
     /// Save a query context information, and adopt different cache policies
     /// for different queries through the context cache layer.
     struct QueryContextHolder {
-        QueryContextHolder(const TUniqueId& query_id, IFileCache* cache, QueryContextPtr context)
+        QueryContextHolder(const TUniqueId& query_id, CloudFileCache* cache,
+                           QueryContextPtr context)
                 : query_id(query_id), cache(cache), context(context) {}
 
         QueryContextHolder& operator=(const QueryContextHolder&) = delete;
@@ -278,14 +377,14 @@ public:
         }
 
         const TUniqueId& query_id;
-        IFileCache* cache = nullptr;
+        CloudFileCache* cache = nullptr;
         QueryContextPtr context;
     };
     using QueryContextHolderPtr = std::unique_ptr<QueryContextHolder>;
     QueryContextHolderPtr get_query_context_holder(const TUniqueId& query_id);
 };
 
-using CloudFileCachePtr = IFileCache*;
+using CloudFileCachePtr = CloudFileCache*;
 
 } // namespace io
 } // namespace doris

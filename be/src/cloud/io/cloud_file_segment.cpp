@@ -6,14 +6,14 @@
 #include <system_error>
 #include <thread>
 
+#include "cloud/io/cloud_file_cache.h"
 #include "cloud/io/file_writer.h"
 #include "cloud/io/local_file_system.h"
 #include "common/status.h"
-
 namespace doris {
 namespace io {
 
-FileSegment::FileSegment(size_t offset, size_t size, const Key& key, IFileCache* cache,
+FileSegment::FileSegment(size_t offset, size_t size, const Key& key, CloudFileCache* cache,
                          State download_state, CacheType cache_type, int64_t expiration_time)
         : _segment_range(offset, offset + size - 1),
           _download_state(download_state),
@@ -322,7 +322,7 @@ FileSegmentsHolder::~FileSegmentsHolder() {
     /// FileSegmentsHolder right after calling file_segment->complete(), so on destruction here
     /// remain only uncompleted file segments.
 
-    IFileCache* cache = nullptr;
+    CloudFileCache* cache = nullptr;
 
     for (auto file_segment_it = file_segments.begin(); file_segment_it != file_segments.end();) {
         auto current_file_segment_it = file_segment_it;

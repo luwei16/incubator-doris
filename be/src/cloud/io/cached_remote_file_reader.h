@@ -50,7 +50,7 @@ private:
     std::pair<size_t, size_t> _align_size(size_t offset, size_t size) const;
 
     FileReaderSPtr _remote_file_reader;
-    IFileCache::Key _cache_key;
+    Key _cache_key;
     CloudFileCachePtr _cache;
 
 private:
