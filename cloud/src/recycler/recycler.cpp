@@ -10,6 +10,7 @@
 
 #include "../test/mock_accessor.h"
 #include "common/config.h"
+#include "common/encryption_util.h"
 #include "common/logging.h"
 #include "common/sync_point.h"
 #include "common/util.h"
@@ -324,6 +325,11 @@ int Recycler::start() {
     }
     LOG(INFO) << "successfully init txn kv";
 
+    if (!init_global_encryption_key_info_map(txn_kv_)) {
+        LOG(WARNING) << "failed to init global encryption key map";
+        return -1;
+    }
+    
     ip_port_ = std::string(butil::my_ip_cstr()) + ":" + std::to_string(config::brpc_listen_port);
     // Add service
     auto recycler_service = new RecyclerServiceImpl(txn_kv_, this);
@@ -370,6 +376,23 @@ void Recycler::join() {
 
 }
 
+static int decrypt_ak_sk_helper(const std::string cipher_ak, const std::string cipher_sk, const EncryptionInfoPB& encryption_info,
+            AkSkPair* plain_ak_sk_pair) {
+    std::string key;
+    int ret = get_encryption_key_for_ak_sk(encryption_info.key_id(), &key);
+    if (ret != 0) {
+        LOG(WARNING) << "failed to get encryptionn key version_id: " << encryption_info.key_id();
+        return -1;
+    }
+    AkSkPair cipher_ak_sk_pair{cipher_ak, cipher_sk};
+    ret = decrypt_ak_sk(cipher_ak_sk_pair, encryption_info.encryption_method(), key, plain_ak_sk_pair);
+    if (ret != 0) {
+        LOG(WARNING) << "failed to decrypt";
+        return -1;
+    }
+    return 0;
+}
+
 InstanceRecycler::InstanceRecycler(std::shared_ptr<TxnKv> txn_kv, const InstanceInfoPB& instance)
         : txn_kv_(std::move(txn_kv)),
           instance_id_(instance.instance_id()),
@@ -378,6 +401,17 @@ InstanceRecycler::InstanceRecycler(std::shared_ptr<TxnKv> txn_kv, const Instance
         S3Conf s3_conf;
         s3_conf.ak = obj_info.ak();
         s3_conf.sk = obj_info.sk();
+        if (obj_info.has_encryption_info()) {
+            AkSkPair plain_ak_sk_pair;
+            int ret = decrypt_ak_sk_helper(obj_info.ak(), obj_info.sk(), obj_info.encryption_info(), &plain_ak_sk_pair);
+            if (ret != 0) {
+                LOG(WARNING) << "fail to decrypt ak sk. instance_id: " << instance_id_
+                             << " obj_info: " << proto_to_json(obj_info);
+            } else {
+                s3_conf.ak = std::move(plain_ak_sk_pair.first);
+                s3_conf.sk = std::move(plain_ak_sk_pair.second);
+            }
+        }
         s3_conf.endpoint = obj_info.endpoint();
         s3_conf.region = obj_info.region();
         s3_conf.bucket = obj_info.bucket();
@@ -1699,9 +1733,33 @@ int InstanceRecycler::init_copy_job_accessor(const std::string& stage_id,
         if (stage_access_type == StagePB::AKSK) {
             s3_conf.ak = object_store_info.ak();
             s3_conf.sk = object_store_info.sk();
+            if (object_store_info.has_encryption_info()) {
+                AkSkPair plain_ak_sk_pair;
+                int ret = decrypt_ak_sk_helper(object_store_info.ak(),
+                                object_store_info.sk(), object_store_info.encryption_info(), &plain_ak_sk_pair);
+                if (ret != 0) {
+                    LOG(WARNING) << "fail to decrypt ak sk. instance_id: " << instance_id_
+                                 << " obj_info: " << proto_to_json(object_store_info);
+                    return -1;
+                }
+                s3_conf.ak = std::move(plain_ak_sk_pair.first);
+                s3_conf.sk = std::move(plain_ak_sk_pair.second);
+            }
         } else if (stage_access_type == StagePB::BUCKET_ACL) {
             s3_conf.ak = instance_info_.ram_user().ak();
             s3_conf.sk = instance_info_.ram_user().sk();
+            if (instance_info_.ram_user().has_encryption_info()) {
+                AkSkPair plain_ak_sk_pair;
+                int ret = decrypt_ak_sk_helper(instance_info_.ram_user().ak(),
+                            instance_info_.ram_user().sk(), instance_info_.ram_user().encryption_info(), &plain_ak_sk_pair);
+                if (ret != 0) {
+                    LOG(WARNING) << "fail to decrypt ak sk. instance_id: " << instance_id_
+                                 << " ram_user: " << proto_to_json(instance_info_.ram_user());
+                    return -1;
+                }
+                s3_conf.ak = std::move(plain_ak_sk_pair.first);
+                s3_conf.sk = std::move(plain_ak_sk_pair.second);
+            }
         } else {
             LOG(INFO) << "Unsupported stage access type=" << stage_access_type
                       << ", instance_id=" << instance_id_ << ", stage_id=" << stage_id;
@@ -1716,6 +1774,17 @@ int InstanceRecycler::init_copy_job_accessor(const std::string& stage_id,
         auto& old_obj = instance_info_.obj_info()[idx - 1];
         s3_conf.ak = old_obj.ak();
         s3_conf.sk = old_obj.sk();
+        if (old_obj.has_encryption_info()) {
+            AkSkPair plain_ak_sk_pair;
+            int ret = decrypt_ak_sk_helper(old_obj.ak(), old_obj.sk(), old_obj.encryption_info(), &plain_ak_sk_pair);
+            if (ret != 0) {
+                LOG(WARNING) << "fail to decrypt ak sk. instance_id: " << instance_id_
+                             << " obj_info: " << proto_to_json(old_obj);
+                return -1;
+            }
+            s3_conf.ak = std::move(plain_ak_sk_pair.first);
+            s3_conf.sk = std::move(plain_ak_sk_pair.second);
+        }
         s3_conf.endpoint = old_obj.endpoint();
         s3_conf.region = old_obj.region();
         s3_conf.bucket = old_obj.bucket();
@@ -1776,6 +1845,17 @@ void InstanceRecycler::recycle_stage() {
         S3Conf s3_conf;
         s3_conf.ak = old_obj.ak();
         s3_conf.sk = old_obj.sk();
+        if (old_obj.has_encryption_info()) {
+            AkSkPair plain_ak_sk_pair;
+            int ret = decrypt_ak_sk_helper(old_obj.ak(), old_obj.sk(), old_obj.encryption_info(), &plain_ak_sk_pair);
+            if (ret != 0) {
+                LOG(WARNING) << "fail to decrypt ak sk. instance_id: " << instance_id_
+                             << " obj_info: " << proto_to_json(old_obj);
+                return -1;
+            }
+            s3_conf.ak = std::move(plain_ak_sk_pair.first);
+            s3_conf.sk = std::move(plain_ak_sk_pair.second);
+        }
         s3_conf.endpoint = old_obj.endpoint();
         s3_conf.region = old_obj.region();
         s3_conf.bucket = old_obj.bucket();
@@ -1838,6 +1918,16 @@ void InstanceRecycler::recycle_expired_stage_objects() {
         S3Conf s3_conf;
         s3_conf.ak = old_obj.ak();
         s3_conf.sk = old_obj.sk();
+        if (old_obj.has_encryption_info()) {
+            AkSkPair plain_ak_sk_pair;
+            int ret = decrypt_ak_sk_helper(old_obj.ak(), old_obj.sk(), old_obj.encryption_info(), &plain_ak_sk_pair);
+            if (ret != 0) {
+                LOG(WARNING) << "fail to decrypt ak sk " << "obj_info:" << proto_to_json(old_obj);
+            } else {
+                s3_conf.ak = std::move(plain_ak_sk_pair.first);
+                s3_conf.sk = std::move(plain_ak_sk_pair.second);
+            }
+        }
         s3_conf.endpoint = old_obj.endpoint();
         s3_conf.region = old_obj.region();
         s3_conf.bucket = old_obj.bucket();

@@ -95,4 +95,8 @@ CONF_String(arn_ak, "");
 CONF_String(arn_sk, "");
 CONF_Int64(internal_stage_objects_expire_time_second, "259200"); // 3 * 24 * 3600 seconds
 
+// format with base64: eg, "selectdbselectdbselectdbselectdb" -> "c2VsZWN0ZGJzZWxlY3RkYnNlbGVjdGRic2VsZWN0ZGI="
+CONF_String(encryption_key, "c2VsZWN0ZGJzZWxlY3RkYnNlbGVjdGRic2VsZWN0ZGI=");
+CONF_String(encryption_method, "AES_256_ECB");
+
 } // namespace selectdb::config

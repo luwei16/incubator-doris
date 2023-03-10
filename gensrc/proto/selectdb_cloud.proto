@@ -11,11 +11,24 @@ option cc_generic_services = true;
 // Resources
 //==============================================================================
 
+message EncryptionInfoPB {
+    optional string encryption_method = 1;
+    optional int64 key_id = 2;
+}
+
+message EncryptionKeyInfoPB {
+    message Item {
+        optional int64 key_id = 1;
+        optional string key = 2;
+    }
+    repeated Item items = 1;
+}
 message RamUserPB {
     optional string user_id = 1;
     optional string ak = 2;
     optional string sk = 3;
     optional string external_id = 4;
+    optional EncryptionInfoPB encryption_info = 6;
 }
 
 message InstanceInfoPB {
@@ -132,7 +145,9 @@ message ObjectStoreInfoPB {
     optional string region = 9;
     optional Provider provider = 10;
     optional string external_endpoint = 11;
-    optional bool sse_enabled = 12;
+    optional string user_id = 13;
+    optional EncryptionInfoPB encryption_info = 14;
+    optional bool sse_enabled = 15;
 }
 
 //==============================================================================
@@ -572,6 +587,15 @@ message AlterObjStoreInfoResponse {
     optional MetaServiceResponseStatus status = 1;
 }
 
+message UpdateAkSkRequest {
+    optional string instance_id = 1;
+    repeated RamUserPB internal_bucket_user = 2;
+    optional RamUserPB ram_user = 3;
+}
+
+message UpdateAkSkResponse {
+    optional MetaServiceResponseStatus status = 1;
+}
 
 message GetObjStoreInfoResponse {
     optional MetaServiceResponseStatus status = 1;
@@ -806,6 +830,16 @@ message GetIamResponse {
     optional RamUserPB ram_user = 3;
 }
 
+message AlterIamRequest {
+    optional string account_id = 1;
+    optional string ak = 2;
+    optional string sk = 3;
+}
+
+message AlterIamResponse {
+    optional MetaServiceResponseStatus status = 1;
+}
+
 message AlterRamUserRequest {
     optional string instance_id = 1;
     optional RamUserPB ram_user = 2;
@@ -953,6 +987,9 @@ enum MetaServiceCode {
     // Rate limit
     MAX_QPS_LIMIT = 6001;
 
+    ERR_ENCRYPT = 7001;
+    ERR_DECPYPT = 7002;
+
     UNDEFINED_ERR = 1000000;
 }
 
@@ -988,6 +1025,7 @@ service MetaService {
 
     rpc get_obj_store_info(GetObjStoreInfoRequest) returns (GetObjStoreInfoResponse);
     rpc alter_obj_store_info(AlterObjStoreInfoRequest) returns (AlterObjStoreInfoResponse);
+    rpc update_ak_sk(UpdateAkSkRequest) returns (UpdateAkSkResponse);
     rpc create_instance(CreateInstanceRequest) returns (CreateInstanceResponse);
     rpc alter_instance(AlterInstanceRequest) returns (AlterInstanceResponse);
     rpc alter_cluster(AlterClusterRequest) returns (AlterClusterResponse);
@@ -1000,6 +1038,7 @@ service MetaService {
     rpc get_stage(GetStageRequest) returns (GetStageResponse);
     rpc drop_stage(DropStageRequest) returns (DropStageResponse);
     rpc get_iam(GetIamRequest) returns (GetIamResponse);
+    rpc alter_iam(AlterIamRequest) returns (AlterIamResponse);
     rpc alter_ram_user(AlterRamUserRequest) returns (AlterRamUserResponse);
     // copy into
     rpc begin_copy(BeginCopyRequest) returns (BeginCopyResponse);

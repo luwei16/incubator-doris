@@ -149,6 +149,11 @@ public:
                               ::selectdb::AlterObjStoreInfoResponse* response,
                               ::google::protobuf::Closure* done) override;
 
+    void update_ak_sk(google::protobuf::RpcController* controller,
+                            const ::selectdb::UpdateAkSkRequest* request,
+                            ::selectdb::UpdateAkSkResponse* response,
+                            ::google::protobuf::Closure* done) override;
+
     void create_instance(google::protobuf::RpcController* controller,
                          const ::selectdb::CreateInstanceRequest* request,
                          ::selectdb::CreateInstanceResponse* response,
@@ -187,6 +192,11 @@ public:
     void get_iam(google::protobuf::RpcController* controller,
                  const ::selectdb::GetIamRequest* request,
                  ::selectdb::GetIamResponse* response,
+                 ::google::protobuf::Closure* done) override;
+
+    void alter_iam(google::protobuf::RpcController* controller,
+                 const ::selectdb::AlterIamRequest* request,
+                 ::selectdb::AlterIamResponse* response,
                  ::google::protobuf::Closure* done) override;
 
     void alter_ram_user(google::protobuf::RpcController* controller,

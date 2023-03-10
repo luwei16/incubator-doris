@@ -298,6 +298,27 @@ std::string system_meta_service_registry_key() {
     return ret;
 }
 
+
+// 0x02 0:"system"  1:"meta-service"  2:"arn_info"
+std::string system_meta_service_arn_info_key() {
+    std::string ret;
+    ret.push_back(CLOUD_SYS_KEY_SPACE02);
+    encode_bytes("system", &ret);
+    encode_bytes("meta-service", &ret);
+    encode_bytes("arn_info", &ret);
+    return ret;
+}
+
+// 0x02 0:"system"  1:"meta-service"  2:"encryption_key_info"
+std::string system_meta_service_encryption_key_info_key() {
+    std::string ret;
+    ret.push_back(CLOUD_SYS_KEY_SPACE02);
+    encode_bytes("system", &ret);
+    encode_bytes("meta-service", &ret);
+    encode_bytes("encryption_key_info", &ret);
+    return ret;
+}
+
 //==============================================================================
 // Other keys
 //==============================================================================

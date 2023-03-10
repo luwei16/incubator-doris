@@ -29,7 +29,14 @@ Content-Type: text/plain
         "prefix": string,
         "endpoint": string,
         "region": string,
-        "external_endpoint": string
+        "external_endpoint": string,
+        "provider": string
+        "user_id": string
+    },
+    "ram_user": {
+        "user_id": string,
+        "ak": string,
+        "sk": string
     }
 }
 ```
@@ -48,6 +55,12 @@ Content-Type: text/plain
 | obj_info.endpoint          | S3的endpoint信息          | 是    |                                |
 | obj_info.region            | S3的region信息            | 是    |                                |
 | obj_info.external_endpoint | S3的external endpoint信息 | 否    | 兼容oss，oss有external、 internal区别 |
+| obj_info.provider          | S3的provider信息 | 是    |          |
+| obj_info.user_id           | bucket的user_id  | 是   |            |
+| ram_user | ram_user信息，用于外部bucket授权         | 否    |           |
+| ram_user.user_id |         | 是    |  |
+| ram_user.ak |              | 是    |  |
+| ram_user.sk |              | 是    |  |
 
 * 请求示例
 
@@ -66,7 +79,14 @@ Content-Type: text/plain
         "bucket": "test-bucket",
         "prefix": "test-prefix",
         "endpoint": "test-endpoint",
-        "region": "test-region"
+        "region": "test-region",
+        "provider": "OBS",
+        "user_id": "xxx"
+    }
+    "ram_user": {
+        "user_id": string,
+        "ak": string,
+        "sk": string
     }
 }
 ```
@@ -1013,7 +1033,7 @@ Content-Type: text/plain
 
 ### 接口描述
 
-本接口用于更新instance配置的S3的ak、sk信息，使用id去查询修改项，id可以用get_obj_store_info查询得到，多次相同参数调用此接口会报错
+本接口用于更新instance配置的S3和RAM_USER的ak、sk信息，使用user_id去查询修改项，使用相同参数调用此接口会报错
 
 ### 请求(Request)
 
@@ -1025,11 +1045,23 @@ Content-Length: <ContentLength>
 Content-Type: text/plain
 
 {
-    "cloud_unique_id": string,
-    "obj": {
-        "id": string,
-        "ak": string,
-        "sk": string,
+    "instance_id": string,
+    "internal_bucket_user":[
+    	{
+	        "user_id": string,
+	    	"ak": string,
+	    	"sk": string
+    	},
+    	{
+    		"user_id": string,
+    		"ak": string,
+    		"sk": string
+    	}
+    ],
+    "ram_user": {
+    	"user_id": string,
+    	"ak": string,
+    	"sk": string
     }
 }
 ```
@@ -1037,11 +1069,15 @@ Content-Type: text/plain
 
 | 参数名             | 描述                              | 是否必须 | 备注        |
 |-----------------|---------------------------------|------|-----------|
-| cloud_unique_id | 节点的cloud_unique_id              | 是    |           |
-| obj             | obj对象                           | 是    | S3信息对象    |
-| obj.id          | 将添加mysql user name的cluster name | 是    | id支持从1到10 |
-| obj.ak          | 将添加mysql user name的cluster id   | 是    |           |
-| obj.sk          | mysql user name                 | 是    | 字符串数组     |
+| instance_id     | instance_id                     | 是    |           |
+| internal_bucket_user  | 需修改的bucket_user列表     | 和ram_user至少存在一个   | 数组 |
+| internal_bucket_user.user_id  | 账号user_id        | 是    | |
+| internal_bucket_user.ak  |                        | 是    |           |
+| internal_bucket_user.sk  |                        | 是    |     |
+| ram_user              | 需修改的ram_user   | 和internal_bucket_user至少存在一个   |     |
+| ram_user.user_id  |  账号user_id                   | 是    |     |
+| ram_user.ak  |                                    | 是    |     |
+| ram_user.sk  |                                    | 是    |     |
 
 * 请求示例
 
@@ -1051,11 +1087,23 @@ Content-Length: <ContentLength>
 Content-Type: text/plain
 
 {
-    "cloud_unique_id": "cloud_unique_id_compute_node1",
-    "obj": {
-        "id": "1",
-        "ak": "test-ak",
-        "sk": "test-sk",
+    "instance_id":"test",
+    "internal_bucket_user":[
+    	{
+	    	"user_id": "bucket_user_id_1",
+	    	"ak": "xxxx",
+	    	"sk": "xxxx"
+    	},
+    	{
+    		"user_id": "bucket_user_id_2",
+    		"ak": "xxxx",
+    		"sk": "xxxx"
+    	}
+    ],
+    "ram_user": {
+    	"user_id": "ram_user_id",
+    	"ak": "xxxx",
+    	"sk": "xxxx"
     }
 }
 ```
@@ -1403,5 +1451,73 @@ Content-Type: text/plain
 status {
   code: OK
   msg: ""
+}
+```
+
+## 添加或更新region的IAM信息
+
+### 接口描述
+
+本接口用于添加或更新region配置的IAM信息，首次调用为添加，后续调用为修改。
+
+### 请求(Request)
+
+* 请求语法
+
+```
+PUT /MetaService/http/alter_iam?token=<token> HTTP/1.1
+Content-Length: <ContentLength>
+Content-Type: text/plain
+
+{
+    "account_id": string,
+    "ak": string,
+    "sk": string
+}
+```
+* 请求参数
+
+| 参数名             | 描述                              | 是否必须 | 备注        |
+|-----------------|---------------------------------|------|-----------|
+| account_id     | 需添加的账号id                     | 是    |           |
+| ak  |                                     | 是    |           |
+| sk  |                                     | 是    |           |
+
+
+* 请求示例
+
+```
+PUT /MetaService/http/alter_iam?token=<token> HTTP/1.1
+Content-Length: <ContentLength>
+Content-Type: text/plain
+
+{
+    "account_id": "test",
+    "ak": "xxxx",
+    "sk": "xxxx"
+}
+```
+
+* 返回参数
+
+| 参数名  | 描述    | 是否必须 | 备注                                                       |
+|------|-------|------|----------------------------------------------------------|
+| code | 返回状态码 | 是    | 枚举值，包括OK、INVALID_ARGUMENT、INTERNAL_ERROR、ALREADY_EXISTED |
+| msg  | 出错原因  | 是    | 若出错返回错误原因，未出错返回空字符串                                      |
+
+* 成功返回示例
+
+```
+{
+ "code": "OK",
+ "msg": ""
+}
+```
+
+* 失败返回示例
+```
+{
+ "code": "INVALID_ARGUMENT",
+ "msg": "already has the same arn info"
 }
 ```

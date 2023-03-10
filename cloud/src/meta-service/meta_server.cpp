@@ -4,6 +4,7 @@
 
 #include "common/config.h"
 #include "common/metric.h"
+#include "common/encryption_util.h"
 #include "common/util.h"
 #include "gen_cpp/selectdb_cloud.pb.h"
 #include "meta-service/keys.h"
@@ -73,6 +74,10 @@ int MetaServer::start() {
     fdb_metric_exporter_.reset(new FdbMetricExporter(txn_kv_));
     if (fdb_metric_exporter_->start() != 0) {
         LOG(WARNING) << "failed to start fdb metric exporter";
+    }
+
+    if (init_global_encryption_key_info_map(txn_kv_) != 0) {
+        LOG(WARNING) << "failed to init global encryption key map";
         return -1;
     }
 

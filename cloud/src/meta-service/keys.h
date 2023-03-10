@@ -36,7 +36,9 @@
 // 0x01 "job" ${instance_id} "tablet" ${tablet_id}                                           -> TabletJobInfoPB
 // 0x01 "job" ${instance_id} "recycle"                                                       -> JobRecyclePB
 //
-// 0x01 "system" "meta-service" "registry"                                                   -> MetaServiceRegistryPB
+// 0x02 "system" "meta-service" "registry"                                                   -> MetaServiceRegistryPB
+// 0x02 "system" "meta-service" "arn_info"                                                   -> RamUserPB
+// 0x02 "system" "meta-service" "encryption_key_info"                                        -> EncryptionKeyInfoPB
 //
 // 0x01 "copy" ${instance_id} "job" ${stage_id} ${table_id} ${copy_id} ${group_id}           -> CopyJobPB
 // 0x01 "copy" ${instance_id} "loading_files" ${stage_id} ${table_id} ${obj_name} ${etag}    -> CopyFilePB
@@ -169,6 +171,22 @@ void recycle_stage_key(const RecycleStageKeyInfo& in, std::string* out);
 [[maybe_unused]] static std::string recycle_stage_key(const RecycleStageKeyInfo& in) { std::string s; recycle_stage_key(in, &s); return s; }
 
 std::string system_meta_service_registry_key();
+std::string system_meta_service_arn_info_key();
+
+// Note:
+// This key points to a value (EncryptionKeyInfoPB, the format is below) which stores a set of items,
+// and each item represents a group of encrpytion key.
+// The size of each item: 8 Bytes (int64 key_id) + 32 Bytes * 1.3 (256bit key * base64 amplification factor) = 50 Bytes.
+// The maximum size kv of fdb can store: 100k/50Bytes = 2048 items
+//
+// message EncryptionKeyInfoPB {
+//     message Item {
+//         optional int64 key_id = 1;
+//         optional string key = 2;
+//     }
+//     repeated Item items = 1;
+// }
+std::string system_meta_service_encryption_key_info_key();
 // clang-format on
 // TODO: add a family of decoding functions if needed
 

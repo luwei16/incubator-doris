@@ -1,10 +1,14 @@
 
 // clang-format off
 #include "meta_service.h"
+#include <brpc/details/profiler_linker.h>
+#include <brpc/options.pb.h>
 #include <gen_cpp/selectdb_cloud.pb.h>
+#include <gen_cpp/types.pb.h>
 #include "meta-service/doris_txn.h"
 #include "meta-service/keys.h"
 #include "common/config.h"
+#include "common/encryption_util.h"
 #include "common/logging.h"
 #include "common/util.h"
 #include "common/bvars.h"
@@ -22,6 +26,7 @@
 
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <functional>
 #include <iomanip>
@@ -32,6 +37,7 @@
 #include <string>
 #include <type_traits>
 #include <unordered_map>
+#include <utility>
 // clang-format on
 
 using namespace std::chrono;
@@ -2890,6 +2896,117 @@ void static format_to_json_resp(std::string& response_body, const MetaServiceCod
     response_body = sb.GetString();
 }
 
+static int encrypt_ak_sk_helper(const std::string plain_ak, const std::string plain_sk, EncryptionInfoPB* encryption_info,
+            AkSkPair* cipher_ak_sk_pair, MetaServiceCode& code, std::string& msg) {
+    std::string key;
+    int64_t key_id;
+    int ret = get_newest_encryption_key_for_ak_sk(&key_id, &key);
+    if (ret != 0) {
+        msg = "failed to get encryption key";
+        code = MetaServiceCode::ERR_ENCRYPT;
+        LOG(WARNING) << msg;
+        return -1;
+    }
+    std::string encryption_method = get_encryption_method_for_ak_sk();
+    AkSkPair plain_ak_sk_pair{plain_ak, plain_sk};
+    ret = encrypt_ak_sk(plain_ak_sk_pair, encryption_method, key, cipher_ak_sk_pair);
+    if (ret != 0) {
+        msg = "failed to encrypt";
+        code = MetaServiceCode::ERR_ENCRYPT;
+        LOG(WARNING) << msg;
+        return -1;
+    }
+    encryption_info->set_key_id(key_id);
+    encryption_info->set_encryption_method(std::move(encryption_method));
+    return 0;
+}
+
+static int decrypt_ak_sk_helper(const std::string cipher_ak, const std::string cipher_sk, const EncryptionInfoPB& encryption_info,
+            AkSkPair* plain_ak_sk_pair, MetaServiceCode& code, std::string& msg) {
+    std::string key;
+    int ret = get_encryption_key_for_ak_sk(encryption_info.key_id(), &key);
+    if (ret != 0) {
+        msg = "failed to get encryption key";
+        code = MetaServiceCode::ERR_DECPYPT;
+        LOG(WARNING) << msg << " key_id: " << encryption_info.key_id();
+        return -1;
+    }
+    AkSkPair cipher_ak_sk_pair{cipher_ak, cipher_sk};
+    ret = decrypt_ak_sk(cipher_ak_sk_pair, encryption_info.encryption_method(), key, plain_ak_sk_pair);
+    if (ret != 0) {
+        msg = "failed to decrypt";
+        code = MetaServiceCode::ERR_DECPYPT;
+        LOG(WARNING) << msg;
+        return -1;
+    }
+    return 0;
+}
+
+static int decrypt_instance_info(InstanceInfoPB &instance, const std::string& instance_id,
+                MetaServiceCode& code, std::string& msg, std::shared_ptr<Transaction>& txn) {
+    for (auto& obj_info: *instance.mutable_obj_info()) {
+        if (obj_info.has_encryption_info()) {
+            AkSkPair plain_ak_sk_pair;
+            int ret = decrypt_ak_sk_helper(obj_info.ak(), obj_info.sk(), obj_info.encryption_info(), &plain_ak_sk_pair, code, msg);
+            if (ret != 0) return -1;
+            obj_info.set_ak(std::move(plain_ak_sk_pair.first));
+            obj_info.set_sk(std::move(plain_ak_sk_pair.second));
+        }
+    }
+    if (instance.has_ram_user() && instance.ram_user().has_encryption_info()) {
+        auto& ram_user = *instance.mutable_ram_user();
+        AkSkPair plain_ak_sk_pair;
+        int ret = decrypt_ak_sk_helper(ram_user.ak(), ram_user.sk(), ram_user.encryption_info(), &plain_ak_sk_pair, code, msg);
+        if (ret != 0) return -1;
+        ram_user.set_ak(std::move(plain_ak_sk_pair.first));
+        ram_user.set_sk(std::move(plain_ak_sk_pair.second));
+
+    }
+
+    std::string val;
+    int ret = txn->get(system_meta_service_arn_info_key(), &val);
+    if (ret == 1) {
+        // For compatibility, use arn_info of config
+        RamUserPB iam_user;
+        iam_user.set_user_id(config::arn_id);
+        iam_user.set_external_id(instance_id);
+        iam_user.set_ak(config::arn_ak);
+        iam_user.set_sk(config::arn_sk);
+        instance.mutable_iam_user()->CopyFrom(iam_user);
+    } else if (ret == 0) {
+        RamUserPB iam_user;
+        if (!iam_user.ParseFromString(val)) {
+            code = MetaServiceCode::PROTOBUF_PARSE_ERR;
+            msg = "failed to parse RamUserPB";
+            LOG(WARNING) << msg;
+            return -1;
+        }
+        AkSkPair plain_ak_sk_pair;
+        int ret = decrypt_ak_sk_helper(iam_user.ak(), iam_user.sk(), iam_user.encryption_info(), &plain_ak_sk_pair, code, msg);
+        if (ret != 0) return -1;
+        iam_user.set_ak(std::move(plain_ak_sk_pair.first));
+        iam_user.set_sk(std::move(plain_ak_sk_pair.second));
+        instance.mutable_iam_user()->CopyFrom(iam_user);
+    } else {
+        code = MetaServiceCode::KV_TXN_GET_ERR;
+        msg = "failed to get arn_info_key";
+        LOG(WARNING) << msg << " ret=" << ret;
+        return -1;
+    }
+
+    for (auto& stage: *instance.mutable_stages()) {
+        if (stage.has_obj_info() && stage.obj_info().has_encryption_info()) {
+            auto& obj_info = *stage.mutable_obj_info();
+            AkSkPair plain_ak_sk_pair;
+            int ret = decrypt_ak_sk_helper(obj_info.ak(), obj_info.sk(), obj_info.encryption_info(), &plain_ak_sk_pair, code, msg);
+            if (ret != 0) return -1;
+            obj_info.set_ak(std::move(plain_ak_sk_pair.first));
+            obj_info.set_sk(std::move(plain_ak_sk_pair.second));
+        }
+    }
+    return 0;
+}
+
 std::pair<MetaServiceCode, std::string> get_instance_info(const std::shared_ptr<ResourceManager>& resource,
                                                           const std::shared_ptr<TxnKv>& txn_kv,
                                                           std::string instance_id, const std::string& cloud_unique_id) {
@@ -2931,12 +3048,10 @@ std::pair<MetaServiceCode, std::string> get_instance_info(const std::shared_ptr<
         code = MetaServiceCode::KV_TXN_GET_ERR;
         return ec;
     }
-
-    RamUserPB arn_user;
-    arn_user.set_user_id(config::arn_id);
-    arn_user.set_ak(config::arn_ak);
-    arn_user.set_sk(config::arn_sk);
-    instance.mutable_iam_user()->CopyFrom(arn_user);
+    // maybe do not decrypt ak/sk?
+    if(decrypt_instance_info(instance, instance_id, code, msg, txn)) {
+        return ec;
+    }
     msg = proto_to_json(instance);
     return ec;
 }
@@ -3018,22 +3133,20 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
         return;
     }
     if (unresolved_path == "update_ak_sk") {
-        AlterObjStoreInfoRequest r;
+        UpdateAkSkRequest r;
         auto st = google::protobuf::util::JsonStringToMessage(request_body, &r);
         if (!st.ok()) {
-            msg = "failed to SetObjStoreInfoRequest, error: " + st.message().ToString();
+            msg = "failed to UpdateAkSkRequest, error: " + st.message().ToString();
             ret = MetaServiceCode::PROTOBUF_PARSE_ERR;
             response_body = msg;
             LOG(WARNING) << msg;
             return;
         }
-        r.set_op(AlterObjStoreInfoRequest::UPDATE_AK_SK);
-        AlterObjStoreInfoResponse res;
-        alter_obj_store_info(cntl, &r, &res, nullptr);
+        UpdateAkSkResponse res;
+        update_ak_sk(cntl, &r, &res, nullptr);
         ret = res.status().code();
         msg = res.status().msg();
         response_body = msg;
-        return;
     }
     if (unresolved_path == "add_obj_info") {
         AlterObjStoreInfoRequest r;
@@ -3428,6 +3541,24 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
         return;
     }
 
+    if (unresolved_path == "alter_iam") {
+        AlterIamRequest r;
+        auto st = google::protobuf::util::JsonStringToMessage(request_body, &r);
+        if (!st.ok()) {
+            msg = "failed to AlterIamRequest, error: " + st.message().ToString();
+            ret = MetaServiceCode::PROTOBUF_PARSE_ERR;
+            response_body = msg;
+            LOG(WARNING) << msg;
+            return;
+        }
+        AlterIamResponse res;
+        alter_iam(cntl, &r, &res, nullptr);
+        ret = res.status().code();
+        msg = res.status().msg();
+        response_body = msg;
+        return;
+    }
+
     // TODO:
     // * unresolved_path == "encode_key"
     // * unresolved_path == "set_token"
@@ -3489,7 +3620,15 @@ void MetaServiceImpl::get_obj_store_info(google::protobuf::RpcController* contro
         msg = "failed to parse InstanceInfoPB";
         return;
     }
-
+    for (auto& obj_info: *instance.mutable_obj_info()) {
+        if (obj_info.has_encryption_info()) {
+            AkSkPair plain_ak_sk_pair;
+            int ret = decrypt_ak_sk_helper(obj_info.ak(), obj_info.sk(), obj_info.encryption_info(), &plain_ak_sk_pair, code, msg);
+            if (ret != 0) return;
+            obj_info.set_ak(std::move(plain_ak_sk_pair.first));
+            obj_info.set_sk(std::move(plain_ak_sk_pair.second));
+        }
+    }
     response->mutable_obj_info()->CopyFrom(instance.obj_info());
     msg = proto_to_json(*response);
     return;
@@ -3508,8 +3647,16 @@ void MetaServiceImpl::alter_obj_store_info(google::protobuf::RpcController* cont
     }
 
     auto& obj = request->obj();
-    std::string ak = obj.has_ak() ? obj.ak() : "";
-    std::string sk = obj.has_sk() ? obj.sk() : "";
+    std::string plain_ak = obj.has_ak() ? obj.ak() : "";
+    std::string plain_sk = obj.has_sk() ? obj.sk() : "";
+
+    EncryptionInfoPB encryption_info;
+    AkSkPair cipher_ak_sk_pair;
+    ret = encrypt_ak_sk_helper(plain_ak, plain_sk, &encryption_info, &cipher_ak_sk_pair, code, msg);
+    if (ret != 0) {
+        return;
+    }
+    const auto& [ak, sk] = cipher_ak_sk_pair;
     std::string bucket = obj.has_bucket() ? obj.bucket() : "";
     std::string prefix = obj.has_prefix() ? obj.prefix() : "";
     std::string endpoint = obj.has_endpoint() ? obj.endpoint() : "";
@@ -3581,32 +3728,6 @@ void MetaServiceImpl::alter_obj_store_info(google::protobuf::RpcController* cont
             std::chrono::duration_cast<std::chrono::seconds>(now_time.time_since_epoch()).count();
 
     switch (request->op()) {
-    case AlterObjStoreInfoRequest::UPDATE_AK_SK: {
-        // get id
-        std::string id = request->obj().has_id() ? request->obj().id() : "0";
-        int idx = std::stoi(id);
-        if (idx < 1 || idx > instance.obj_info().size()) {
-            // err
-            code = MetaServiceCode::INVALID_ARGUMENT;
-            msg = "id invalid, please check it";
-            return;
-        }
-        auto& obj_info =
-                const_cast<std::decay_t<decltype(instance.obj_info())>&>(instance.obj_info());
-        for (auto& it : obj_info) {
-            if (std::stoi(it.id()) == idx) {
-                if (it.ak() == ak && it.sk() == sk) {
-                    // not change, just return ok
-                    code = MetaServiceCode::OK;
-                    msg = "";
-                    return;
-                }
-                it.set_mtime(time);
-                it.set_ak(ak);
-                it.set_sk(sk);
-            }
-        }
-    } break;
     case AlterObjStoreInfoRequest::ADD_OBJ_INFO: {
         if (!obj.has_provider()) {
             code = MetaServiceCode::INVALID_ARGUMENT;
@@ -3624,7 +3745,7 @@ void MetaServiceImpl::alter_obj_store_info(google::protobuf::RpcController* cont
             msg = "s3 conf info err, please check it";
             return;
         }
-
+ 
         auto& objs = instance.obj_info();
         for (auto& it : objs) {
             if (bucket == it.bucket() && prefix == it.prefix() && endpoint == it.endpoint() &&
@@ -3641,8 +3762,12 @@ void MetaServiceImpl::alter_obj_store_info(google::protobuf::RpcController* cont
         last_item.set_ctime(time);
         last_item.set_mtime(time);
         last_item.set_id(std::to_string(instance.obj_info().size() + 1));
-        last_item.set_ak(ak);
-        last_item.set_sk(sk);
+        if (obj.has_user_id()) {
+            last_item.set_user_id(obj.user_id());
+        }
+        last_item.set_ak(std::move(cipher_ak_sk_pair.first));
+        last_item.set_sk(std::move(cipher_ak_sk_pair.second));
+        last_item.mutable_encryption_info()->CopyFrom(encryption_info);
         last_item.set_bucket(bucket);
         // format prefix, such as `/aa/bb/`, `aa/bb//`, `//aa/bb`, `  /aa/bb` -> `aa/bb`
         prefix = trim(prefix);
@@ -3683,6 +3808,203 @@ void MetaServiceImpl::alter_obj_store_info(google::protobuf::RpcController* cont
     return;
 }
 
+void MetaServiceImpl::update_ak_sk(google::protobuf::RpcController* controller,
+                                           const ::selectdb::UpdateAkSkRequest* request,
+                                           ::selectdb::UpdateAkSkResponse* response,
+                                           ::google::protobuf::Closure* done) {
+    RPC_PREPROCESS(update_ak_sk);
+    instance_id = request->has_instance_id() ? request->instance_id() : "";
+    if (instance_id.empty()) {
+        msg = "instance id not set";
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        return;
+    }
+    if (!request->has_ram_user() && request->internal_bucket_user().empty()) {
+        msg = "nothing to update";
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        return;
+    }
+    RPC_RATE_LIMIT(update_ak_sk)
+
+    InstanceKeyInfo key_info {instance_id};
+    std::string key;
+    std::string val;
+    instance_key(key_info, &key);
+
+    std::unique_ptr<Transaction> txn;
+    ret = txn_kv_->create_txn(&txn);
+    if (ret != 0) {
+        code = MetaServiceCode::KV_TXN_CREATE_ERR;
+        msg = "failed to create txn";
+        LOG(WARNING) << msg << " ret=" << ret;
+        return;
+    }
+    ret = txn->get(key, &val);
+    LOG(INFO) << "get instance_key=" << hex(key);
+
+    if (ret != 0) {
+        code = MetaServiceCode::KV_TXN_GET_ERR;
+        ss << "failed to get instance, instance_id=" << instance_id << " ret=" << ret;
+        msg = ss.str();
+        return;
+    }
+
+    InstanceInfoPB instance;
+    if (!instance.ParseFromString(val)) {
+        code = MetaServiceCode::PROTOBUF_PARSE_ERR;
+        msg = "failed to parse InstanceInfoPB";
+        return;
+    }
+
+    if (instance.status() != InstanceInfoPB::NORMAL) {
+        code = MetaServiceCode::CLUSTER_NOT_FOUND;
+        msg = "instance status has been set delete, plz check it";
+        return;
+    }
+
+    auto now_time = std::chrono::system_clock::now();
+    uint64_t time =
+            std::chrono::duration_cast<std::chrono::seconds>(now_time.time_since_epoch()).count();
+
+    std::stringstream update_record;
+
+    // if has ram_user, encrypt and save it
+    if (request->has_ram_user()) {
+        if (request->ram_user().user_id().empty()
+                || request->ram_user().ak().empty() || request->ram_user().sk().empty()) {
+            code = MetaServiceCode::INVALID_ARGUMENT;
+            msg = "ram user info err " + proto_to_json(*request);
+            return;
+        }
+        if (!instance.has_ram_user()) {
+            code = MetaServiceCode::INVALID_ARGUMENT;
+            msg = "instance doesn't have ram user info";
+            return;
+        }
+        auto& ram_user = request->ram_user();
+        EncryptionInfoPB encryption_info;
+        AkSkPair cipher_ak_sk_pair;
+        ret = encrypt_ak_sk_helper(ram_user.ak(), ram_user.sk(), &encryption_info, &cipher_ak_sk_pair, code, msg);
+        if (ret != 0) {
+            return;
+        }
+        const auto& [ak, sk] = cipher_ak_sk_pair;
+        auto& instance_ram_user = *instance.mutable_ram_user();
+        if (ram_user.user_id() != instance_ram_user.user_id()) {
+            code = MetaServiceCode::INVALID_ARGUMENT;
+            msg = "ram user_id err";
+            return;
+        }
+        std::string old_ak = instance_ram_user.ak();
+        std::string old_sk = instance_ram_user.sk();
+        if (old_ak == ak && old_sk == sk) {
+            code = MetaServiceCode::INVALID_ARGUMENT;
+            msg = "ak sk eq original, please check it";
+            return;
+        }
+        instance_ram_user.set_ak(std::move(cipher_ak_sk_pair.first));
+        instance_ram_user.set_sk(std::move(cipher_ak_sk_pair.second));
+        instance_ram_user.mutable_encryption_info()->CopyFrom(encryption_info);
+        update_record << "update ram_user's ak sk, instance_id: " << instance_id
+                      << " user_id: " << ram_user.user_id()
+                      << " old:  cipher ak: " << old_ak << " cipher sk: " << old_sk
+                      << " new: cipher ak: " << ak << " cipher sk: " << sk;
+    }
+
+    bool has_found_alter_obj_info = false;
+    for (auto& alter_bucket_user : request->internal_bucket_user()) {
+        if (!alter_bucket_user.has_ak() || !alter_bucket_user.has_sk() || !alter_bucket_user.has_user_id()) {
+            code = MetaServiceCode::INVALID_ARGUMENT;
+            msg = "s3 bucket info err " + proto_to_json(*request);
+            return;
+        }
+        std::string user_id = alter_bucket_user.user_id();
+        EncryptionInfoPB encryption_info;
+        AkSkPair cipher_ak_sk_pair;
+        ret = encrypt_ak_sk_helper(alter_bucket_user.ak(), alter_bucket_user.sk(), &encryption_info, &cipher_ak_sk_pair, code, msg);
+        if (ret != 0) {
+            return;
+        }
+        const auto& [ak, sk] = cipher_ak_sk_pair;
+        auto& obj_info =
+                const_cast<std::decay_t<decltype(instance.obj_info())>&>(instance.obj_info());
+        for (auto& it : obj_info) {
+            std::string old_ak = it.ak();
+            std::string old_sk = it.sk();
+            if (!it.has_user_id()) {
+                has_found_alter_obj_info = true;
+                // For compatibility, obj_info without a user_id only allow 
+                // single internal_bucket_user to modify it.
+                if (request->internal_bucket_user_size() != 1) {
+                    code = MetaServiceCode::INVALID_ARGUMENT;
+                    msg = "fail to update old instance's obj_info, s3 obj info err " + proto_to_json(*request);
+                    return;
+                }
+                if (it.ak() == ak && it.sk() == sk) {
+                    code = MetaServiceCode::INVALID_ARGUMENT;
+                    msg = "ak sk eq original, please check it";
+                    return;
+                }
+                it.set_mtime(time);
+                it.set_user_id(user_id);
+                it.set_ak(ak);
+                it.set_sk(sk);
+                it.mutable_encryption_info()->CopyFrom(encryption_info);
+                update_record << "update obj_info's ak sk without user_id, instance_id: " << instance_id
+                      << " obj_info_id: " << it.id()
+                      << " new user_id: " << user_id
+                      << " old:  cipher ak: " << old_ak << " cipher sk: " << old_sk
+                      << " new:  cipher ak: " << ak << " cipher sk: " << sk;
+                continue;
+            }
+            if (it.user_id() == user_id) {
+                has_found_alter_obj_info = true;
+                if (it.ak() == ak && it.sk() == sk) {
+                    code = MetaServiceCode::INVALID_ARGUMENT;
+                    msg = "ak sk eq original, please check it";
+                    return;
+                }
+                it.set_mtime(time);
+                it.set_ak(ak);
+                it.set_sk(sk);
+                it.mutable_encryption_info()->CopyFrom(encryption_info);
+                update_record << "update obj_info's ak sk, instance_id: " << instance_id
+                      << " obj_info_id: " << it.id()
+                      << " user_id: " << user_id
+                      << " old:  cipher ak: " << old_ak << " cipher sk: " << old_sk
+                      << " new:  cipher ak: " << ak << " cipher sk: " << sk;
+            }
+        }
+    }
+
+    if (!request->internal_bucket_user().empty() && !has_found_alter_obj_info) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "fail to find the alter obj info";
+        return;
+    }
+
+    LOG(INFO) << "instance " << instance_id << " has " << instance.obj_info().size()
+              << " s3 history info, and instance = " << proto_to_json(instance);
+
+    val = instance.SerializeAsString();
+    if (val.empty()) {
+        msg = "failed to serialize";
+        code = MetaServiceCode::PROTOBUF_SERIALIZE_ERR;
+        return;
+    }
+
+    txn->put(key, val);
+    LOG(INFO) << "put instance_id=" << instance_id << " instance_key=" << hex(key);
+    ret = txn->commit();
+    if (ret != 0) {
+        code = ret == -1 ? MetaServiceCode::KV_TXN_CONFLICT : MetaServiceCode::KV_TXN_COMMIT_ERR;
+        msg = fmt::format("failed to commit kv txn, ret={}", ret);
+        LOG(WARNING) << msg;
+    }
+    LOG(INFO) << update_record.str();
+    return;
+}
+
 void MetaServiceImpl::create_instance(google::protobuf::RpcController* controller,
                                       const ::selectdb::CreateInstanceRequest* request,
                                       ::selectdb::CreateInstanceResponse* response,
@@ -3691,8 +4013,8 @@ void MetaServiceImpl::create_instance(google::protobuf::RpcController* controlle
     instance_id = request->instance_id();
     // Prepare data
     auto& obj = request->obj_info();
-    std::string ak = obj.has_ak() ? obj.ak() : "";
-    std::string sk = obj.has_sk() ? obj.sk() : "";
+    std::string plain_ak = obj.has_ak() ? obj.ak() : "";
+    std::string plain_sk = obj.has_sk() ? obj.sk() : "";
     std::string bucket = obj.has_bucket() ? obj.bucket() : "";
     std::string prefix = obj.has_prefix() ? obj.prefix() : "";
     // format prefix, such as `/aa/bb/`, `aa/bb//`, `//aa/bb`, `  /aa/bb` -> `aa/bb`
@@ -3702,7 +4024,7 @@ void MetaServiceImpl::create_instance(google::protobuf::RpcController* controlle
     std::string region = obj.has_region() ? obj.region() : "";
 
     // ATTN: prefix may be empty
-    if (ak.empty() || sk.empty() || bucket.empty() || endpoint.empty() || region.empty() ||
+    if (plain_ak.empty() || plain_sk.empty() || bucket.empty() || endpoint.empty() || region.empty() ||
         !obj.has_provider()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
         msg = "s3 conf info err, please check it";
@@ -3721,6 +4043,13 @@ void MetaServiceImpl::create_instance(google::protobuf::RpcController* controlle
         }
     }
 
+
+    EncryptionInfoPB encryption_info;
+    AkSkPair cipher_ak_sk_pair;
+    ret = encrypt_ak_sk_helper(plain_ak, plain_sk, &encryption_info, &cipher_ak_sk_pair, code, msg);
+    if (ret != 0) {
+        return;
+    }
     InstanceInfoPB instance;
     instance.set_instance_id(instance_id);
     instance.set_user_id(request->has_user_id() ? request->user_id() : "");
@@ -3728,8 +4057,12 @@ void MetaServiceImpl::create_instance(google::protobuf::RpcController* controlle
     instance.set_status(InstanceInfoPB::NORMAL);
     instance.set_sse_enabled(request->sse_enabled());
     auto obj_info = instance.add_obj_info();
-    obj_info->set_ak(ak);
-    obj_info->set_sk(sk);
+    if (obj.has_user_id()) {
+        obj_info->set_user_id(obj.user_id());
+    }
+    obj_info->set_ak(std::move(cipher_ak_sk_pair.first));
+    obj_info->set_sk(std::move(cipher_ak_sk_pair.second));
+    obj_info->mutable_encryption_info()->CopyFrom(encryption_info);
     obj_info->set_bucket(bucket);
     obj_info->set_prefix(prefix);
     obj_info->set_endpoint(endpoint);
@@ -3746,7 +4079,19 @@ void MetaServiceImpl::create_instance(google::protobuf::RpcController* controlle
     obj_info->set_mtime(time);
     obj_info->set_sse_enabled(instance.sse_enabled());
     if (request->has_ram_user()) {
-        instance.mutable_ram_user()->CopyFrom(request->ram_user());
+        auto& ram_user = request->ram_user();
+        EncryptionInfoPB encryption_info;
+        AkSkPair cipher_ak_sk_pair;
+        ret = encrypt_ak_sk_helper(ram_user.ak(), ram_user.sk(), &encryption_info, &cipher_ak_sk_pair, code, msg);
+        if (ret != 0) {
+            return;
+        } 
+        RamUserPB new_ram_user;
+        new_ram_user.CopyFrom(ram_user);
+        new_ram_user.set_ak(std::move(cipher_ak_sk_pair.first));
+        new_ram_user.set_sk(std::move(cipher_ak_sk_pair.second));
+        new_ram_user.mutable_encryption_info()->CopyFrom(encryption_info);
+        instance.mutable_ram_user()->CopyFrom(new_ram_user);
     }
 
     if (instance.instance_id().empty()) {
@@ -4538,7 +4883,23 @@ void MetaServiceImpl::create_stage(::google::protobuf::RpcController* controller
         as->add_mysql_user_id(stage.mysql_user_id(0));
         as->set_stage_id(stage.stage_id());
     } else if (stage.type() == StagePB::EXTERNAL) {
-        instance.add_stages()->CopyFrom(stage);
+        if (!stage.has_obj_info()) {
+            instance.add_stages()->CopyFrom(stage);
+        } else {
+            StagePB tmp_stage;
+            tmp_stage.CopyFrom(stage);
+            auto obj_info = tmp_stage.mutable_obj_info();
+            EncryptionInfoPB encryption_info;
+            AkSkPair cipher_ak_sk_pair;
+            ret = encrypt_ak_sk_helper(obj_info->ak(), obj_info->sk(), &encryption_info, &cipher_ak_sk_pair, code, msg);
+            if (ret != 0) {
+                return;
+            }
+            obj_info->set_ak(std::move(cipher_ak_sk_pair.first));
+            obj_info->set_sk(std::move(cipher_ak_sk_pair.second));
+            obj_info->mutable_encryption_info()->CopyFrom(encryption_info);
+            instance.add_stages()->CopyFrom(tmp_stage);
+        }
     }
     val = instance.SerializeAsString();
     if (val.empty()) {
@@ -4675,6 +5036,13 @@ void MetaServiceImpl::get_stage(google::protobuf::RpcController* controller,
 
                 stage_pb.mutable_obj_info()->set_ak(old_obj.ak());
                 stage_pb.mutable_obj_info()->set_sk(old_obj.sk());
+                if (old_obj.has_encryption_info()) {
+                    AkSkPair plain_ak_sk_pair;
+                    int ret = decrypt_ak_sk_helper(old_obj.ak(), old_obj.sk(), old_obj.encryption_info(), &plain_ak_sk_pair, code, msg);
+                    if (ret != 0) return;
+                    stage_pb.mutable_obj_info()->set_ak(std::move(plain_ak_sk_pair.first));
+                    stage_pb.mutable_obj_info()->set_sk(std::move(plain_ak_sk_pair.second));
+                }
                 stage_pb.mutable_obj_info()->set_bucket(old_obj.bucket());
                 stage_pb.mutable_obj_info()->set_endpoint(old_obj.endpoint());
                 stage_pb.mutable_obj_info()->set_external_endpoint(old_obj.external_endpoint());
@@ -4697,7 +5065,7 @@ void MetaServiceImpl::get_stage(google::protobuf::RpcController* controller,
         }
     }
 
-    // get all external stages
+    // get all external stages for display, but don't show ak/sk, so there is no need to decrypt ak/sk.
     if (type == StagePB::EXTERNAL && !request->has_stage_name()) {
         for (int i = 0; i < instance.stages_size(); ++i) {
             auto& s = instance.stages(i);
@@ -4715,8 +5083,16 @@ void MetaServiceImpl::get_stage(google::protobuf::RpcController* controller,
         if (s.type() == type && s.name() == request->stage_name()) {
             StagePB stage;
             stage.CopyFrom(s);
-            if (!stage.has_access_type()) {
+            if (!stage.has_access_type() || stage.access_type() == StagePB::AKSK) {
                 stage.set_access_type(StagePB::AKSK);
+                auto obj_info = stage.mutable_obj_info();
+                if (obj_info->has_encryption_info()) {
+                    AkSkPair plain_ak_sk_pair;
+                    int ret = decrypt_ak_sk_helper(obj_info->ak(), obj_info->sk(), obj_info->encryption_info(), &plain_ak_sk_pair, code, msg);
+                    if (ret != 0) return;
+                    obj_info->set_ak(std::move(plain_ak_sk_pair.first));
+                    obj_info->set_sk(std::move(plain_ak_sk_pair.second));
+                }
             } else if (stage.access_type() == StagePB::BUCKET_ACL) {
                 if (!instance.has_ram_user()) {
                     ss << "instance does not have ram user";
@@ -4724,12 +5100,44 @@ void MetaServiceImpl::get_stage(google::protobuf::RpcController* controller,
                     code = MetaServiceCode::INVALID_ARGUMENT;
                     return;
                 }
-                stage.mutable_obj_info()->set_ak(instance.ram_user().ak());
-                stage.mutable_obj_info()->set_sk(instance.ram_user().sk());
+                if (instance.ram_user().has_encryption_info()) {
+                    AkSkPair plain_ak_sk_pair;
+                    int ret = decrypt_ak_sk_helper(instance.ram_user().ak(), instance.ram_user().sk(), instance.ram_user().encryption_info(), &plain_ak_sk_pair, code, msg);
+                    if (ret != 0) return;
+                    stage.mutable_obj_info()->set_ak(std::move(plain_ak_sk_pair.first));
+                    stage.mutable_obj_info()->set_sk(std::move(plain_ak_sk_pair.second));
+                } else {
+                    stage.mutable_obj_info()->set_ak(instance.ram_user().ak());
+                    stage.mutable_obj_info()->set_sk(instance.ram_user().sk());
+                }
             } else if (stage.access_type() == StagePB::IAM) {
-                stage.mutable_obj_info()->set_ak(config::arn_ak);
-                stage.mutable_obj_info()->set_sk(config::arn_sk);
-                stage.set_external_id(instance_id);
+                std::string val;
+                ret = txn->get(system_meta_service_arn_info_key(), &val);
+                if (ret == 1) {
+                    // For compatibility, use arn_info of config
+                    stage.mutable_obj_info()->set_ak(config::arn_ak);
+                    stage.mutable_obj_info()->set_sk(config::arn_sk);
+                    stage.set_external_id(instance_id);
+                } else if (ret == 0) {
+                    RamUserPB iam_user;
+                    if (!iam_user.ParseFromString(val)) {
+                        code = MetaServiceCode::PROTOBUF_PARSE_ERR;
+                        msg = "failed to parse RamUserPB";
+                        return;
+                    }
+                    AkSkPair plain_ak_sk_pair;
+                    int ret = decrypt_ak_sk_helper(iam_user.ak(), iam_user.sk(), iam_user.encryption_info(), &plain_ak_sk_pair, code, msg);
+                    if (ret != 0) return;
+                    stage.mutable_obj_info()->set_ak(std::move(plain_ak_sk_pair.first));
+                    stage.mutable_obj_info()->set_sk(std::move(plain_ak_sk_pair.second));
+                    stage.set_external_id(instance_id);
+                } else {
+                    code = MetaServiceCode::KV_TXN_GET_ERR;
+                    ss << "failed to get arn_info_key, ret=" << ret;
+                    msg = ss.str();
+                    return;
+                }
+
             }
             response->add_stage()->CopyFrom(stage);
             return;
@@ -4942,14 +5350,137 @@ void MetaServiceImpl::get_iam(google::protobuf::RpcController* controller,
         return;
     }
 
-    RamUserPB iam_user;
-    iam_user.set_user_id(config::arn_id);
-    iam_user.set_external_id(instance_id);
-    iam_user.set_ak(config::arn_ak);
-    iam_user.set_sk(config::arn_sk);
-    response->mutable_iam_user()->CopyFrom(iam_user);
+    val.clear();
+    ret = txn->get(system_meta_service_arn_info_key(), &val);
+    if (ret == 1) {
+        // For compatibility, use arn_info of config
+        RamUserPB iam_user;
+        iam_user.set_user_id(config::arn_id);
+        iam_user.set_external_id(instance_id);
+        iam_user.set_ak(config::arn_ak);
+        iam_user.set_sk(config::arn_sk);
+        response->mutable_iam_user()->CopyFrom(iam_user);
+    } else if (ret == 0) {
+        RamUserPB iam_user;
+        if (!iam_user.ParseFromString(val)) {
+            code = MetaServiceCode::PROTOBUF_PARSE_ERR;
+            msg = "failed to parse RamUserPB";
+            return;
+        }
+        AkSkPair plain_ak_sk_pair;
+        int ret = decrypt_ak_sk_helper(iam_user.ak(), iam_user.sk(), iam_user.encryption_info(), &plain_ak_sk_pair, code, msg);
+        if (ret != 0) return;
+        iam_user.set_external_id(instance_id);
+        iam_user.set_ak(std::move(plain_ak_sk_pair.first));
+        iam_user.set_sk(std::move(plain_ak_sk_pair.second));
+        response->mutable_iam_user()->CopyFrom(iam_user);
+    } else {
+        code = MetaServiceCode::KV_TXN_GET_ERR;
+        ss << "failed to get arn_info_key, ret=" << ret;
+        msg = ss.str();
+        return;
+    }
+
     if (instance.has_ram_user()) {
-        response->mutable_ram_user()->CopyFrom(instance.ram_user());
+        RamUserPB ram_user;
+        ram_user.CopyFrom(instance.ram_user());
+        if (ram_user.has_encryption_info()) {
+            AkSkPair plain_ak_sk_pair;
+            int ret = decrypt_ak_sk_helper(ram_user.ak(), ram_user.sk(), ram_user.encryption_info(), &plain_ak_sk_pair, code, msg);
+            if (ret != 0) return; 
+            ram_user.set_ak(std::move(plain_ak_sk_pair.first));
+            ram_user.set_sk(std::move(plain_ak_sk_pair.second));
+        }
+        response->mutable_ram_user()->CopyFrom(ram_user);
+    }
+}
+
+void MetaServiceImpl::alter_iam(google::protobuf::RpcController* controller,
+                              const ::selectdb::AlterIamRequest* request,
+                              ::selectdb::AlterIamResponse* response,
+                              ::google::protobuf::Closure* done) {
+    RPC_PREPROCESS(alter_iam);
+    std::string arn_id = request->has_account_id() ? request->account_id() : "";
+    std::string arn_ak = request->has_ak() ? request->ak() : "";
+    std::string arn_sk = request->has_sk() ? request->sk() : "";
+    if (arn_id.empty() || arn_ak.empty() || arn_sk.empty()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "invalid argument";
+        return;
+    }
+
+    RPC_RATE_LIMIT(alter_iam)
+
+    std::string key = system_meta_service_arn_info_key();
+    std::string val;
+    std::unique_ptr<Transaction> txn;
+    ret = txn_kv_->create_txn(&txn);
+    if (ret != 0) {
+        code = MetaServiceCode::KV_TXN_CREATE_ERR;
+        msg = "failed to create txn";
+        LOG(WARNING) << msg << " ret=" << ret;
+        return;
+    }
+    ret = txn->get(key, &val);
+    if (ret != 0 && ret != 1) {
+        code = MetaServiceCode::KV_TXN_GET_ERR;
+        ss << "fail to arn_info_key, ret=" << ret;
+        msg = ss.str();
+        return;
+    }
+
+    bool is_add_req = ret == 1;
+    EncryptionInfoPB encryption_info;
+    AkSkPair cipher_ak_sk_pair;
+    ret = encrypt_ak_sk_helper(arn_ak, arn_sk, &encryption_info, &cipher_ak_sk_pair, code, msg);
+    if (ret != 0) {
+        return;
+    }
+    const auto& [ak, sk] = cipher_ak_sk_pair;
+    RamUserPB iam_user;
+    std::string old_ak;
+    std::string old_sk;
+    if (!is_add_req) {
+        if (!iam_user.ParseFromString(val)) {
+            code = MetaServiceCode::PROTOBUF_PARSE_ERR;
+            ss << "failed to parse RamUserPB";
+            msg = ss.str();
+            return;
+        }
+
+        if (arn_id == iam_user.user_id() && ak == iam_user.ak() && sk == iam_user.sk()) {
+            code = MetaServiceCode::INVALID_ARGUMENT;
+            ss << "already has the same arn info";
+            msg = ss.str();
+            return;
+        }
+        old_ak = iam_user.ak();
+        old_sk = iam_user.sk();
+    }
+    iam_user.set_user_id(arn_id);
+    iam_user.set_ak(std::move(cipher_ak_sk_pair.first));
+    iam_user.set_sk(std::move(cipher_ak_sk_pair.second));
+    iam_user.mutable_encryption_info()->CopyFrom(encryption_info);
+    val = iam_user.SerializeAsString();
+    if (val.empty()) {
+        code = MetaServiceCode::PROTOBUF_SERIALIZE_ERR;
+        ss << "failed to serialize";
+        msg = ss.str();
+        return;
+    }
+    txn->put(key, val);
+    ret = txn->commit();
+    if (ret != 0) {
+        code = ret == -1 ? MetaServiceCode::KV_TXN_CONFLICT : MetaServiceCode::KV_TXN_COMMIT_ERR;
+        ss << "txn->commit failed() ret=" << ret;
+        msg = ss.str();
+        return;
+    }
+    if (is_add_req) {
+        LOG(INFO) << "add new iam info, cipher ak: " << ak << " cipher sk: " << sk;
+    } else {
+        LOG(INFO) << "alter iam info, old:  cipher ak: " << old_ak << " cipher sk" << old_sk
+                  << " new: cipher ak: " << ak << " cipher sk:" << sk;
     }
 }
 
@@ -5008,7 +5539,19 @@ void MetaServiceImpl::alter_ram_user(google::protobuf::RpcController* controller
         LOG(WARNING) << "instance has ram user. instance_id=" << instance_id
                      << ", ram_user_id=" << ram_user.user_id();
     }
-    instance.mutable_ram_user()->CopyFrom(ram_user);
+    EncryptionInfoPB encryption_info;
+    AkSkPair cipher_ak_sk_pair;
+    ret = encrypt_ak_sk_helper(ram_user.ak(), ram_user.sk(), &encryption_info, &cipher_ak_sk_pair, code, msg);
+    if (ret != 0) {
+        return;
+    }
+    RamUserPB new_ram_user;
+    new_ram_user.CopyFrom(ram_user);
+    new_ram_user.set_user_id(ram_user.user_id());
+    new_ram_user.set_ak(std::move(cipher_ak_sk_pair.first));
+    new_ram_user.set_sk(std::move(cipher_ak_sk_pair.second));
+    new_ram_user.mutable_encryption_info()->CopyFrom(encryption_info);
+    instance.mutable_ram_user()->CopyFrom(new_ram_user);
     val = instance.SerializeAsString();
     if (val.empty()) {
         msg = "failed to serialize";

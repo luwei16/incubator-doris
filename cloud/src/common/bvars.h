@@ -89,6 +89,8 @@ extern BvarLatencyRecorderWithTag g_bvar_ms_create_stage;
 extern BvarLatencyRecorderWithTag g_bvar_ms_get_stage;
 extern BvarLatencyRecorderWithTag g_bvar_ms_drop_stage;
 extern BvarLatencyRecorderWithTag g_bvar_ms_get_iam;
+extern BvarLatencyRecorderWithTag g_bvar_ms_update_ak_sk;
+extern BvarLatencyRecorderWithTag g_bvar_ms_alter_iam;
 extern BvarLatencyRecorderWithTag g_bvar_ms_alter_ram_user;
 extern BvarLatencyRecorderWithTag g_bvar_ms_begin_copy;
 extern BvarLatencyRecorderWithTag g_bvar_ms_finish_copy;

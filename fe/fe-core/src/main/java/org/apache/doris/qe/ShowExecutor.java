@@ -2548,7 +2548,7 @@ public class ShowExecutor {
                 result.add(stage.getObjInfo().getRegion());
                 result.add(stage.getObjInfo().getBucket());
                 result.add(stage.getObjInfo().getPrefix());
-                result.add(stage.getObjInfo().getAk());
+                result.add(StringUtils.isEmpty(stage.getObjInfo().getAk()) ? "" : "**********");
                 result.add(StringUtils.isEmpty(stage.getObjInfo().getSk()) ? "" : "**********");
                 result.add(stage.getObjInfo().getProvider().name());
                 Map<String, String> propertiesMap = new HashMap<>();
