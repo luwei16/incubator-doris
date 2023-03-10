@@ -3132,6 +3132,25 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
         return;
     }
 
+    if (unresolved_path == "disable_instance_sse") {
+        AlterInstanceRequest r;
+        auto st = google::protobuf::util::JsonStringToMessage(request_body, &r);
+        if (!st.ok()) {
+            msg = "failed to AlterInstanceRequest, error: " + st.message().ToString();
+            ret = MetaServiceCode::PROTOBUF_PARSE_ERR;
+            response_body = msg;
+            LOG(WARNING) << msg;
+            return;
+        }
+        r.set_op(AlterInstanceRequest::DISABLE_SSE);
+        AlterInstanceResponse res;
+        alter_instance(cntl, &r, &res, nullptr);
+        ret = res.status().code();
+        msg = res.status().msg();
+        response_body = msg;
+        return;
+    }
+
     if (unresolved_path == "drop_instance") {
         AlterInstanceRequest r;
         auto st = google::protobuf::util::JsonStringToMessage(request_body, &r);
@@ -3876,6 +3895,32 @@ void MetaServiceImpl::alter_instance(google::protobuf::RpcController* controller
             }
             LOG(INFO) << "put instance_id=" << request->instance_id()
                       << "instance enable sse json=" << proto_to_json(*instance);
+            return std::make_pair(MetaServiceCode::OK, ret);
+        });
+    } break;
+    case AlterInstanceRequest::DISABLE_SSE: {
+        ret = alter_instance(request, [&request](InstanceInfoPB* instance) {
+            std::string msg;
+            if (!instance->sse_enabled()) {
+                msg = "failed to disable sse, instance has disabled sse";
+                LOG(WARNING) << msg;
+                return std::make_pair(MetaServiceCode::INVALID_ARGUMENT, msg);
+            }
+            instance->set_sse_enabled(false);
+            instance->set_mtime(duration_cast<seconds>(system_clock::now().time_since_epoch()).count());
+
+
+            for (auto& obj_info: *(instance->mutable_obj_info())) {
+                obj_info.set_sse_enabled(false);
+            }
+            std::string ret = instance->SerializeAsString();
+            if (ret.empty()) {
+                msg = "failed to serialize";
+                LOG(ERROR) << msg;
+                return std::make_pair(MetaServiceCode::PROTOBUF_SERIALIZE_ERR, msg);
+            }
+            LOG(INFO) << "put instance_id=" << request->instance_id()
+                      << "instance disable sse json=" << proto_to_json(*instance);
             return std::make_pair(MetaServiceCode::OK, ret);
         });
     } break;

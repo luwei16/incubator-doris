@@ -245,8 +245,8 @@ void StorageEngine::_refresh_s3_info_thread_callback() {
                         LOG(WARNING) << "failed to connect s3 fs. id=" << id;
                     }
                 }
-                if (s3_conf.sse_enabled && !s3_fs->sse_enabled()) {
-                    s3_fs->set_sse_enabled(true);
+                if (s3_conf.sse_enabled != s3_fs->sse_enabled()) {
+                    s3_fs->set_sse_enabled(s3_conf.sse_enabled);
                     s3_fs->reset_transfer_manager();
                 }
             }

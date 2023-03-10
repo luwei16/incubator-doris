@@ -705,6 +705,7 @@ message AlterInstanceRequest {
         REFRESH        = 2;
         RENAME         = 3;
         ENABLE_SSE     = 4;
+        DISABLE_SSE    = 5;
     }
     optional string instance_id = 1;
     optional Operation op = 2;
