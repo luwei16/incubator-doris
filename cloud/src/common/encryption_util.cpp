@@ -453,7 +453,8 @@ static inline int decrypt_with_base64_impl(const std::string& encrypt, Encryptio
     return 0;
 }
 
-static int decrypt_with_base64(const std::string& encrypt, const std::string& encrypt_method, const std::string& key, std::string* source) {
+static int decrypt_with_base64(const std::string& encrypt, const std::string& encrypt_method,
+                               const std::string& key, std::string* source) {
     if (encrypt.empty()) {
         *source = "";
         return 0;
@@ -466,27 +467,27 @@ static int decrypt_with_base64(const std::string& encrypt, const std::string& en
 
 }
 
-int encrypt_ak_sk(const AkSkPair& plain_ak_sk, const std::string& encryption_method, const std::string& encryption_key, AkSkPair* cipher_ak_sk) {
+int encrypt_ak_sk(const AkSkPair& plain_ak_sk, const std::string& encryption_method,
+                  const std::string& encryption_key, AkSkPair* cipher_ak_sk) {
     std::string encrypt_ak;
     std::string encrypt_sk;
-    if (encrypt_to_base64(plain_ak_sk.first, encryption_method, encryption_key, &encrypt_ak) != 0
-        || encrypt_to_base64(plain_ak_sk.second, encryption_method, encryption_key, &encrypt_sk) != 0) {
+    if (encrypt_to_base64(plain_ak_sk.second, encryption_method, encryption_key, &encrypt_sk) != 0) {
         *cipher_ak_sk = {"", ""};
         return -1;
     }
-    *cipher_ak_sk = {encrypt_ak, encrypt_sk};
+    *cipher_ak_sk = {plain_ak_sk.first, encrypt_sk};
     return 0;
 }
 
-int decrypt_ak_sk(const AkSkPair& cipher_ak_sk, const std::string& encryption_method, const std::string& encryption_key, AkSkPair* plain_ak_sk) {
+int decrypt_ak_sk(const AkSkPair& cipher_ak_sk, const std::string& encryption_method,
+                  const std::string& encryption_key, AkSkPair* plain_ak_sk) {
     std::string ak;
     std::string sk;
-    if (decrypt_with_base64(cipher_ak_sk.first, encryption_method, encryption_key, &ak) != 0
-        || decrypt_with_base64(cipher_ak_sk.second, encryption_method, encryption_key, &sk) != 0) {
+    if (decrypt_with_base64(cipher_ak_sk.second, encryption_method, encryption_key, &sk) != 0) {
         *plain_ak_sk = {"", ""};
         return -1;
     }
-    *plain_ak_sk = {ak, sk};
+    *plain_ak_sk = {cipher_ak_sk.first, sk};
     return 0;
 }
 
