@@ -25,6 +25,7 @@
 
 #include "cloud/cloud_tablet_mgr.h"
 #include "cloud/io/cloud_file_cache_factory.h"
+#include "cloud/io/cloud_file_cache_fwd.h"
 #include "cloud/utils.h"
 #include "common/config.h"
 #include "common/consts.h"
@@ -1223,13 +1224,13 @@ void PInternalServiceImpl::multiget_data(google::protobuf::RpcController* contro
 
 FileCacheType cache_type_to_pb(io::CacheType type) {
     switch (type) {
-    case TTL:
+    case io::CacheType::TTL:
         return FileCacheType::TTL;
         break;
-    case INDEX:
+    case io::CacheType::INDEX:
         return FileCacheType::INDEX;
         break;
-    case NORMAL:
+    case io::CacheType::NORMAL:
         return FileCacheType::NORMAL;
         break;
     default:
