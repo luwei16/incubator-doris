@@ -18,8 +18,14 @@ public:
                              const FileCacheSettings& file_cache_settings);
 
     CloudFileCachePtr get_by_path(const Key& key);
+
     std::vector<CloudFileCache::QueryContextHolderPtr> get_query_context_holders(
             const TUniqueId& query_id);
+
+    Status reload_file_cache();
+
+    void set_read_only();
+
     FileCacheFactory() = default;
     FileCacheFactory& operator=(const FileCacheFactory&) = delete;
     FileCacheFactory(const FileCacheFactory&) = delete;

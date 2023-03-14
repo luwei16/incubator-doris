@@ -17,6 +17,7 @@
 
 #include "service/http_service.h"
 
+#include "http/action/change_file_cache_state_action.h"
 #include "http/action/check_rpc_channel_action.h"
 #include "http/action/check_tablet_segment_action.h"
 #include "http/action/checksum_action.h"
@@ -26,12 +27,13 @@
 #include "http/action/health_action.h"
 #include "http/action/meta_action.h"
 #include "http/action/metrics_action.h"
-#include "http/action/pad_segment_action.h"
 #include "http/action/pad_rowset_action.h"
+#include "http/action/pad_segment_action.h"
 #include "http/action/pprof_actions.h"
 #include "http/action/reload_tablet_action.h"
 #include "http/action/reset_rpc_channel_action.h"
 #include "http/action/restore_tablet_action.h"
+#include "http/action/shrink_mem_action.h"
 #include "http/action/snapshot_action.h"
 #include "http/action/stream_load.h"
 #include "http/action/stream_load_2pc.h"
@@ -46,7 +48,6 @@
 #include "runtime/exec_env.h"
 #include "runtime/load_path_mgr.h"
 #include "util/doris_metrics.h"
-#include "http/action/shrink_mem_action.h"
 
 #ifdef ENABLE_INJECTION_POINT
 #include "common/sync_point.h"
@@ -269,6 +270,11 @@ Status HttpService::cloud_start() {
     // shrink memory for starting co-exist process during upgrade
     ShrinkMemAction* shrink_mem_action = _pool.add(new ShrinkMemAction());
     _ev_http_server->register_handler(HttpMethod::GET, "/api/shrink_mem", shrink_mem_action);
+
+    ChangeFileCacheStateAction* change_file_cache_action =
+            _pool.add(new ChangeFileCacheStateAction());
+    _ev_http_server->register_handler(HttpMethod::POST, "/api/change_file_cache_state",
+                                      change_file_cache_action);
 
     _ev_http_server->start();
     return Status::OK();

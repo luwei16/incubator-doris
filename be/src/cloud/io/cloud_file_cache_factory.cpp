@@ -64,5 +64,17 @@ std::vector<CloudFileCache::QueryContextHolderPtr> FileCacheFactory::get_query_c
     return holders;
 }
 
+Status FileCacheFactory::reload_file_cache() {
+    for (auto& cache : _caches) {
+        RETURN_IF_ERROR(cache->reinitialize());
+    }
+    CloudFileCache::set_read_only(false);
+    return Status::OK();
+}
+
+void FileCacheFactory::set_read_only() {
+    CloudFileCache::set_read_only(true);
+}
+
 } // namespace io
 } // namespace doris

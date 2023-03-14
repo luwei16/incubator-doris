@@ -3,15 +3,18 @@
 #include <bvar/bvar.h>
 
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <list>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <thread>
 #include <unordered_map>
 
 #include "cloud/io/cloud_file_cache_fwd.h"
+#include "cloud/io/cloud_file_cache_settings.h"
 #include "cloud/io/cloud_file_segment.h"
 #include "cloud/io/file_reader.h"
 #include "common/config.h"
@@ -72,7 +75,7 @@ public:
     static Key hash(const std::string& path);
 
     std::string get_path_in_local_cache(const Key& key, int64_t expiration_time, size_t offset,
-                                        CacheType type) const;
+                                        CacheType type, bool is_tmp = false) const;
 
     std::string get_path_in_local_cache(const Key& key, int64_t expiration_time) const;
 
@@ -108,8 +111,12 @@ public:
     void modify_expiration_time(const Key&, int64_t new_expiration_time);
 
     void reset_range(const Key&, size_t offset, size_t old_size, size_t new_size);
+
     std::vector<std::tuple<size_t, size_t, CacheType, int64_t>> get_hot_segments_meta(
             const Key& key) const;
+
+    // when cache change to read-write  from read-only, it need reinitialize
+    Status reinitialize();
 
     CloudFileCache& operator=(const CloudFileCache&) = delete;
     CloudFileCache(const CloudFileCache&) = delete;
@@ -279,6 +286,8 @@ private:
     QueryContextPtr get_or_set_query_context(const TUniqueId& query_id,
                                              std::lock_guard<std::mutex>&);
 
+    Status initialize_unlocked(std::lock_guard<std::mutex>&);
+
     using FileSegmentsByOffset = std::map<size_t, FileSegmentCell>;
     struct HashCachedFileKey {
         std::size_t operator()(const Key& k) const { return KeyHash()(k); }
@@ -382,6 +391,36 @@ public:
     };
     using QueryContextHolderPtr = std::unique_ptr<QueryContextHolder>;
     QueryContextHolderPtr get_query_context_holder(const TUniqueId& query_id);
+
+private:
+    static inline std::deque<std::shared_ptr<FileReader>> s_file_reader_cache;
+    static inline std::mutex s_file_reader_cache_mtx;
+    static constexpr size_t s_max_fd_cache_size = 1024 * 1024;
+    static inline std::atomic_bool s_read_only {false};
+
+public:
+    static void set_read_only(bool read_only) {
+        s_read_only = read_only;
+        if (read_only) {
+            std::lock_guard lock(s_file_reader_cache_mtx);
+            s_file_reader_cache.clear();
+        }
+    }
+
+    static bool read_only() { return s_read_only; }
+
+    static std::weak_ptr<FileReader> cache_file_reader(std::shared_ptr<FileReader> file_reader) {
+        std::weak_ptr<FileReader> wp;
+        if (!s_read_only) [[likely]] {
+            std::lock_guard lock(s_file_reader_cache_mtx);
+            if (s_max_fd_cache_size == s_file_reader_cache.size()) {
+                s_file_reader_cache.pop_back();
+            }
+            wp = file_reader;
+            s_file_reader_cache.emplace_front(std::move(file_reader));
+        }
+        return wp;
+    }
 };
 
 using CloudFileCachePtr = CloudFileCache*;

@@ -50,6 +50,10 @@ Status CachedRemoteFileReader::close() {
 
 std::pair<size_t, size_t> CachedRemoteFileReader::_align_size(size_t offset,
                                                               size_t read_size) const {
+    // when the cache is read_only, we don't need to prefetch datas into cache, so we just read what we need
+    if (CloudFileCache::read_only()) [[unlikely]] {
+        return std::make_pair(offset, read_size);
+    }
     size_t left = offset;
     size_t right = offset + read_size - 1;
     size_t align_left = (left / config::file_cache_max_file_segment_size) *
@@ -89,7 +93,6 @@ Status CachedRemoteFileReader::read_at_impl(size_t offset, Slice result, size_t*
     }
     ReadStatistics stats;
     auto [align_left, align_size] = _align_size(offset, bytes_req);
-    DCHECK((align_left % config::file_cache_max_file_segment_size) == 0);
     auto cache_context = CacheContext::create(state);
     FileSegmentsHolder holder =
             _cache->get_or_set(_cache_key, align_left, align_size, cache_context);
@@ -171,35 +174,45 @@ Status CachedRemoteFileReader::read_at_impl(size_t offset, Slice result, size_t*
             current_offset = right + 1;
             continue;
         }
-        FileSegment::State segment_state;
+        FileSegment::State segment_state = segment->state();
         int64_t wait_time = 0;
         static int64_t MAX_WAIT_TIME = 10;
-        if (segment->state() != FileSegment::State::DOWNLOADED) {
+        if (segment_state != FileSegment::State::DOWNLOADED) {
             do {
                 {
                     SCOPED_RAW_TIMER(&stats.remote_read_timer);
                     segment_state = segment->wait();
                 }
-                if (segment_state == FileSegment::State::DOWNLOADED) {
-                    break;
-                }
                 if (segment_state != FileSegment::State::DOWNLOADING) {
-                    return Status::IOError(
-                            "File Cache State is {}, the cache downloader encounters an error, "
-                            "please "
-                            "retry it",
-                            segment_state);
+                    break;
                 }
             } while (++wait_time < MAX_WAIT_TIME);
         }
         if (UNLIKELY(wait_time) == MAX_WAIT_TIME) {
             return Status::IOError("Waiting too long for the download to complete");
         }
-        size_t file_offset = current_offset - left;
         {
-            SCOPED_RAW_TIMER(&stats.local_read_timer);
-            RETURN_IF_ERROR(segment->read_at(
-                    Slice(result.data + (current_offset - offset), read_size), file_offset));
+            Status st;
+            /*
+             * If segment_state == EMPTY, the thread reads the data from remote.
+             * If segment_state == DOWNLOADED, when the cache file is deleted by the other process,
+             * the thread reads the data from remote too.
+             */
+            if (segment_state == FileSegment::State::DOWNLOADED) {
+                size_t file_offset = current_offset - left;
+                SCOPED_RAW_TIMER(&stats.local_read_timer);
+                st = segment->read_at(Slice(result.data + (current_offset - offset), read_size),
+                                      file_offset);
+            }
+            if (!st || segment_state == FileSegment::State::EMPTY) {
+                size_t bytes_read {0};
+                stats.hit_cache = false;
+                SCOPED_RAW_TIMER(&stats.remote_read_timer);
+                RETURN_IF_ERROR(_remote_file_reader->read_at(
+                        current_offset, Slice(result.data + (current_offset - offset), read_size),
+                        &bytes_read, state));
+                DCHECK(bytes_read == read_size);
+            }
         }
         *bytes_read += read_size;
         current_offset = right + 1;

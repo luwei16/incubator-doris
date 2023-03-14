@@ -4,8 +4,8 @@
 
 #include <filesystem>
 #include <memory>
-#include <string>
 #include <random>
+#include <string>
 #include <system_error>
 #include <utility>
 
@@ -85,9 +85,10 @@ CacheType CloudFileCache::string_to_cache_type(const std::string& str) {
 }
 
 std::string CloudFileCache::get_path_in_local_cache(const Key& key, int64_t expiration_time,
-                                                    size_t offset, CacheType type) const {
+                                                    size_t offset, CacheType type,
+                                                    bool is_tmp) const {
     return get_path_in_local_cache(key, expiration_time) /
-           (std::to_string(offset) + cache_type_to_string(type));
+           (std::to_string(offset) + (is_tmp ? "_tmp" : cache_type_to_string(type)));
 }
 
 std::string CloudFileCache::get_path_in_local_cache(const Key& key, int64_t expiration_time) const {
@@ -157,6 +158,10 @@ void CloudFileCache::QueryContext::reserve(const Key& key, size_t offset, size_t
 
 Status CloudFileCache::initialize() {
     std::lock_guard cache_lock(_mutex);
+    return initialize_unlocked(cache_lock);
+}
+
+Status CloudFileCache::initialize_unlocked(std::lock_guard<std::mutex>& cache_lock) {
     if (!_is_initialized) {
         if (std::filesystem::exists(_cache_base_path)) {
             RETURN_IF_ERROR(load_cache_info_into_memory(cache_lock));
@@ -173,6 +178,19 @@ Status CloudFileCache::initialize() {
     _cache_background_thread = std::thread(&CloudFileCache::run_background_operation, this);
 
     return Status::OK();
+}
+
+Status CloudFileCache::reinitialize() {
+    std::lock_guard cache_lock(_mutex);
+    _is_initialized = false;
+    _files.clear();
+    _time_to_key.clear();
+    _key_to_time.clear();
+    _normal_queue.remove_all(cache_lock);
+    _index_queue.remove_all(cache_lock);
+    _disposable_queue.remove_all(cache_lock);
+
+    return initialize_unlocked(cache_lock);
 }
 
 void CloudFileCache::use_cell(const FileSegmentCell& cell, FileSegments& result,
@@ -373,10 +391,11 @@ FileSegments CloudFileCache::split_range_into_cells(const Key& key, const CacheC
     while (current_pos < end_pos_non_included) {
         current_size = std::min(remaining_size, _max_file_segment_size);
         remaining_size -= current_size;
-        state = try_reserve(key, context, current_pos, current_size, cache_lock)
-                        ? state
-                        : FileSegment::State::SKIP_CACHE;
-        if (UNLIKELY(state == FileSegment::State::SKIP_CACHE)) {
+        state = !s_read_only ? try_reserve(key, context, current_pos, current_size, cache_lock)
+                                       ? state
+                                       : FileSegment::State::SKIP_CACHE
+                             : FileSegment::State::SKIP_CACHE;
+        if (state == FileSegment::State::SKIP_CACHE) [[unlikely]] {
             auto file_segment = std::make_shared<FileSegment>(current_pos, current_size, key, this,
                                                               FileSegment::State::SKIP_CACHE,
                                                               context.cache_type, 0);
@@ -996,15 +1015,17 @@ bool CloudFileCache::try_reserve_for_lru(const Key& key, QueryContextPtr query_c
 }
 
 void CloudFileCache::remove(FileSegmentSPtr file_segment, std::lock_guard<std::mutex>& cache_lock,
-                            std::lock_guard<std::mutex>&) {
+                            std::lock_guard<std::mutex>& segment_lock) {
     auto key = file_segment->key();
     auto offset = file_segment->offset();
     auto type = file_segment->cache_type();
     auto expiration_time = file_segment->expiration_time();
     auto* cell = get_cell(key, offset, cache_lock);
     // It will be removed concurrently
-    if (!cell) [[unlikely]]
+    if (!cell) [[unlikely]] {
         return;
+    }
+    auto state = cell->file_segment->state_unlock(segment_lock);
 
     if (cell->queue_iterator) {
         auto& queue = get_queue(file_segment->cache_type());
@@ -1014,7 +1035,8 @@ void CloudFileCache::remove(FileSegmentSPtr file_segment, std::lock_guard<std::m
     auto& offsets = _files[file_segment->key()];
     offsets.erase(file_segment->offset());
 
-    auto cache_file_path = get_path_in_local_cache(key, expiration_time, offset, type);
+    auto cache_file_path = get_path_in_local_cache(key, expiration_time, offset, type,
+                                                   state == FileSegment::State::EMPTY);
     if (std::filesystem::exists(cache_file_path)) {
         std::error_code ec;
         std::filesystem::remove(cache_file_path, ec);
@@ -1080,7 +1102,8 @@ Status CloudFileCache::load_cache_info_into_memory(std::lock_guard<std::mutex>& 
                     offset = stoull(offset_with_suffix.substr(0, delim_pos));
                     std::string suffix = offset_with_suffix.substr(delim_pos + 1);
                     // not need persistent any more
-                    if (suffix == "persistent") [[unlikely]] {
+                    // if suffix is equals to "tmp", it should be removed too.
+                    if (suffix == "persistent" || suffix == "tmp") [[unlikely]] {
                         std::error_code ec;
                         std::filesystem::remove(offset_it->path(), ec);
                         if (ec) {

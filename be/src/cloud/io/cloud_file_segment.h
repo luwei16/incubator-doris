@@ -23,7 +23,7 @@ class FileSegment {
 
 public:
     using LocalWriterPtr = std::unique_ptr<FileWriter>;
-    using LocalReaderPtr = std::shared_ptr<FileReader>;
+    using LocalReaderPtr = std::weak_ptr<FileReader>;
 
     enum class State {
         DOWNLOADED,
@@ -81,7 +81,7 @@ public:
     Status append(Slice data);
 
     // read data from cache file
-    Status read_at(Slice buffer, size_t offset_);
+    Status read_at(Slice buffer, size_t offset);
 
     // finish write, release the file writer
     Status finalize_write();
@@ -109,7 +109,7 @@ public:
 
     std::string get_info_for_log() const;
 
-    std::string get_path_in_local_cache() const;
+    std::string get_path_in_local_cache(bool is_tmp = false) const;
 
     bool change_cache_type(CacheType new_type);
 
@@ -120,6 +120,8 @@ public:
     // only used for s3 file writer
     // should guarantee that the fragment don't have concurrency problem
     void reset_range();
+
+    State state_unlock(std::lock_guard<std::mutex>&) const;
 
     FileSegment& operator=(const FileSegment&) = delete;
     FileSegment(const FileSegment&) = delete;

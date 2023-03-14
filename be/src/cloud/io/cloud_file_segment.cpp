@@ -130,7 +130,7 @@ Status FileSegment::append(Slice data) {
     DCHECK(data.size != 0) << "Writing zero size is not allowed";
     Status st = Status::OK();
     if (!_cache_writer) {
-        auto download_path = get_path_in_local_cache();
+        auto download_path = get_path_in_local_cache(true);
         st = global_local_filesystem()->create_file(download_path, &_cache_writer);
         if (!st) {
             _cache_writer.reset();
@@ -146,28 +146,24 @@ Status FileSegment::append(Slice data) {
     return st;
 }
 
-std::string FileSegment::get_path_in_local_cache() const {
-    return _cache->get_path_in_local_cache(key(), _expiration_time, offset(), _cache_type);
+std::string FileSegment::get_path_in_local_cache(bool is_tmp) const {
+    return _cache->get_path_in_local_cache(key(), _expiration_time, offset(), _cache_type, is_tmp);
 }
 
 Status FileSegment::read_at(Slice buffer, size_t offset) {
-    Status st = Status::OK();
-    if (!_cache_reader) {
-        std::lock_guard segment_lock(_mutex);
-        if (!_cache_reader) {
+    std::shared_ptr<FileReader> reader;
+    if (!(reader = _cache_reader.lock())) {
+        std::lock_guard<std::mutex> lock(_mutex);
+        if (!(reader = _cache_reader.lock())) {
             auto download_path = get_path_in_local_cache();
-            st = global_local_filesystem()->open_file(download_path, &_cache_reader);
-            if (!st) {
-                _cache_reader.reset();
-                return st;
-            }
+            RETURN_IF_ERROR(global_local_filesystem()->open_file(download_path, &reader));
+            _cache_reader = CloudFileCache::cache_file_reader(reader);
         }
     }
-    io::IOState state;
     size_t bytes_reads = buffer.size;
-    RETURN_IF_ERROR(_cache_reader->read_at(offset, buffer, &bytes_reads, &state));
+    RETURN_IF_ERROR(reader->read_at(offset, buffer, &bytes_reads));
     DCHECK(bytes_reads == buffer.size);
-    return st;
+    return Status::OK();
 }
 
 bool FileSegment::change_cache_type(CacheType new_type) {
@@ -249,19 +245,32 @@ FileSegment::State FileSegment::wait() {
 }
 
 Status FileSegment::set_downloaded(std::lock_guard<std::mutex>& /* segment_lock */) {
+    Status status = Status::OK();
     if (_is_downloaded) {
-        return Status::OK();
+        return status;
     }
 
     if (_cache_writer) {
         RETURN_IF_ERROR(_cache_writer->close(false));
+        std::error_code ec;
+        std::filesystem::rename(_cache_writer->path(), get_path_in_local_cache(), ec);
+        if (ec) {
+            LOG(ERROR) << fmt::format("failed to rename {} to {} : {}",
+                                      _cache_writer->path().string(), get_path_in_local_cache(),
+                                      ec.message());
+            status = Status::IOError(ec.message());
+        }
         _cache_writer.reset();
     }
 
-    _download_state = State::DOWNLOADED;
-    _is_downloaded = true;
+    if (status) [[likely]] {
+        _is_downloaded = true;
+        _download_state = State::DOWNLOADED;
+    } else {
+        _download_state = State::EMPTY;
+    }
     _downloader_id.clear();
-    return Status::OK();
+    return status;
 }
 
 void FileSegment::reset_range() {
@@ -317,6 +326,10 @@ bool FileSegment::has_finalized_state() const {
     return _download_state == State::DOWNLOADED;
 }
 
+FileSegment::State FileSegment::state_unlock(std::lock_guard<std::mutex>&) const {
+    return _download_state;
+}
+
 FileSegmentsHolder::~FileSegmentsHolder() {
     /// In CacheableReadBufferFromRemoteFS file segment's downloader removes file segments from
     /// FileSegmentsHolder right after calling file_segment->complete(), so on destruction here
@@ -336,7 +349,7 @@ FileSegmentsHolder::~FileSegmentsHolder() {
             std::lock_guard cache_lock(cache->_mutex);
             std::lock_guard segment_lock(file_segment->_mutex);
             file_segment->complete_unlocked(segment_lock);
-            if (file_segment->_download_state == FileSegment::State::EMPTY) {
+            if (file_segment->state_unlock(segment_lock) == FileSegment::State::EMPTY) {
                 cache->remove(file_segment, cache_lock, segment_lock);
             }
         }
