@@ -667,6 +667,24 @@ class Suite implements GroovyInterceptable {
         }
     }
 
+    def checkProfile = { addrSet, fragNum ->
+        List<List<Object>> profileRes = sql " show query profile '/' "
+        for (row : profileRes) {
+            //println row
+        }
+
+        for (int i = 0; i < fragNum; ++i) {
+            String exec_sql = "show query profile '/" + profileRes[0][0] + "/" + i.toString() + "'"
+            List<List<Object>> result = sql exec_sql
+            for (row : result) {
+                println row
+            }
+
+            println result[0][1]
+            println addrSet
+            assertTrue(addrSet.contains(result[0][1]));
+        }
+    }
 }
 
 
