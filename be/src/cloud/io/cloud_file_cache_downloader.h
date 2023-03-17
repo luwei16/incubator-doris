@@ -4,16 +4,26 @@
 #include <glog/logging.h>
 
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
+#include <deque>
 
-#include "common/status.h"
 #include "cloud/io/s3_file_system.h"
+#include "common/status.h"
 
 namespace Aws::Transfer {
 class TransferManager;
 } // namespace Aws::Transfer
 
 namespace doris::io {
+
+struct DownloadTask {
+    std::chrono::steady_clock::time_point atime;
+    std::vector<FileCacheSegmentMeta> metas;
+    DownloadTask(std::vector<FileCacheSegmentMeta> metas) : metas(std::move(metas)) {
+        atime = std::chrono::steady_clock::now();
+    }
+};
 
 class FileCacheSegmentDownloader {
 public:
@@ -29,8 +39,7 @@ public:
         }
     }
 
-    virtual void download_segments(const std::string& brpc_addr,
-                                   const std::vector<FileCacheSegmentMeta>& metas) = 0;
+    virtual void download_segments(DownloadTask task) = 0;
 
     inline static FileCacheSegmentDownloader* downloader {nullptr};
 
@@ -39,7 +48,7 @@ public:
         return downloader;
     }
 
-    void submit_download_task(std::string brpc_addr, std::vector<FileCacheSegmentMeta> metas);
+    void submit_download_task(DownloadTask task);
 
     void polling_download_task();
 
@@ -47,10 +56,9 @@ private:
     std::thread _download_thread;
     std::mutex _mtx;
     std::condition_variable _empty;
-    std::condition_variable _full;
-    std::list<std::pair<std::string, std::vector<FileCacheSegmentMeta>>> _task_queue;
+    std::deque<DownloadTask> _task_queue;
     std::atomic_bool _closed {false};
-    size_t max_size {2};
+    const size_t _max_size {1024};
 };
 
 class FileCacheSegmentS3Downloader : FileCacheSegmentDownloader {
@@ -60,14 +68,11 @@ public:
         FileCacheSegmentDownloader::downloader = &s3_downloader;
     }
 
-    FileCacheSegmentS3Downloader();
+    FileCacheSegmentS3Downloader() = default;
 
-    void download_segments(const std::string& brpc_addr,
-                           const std::vector<FileCacheSegmentMeta>& metas) override;
+    void download_segments(DownloadTask task) override;
 
 private:
-    inline static size_t S3_TRANSFER_EXECUTOR_POOL_SIZE {8};
-    std::shared_ptr<Aws::Utils::Threading::PooledThreadExecutor> _executor;
     std::atomic<size_t> _cur_download_file {0};
 };
 

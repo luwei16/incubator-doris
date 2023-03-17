@@ -395,7 +395,7 @@ public:
 private:
     static inline std::deque<std::shared_ptr<FileReader>> s_file_reader_cache;
     static inline std::mutex s_file_reader_cache_mtx;
-    static constexpr size_t s_max_fd_cache_size = 1024 * 1024;
+    static constexpr size_t s_max_file_reader_size = 1024 * 1024;
     static inline std::atomic_bool s_read_only {false};
 
 public:
@@ -413,7 +413,7 @@ public:
         std::weak_ptr<FileReader> wp;
         if (!s_read_only) [[likely]] {
             std::lock_guard lock(s_file_reader_cache_mtx);
-            if (s_max_fd_cache_size == s_file_reader_cache.size()) {
+            if (s_max_file_reader_size == s_file_reader_cache.size()) {
                 s_file_reader_cache.pop_back();
             }
             wp = file_reader;

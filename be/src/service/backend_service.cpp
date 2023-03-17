@@ -406,8 +406,8 @@ void BackendService::pre_cache_async(TPreCacheAsyncResponse& response,
                        brpc_response.file_cache_segment_metas().cend(), std::back_inserter(metas),
                        [](const FileCacheSegmentMeta& meta) { return meta; });
         LOG(INFO) << "lw test pre cache async 3333";
-        io::FileCacheSegmentDownloader::instance()->submit_download_task(std::move(brpc_addr),
-                                                                         std::move(metas));
+        io::DownloadTask download_task(std::move(metas));
+        io::FileCacheSegmentDownloader::instance()->submit_download_task(download_task);
         LOG(INFO) << "lw test pre cache async 4444";
     } else {
         st = Status::RpcError("{} isn't connected", brpc_addr);
