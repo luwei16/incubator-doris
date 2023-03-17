@@ -51,6 +51,7 @@ public abstract class Type {
 
     // Static constant types for scalar types that don't require additional information.
     public static final ScalarType INVALID = new ScalarType(PrimitiveType.INVALID_TYPE);
+    public static final ScalarType UNSUPPORTED = new ScalarType(PrimitiveType.UNSUPPORTED);
     public static final ScalarType NULL = new ScalarType(PrimitiveType.NULL_TYPE);
     public static final ScalarType BOOLEAN = new ScalarType(PrimitiveType.BOOLEAN);
     public static final ScalarType TINYINT = new ScalarType(PrimitiveType.TINYINT);
@@ -238,6 +239,10 @@ public abstract class Type {
 
     public boolean isInvalid() {
         return isScalarType(PrimitiveType.INVALID_TYPE);
+    }
+
+    public boolean isUnsupported() {
+        return isScalarType(PrimitiveType.UNSUPPORTED);
     }
 
     public boolean isValid() {
@@ -1503,6 +1508,7 @@ public abstract class Type {
                         || t1 == PrimitiveType.TIMEV2 || t2 == PrimitiveType.TIMEV2
                         || t1 == PrimitiveType.MAP || t2 == PrimitiveType.MAP
                         || t1 == PrimitiveType.STRUCT || t2 == PrimitiveType.STRUCT
+                        || t1 == PrimitiveType.UNSUPPORTED || t2 == PrimitiveType.UNSUPPORTED
                         || t1 == PrimitiveType.VARIANT || t2 == PrimitiveType.VARIANT) {
                     continue;
                 }

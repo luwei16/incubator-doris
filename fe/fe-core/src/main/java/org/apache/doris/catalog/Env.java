@@ -463,6 +463,8 @@ public class Env {
 
     private ExternalMetaCacheMgr extMetaCacheMgr;
 
+    private AtomicLong stmtIdCounter;
+
     public List<Frontend> getFrontends(FrontendNodeType nodeType) {
         if (nodeType == null) {
             // get all
@@ -576,6 +578,7 @@ public class Env {
         this.partitionInMemoryInfoCollector = new PartitionInMemoryInfoCollector();
 
         this.replayedJournalId = new AtomicLong(0L);
+        this.stmtIdCounter = new AtomicLong(0L);
         this.isElectable = false;
         this.synchronizedTimeMs = 0;
         this.feType = FrontendNodeType.INIT;
@@ -3916,6 +3919,11 @@ public class Env {
     // Get the next available, needn't lock because of nextId is atomic.
     public long getNextId() {
         return idGenerator.getNextId();
+    }
+
+    // counter for prepared statement id
+    public long getNextStmtId() {
+        return this.stmtIdCounter.getAndIncrement();
     }
 
     public IdGeneratorBuffer getIdGeneratorBuffer(long bufferSize) {

@@ -930,7 +930,8 @@ public abstract class Expr extends TreeNode<Expr> implements ParseNode, Cloneabl
             // Hack to ensure BE never sees TYPE_NULL. If an expr makes it this far without
             // being cast to a non-NULL type, the type doesn't matter and we can cast it
             // arbitrarily.
-            Preconditions.checkState(this instanceof NullLiteral || this instanceof SlotRef);
+            Preconditions.checkState(this instanceof NullLiteral
+                    || this instanceof SlotRef || this instanceof PlaceHolderExpr);
             return NullLiteral.create(ScalarType.BOOLEAN).treeToThrift();
         }
         TExpr result = new TExpr();
@@ -1379,6 +1380,9 @@ public abstract class Expr extends TreeNode<Expr> implements ParseNode, Cloneabl
      *                           failure to convert a string literal to a date literal
      */
     public final Expr castTo(Type targetType) throws AnalysisException {
+        if (this instanceof PlaceHolderExpr && this.type.isUnsupported()) {
+            return this;
+        }
         // If the targetType is NULL_TYPE then ignore the cast because NULL_TYPE
         // is compatible with all types and no cast is necessary.
         if (targetType.isNull()) {

@@ -52,6 +52,11 @@ public class MysqlChannel {
     protected String remoteIp;
     protected boolean isSend;
 
+    // mysql useServerPrepStmts
+    private boolean useServerPrepStmts;
+    // mysql flag CLIENT_DEPRECATE_EOF
+    private boolean clientDeprecatedEOF;
+
     protected MysqlChannel() {
         this.sequenceId = 0;
         this.sendBuffer = ByteBuffer.allocate(2 * 1024 * 1024);
@@ -84,6 +89,22 @@ public class MysqlChannel {
                 LOG.warn("get remote host string failed: ", e);
             }
         }
+    }
+
+    public void setUseServerPrepStmts() {
+        useServerPrepStmts = true;
+    }
+
+    public void setClientDeprecatedEOF() {
+        clientDeprecatedEOF = true;
+    }
+
+    public boolean useServerPrepStmts() {
+        return useServerPrepStmts;
+    }
+
+    public boolean clientDeprecatedEOF() {
+        return clientDeprecatedEOF;
     }
 
     public void setSequenceId(int sequenceId) {
