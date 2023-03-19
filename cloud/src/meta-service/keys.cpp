@@ -126,7 +126,10 @@ static void encode_prefix(const T& t, std::string* key) {
                       || std::is_same_v<T, CopyFileKeyInfo>) {
         encode_bytes(COPY_KEY_PREFIX, key);
     } else {
-        std::abort(); // Impossible
+        // This branch mean to be unreachable, add an assert(false) here to
+        // prevent missing branch match.
+        // Postpone deduction of static_assert by evaluating sizeof(T)
+        static_assert(!sizeof(T), "all types must be matched with if constexpr");
     }
     encode_bytes(std::get<0>(t), key); // instance_id
 }
