@@ -356,7 +356,7 @@ int Recycler::start() {
     }
     LOG(INFO) << "successfully init txn kv";
 
-    if (!init_global_encryption_key_info_map(txn_kv_)) {
+    if (init_global_encryption_key_info_map(txn_kv_) != 0) {
         LOG(WARNING) << "failed to init global encryption key map";
         return -1;
     }
