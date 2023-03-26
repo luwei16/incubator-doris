@@ -17,8 +17,8 @@
 
 import org.codehaus.groovy.runtime.IOGroovyMethods
 
-suite("test_compaction_agg_keys") {
-    def tableName = "compaction_agg_keys_regression_test"
+suite("test_compaction_uniq_keys_with_delete") {
+    def tableName = "test_compaction_uniq_keys_with_delete_regression_test"
 
     try {
         //BackendId,Cluster,IP,HeartbeatPort,BePort,HttpPort,BrpcPort,LastStartTime,LastHeartbeat,Alive,SystemDecommissioned,ClusterDecommissioned,TabletNum,DataUsedCapacity,AvailCapacity,TotalCapacity,UsedPct,MaxDiskUsedPct,Tag,ErrMsg,Version,Status
@@ -68,52 +68,66 @@ suite("test_compaction_agg_keys") {
                 `city` VARCHAR(20) COMMENT "用户所在城市",
                 `age` SMALLINT COMMENT "用户年龄",
                 `sex` TINYINT COMMENT "用户性别",
-                `last_visit_date` DATETIME REPLACE DEFAULT "1970-01-01 00:00:00" COMMENT "用户最后一次访问时间",
-                `last_update_date` DATETIME REPLACE_IF_NOT_NULL DEFAULT "1970-01-01 00:00:00" COMMENT "用户最后一次更新时间",
-                `datetime_val1` DATETIMEV2(3) REPLACE DEFAULT "1970-01-01 00:00:00.111" COMMENT "用户最后一次访问时间",
-                `datetime_val2` DATETIME(6) REPLACE_IF_NOT_NULL DEFAULT "1970-01-01 00:00:00" COMMENT "用户最后一次更新时间",
-                `last_visit_date_not_null` DATETIME REPLACE NOT NULL DEFAULT "1970-01-01 00:00:00" COMMENT "用户最后一次访问时间",
-                `cost` BIGINT SUM DEFAULT "0" COMMENT "用户总消费",
-                `max_dwell_time` INT MAX DEFAULT "0" COMMENT "用户最大停留时间",
-                `min_dwell_time` INT MIN DEFAULT "99999" COMMENT "用户最小停留时间",
-                `hll_col` HLL HLL_UNION NOT NULL COMMENT "HLL列",
-                `bitmap_col` Bitmap BITMAP_UNION NOT NULL COMMENT "bitmap列" )
-            AGGREGATE KEY(`user_id`, `date`, `datev2`, `datetimev2_1`, `datetimev2_2`, `city`, `age`, `sex`) DISTRIBUTED BY HASH(`user_id`);
+                `last_visit_date` DATETIME DEFAULT "1970-01-01 00:00:00" COMMENT "用户最后一次访问时间",
+                `last_update_date` DATETIME DEFAULT "1970-01-01 00:00:00" COMMENT "用户最后一次更新时间",
+                `datetime_val1` DATETIMEV2(3) DEFAULT "1970-01-01 00:00:00.111" COMMENT "用户最后一次访问时间",
+                `datetime_val2` DATETIME(6) DEFAULT "1970-01-01 00:00:00" COMMENT "用户最后一次更新时间",
+                `last_visit_date_not_null` DATETIME NOT NULL DEFAULT "1970-01-01 00:00:00" COMMENT "用户最后一次访问时间",
+                `cost` BIGINT DEFAULT "0" COMMENT "用户总消费",
+                `max_dwell_time` INT DEFAULT "0" COMMENT "用户最大停留时间",
+                `min_dwell_time` INT DEFAULT "99999" COMMENT "用户最小停留时间")
+            UNIQUE KEY(`user_id`, `date`, `datev2`, `datetimev2_1`, `datetimev2_2`, `city`, `age`, `sex`) DISTRIBUTED BY HASH(`user_id`);
         """
 
         sql """ INSERT INTO ${tableName} VALUES
-             (1, '2017-10-01', '2017-10-01', '2017-10-01 11:11:11.110000', '2017-10-01 11:11:11.110111', 'Beijing', 10, 1, '2020-01-01', '2020-01-01', '2017-10-01 11:11:11.170000', '2017-10-01 11:11:11.110111', '2020-01-01', 1, 30, 20, hll_hash(1), to_bitmap(1))
+             (1, '2017-10-01', '2017-10-01', '2017-10-01 11:11:11.110000', '2017-10-01 11:11:11.110111', 'Beijing', 10, 1, '2020-01-01', '2020-01-01', '2017-10-01 11:11:11.170000', '2017-10-01 11:11:11.110111', '2020-01-01', 1, 30, 20)
             """
 
         sql """ INSERT INTO ${tableName} VALUES
-             (1, '2017-10-01', '2017-10-01', '2017-10-01 11:11:11.110000', '2017-10-01 11:11:11.110111', 'Beijing', 10, 1, '2020-01-02', '2020-01-02', '2017-10-01 11:11:11.160000', '2017-10-01 11:11:11.100111', '2020-01-02', 1, 31, 19, hll_hash(2), to_bitmap(2))
+             (1, '2017-10-01', '2017-10-01', '2017-10-01 11:11:11.110000', '2017-10-01 11:11:11.110111', 'Beijing', 10, 1, '2020-01-02', '2020-01-02', '2017-10-01 11:11:11.160000', '2017-10-01 11:11:11.100111', '2020-01-02', 1, 31, 19)
+            """
+
+        sql """
+            DELETE FROM ${tableName} where user_id <= 5
             """
 
         sql """ INSERT INTO ${tableName} VALUES
-             (2, '2017-10-01', '2017-10-01', '2017-10-01 11:11:11.110000', '2017-10-01 11:11:11.110111', 'Beijing', 10, 1, '2020-01-02', '2020-01-02', '2017-10-01 11:11:11.150000', '2017-10-01 11:11:11.130111', '2020-01-02', 1, 31, 21, hll_hash(2), to_bitmap(2))
+             (2, '2017-10-01', '2017-10-01', '2017-10-01 11:11:11.110000', '2017-10-01 11:11:11.110111', 'Beijing', 10, 1, '2020-01-02', '2020-01-02', '2017-10-01 11:11:11.150000', '2017-10-01 11:11:11.130111', '2020-01-02', 1, 31, 21)
             """
 
         sql """ INSERT INTO ${tableName} VALUES
-             (2, '2017-10-01', '2017-10-01', '2017-10-01 11:11:11.110000', '2017-10-01 11:11:11.110111', 'Beijing', 10, 1, '2020-01-03', '2020-01-03', '2017-10-01 11:11:11.140000', '2017-10-01 11:11:11.120111', '2020-01-03', 1, 32, 20, hll_hash(3), to_bitmap(3))
+             (2, '2017-10-01', '2017-10-01', '2017-10-01 11:11:11.110000', '2017-10-01 11:11:11.110111', 'Beijing', 10, 1, '2020-01-03', '2020-01-03', '2017-10-01 11:11:11.140000', '2017-10-01 11:11:11.120111', '2020-01-03', 1, 32, 20)
             """
 
-        sql """ INSERT INTO ${tableName} VALUES
-             (3, '2017-10-01', '2017-10-01', '2017-10-01 11:11:11.110000', '2017-10-01 11:11:11.110111', 'Beijing', 10, 1, '2020-01-03', '2020-01-03', '2017-10-01 11:11:11.100000', '2017-10-01 11:11:11.140111', '2020-01-03', 1, 32, 22, hll_hash(3), to_bitmap(3))
-            """
-
-        sql """ INSERT INTO ${tableName} VALUES
-             (3, '2017-10-01', '2017-10-01', '2017-10-01 11:11:11.110000', '2017-10-01 11:11:11.110111', 'Beijing', 10, 1, '2020-01-04', '2020-01-04', '2017-10-01 11:11:11.110000', '2017-10-01 11:11:11.150111', '2020-01-04', 1, 33, 21, hll_hash(4), to_bitmap(4))
-            """
-
-        sql """ INSERT INTO ${tableName} VALUES
-             (3, '2017-10-01', '2017-10-01', '2017-10-01 11:11:11.110000', '2017-10-01 11:11:11.110111', 'Beijing', 10, 1, NULL, NULL, NULL, NULL, '2020-01-05', 1, 34, 20, hll_hash(5), to_bitmap(5))
-            """
-
-        sql """ INSERT INTO ${tableName} VALUES
-             (4, '2017-10-01', '2017-10-01', '2017-10-01 11:11:11.110000', '2017-10-01 11:11:11.110111', 'Beijing', 10, 1, NULL, NULL, NULL, NULL, '2020-01-05', 1, 34, 20, hll_hash(5), to_bitmap(5))
+        sql """
+            DELETE FROM ${tableName} where user_id <= 1
             """
 
         qt_select_default """ SELECT * FROM ${tableName} t ORDER BY user_id; """
+
+        sql """ INSERT INTO ${tableName} VALUES
+             (3, '2017-10-01', '2017-10-01', '2017-10-01 11:11:11.110000', '2017-10-01 11:11:11.110111', 'Beijing', 10, 1, '2020-01-03', '2020-01-03', '2017-10-01 11:11:11.100000', '2017-10-01 11:11:11.140111', '2020-01-03', 1, 32, 22)
+            """
+
+        sql """ INSERT INTO ${tableName} VALUES
+             (3, '2017-10-01', '2017-10-01', '2017-10-01 11:11:11.110000', '2017-10-01 11:11:11.110111', 'Beijing', 10, 1, '2020-01-04', '2020-01-04', '2017-10-01 11:11:11.110000', '2017-10-01 11:11:11.150111', '2020-01-04', 1, 33, 21)
+            """
+
+        sql """
+            DELETE FROM ${tableName} where user_id <= 2
+            """
+
+        sql """ INSERT INTO ${tableName} VALUES
+             (3, '2017-10-01', '2017-10-01', '2017-10-01 11:11:11.110000', '2017-10-01 11:11:11.110111', 'Beijing', 10, 1, NULL, NULL, NULL, NULL, '2020-01-05', 1, 34, 20)
+            """
+
+        qt_select_default1 """ SELECT * FROM ${tableName} t ORDER BY user_id; """
+
+        sql """ INSERT INTO ${tableName} VALUES
+             (4, '2017-10-01', '2017-10-01', '2017-10-01 11:11:11.110000', '2017-10-01 11:11:11.110111', 'Beijing', 10, 1, NULL, NULL, NULL, NULL, '2020-01-05', 1, 34, 20)
+            """
+
+        qt_select_default2 """ SELECT * FROM ${tableName} t ORDER BY user_id; """
 
         //TabletId,ReplicaId,BackendId,SchemaHash,Version,LstSuccessVersion,LstFailedVersion,LstFailedTime,LocalDataSize,RemoteDataSize,RowCount,State,LstConsistencyCheckTime,CheckVersion,VersionCount,PathHash,MetaUrl,CompactionStatus
         String[][] tablets = sql """ show tablets from ${tableName}; """
@@ -199,7 +213,7 @@ suite("test_compaction_agg_keys") {
             }
         }
         assert (rowCount < 8)
-        qt_select_default2 """ SELECT * FROM ${tableName} t ORDER BY user_id; """
+        qt_select_default3 """ SELECT * FROM ${tableName} t ORDER BY user_id; """
     } finally {
         try_sql("DROP TABLE IF EXISTS ${tableName}")
     }

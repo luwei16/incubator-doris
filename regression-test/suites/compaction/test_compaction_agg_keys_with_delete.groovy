@@ -17,8 +17,8 @@
 
 import org.codehaus.groovy.runtime.IOGroovyMethods
 
-suite("test_compaction_agg_keys") {
-    def tableName = "compaction_agg_keys_regression_test"
+suite("test_compaction_agg_keys_with_delete") {
+    def tableName = "test_compaction_agg_keys_with_delete_regression_test"
 
     try {
         //BackendId,Cluster,IP,HeartbeatPort,BePort,HttpPort,BrpcPort,LastStartTime,LastHeartbeat,Alive,SystemDecommissioned,ClusterDecommissioned,TabletNum,DataUsedCapacity,AvailCapacity,TotalCapacity,UsedPct,MaxDiskUsedPct,Tag,ErrMsg,Version,Status
@@ -89,12 +89,20 @@ suite("test_compaction_agg_keys") {
              (1, '2017-10-01', '2017-10-01', '2017-10-01 11:11:11.110000', '2017-10-01 11:11:11.110111', 'Beijing', 10, 1, '2020-01-02', '2020-01-02', '2017-10-01 11:11:11.160000', '2017-10-01 11:11:11.100111', '2020-01-02', 1, 31, 19, hll_hash(2), to_bitmap(2))
             """
 
+        sql """
+            DELETE FROM ${tableName} where user_id <= 5
+            """
+
         sql """ INSERT INTO ${tableName} VALUES
              (2, '2017-10-01', '2017-10-01', '2017-10-01 11:11:11.110000', '2017-10-01 11:11:11.110111', 'Beijing', 10, 1, '2020-01-02', '2020-01-02', '2017-10-01 11:11:11.150000', '2017-10-01 11:11:11.130111', '2020-01-02', 1, 31, 21, hll_hash(2), to_bitmap(2))
             """
 
         sql """ INSERT INTO ${tableName} VALUES
              (2, '2017-10-01', '2017-10-01', '2017-10-01 11:11:11.110000', '2017-10-01 11:11:11.110111', 'Beijing', 10, 1, '2020-01-03', '2020-01-03', '2017-10-01 11:11:11.140000', '2017-10-01 11:11:11.120111', '2020-01-03', 1, 32, 20, hll_hash(3), to_bitmap(3))
+            """
+
+        sql """
+            DELETE FROM ${tableName} where user_id <= 5
             """
 
         sql """ INSERT INTO ${tableName} VALUES
@@ -107,6 +115,10 @@ suite("test_compaction_agg_keys") {
 
         sql """ INSERT INTO ${tableName} VALUES
              (3, '2017-10-01', '2017-10-01', '2017-10-01 11:11:11.110000', '2017-10-01 11:11:11.110111', 'Beijing', 10, 1, NULL, NULL, NULL, NULL, '2020-01-05', 1, 34, 20, hll_hash(5), to_bitmap(5))
+            """
+
+        sql """
+            DELETE FROM ${tableName} where user_id <= 5
             """
 
         sql """ INSERT INTO ${tableName} VALUES
