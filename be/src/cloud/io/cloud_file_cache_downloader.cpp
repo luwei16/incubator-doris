@@ -2,8 +2,11 @@
 
 #include <aws/transfer/TransferHandle.h>
 #include <aws/transfer/TransferManager.h>
+#include <bvar/bvar.h>
 #include <fmt/core.h>
 #include <gen_cpp/internal_service.pb.h>
+
+#include <mutex>
 
 #include "cloud/io/cloud_file_cache.h"
 #include "cloud/io/cloud_file_cache_factory.h"
@@ -15,17 +18,19 @@
 
 namespace doris::io {
 
-void FileCacheSegmentDownloader::submit_download_task(std::string brpc_addr,
-                                                      std::vector<FileCacheSegmentMeta> metas) {
-    std::unique_lock lock(_mtx);
-    if (_task_queue.size() == max_size) {
-        _full.wait(lock, [this]() { return _task_queue.size() < max_size; });
+bvar::Adder<uint64_t> file_cache_downloader_counter("file_cache_downloader", "size");
+
+void FileCacheSegmentDownloader::submit_download_task(DownloadTask task) {
+    std::lock_guard lock(_mtx);
+    if (_task_queue.size() == _max_size) {
+        _task_queue.pop_front();
     }
-    _task_queue.push_back(std::make_pair(std::move(brpc_addr), std::move(metas)));
+    _task_queue.push_back(std::move(task));
     _empty.notify_all();
 }
 
 void FileCacheSegmentDownloader::polling_download_task() {
+    const int64_t hot_interval = 2 * 60 * 60; // 2 hours
     while (true) {
         std::unique_lock lock(_mtx);
         if (_task_queue.empty()) {
@@ -34,9 +39,13 @@ void FileCacheSegmentDownloader::polling_download_task() {
         if (_closed) {
             break;
         }
-        download_segments(_task_queue.front().first, _task_queue.front().second);
+        DownloadTask task = std::move(_task_queue.front());
+        if (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() -
+                                                             task.atime)
+                    .count() < hot_interval) {
+            download_segments(std::move(task));
+        }
         _task_queue.pop_front();
-        _full.notify_all();
     }
 }
 
@@ -53,10 +62,8 @@ void FileCacheSegmentS3Downloader::check_download_task(const std::vector<int64_t
     }
 }
 
-void FileCacheSegmentS3Downloader::download_segments(
-        const std::string& brpc_addr [[maybe_unused]],
-        const std::vector<FileCacheSegmentMeta>& metas) {
-    std::for_each(metas.cbegin(), metas.cend(), [this](const FileCacheSegmentMeta& meta) {
+void FileCacheSegmentS3Downloader::download_segments(DownloadTask task) {
+    std::for_each(task.metas.cbegin(), task.metas.cend(), [this](const FileCacheSegmentMeta& meta) {
         TabletSharedPtr tablet;
         cloud::tablet_mgr()->get_tablet(meta.tablet_id(), &tablet);
         _inflight_tasks.insert(meta.tablet_id());
@@ -67,14 +74,14 @@ void FileCacheSegmentS3Downloader::download_segments(
             CloudFileCachePtr cache = FileCacheFactory::instance().get_by_path(cache_key);
             CacheContext context;
             switch (meta.cache_type()) {
-                case FileCacheType::TTL:
-                    context.cache_type = CacheType::TTL;
-                    break;
-                case FileCacheType::INDEX:
-                    context.cache_type = CacheType::INDEX;
-                    break;
-                default:
-                    context.cache_type = CacheType::NORMAL;
+            case FileCacheType::TTL:
+                context.cache_type = CacheType::TTL;
+                break;
+            case FileCacheType::INDEX:
+                context.cache_type = CacheType::INDEX;
+                break;
+            default:
+                context.cache_type = CacheType::NORMAL;
             }
             context.expiration_time = meta.expiration_time();
             FileSegmentsHolder holder =
@@ -89,31 +96,31 @@ void FileCacheSegmentS3Downloader::download_segments(
                 do {
                     cur_download_size = _cur_download_file;
                     next_download_size = cur_download_size + 1;
-                } while (cur_download_size >= S3_TRANSFER_EXECUTOR_POOL_SIZE ||
+                } while (cur_download_size >= config::s3_transfer_executor_pool_size ||
                          !_cur_download_file.compare_exchange_strong(cur_download_size,
                                                                      next_download_size));
                 auto transfer_manager = s3_file_system->get_transfer_manager();
                 if (!transfer_manager) {
                     return;
                 }
-                auto download_callback = [this, file_segment,
-                                          meta](const Aws::Transfer::TransferHandle* handle) {
-                    if (handle->GetStatus() == Aws::Transfer::TransferStatus::NOT_STARTED ||
-                        handle->GetStatus() == Aws::Transfer::TransferStatus::IN_PROGRESS) {
-                        return; // not finish
-                    }
-                    if (handle->GetStatus() == Aws::Transfer::TransferStatus::COMPLETED) {
-                        file_segment->finalize_write();
-                    } else {
-                        LOG(WARNING) << "s3 download error " << handle->GetStatus();
-                    }
-                    _cur_download_file--;
-
-                    {
-                        std::unique_lock lock(_mtx);
-                        _inflight_tasks.erase(meta.tablet_id());
-                    }
-                };
+                auto download_callback =
+                        [this, file_segment, meta](const Aws::Transfer::TransferHandle* handle) {
+                            if (handle->GetStatus() == Aws::Transfer::TransferStatus::NOT_STARTED ||
+                                handle->GetStatus() == Aws::Transfer::TransferStatus::IN_PROGRESS) {
+                                return; // not finish
+                            }
+                            if (handle->GetStatus() == Aws::Transfer::TransferStatus::COMPLETED) {
+                                file_segment->finalize_write();
+                                file_cache_downloader_counter << file_segment->range().size();
+                            } else {
+                                LOG(WARNING) << "s3 download error " << handle->GetStatus();
+                            }
+                            _cur_download_file--;
+                            {
+                                std::unique_lock lock(_mtx);
+                                _inflight_tasks.erase(meta.tablet_id());
+                            }
+                        };
                 std::string download_file = file_segment->get_path_in_local_cache();
                 auto createFileFn = [=]() {
                     return Aws::New<Aws::FStream>(meta.file_name().c_str(), download_file.c_str(),
@@ -131,11 +138,6 @@ void FileCacheSegmentS3Downloader::download_segments(
             }
         }
     });
-}
-
-FileCacheSegmentS3Downloader::FileCacheSegmentS3Downloader() {
-    _executor = Aws::MakeShared<Aws::Utils::Threading::PooledThreadExecutor>(
-            "FileCacheSegmentS3Downloader", S3_TRANSFER_EXECUTOR_POOL_SIZE);
 }
 
 } // namespace doris::io

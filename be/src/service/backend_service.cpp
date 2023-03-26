@@ -402,8 +402,8 @@ void BackendService::pre_cache_async(TPreCacheAsyncResponse& response,
         std::transform(brpc_response.file_cache_segment_metas().cbegin(),
                        brpc_response.file_cache_segment_metas().cend(), std::back_inserter(metas),
                        [](const FileCacheSegmentMeta& meta) { return meta; });
-        io::FileCacheSegmentDownloader::instance()->submit_download_task(std::move(brpc_addr),
-                                                                         std::move(metas));
+        io::DownloadTask download_task(std::move(metas));
+        io::FileCacheSegmentDownloader::instance()->submit_download_task(download_task);
     } else {
         st = Status::RpcError("{} isn't connected", brpc_addr);
     }
@@ -413,17 +413,14 @@ void BackendService::pre_cache_async(TPreCacheAsyncResponse& response,
 
 void BackendService::check_pre_cache(TCheckPreCacheResponse& response,
                                      const TCheckPreCacheRequest& request) {
-    LOG(INFO) << "check pre cache begin";
     std::map<int64_t, bool> task_done;
     io::FileCacheSegmentDownloader::instance()->check_download_task(request.tablets, &task_done);
-    LOG(INFO) << "check pre cache 11";
     response.__set_task_done(task_done);
 
     Status st = Status::OK();
     TStatus t_status;
     st.to_thrift(&t_status);
     response.status = t_status;
-    LOG(INFO) << "check pre cache end";
 }
 
 } // namespace doris

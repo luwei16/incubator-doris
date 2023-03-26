@@ -791,7 +791,9 @@ RowsetSharedPtr BetaRowsetWriter::build() {
         }
         _rowset_meta->set_tablet_schema(new_schema);
     }
-
+    for (auto& file_writer : _file_writers) {
+        _rowset_meta->add_segment_file_size(file_writer->bytes_appended());
+    }
     RowsetSharedPtr rowset;
     status = RowsetFactory::create_rowset(_context.tablet_schema, _context.rowset_dir, _rowset_meta,
                                           &rowset);
@@ -901,6 +903,7 @@ Status BetaRowsetWriter::_do_create_segment_writer(
     segment_v2::SegmentWriterOptions writer_options;
     writer_options.rowset_ctx = &_context;
     writer_options.enable_unique_key_merge_on_write = _context.enable_unique_key_merge_on_write;
+    writer_options.is_direct_write = _context.is_direct_write;
 
     if (is_segcompaction) {
         writer->reset(new segment_v2::SegmentWriter(file_writer.get(), _num_segcompacted,

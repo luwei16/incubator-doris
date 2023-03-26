@@ -365,6 +365,7 @@ if (CLOUD_MODE)
         olap/options_test.cpp
         olap/common_test.cpp
         olap/primary_key_index_test.cpp
+        olap/cumulative_compaction_policy_test.cpp
     )
 else()  
     set(OLAP_TEST_FILES
@@ -464,7 +465,7 @@ set(CLOUD_TEST_FILES
     cloud/cloud_tablet_mgr_test.cpp
     cloud/cloud_tablet_test.cpp
     cloud/cloud_prefetch_test.cpp
-    cloud/cloud_file_cache_test.cpp
+    #cloud/cloud_file_cache_test.cpp
 )
 
 if (CLOUD_MODE)

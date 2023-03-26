@@ -91,12 +91,12 @@ public class CloudTabletRebalancer extends MasterDaemon {
     }
 
     private class InfightTask {
-       public Tablet pickedTablet;
-       public long srcBe;
-       public long destBe;
-       public boolean isGlobal;
-       public String clusterId;
-       public Map<Long, List<Tablet>> beToTablets;
+        public Tablet pickedTablet;
+        public long srcBe;
+        public long destBe;
+        public boolean isGlobal;
+        public String clusterId;
+        public Map<Long, List<Tablet>> beToTablets;
     }
 
     // 1 build cluster to backends info
@@ -345,13 +345,14 @@ public class CloudTabletRebalancer extends MasterDaemon {
                     Map<String, List<Long>> clusterToBackends =
                             ((CloudReplica) replica).getClusterToBackends();
                     for (List<Long> bes : clusterToBackends.values()) {
-                        fillBeToTablets(bes.get(0), partition, index, tablet, this.beToTabletsGlobal, this.partitionToTablets);
+                        fillBeToTablets(bes.get(0), partition, index, tablet, this.beToTabletsGlobal,
+                                this.partitionToTablets);
 
                         if (tabletToInfightTask.containsKey(tablet.getId())) {
                             InfightTask task = tabletToInfightTask.get(tablet.getId());
                             fillBeToTablets(task.destBe, partition, index, tablet, futureBeToTabletsGlobal,
                                             futurePartitionToTablets);
-                        } {
+                        } else {
                             fillBeToTablets(bes.get(0), partition, index, tablet, futureBeToTabletsGlobal,
                                             futurePartitionToTablets);
                         }
@@ -434,7 +435,7 @@ public class CloudTabletRebalancer extends MasterDaemon {
         }
     }
 
-    private Map<Long, Boolean> sendCheckPreCacheRpc(List<Long> tablet_ids, long be) {
+    private Map<Long, Boolean> sendCheckPreCacheRpc(List<Long> tabletIds, long be) {
         BackendService.Client client = null;
         TNetworkAddress address = null;
         Backend destBackend = Env.getCurrentSystemInfo().getBackend(be);
@@ -442,7 +443,7 @@ public class CloudTabletRebalancer extends MasterDaemon {
             address = new TNetworkAddress(destBackend.getHost(), destBackend.getBePort());
             client = ClientPool.backendPool.borrowObject(address);
             TCheckPreCacheRequest req = new TCheckPreCacheRequest();
-            req.setTablets(tablet_ids);
+            req.setTablets(tabletIds);
             TCheckPreCacheResponse result = client.checkPreCache(req);
             if (result.getStatus().getStatusCode() != TStatusCode.OK) {
                 LOG.warn("check pre cache status {} {}", result.getStatus().getStatusCode(),
@@ -461,7 +462,6 @@ public class CloudTabletRebalancer extends MasterDaemon {
     private void updateBeToTablets(Tablet pickedTablet, long srcBe, long destBe, boolean isGlobal,
             String clusterId, Map<Long, List<Tablet>> beToTablets,
             Map<Long, List<Tablet>> globalBeToTablets) {
-        CloudReplica cloudReplica = (CloudReplica) pickedTablet.getReplicas().get(0);
         if (isGlobal) {
             globalBeToTablets.get(srcBe).remove(pickedTablet);
             globalBeToTablets.putIfAbsent(destBe, new ArrayList<Tablet>());
@@ -597,7 +597,8 @@ public class CloudTabletRebalancer extends MasterDaemon {
                 LOG.info("pre cache {} from {} to {}, cluster {} minNum {} maxNum {} beNum {} totalTabletsNum {}",
                          pickedTablet.getId(), srcBe, destBe, clusterId,
                          minTabletsNum, maxTabletsNum, beNum, totalTabletsNum);
-                updateBeToTablets(pickedTablet, srcBe, destBe, isGlobal, clusterId, beToTablets, futureBeToTabletsGlobal);
+                updateBeToTablets(pickedTablet, srcBe, destBe, isGlobal, clusterId, beToTablets,
+                                  futureBeToTabletsGlobal);
             } else {
                 if (isGlobal) {
                     long maxBeSize = partitionToTablets.get(cloudReplica.getPartitionId())
