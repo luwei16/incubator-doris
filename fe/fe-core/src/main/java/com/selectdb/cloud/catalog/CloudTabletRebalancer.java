@@ -101,9 +101,12 @@ public class CloudTabletRebalancer extends MasterDaemon {
 
     // 1 build cluster to backends info
     // 2 complete route info
-    // 3 Statistics backend to tablets mapping information
-    // 4 balance in partitions/index
-    // 5 if the partition already balanced, perform global balance
+    // 3 check whether the inflight preheating task has been completed
+    // 4 migrate tablet for smooth upgrade
+    // 5 statistics be to tablets mapping information
+    // 6 partition-level balance
+    // 7 if tablets in partition-level already balanced, perform global balance
+    // 8 check whether all tablets of decomission node have been migrated
     @Override
     protected void runAfterCatalogReady() {
         LOG.info("cloud tablet rebalance begin");
@@ -131,8 +134,10 @@ public class CloudTabletRebalancer extends MasterDaemon {
             Env.getCurrentEnv().getEditLog().logUpdateCloudReplica(info);
         }
 
+        // 3 check whether the inflight preheating task has been completed
         checkInflghtPreCache();
 
+        // 4 migrate tablet for smooth upgrade
         Pair<Long, Long> pair;
         while (!tabletsMigrateTasks.isEmpty()) {
             try {
@@ -144,13 +149,16 @@ public class CloudTabletRebalancer extends MasterDaemon {
             migrateTablets(pair.first, pair.second);
         }
 
-        // Statistics be to tablets mapping information
+        // 5 statistics be to tablets mapping information
         statRouteInfo();
 
+        // 6 partition-level balance
         balanceAllPartitions();
-        // if the partition/index already balanced, perform global balance
+
+        // 7 if tablets in partition-level already balanced, perform global balance
         globalBalance();
 
+        // 8 check whether all tablets of decomission have been migrated
         checkDecommissionState(clusterToBes);
 
         LOG.info("finished to rebalancer. cost: {} ms", (System.currentTimeMillis() - start));
@@ -431,7 +439,7 @@ public class CloudTabletRebalancer extends MasterDaemon {
                         result.getStatus().getErrorMsgs());
             }
         } catch (Exception e) {
-            LOG.warn("task exec error. backend[{}]", destBackend.getId(), e);
+            LOG.warn("send pre heating rpc error. backend[{}]", destBackend.getId(), e);
         }
     }
 
