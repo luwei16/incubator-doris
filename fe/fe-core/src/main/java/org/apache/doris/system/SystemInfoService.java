@@ -425,6 +425,9 @@ public class SystemInfoService {
                 /* When smooth upgrading, a new BE process will start on the existed node */
                 int beNum = existedHostToBeList.get(host).size();
                 Backend colocatedBe = existedHostToBeList.get(host).get(0);
+                if (colocatedBe.getCloudClusterId() != be.getCloudClusterId()) {
+                    continue;
+                }
                 if (beNum != 1) {
                     LOG.warn("find {} co-located BEs, select the first one {} as migration src", beNum,
                             colocatedBe.getId());

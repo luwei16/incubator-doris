@@ -21,6 +21,8 @@ import org.apache.doris.common.ThriftServer;
 import org.apache.doris.proto.PBackendServiceGrpc;
 import org.apache.doris.thrift.BackendService;
 import org.apache.doris.thrift.HeartbeatService;
+import org.apache.doris.thrift.TCheckPreCacheRequest;
+import org.apache.doris.thrift.TCheckPreCacheResponse;
 import org.apache.doris.thrift.TNetworkAddress;
 import org.apache.doris.utframe.MockedBackendFactory.BeThriftService;
 

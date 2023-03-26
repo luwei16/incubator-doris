@@ -43,9 +43,13 @@ public:
 
     void polling_download_task();
 
+    virtual void check_download_task(const std::vector<int64_t>& tablets, std::map<int64_t, bool>* done) = 0;
+
+protected:
+    std::mutex _mtx;
+
 private:
     std::thread _download_thread;
-    std::mutex _mtx;
     std::condition_variable _empty;
     std::condition_variable _full;
     std::list<std::pair<std::string, std::vector<FileCacheSegmentMeta>>> _task_queue;
@@ -65,10 +69,13 @@ public:
     void download_segments(const std::string& brpc_addr,
                            const std::vector<FileCacheSegmentMeta>& metas) override;
 
+    void check_download_task(const std::vector<int64_t>& tablets, std::map<int64_t, bool>* done) override;
+
 private:
     inline static size_t S3_TRANSFER_EXECUTOR_POOL_SIZE {8};
     std::shared_ptr<Aws::Utils::Threading::PooledThreadExecutor> _executor;
     std::atomic<size_t> _cur_download_file {0};
+    std::unordered_set<int64_t> _inflight_tasks;
 };
 
 } // namespace doris::io

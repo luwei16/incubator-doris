@@ -40,12 +40,26 @@ void FileCacheSegmentDownloader::polling_download_task() {
     }
 }
 
+void FileCacheSegmentS3Downloader::check_download_task(const std::vector<int64_t>& tablets,
+        std::map<int64_t, bool>* done) {
+    std::unique_lock lock(_mtx);
+    for (int64_t tablet : tablets) {
+        auto it = _inflight_tasks.find(tablet);
+        if (it == _inflight_tasks.end()) {
+            done->insert({tablet, true});
+        } else {
+            done->insert({tablet, false});
+        }
+    }
+}
+
 void FileCacheSegmentS3Downloader::download_segments(
         const std::string& brpc_addr [[maybe_unused]],
         const std::vector<FileCacheSegmentMeta>& metas) {
     std::for_each(metas.cbegin(), metas.cend(), [this](const FileCacheSegmentMeta& meta) {
         TabletSharedPtr tablet;
         cloud::tablet_mgr()->get_tablet(meta.tablet_id(), &tablet);
+        _inflight_tasks.insert(meta.tablet_id());
         auto id_to_rowset_meta_map = tablet->tablet_meta()->snapshot_rs_metas();
         if (auto iter = id_to_rowset_meta_map.find(meta.rowset_id());
             iter != id_to_rowset_meta_map.end()) {
@@ -94,6 +108,11 @@ void FileCacheSegmentS3Downloader::download_segments(
                         LOG(WARNING) << "s3 download error " << handle->GetStatus();
                     }
                     _cur_download_file--;
+
+                    {
+                        std::unique_lock lock(_mtx);
+                        _inflight_tasks.erase(meta.tablet_id());
+                    }
                 };
                 std::string download_file = file_segment->get_path_in_local_cache();
                 auto createFileFn = [=]() {
