@@ -243,6 +243,16 @@ public class CloudTabletRebalancer extends MasterDaemon {
                     tabletToInfightTask.remove(result.getKey());
                 }
             }
+        }
+
+        // recalculate inflight beToTablets, just for print the log
+        beToTabletIds = new HashMap<Long, List<Long>>();
+        for (Map.Entry<Long, InfightTask> entry : tabletToInfightTask.entrySet()) {
+            beToTabletIds.putIfAbsent(entry.getValue().destBe, new ArrayList<Long>());
+            beToTabletIds.get(entry.getValue().destBe).add(entry.getValue().pickedTablet.getId());
+        }
+
+        for (Map.Entry<Long, List<Long>> entry : beToTabletIds.entrySet()) {
             LOG.info("after pre cache check dest be {} inflight task num {}", entry.getKey(), entry.getValue().size());
         }
     }
