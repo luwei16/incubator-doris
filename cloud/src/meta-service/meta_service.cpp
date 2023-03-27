@@ -2901,6 +2901,11 @@ static int encrypt_ak_sk_helper(const std::string plain_ak, const std::string pl
     std::string key;
     int64_t key_id;
     int ret = get_newest_encryption_key_for_ak_sk(&key_id, &key);
+    {
+        TEST_SYNC_POINT_CALLBACK("encrypt_ak_sk:get_encryption_key_ret", &ret);
+        TEST_SYNC_POINT_CALLBACK("encrypt_ak_sk:get_encryption_key", &key);
+        TEST_SYNC_POINT_CALLBACK("encrypt_ak_sk:get_encryption_key_id", &key_id);
+    }
     if (ret != 0) {
         msg = "failed to get encryption key";
         code = MetaServiceCode::ERR_ENCRYPT;
@@ -2925,6 +2930,10 @@ static int decrypt_ak_sk_helper(const std::string cipher_ak, const std::string c
             AkSkPair* plain_ak_sk_pair, MetaServiceCode& code, std::string& msg) {
     std::string key;
     int ret = get_encryption_key_for_ak_sk(encryption_info.key_id(), &key);
+    {
+        TEST_SYNC_POINT_CALLBACK("decrypt_ak_sk:get_encryption_key_ret", &ret);
+        TEST_SYNC_POINT_CALLBACK("decrypt_ak_sk:get_encryption_key", &key);
+    }
     if (ret != 0) {
         msg = "failed to get encryption key";
         code = MetaServiceCode::ERR_DECPYPT;

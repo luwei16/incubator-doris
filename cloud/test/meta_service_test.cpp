@@ -132,10 +132,18 @@ TEST(MetaServiceTest, CreateInstanceTest) {
         obj.set_provider(ObjectStoreInfoPB::BOS);
         req.mutable_obj_info()->CopyFrom(obj);
 
+        auto sp = SyncPoint::get_instance();
+        sp->set_call_back("encrypt_ak_sk:get_encryption_key_ret", [](void* p) { *reinterpret_cast<int*>(p) = 0; });
+        sp->set_call_back("encrypt_ak_sk:get_encryption_key", [](void* p) { *reinterpret_cast<std::string*>(p) = "test"; });
+        sp->set_call_back("encrypt_ak_sk:get_encryption_key_id", [](void* p) { *reinterpret_cast<int*>(p) = 1; });
+        sp->enable_processing();
         CreateInstanceResponse res;
         meta_service->create_instance(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
                                       &req, &res, nullptr);
         ASSERT_EQ(res.status().code(), MetaServiceCode::OK);
+        sp->clear_all_call_backs();
+        sp->clear_trace();
+        sp->disable_processing();
     }
 
     // case: request has invalid argument
@@ -1526,6 +1534,11 @@ TEST(MetaServiceTest, StageTest) {
     [[maybe_unused]] auto sp = SyncPoint::get_instance();
     sp->set_call_back("get_instance_id::pred", [](void* p) { *((bool*)p) = true; });
     sp->set_call_back("get_instance_id", [&](void* p) { *((std::string*)p) = instance_id; });
+    sp->set_call_back("encrypt_ak_sk:get_encryption_key_ret", [](void* p) { *reinterpret_cast<int*>(p) = 0; });
+    sp->set_call_back("encrypt_ak_sk:get_encryption_key", [](void* p) { *reinterpret_cast<std::string*>(p) = "test"; });
+    sp->set_call_back("encrypt_ak_sk:get_encryption_key_id", [](void* p) { *reinterpret_cast<int*>(p) = 1; });
+    sp->set_call_back("decrypt_ak_sk:get_encryption_key_ret", [](void* p) { *reinterpret_cast<int*>(p) = 0; });
+    sp->set_call_back("decrypt_ak_sk:get_encryption_key", [](void* p) { *reinterpret_cast<std::string*>(p) = "test"; });
     sp->enable_processing();
 
     ObjectStoreInfoPB obj;
@@ -1719,6 +1732,9 @@ TEST(MetaServiceTest, StageTest) {
             ASSERT_EQ("ex_name_0", get_stage_res.stage().at(0).name());
         }
     }
+    sp->clear_all_call_backs();
+    sp->clear_trace();
+    sp->disable_processing();
 }
 
 TEST(MetaServiceTest, GetIamTest) {
@@ -1729,6 +1745,11 @@ TEST(MetaServiceTest, GetIamTest) {
     [[maybe_unused]] auto sp = SyncPoint::get_instance();
     sp->set_call_back("get_instance_id::pred", [](void* p) { *((bool*)p) = true; });
     sp->set_call_back("get_instance_id", [&](void* p) { *((std::string*)p) = instance_id; });
+    sp->set_call_back("encrypt_ak_sk:get_encryption_key_ret", [](void* p) { *reinterpret_cast<int*>(p) = 0; });
+    sp->set_call_back("encrypt_ak_sk:get_encryption_key", [](void* p) { *reinterpret_cast<std::string*>(p) = "test"; });
+    sp->set_call_back("encrypt_ak_sk:get_encryption_key_id", [](void* p) { *reinterpret_cast<int*>(p) = 1; });
+    sp->set_call_back("decrypt_ak_sk:get_encryption_key_ret", [](void* p) { *reinterpret_cast<int*>(p) = 0; });
+    sp->set_call_back("decrypt_ak_sk:get_encryption_key", [](void* p) { *reinterpret_cast<std::string*>(p) = "test"; });
     sp->enable_processing();
 
     config::arn_id = "iam_arn";
@@ -1779,6 +1800,9 @@ TEST(MetaServiceTest, GetIamTest) {
     ASSERT_EQ(response.iam_user().external_id(), instance_id);
     ASSERT_EQ(response.iam_user().ak(), "iam_ak");
     ASSERT_EQ(response.iam_user().sk(), "iam_sk");
+    sp->clear_all_call_backs();
+    sp->clear_trace();
+    sp->disable_processing();
 }
 
 TEST(MetaServiceTest, AlterIamTest) {
@@ -1789,6 +1813,11 @@ TEST(MetaServiceTest, AlterIamTest) {
     [[maybe_unused]] auto sp = SyncPoint::get_instance();
     sp->set_call_back("get_instance_id::pred", [](void* p) { *((bool*)p) = true; });
     sp->set_call_back("get_instance_id", [&](void* p) { *((std::string*)p) = instance_id; });
+    sp->set_call_back("encrypt_ak_sk:get_encryption_key_ret", [](void* p) { *reinterpret_cast<int*>(p) = 0; });
+    sp->set_call_back("encrypt_ak_sk:get_encryption_key", [](void* p) { *reinterpret_cast<std::string*>(p) = "test"; });
+    sp->set_call_back("encrypt_ak_sk:get_encryption_key_id", [](void* p) { *reinterpret_cast<int*>(p) = 1; });
+    sp->set_call_back("decrypt_ak_sk:get_encryption_key_ret", [](void* p) { *reinterpret_cast<int*>(p) = 0; });
+    sp->set_call_back("decrypt_ak_sk:get_encryption_key", [](void* p) { *reinterpret_cast<std::string*>(p) = "test"; });
     sp->enable_processing();
 
     config::arn_id = "iam_arn";
@@ -1847,6 +1876,9 @@ TEST(MetaServiceTest, AlterIamTest) {
     ASSERT_EQ(response.ram_user().user_id(), "test_user_id");
     ASSERT_EQ(response.ram_user().ak(), "test_ak");
     ASSERT_EQ(response.ram_user().sk(), "test_sk");
+    sp->clear_all_call_backs();
+    sp->clear_trace();
+    sp->disable_processing();
 }
 
 std::string to_raw_string(std::string_view v) {
