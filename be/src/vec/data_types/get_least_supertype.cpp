@@ -383,7 +383,7 @@ Status get_least_supertype(const DataTypes& types, DataTypePtr* type, bool compa
                 return Status::OK();
             }
             if (have_decimal128i || min_precision > DataTypeDecimal<Decimal64>::max_precision()) {
-                *type =std::make_shared<DataTypeDecimal<Decimal128I>>(
+                *type = std::make_shared<DataTypeDecimal<Decimal128I>>(
                         DataTypeDecimal<Decimal128I>::max_precision(), max_scale);
                 return Status::OK();
             }

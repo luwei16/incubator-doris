@@ -59,7 +59,7 @@ set(VEC_FILES
   json/json_parser.cpp
   json/parse2column.cpp
   json/path_in_data.cpp
-  common/object_util.cpp
+  common/schema_util.cpp
   common/demangle.cpp
   common/exception.cpp
   common/mremap.cpp
@@ -149,6 +149,7 @@ set(VEC_FILES
   exprs/vcast_expr.cpp
   exprs/vcase_expr.cpp
   exprs/vinfo_func.cpp
+  exprs/vschema_change_expr.cpp
   exprs/table_function/vexplode.cpp
   exprs/table_function/vexplode_split.cpp
   exprs/table_function/vexplode_numbers.cpp

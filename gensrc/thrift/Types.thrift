@@ -100,7 +100,7 @@ enum TTypeNodeType {
     ARRAY,
     MAP,
     STRUCT,
-    VARIANT
+    VARIANT,
 }
 
 enum TStorageBackendType {

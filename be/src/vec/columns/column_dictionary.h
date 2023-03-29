@@ -26,6 +26,7 @@
 #include "vec/columns/column_string.h"
 #include "vec/columns/predicate_column.h"
 #include "vec/common/pod_array.h"
+#include "vec/common/string_ref.h"
 #include "vec/core/types.h"
 
 namespace doris::vectorized {
@@ -112,13 +113,11 @@ public:
         LOG(FATAL) << "get_permutation not supported in ColumnDictionary";
     }
 
-    // SELECTDB_CODE_BEGIN
+    void reserve(size_t n) override { _codes.reserve(n); }
+
     [[noreturn]] TypeIndex get_data_type() const override {
         LOG(FATAL) << "ColumnDictionary get_data_type not implemeted";
     }
-    // SELECTDB_CODE_END
-
-    void reserve(size_t n) override { _codes.reserve(n); }
 
     const char* get_family_name() const override { return "ColumnDictionary"; }
 

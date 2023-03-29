@@ -21,6 +21,7 @@
 #include "exprs/expr.h"
 #include "runtime/tuple.h"
 #include "util/runtime_profile.h"
+#include "vec/common/schema_util.h"
 #include "vec/exprs/vexpr.h"
 #include "vec/exprs/vexpr_context.h"
 
@@ -37,7 +38,7 @@ namespace vectorized {
 class VExprContext;
 class IColumn;
 using MutableColumnPtr = IColumn::MutablePtr;
-namespace object_util {
+namespace schema_util {
 struct FullBaseSchemaView;
 }
 } // namespace vectorized
@@ -158,7 +159,7 @@ protected:
 
     bool _is_dynamic_schema = false;
     // for tracing dynamic schema
-    std::unique_ptr<vectorized::object_util::FullBaseSchemaView> _full_base_schema_view;
+    std::unique_ptr<vectorized::schema_util::FullBaseSchemaView> _full_base_schema_view;
 
 private:
     Status _filter_src_block();

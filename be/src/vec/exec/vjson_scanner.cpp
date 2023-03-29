@@ -24,7 +24,7 @@
 #include "exec/line_reader.h"
 #include "exprs/json_functions.h"
 #include "runtime/runtime_state.h"
-#include "vec/common/object_util.h"
+#include "vec/common/schema_util.h"
 #include "vec/data_types/data_type_string.h"
 
 namespace doris::vectorized {
@@ -79,28 +79,28 @@ Status VJsonScanner<JsonReader>::get_next(vectorized::Block* output_block, bool*
         }
     }
 
-    if (_is_dynamic_schema) {
-        // finalize object column
-        auto obj = assert_cast<ColumnObject*>(columns.back().get());
-        obj->finalize();
+    // if (_is_dynamic_schema) {
+    //     // finalize object column
+    //     auto obj = assert_cast<ColumnObject*>(columns.back().get());
+    //     obj->finalize();
 
-        // flatten object columns for the purpose of extracting static columns and
-        // fill default values missing in static columns
-        RETURN_IF_ERROR(object_util::flatten_object(_src_block, true /*replace static columns*/));
+    //     // flatten object columns for the purpose of extracting static columns and
+    //     // fill default values missing in static columns
+    //     RETURN_IF_ERROR(object_util::flatten_object(_src_block, true /*replace static columns*/));
 
-        bool need_issue_rpc = false;
-        for (const auto& name : _src_block.get_names()) {
-            // missing column in base schema
-            if (!_full_base_schema_view->column_name_to_column.contains(name)) {
-                need_issue_rpc = true;
-            }
-        }
-        if (need_issue_rpc) {
-            // duplicated columns in _full_base_schema_view will be idempotent
-            RETURN_IF_ERROR(vectorized::object_util::send_add_columns_rpc(
-                    _src_block.get_columns_with_type_and_name(), _full_base_schema_view.get()));
-        }
-    }
+    //     bool need_issue_rpc = false;
+    //     for (const auto& name : _src_block.get_names()) {
+    //         // missing column in base schema
+    //         if (!_full_base_schema_view->column_name_to_column.contains(name)) {
+    //             need_issue_rpc = true;
+    //         }
+    //     }
+    //     if (need_issue_rpc) {
+    //         // duplicated columns in _full_base_schema_view will be idempotent
+    //         RETURN_IF_ERROR(vectorized::object_util::send_add_columns_rpc(
+    //                 _src_block.get_columns_with_type_and_name(), _full_base_schema_view.get()));
+    //     }
+    // }
 
     COUNTER_UPDATE(_rows_read_counter, columns[0]->size());
     SCOPED_TIMER(_materialize_timer);

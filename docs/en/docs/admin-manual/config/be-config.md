@@ -1626,4 +1626,9 @@ Translated with www.DeepL.com/Translator (free version)
 * Description: Whether enable simdjson to parse json while stream load
 * Default value: false
 
+#### `enable_parse_multi_dimession_array`
+
+* Description: Whether parse multidimensional array, if false encountering will return ERROR
+* Default value: true
+
 </version>

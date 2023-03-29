@@ -29,13 +29,11 @@ namespace io {
 class FileWriter;
 } // namespace io
 
-
-namespace vectorized::object_util {
-class LocalSchemaChangeRecorder;
-}
-
 using SegCompactionCandidates = std::vector<segment_v2::SegmentSharedPtr>;
 using SegCompactionCandidatesSharedPtr = std::shared_ptr<SegCompactionCandidates>;
+namespace vectorized::schema_util {
+class LocalSchemaChangeRecorder;
+}
 
 class BetaRowsetWriter : public RowsetWriter {
 public:
@@ -85,11 +83,6 @@ public:
 
     const RowsetMetaSharedPtr& rowset_meta() const override { return _rowset_meta; }
 
-    // Maybe modified by local schema change
-    vectorized::object_util::LocalSchemaChangeRecorder* mutable_schema_change_recorder() {
-        return _context.schema_change_recorder.get();
-    }
-
     int64_t upload_cost_ms() const override { return _upload_cost_ms; }
     int64_t total_data_size() const override { return _total_data_size.load(std::memory_order_relaxed); }
 
@@ -98,6 +91,10 @@ public:
     int32_t get_atomic_num_segment() const override { return _num_segment.load(); }
 
     const std::vector<io::FileWriterPtr>& get_file_writers() const { return _file_writers; }
+    // Maybe modified by local schema change
+    vectorized::schema_util::LocalSchemaChangeRecorder* mutable_schema_change_recorder() {
+        return _context.schema_change_recorder.get();
+    }
 
 private:
     template <typename RowType>
@@ -111,7 +108,7 @@ private:
                                      bool is_segcompaction, int64_t begin, int64_t end,
                                      const vectorized::Block* block = nullptr);
     Status _create_segment_writer(std::unique_ptr<segment_v2::SegmentWriter>* writer,
-                                const vectorized::Block* block = nullptr);
+                                  const vectorized::Block* block = nullptr);
     Status _create_segment_writer_for_segcompaction(
             std::unique_ptr<segment_v2::SegmentWriter>* writer, uint64_t begin, uint64_t end);
 

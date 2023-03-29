@@ -150,6 +150,12 @@ private:
     Status _generate_delete_bitmap(int64_t atomic_num_segments_before_flush,
                                    int64_t atomic_num_segments_after_flush);
 
+    // Unfold variant column to Block
+    // Eg. [A | B | C | (D, E, F)]
+    // After unfold block structure changed to -> [A | B | C | D | E | F]
+    // The expanded D, E, F is dynamic part of the block
+    void unfold_variant_column(vectorized::Block& block);
+
 private:
     TabletSharedPtr _tablet;
     Schema* _schema;

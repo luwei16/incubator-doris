@@ -957,14 +957,23 @@ public class Load {
                     slotDesc.setColumn(new Column(realColName, tblColumn.getType()));
                     slotDesc.setIsNullable(tblColumn.isAllowNull());
                 } else {
-                    // columns default be varchar type
-                    slotDesc.setType(ScalarType.createType(PrimitiveType.VARCHAR));
-                    slotDesc.setColumn(new Column(realColName, PrimitiveType.VARCHAR));
-                    // ISSUE A: src slot should be nullable even if the column is not nullable.
-                    // because src slot is what we read from file, not represent to real column value.
-                    // If column is not nullable, error will be thrown when filling the dest slot,
-                    // which is not nullable.
-                    slotDesc.setIsNullable(true);
+                    if (formatType == TFileFormatType.FORMAT_JSON
+                                && tbl instanceof OlapTable && ((OlapTable) tbl).isDynamicSchema()) {
+                        // Dynamic table does not require conversion from VARCHAR to corresponding data types.
+                        // Some columns are self-described and their types are dynamically generated.
+                        slotDesc.setType(tblColumn.getType());
+                        slotDesc.setColumn(new Column(realColName, tblColumn.getType()));
+                        slotDesc.setIsNullable(tblColumn.isAllowNull());
+                    } else {
+                        // columns default be varchar type
+                        slotDesc.setType(ScalarType.createType(PrimitiveType.VARCHAR));
+                        slotDesc.setColumn(new Column(realColName, PrimitiveType.VARCHAR));
+                        // ISSUE A: src slot should be nullable even if the column is not nullable.
+                        // because src slot is what we read from file, not represent to real column value.
+                        // If column is not nullable, error will be thrown when filling the dest slot,
+                        // which is not nullable.
+                        slotDesc.setIsNullable(true);
+                    }
                 }
                 slotDesc.setIsMaterialized(true);
                 srcSlotIds.add(slotDesc.getId().asInt());
@@ -972,7 +981,7 @@ public class Load {
             }
         }
 
-        // add a implict container column "__dynamic__" for dynamic columns
+        // add a implict container column "DORIS_DYNAMIC_COL" for dynamic columns
         if (tbl instanceof OlapTable && ((OlapTable) tbl).isDynamicSchema()) {
             analyzer.getDescTbl().addReferencedTable(tbl);
             SlotDescriptor slotDesc = analyzer.getDescTbl().addSlotDescriptor(srcTupleDesc);
@@ -981,8 +990,10 @@ public class Load {
                                     "stream load auto dynamic column");
             slotDesc.setType(Type.VARIANT);
             slotDesc.setColumn(col);
-            // alaways nullable
-            slotDesc.setIsNullable(true);
+            slotDesc.setIsNullable(false);
+            // Non-nullable slots will have 0 for the byte offset and -1 for the bit mask
+            slotDesc.setNullIndicatorBit(-1);
+            slotDesc.setNullIndicatorByte(0);
             slotDesc.setIsMaterialized(true);
             srcSlotIds.add(slotDesc.getId().asInt());
             slotDescByName.put(name, slotDesc);

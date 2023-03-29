@@ -34,7 +34,7 @@
 #include "util/crc32c.h"
 #include "util/faststring.h"
 #include "util/key_util.h"
-#include "vec/common/object_util.h"
+#include "vec/common/schema_util.h"
 
 namespace doris {
 namespace segment_v2 {
@@ -119,9 +119,7 @@ Status SegmentWriter::init(const std::vector<uint32_t>& col_ids, bool has_key,
     _has_key = has_key;
     _column_writers.reserve(_tablet_schema->columns().size());
     _column_ids.insert(_column_ids.end(), col_ids.begin(), col_ids.end());
-    _olap_data_convertor =
-            std::make_unique<vectorized::OlapBlockDataConvertor>();
-
+    _olap_data_convertor = std::make_unique<vectorized::OlapBlockDataConvertor>();
     auto create_column_writer = [&](uint32_t cid, const auto& column) -> auto{
         ColumnWriterOptions opts;
         opts.meta = _footer.add_columns();
@@ -174,7 +172,7 @@ Status SegmentWriter::init(const std::vector<uint32_t>& col_ids, bool has_key,
         _olap_data_convertor->add_column_data_convertor(column);
         return Status::OK();
     };
-
+  
     if (block && _should_create_writers_with_dynamic_block(block->columns())) {
         RETURN_IF_ERROR(_create_writers_with_dynamic_block(block, create_column_writer));
     } else {
@@ -219,10 +217,10 @@ Status SegmentWriter::_create_writers_with_dynamic_block(
     // generate writers from schema and extended schema info
     _olap_data_convertor->reserve(block->columns());
     // new columns added, query column info from Master
-    vectorized::object_util::FullBaseSchemaView schema_view;
+    vectorized::schema_util::FullBaseSchemaView schema_view;
     CHECK(block->columns() > _tablet_schema->num_columns());
     schema_view.table_id = _tablet_schema->table_id();
-    RETURN_IF_ERROR(vectorized::object_util::send_fetch_full_base_schema_view_rpc(&schema_view));
+    RETURN_IF_ERROR(vectorized::schema_util::send_fetch_full_base_schema_view_rpc(&schema_view));
     // create writers with static columns
     for (size_t i = 0; i < _tablet_schema->columns().size(); ++i) {
         create_column_writer(i, _tablet_schema->column(i));
@@ -241,7 +239,10 @@ Status SegmentWriter::_create_writers_with_dynamic_block(
 
 Status SegmentWriter::append_block(const vectorized::Block* block, size_t row_pos,
                                    size_t num_rows) {
-    assert(block && num_rows > 0 && row_pos + num_rows <= block->rows());
+    CHECK(block->columns() >= _column_writers.size())
+            << ", block->columns()=" << block->columns()
+            << ", _column_writers.size()=" << _column_writers.size();
+
     _olap_data_convertor->set_source_content(block, row_pos, num_rows);
 
     // find all row pos for short key indexes

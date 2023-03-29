@@ -30,6 +30,8 @@
 #include "vec/columns/column_impl.h"
 #include "vec/columns/columns_common.h"
 #include "util/stack_util.h"
+#include "vec/columns/column_impl.h"
+#include "vec/columns/columns_common.h"
 #include "vec/common/arena.h"
 #include "vec/common/assert_cast.h"
 #include "vec/common/bit_cast.h"

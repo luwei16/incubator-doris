@@ -159,17 +159,21 @@ public class LoadingTaskPlanner {
         }
 
         if (table.isDynamicSchema()) {
+            // Dynamic table for s3load ...
             descTable.addReferencedTable(table);
             // For reference table
             scanTupleDesc.setTableId((int) table.getId());
-            // Add a implict container column "__dynamic__" for dynamic columns
+            scanTupleDesc.setTable(table);
+            // Add a implict container column "DORIS_DYNAMIC_COL" for dynamic columns
             SlotDescriptor slotDesc = descTable.addSlotDescriptor(scanTupleDesc);
             Column col = new Column(Column.DYNAMIC_COLUMN_NAME, Type.VARIANT, false, null, false, "",
                                     "stream load auto dynamic column");
             slotDesc.setIsMaterialized(true);
+            // Non-nullable slots will have 0 for the byte offset and -1 for the bit mask
+            slotDesc.setNullIndicatorBit(-1);
+            slotDesc.setNullIndicatorByte(0);
             slotDesc.setColumn(col);
-            // alaways nullable
-            slotDesc.setIsNullable(true);
+            slotDesc.setIsNullable(false);
             LOG.debug("plan scanTupleDesc{}", scanTupleDesc.toString());
         }
 

@@ -14,8 +14,6 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-// https://github.com/ClickHouse/ClickHouse/blob/master/src/DataTypes/ObjectUtils.cpp
-// and modified by Doris
 
 #pragma once
 
@@ -27,12 +25,14 @@
 #include <vec/data_types/data_type_number.h>
 
 #include "olap/tablet_schema.h"
+#include "runtime/descriptors.h"
+#include "vec/data_types/data_type.h"
 
 namespace doris {
 class LocalSchemaChangeRecorder;
 }
 
-namespace doris::vectorized::object_util {
+namespace doris::vectorized::schema_util {
 /// Returns number of dimensions in Array type. 0 if type is not array.
 size_t get_number_of_dimensions(const IDataType& type);
 
@@ -45,63 +45,21 @@ DataTypePtr get_base_type_of_array(const DataTypePtr& type);
 /// Returns Array with requested number of dimensions and no scalars.
 Array create_empty_array_field(size_t num_dimensions);
 
-/// Converts Object types and columns to Tuples in @columns_list and @block
-/// and checks that types are consistent with types in @extended_storage_columns.
-Status convert_objects_to_tuples(Block& block);
+// Cast column to dst type
+Status cast_column(const ColumnWithTypeAndName& arg, const DataTypePtr& type, ColumnPtr* result);
 
-/// Receives several Tuple types and deduces the least common type among them.
-DataTypePtr get_least_common_type_for_object(const DataTypes& types,
-                                             bool check_ambiguos_paths = false);
-
-/// Flattens nested Tuple to plain Tuple. I.e extracts all paths and types from tuple.
-/// E.g. Tuple(t Tuple(c1 UInt32, c2 String), c3 UInt64) -> Tuple(t.c1 UInt32, t.c2 String, c3 UInt32)
-std::pair<PathsInData, DataTypes> flatten_tuple(const DataTypePtr& type);
-
-/// Flattens nested Tuple column to plain columns.
-Columns flatten_tuple(const ColumnPtr& column);
-
-void flatten_tuple(Block& block);
-
-/// The reverse operation to 'flattenTuple'.
-/// Creates nested Tuple from all paths and types.
-/// E.g. Tuple(t.c1 UInt32, t.c2 String, c3 UInt32) -> Tuple(t Tuple(c1 UInt32, c2 String), c3 UInt64)
-DataTypePtr unflatten_tuple(const PathsInData& paths, const DataTypes& tuple_types);
-
-std::pair<ColumnPtr, DataTypePtr> unflatten_tuple(const PathsInData& paths,
-                                                  const DataTypes& tuple_types,
-                                                  const Columns& tuple_columns);
-
-// None nested type
-FieldType get_field_type(const IDataType* data_type);
-
-// NOTICE: the last column must be dynamic column
-// 1. The dynamic column will be parsed to ColumnObject and the parsed column will
-// be flattened to multiple subcolumns, thus the dynamic schema is infered from the
-// dynamic column.
-// 2. Schema change which is add columns will be performed if the infered schema is
-// different from the original tablet schema, new columns added to schema change history
-Status parse_and_expand_dynamic_column(Block& block, const TabletSchema& schema_hints,
-                                       LocalSchemaChangeRecorder* history);
-
-Status parse_object_column(Block& block, size_t position);
-
-Status parse_object_column(ColumnObject& dest, const IColumn& src, bool need_finalize,
-                           const int* row_begin, const int* row_end);
-
-// Object column will be flattened and if replace_if_duplicated
+// Object column will be unfolded and if  cast_to_original_type
 // the original column in the block will be replaced with the subcolumn
-// from object column.Also if column in block is empty, it will be filled
+// from object column and casted to the new type from slot_descs.
+// Also if column in block is empty, it will be filled
 // with num_rows of default values
-Status flatten_object(Block& block, bool replace_if_duplicated);
+void unfold_object(size_t dynamic_col_position, Block& block, bool cast_to_original_type);
 
 /// If both of types are signed/unsigned integers and size of left field type
 /// is less than right type, we don't need to convert field,
 /// because all integer fields are stored in Int64/UInt64.
 bool is_conversion_required_between_integers(const IDataType& lhs, const IDataType& rhs);
 bool is_conversion_required_between_integers(FieldType lhs, FieldType rhs);
-
-// Cast column to type
-Status cast_column(const ColumnWithTypeAndName& arg, const DataTypePtr& type, ColumnPtr* result);
 
 // Align block schema with tablet schema
 // eg.
@@ -131,16 +89,6 @@ Status send_add_columns_rpc(ColumnsWithTypeAndName column_type_names,
 
 Status send_fetch_full_base_schema_view_rpc(FullBaseSchemaView* schema_view);
 
-// block alignment
-// TODO using column_unique_id instead of names
-void align_block_by_name_and_type(MutableBlock* mblock, const Block* block, const int* row_begin,
-                                  const int* row_end);
-void align_block_by_name_and_type(MutableBlock* mblock, const Block* block, size_t row_begin,
-                                  size_t length);
-
-void align_append_block_by_selector(MutableBlock* mblock,
-                const Block* block, const IColumn::Selector& selector);
-
 // For tracking local schema change during load procedure
 class LocalSchemaChangeRecorder {
 public:
@@ -156,4 +104,4 @@ private:
     std::map<std::string, TabletColumn> _extended_columns;
 };
 
-} // namespace  doris::vectorized::object_util
+} // namespace  doris::vectorized::schema_util

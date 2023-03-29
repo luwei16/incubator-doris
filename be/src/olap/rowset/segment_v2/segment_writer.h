@@ -24,7 +24,6 @@
 
 #include "common/status.h" // Status
 #include "gen_cpp/segment_v2.pb.h"
-#include "gutil/macros.h"
 #include "olap/tablet_schema.h"
 #include "vec/core/block.h"
 #include "vec/olap/olap_data_convertor.h"
@@ -74,8 +73,10 @@ public:
     ~SegmentWriter();
 
     Status init(const vectorized::Block* block = nullptr);
+
     // for vertical compaction
-    Status init(const std::vector<uint32_t>& col_ids, bool has_key, const vectorized::Block* block = nullptr);
+    Status init(const std::vector<uint32_t>& col_ids, bool has_key,
+                const vectorized::Block* block = nullptr);
 
     template <typename RowType>
     Status append_row(const RowType& row);
