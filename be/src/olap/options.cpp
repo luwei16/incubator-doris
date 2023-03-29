@@ -227,27 +227,7 @@ Status parse_conf_rm_paths(const std::string& config_path, std::vector<std::stri
 }
 
 io::FileCacheSettings CachePath::init_settings() const {
-    io::FileCacheSettings settings;
-    settings.total_size = total_bytes;
-    settings.max_file_segment_size = config::file_cache_max_file_segment_size;
-    settings.max_query_cache_size = query_limit_bytes;
-    size_t per_size = settings.total_size / io::percentage[3];
-    settings.disposable_queue_size = per_size * io::percentage[1];
-    settings.disposable_queue_elements =
-            std::max(settings.disposable_queue_size / settings.max_file_segment_size,
-                     io::FILE_CACHE_QUEUE_DEFAULT_ELEMENTS);
-
-    settings.index_queue_size = per_size * io::percentage[2];
-    settings.index_queue_elements =
-            std::max(settings.index_queue_size / settings.max_file_segment_size,
-                     io::FILE_CACHE_QUEUE_DEFAULT_ELEMENTS);
-
-    settings.query_queue_size =
-            settings.total_size - settings.disposable_queue_size - settings.index_queue_size;
-    settings.query_queue_elements =
-            std::max(settings.query_queue_size / settings.max_file_segment_size,
-                     io::FILE_CACHE_QUEUE_DEFAULT_ELEMENTS);
-    return settings;
+    return io::calc_settings(total_bytes, query_limit_bytes);
 }
 
 } // end namespace doris

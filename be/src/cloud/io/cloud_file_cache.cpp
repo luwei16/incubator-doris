@@ -176,6 +176,16 @@ Status CloudFileCache::initialize_unlocked(std::lock_guard<std::mutex>& cache_lo
     }
     _is_initialized = true;
     _cache_background_thread = std::thread(&CloudFileCache::run_background_operation, this);
+    LOG(INFO) << fmt::format(
+            "q file cache path={}, disposable queue size={} elements={}, index queue size={} "
+            "elements={}, query queue "
+            "size={} elements={}",
+            _cache_base_path, _disposable_queue.get_total_cache_size(cache_lock),
+            _disposable_queue.get_elements_num(cache_lock),
+            _index_queue.get_total_cache_size(cache_lock),
+            _index_queue.get_elements_num(cache_lock),
+            _normal_queue.get_total_cache_size(cache_lock),
+            _normal_queue.get_elements_num(cache_lock));
 
     return Status::OK();
 }
@@ -887,7 +897,7 @@ bool CloudFileCache::try_reserve_from_other_queue(CacheType cur_cache_type, size
             size_t cell_size = cell->size();
             DCHECK(entry_size == cell_size);
 
-            if (cell->atime == 0 ? true : cell->atime + queue.get_hot_data_interval() < cur_time) {
+            if (cell->atime == 0 ? true : cell->atime + queue.get_hot_data_interval() > cur_time) {
                 break;
             }
 
@@ -1044,7 +1054,7 @@ void CloudFileCache::remove(FileSegmentSPtr file_segment, std::lock_guard<std::m
             LOG(ERROR) << ec.message();
         }
     }
-    if (_is_initialized && offsets.empty()) {
+    if (offsets.empty()) {
         auto key_path = get_path_in_local_cache(key, expiration_time);
         _files.erase(key);
         std::error_code ec;
@@ -1059,7 +1069,7 @@ Status CloudFileCache::load_cache_info_into_memory(std::lock_guard<std::mutex>& 
     Key key;
     uint64_t offset = 0;
     size_t size = 0;
-    std::vector<std::pair<LRUQueue::Iterator, CacheType>> queue_entries;
+    std::vector<std::pair<Key, size_t>> queue_entries;
 
     // upgrade the cache
     std::filesystem::directory_iterator upgrade_key_it {_cache_base_path};
@@ -1073,7 +1083,7 @@ Status CloudFileCache::load_cache_info_into_memory(std::lock_guard<std::mutex>& 
             }
         }
     }
-
+    std::vector<std::string> need_to_check_if_empty_dir;
     /// cache_base_path / key / offset
     std::filesystem::directory_iterator key_it {_cache_base_path};
     for (; key_it != std::filesystem::directory_iterator(); ++key_it) {
@@ -1133,10 +1143,9 @@ Status CloudFileCache::load_cache_info_into_memory(std::lock_guard<std::mutex>& 
             }
             context.cache_type = cache_type;
             if (try_reserve(key, context, offset, size, cache_lock)) {
-                auto* cell = add_cell(key, context, offset, size, FileSegment::State::DOWNLOADED,
-                                      cache_lock);
+                add_cell(key, context, offset, size, FileSegment::State::DOWNLOADED, cache_lock);
                 if (cache_type != CacheType::TTL) {
-                    queue_entries.emplace_back(*cell->queue_iterator, cache_type);
+                    queue_entries.emplace_back(key, offset);
                 }
             } else {
                 std::error_code ec;
@@ -1144,17 +1153,32 @@ Status CloudFileCache::load_cache_info_into_memory(std::lock_guard<std::mutex>& 
                 if (ec) {
                     return Status::IOError(ec.message());
                 }
+                need_to_check_if_empty_dir.push_back(key_it->path());
             }
         }
     }
+
+    std::for_each(need_to_check_if_empty_dir.cbegin(), need_to_check_if_empty_dir.cend(),
+                  [](auto& dir) {
+                      std::error_code ec;
+                      if (std::filesystem::is_empty(dir, ec) && !ec) {
+                          std::filesystem::remove(dir, ec);
+                      }
+                      if (ec) {
+                          LOG(ERROR) << ec.message();
+                      }
+                  });
 
     /// Shuffle cells to have random order in LRUQueue as at startup all cells have the same priority.
     auto rng = std::default_random_engine {
             static_cast<uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count())};
     std::shuffle(queue_entries.begin(), queue_entries.end(), rng);
-    for (const auto& [it, cache_type] : queue_entries) {
-        auto& queue = get_queue(cache_type);
-        queue.move_to_end(it, cache_lock);
+    for (const auto& [key, offset] : queue_entries) {
+        auto* cell = get_cell(key, offset, cache_lock);
+        if (cell) {
+            auto& queue = get_queue(cell->cache_type);
+            queue.move_to_end(*cell->queue_iterator, cache_lock);
+        }
     }
     return Status::OK();
 }
