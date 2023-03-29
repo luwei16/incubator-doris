@@ -73,7 +73,6 @@ public class LoadingTaskPlanner {
     private final boolean useNewLoadScanNode;
     private UserIdentity userInfo;
     private String cluster;
-    private String qualifiedUser;
     // Something useful
     // ConnectContext here is just a dummy object to avoid some NPE problem, like ctx.getDatabase()
     private Analyzer analyzer = new Analyzer(Env.getCurrentEnv(), new ConnectContext());
@@ -115,11 +114,10 @@ public class LoadingTaskPlanner {
             BrokerDesc brokerDesc, List<BrokerFileGroup> brokerFileGroups,
             boolean strictMode, String timezone, long timeoutS, int loadParallelism,
             int sendBatchParallelism, boolean useNewLoadScanNode, UserIdentity userInfo,
-            String cluster, String qualifiedUser) {
+            String cluster) {
         this(loadJobId, txnId, dbId, table, brokerDesc, brokerFileGroups, strictMode,
                 timezone, timeoutS, loadParallelism, sendBatchParallelism, useNewLoadScanNode, userInfo);
         this.cluster = cluster;
-        this.qualifiedUser = qualifiedUser;
     }
 
     public void plan(TUniqueId loadId, List<List<TBrokerFileStatus>> fileStatusesList, int filesAdded)
@@ -186,7 +184,7 @@ public class LoadingTaskPlanner {
                 scanNode = new ExternalFileScanNode(new PlanNodeId(nextNodeId++), scanTupleDesc);
             } else {
                 scanNode = new ExternalFileScanNode(new PlanNodeId(nextNodeId++), scanTupleDesc,
-                                                    cluster, qualifiedUser);
+                                                    cluster);
             }
             ((ExternalFileScanNode) scanNode).setLoadInfo(loadJobId, txnId, table, brokerDesc, fileGroups,
                     fileStatusesList, filesAdded, strictMode, loadParallelism, userInfo);
@@ -196,7 +194,7 @@ public class LoadingTaskPlanner {
                         fileStatusesList, filesAdded);
             } else {
                 scanNode = new BrokerScanNode(new PlanNodeId(nextNodeId++), scanTupleDesc, "BrokerScanNode",
-                        fileStatusesList, filesAdded, cluster, qualifiedUser);
+                        fileStatusesList, filesAdded, cluster);
             }
             ((BrokerScanNode) scanNode).setLoadInfo(loadJobId, txnId, table, brokerDesc, fileGroups, strictMode,
                     loadParallelism, userInfo);

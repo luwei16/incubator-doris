@@ -131,8 +131,6 @@ public class ExternalFileScanNode extends ExternalScanNode {
 
     private String cluster;
 
-    private String qualifiedUser;
-
     private boolean needClearContext = false;
 
     /**
@@ -144,10 +142,9 @@ public class ExternalFileScanNode extends ExternalScanNode {
         super(id, desc, "EXTERNAL_FILE_SCAN_NODE", StatisticalType.FILE_SCAN_NODE);
     }
 
-    public ExternalFileScanNode(PlanNodeId id, TupleDescriptor desc, String cluster, String qualifiedUser) {
+    public ExternalFileScanNode(PlanNodeId id, TupleDescriptor desc, String cluster) {
         this(id, desc);
         this.cluster = cluster;
-        this.qualifiedUser = qualifiedUser;
     }
 
     // Only for broker load job.

@@ -77,10 +77,6 @@ public class BrokerLoadJob extends BulkLoadJob {
     private RuntimeProfile jobProfile;
     // If set to true, the profile of load job with be pushed to ProfileManager
     private boolean enableProfile = false;
-    private TUniqueId queryId;
-
-    private String clusterId = null;
-    private String qualifiedUser = null;
 
     // for log replay and unit test
     public BrokerLoadJob() {
@@ -103,27 +99,6 @@ public class BrokerLoadJob extends BulkLoadJob {
         this.brokerDesc = brokerDesc;
         if (ConnectContext.get() != null && ConnectContext.get().getSessionVariable().enableProfile()) {
             enableProfile = true;
-        }
-
-        if (Config.isCloudMode()) {
-            ConnectContext context = ConnectContext.get();
-            if (context != null) {
-                String clusterName = context.getCloudCluster();
-                if (Strings.isNullOrEmpty(clusterName)) {
-                    LOG.warn("cluster name is null");
-                }
-
-                this.clusterId = Env.getCurrentSystemInfo().getCloudClusterIdByName(clusterName);
-                if (!Strings.isNullOrEmpty(context.getSessionVariable().getCloudCluster())) {
-                    clusterName = context.getSessionVariable().getCloudCluster();
-                    this.clusterId = Env.getCurrentSystemInfo().getCloudClusterIdByName(clusterName);
-                }
-                qualifiedUser = context.getQualifiedUser();
-            }
-        }
-
-        if (ConnectContext.get() != null) {
-            queryId = ConnectContext.get().queryId();
         }
     }
 
@@ -247,13 +222,14 @@ public class BrokerLoadJob extends BulkLoadJob {
                 UUID uuid = UUID.randomUUID();
                 TUniqueId loadId = new TUniqueId(uuid.getMostSignificantBits(), uuid.getLeastSignificantBits());
 
-                LOG.info("sqlQueryId={}, loadId={}", DebugUtil.printId(queryId), DebugUtil.printId(loadId));
+                LOG.info("loadId={}, BrokerLoadJobId={}, transactionId={}",
+                        DebugUtil.printId(loadId), this.id, this.transactionId);
                 if (Config.isNotCloudMode()) {
                     task.init(loadId, attachment.getFileStatusByTable(aggKey),
                             attachment.getFileNumByTable(aggKey), getUserInfo());
                 } else {
                     task.init(loadId, attachment.getFileStatusByTable(aggKey),
-                            attachment.getFileNumByTable(aggKey), getUserInfo(), clusterId, qualifiedUser);
+                            attachment.getFileNumByTable(aggKey), getUserInfo(), clusterId);
                 }
                 idToTasks.put(task.getSignature(), task);
                 // idToTasks contains previous LoadPendingTasks, so idToTasks is just used to save all tasks.
@@ -432,5 +408,84 @@ public class BrokerLoadJob extends BulkLoadJob {
     public void afterVisible(TransactionState txnState, boolean txnOperated) {
         super.afterVisible(txnState, txnOperated);
         writeProfile();
+    }
+
+    @Override
+    public void onTaskFailed(long taskId, FailMsg failMsg) {
+        if (!Config.isCloudMode() || Strings.isNullOrEmpty(this.clusterId)) {
+            super.onTaskFailed(taskId, failMsg);
+            return;
+        }
+        try {
+            writeLock();
+            if (isTxnDone()) {
+                LOG.warn(new LogBuilder(LogKey.LOAD_JOB, id)
+                        .add("label", label)
+                        .add("transactionId", transactionId)
+                        .add("state", state)
+                        .add("error_msg", "this task will be ignored when job is: " + state)
+                        .build());
+                return;
+            }
+            LOG.info(new LogBuilder(LogKey.LOAD_JOB, id)
+                    .add("label", label)
+                    .add("transactionId", transactionId)
+                    .add("state", state)
+                    .add("retryTimes", retryTimes)
+                    .add("failMsg", failMsg.getMsg())
+                    .build());
+
+            this.retryTimes--;
+            if (this.retryTimes <= 0) {
+                boolean abortTxn = this.transactionId > 0 ? true : false;
+                unprotectedExecuteCancel(failMsg, abortTxn);
+                logFinalOperation();
+                return;
+            } else {
+                unprotectedExecuteRetry(failMsg);
+            }
+        } finally {
+            writeUnlock();
+        }
+
+        boolean allTaskDone = false;
+        while (!allTaskDone) {
+            try {
+                writeLock();
+                // check if all task has been done
+                // unprotectedExecuteRetry() will cancel all running task
+                allTaskDone = true;
+                for (Map.Entry<Long, LoadTask> entry : idToTasks.entrySet()) {
+                    if (entry.getKey() != taskId && !entry.getValue().isDone()) {
+                        LOG.info("LoadTask({}) has not been done", entry.getKey());
+                        allTaskDone = false;
+                    }
+                }
+            } finally {
+                writeUnlock();
+            }
+            if (!allTaskDone) {
+                try {
+                    Thread.sleep(1000);
+                    continue;
+                } catch (InterruptedException e) {
+                    LOG.warn("", e);
+                }
+            }
+        }
+
+        try {
+            writeLock();
+            this.state = JobState.PENDING;
+            this.idToTasks.clear();
+            this.failMsg = null;
+            this.finishedTaskIds.clear();
+            Env.getCurrentGlobalTransactionMgr().getCallbackFactory().addCallback(this);
+            LoadTask task = createPendingTask();
+            idToTasks.put(task.getSignature(), task);
+            Env.getCurrentEnv().getPendingLoadTaskScheduler().submit(task);
+        } finally {
+            writeUnlock();
+        }
     }
 }

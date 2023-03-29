@@ -99,6 +99,7 @@ public class LoadLoadingTask extends LoadTask {
         this.txnId = txnId;
         this.failMsg = new FailMsg(FailMsg.CancelType.LOAD_RUN_FAIL);
         // No need to retry for cloud mode, txn id should not be reused
+        // http://jira.selectdb.com:8090/browse/CORE-466
         this.retryTime = 1;
         this.timezone = timezone;
         this.timeoutS = timeoutS;
@@ -120,12 +121,12 @@ public class LoadLoadingTask extends LoadTask {
     }
 
     public void init(TUniqueId loadId, List<List<TBrokerFileStatus>> fileStatusList,
-            int fileNum, UserIdentity userInfo, String clusterId, String qualifiedUser) throws UserException {
+            int fileNum, UserIdentity userInfo, String clusterId) throws UserException {
         this.loadId = loadId;
         String clusterName = Env.getCurrentSystemInfo().getClusterNameByClusterId(clusterId);
         planner = new LoadingTaskPlanner(callback.getCallbackId(), txnId, db.getId(), table, brokerDesc, fileGroups,
                 strictMode, timezone, this.timeoutS, this.loadParallelism, this.sendBatchParallelism,
-                this.useNewLoadScanNode, userInfo, clusterName, qualifiedUser);
+                this.useNewLoadScanNode, userInfo, clusterName);
         planner.plan(loadId, fileStatusList, fileNum);
         this.clusterId = clusterId;
     }

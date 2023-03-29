@@ -141,8 +141,6 @@ public class BrokerScanNode extends LoadScanNode {
 
     private String cluster;
 
-    private String qualifiedUser;
-
     private boolean needClearContext = false;
 
     protected static class ParamCreateContext {
@@ -169,10 +167,9 @@ public class BrokerScanNode extends LoadScanNode {
 
     public BrokerScanNode(PlanNodeId id, TupleDescriptor destTupleDesc, String planNodeName,
                           List<List<TBrokerFileStatus>> fileStatusesList, int filesAdded,
-                          String cluster, String qualifiedUser) {
+                          String cluster) {
         this(id, destTupleDesc, planNodeName, fileStatusesList, filesAdded);
         this.cluster = cluster;
-        this.qualifiedUser = qualifiedUser;
     }
 
     // For hive and iceberg scan node

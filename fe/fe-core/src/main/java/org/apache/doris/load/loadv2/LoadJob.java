@@ -343,7 +343,8 @@ public abstract class LoadJob extends AbstractTxnStateChangeCallback implements 
 
     // return true if the corresponding transaction is done(COMMITTED, FINISHED, CANCELLED)
     public boolean isTxnDone() {
-        return state == JobState.COMMITTED || state == JobState.FINISHED || state == JobState.CANCELLED;
+        return state == JobState.COMMITTED || state == JobState.FINISHED
+                || state == JobState.CANCELLED || state == JobState.RETRY;
     }
 
     // return true if job is done(FINISHED/CANCELLED/UNKNOWN)
@@ -621,6 +622,55 @@ public abstract class LoadJob extends AbstractTxnStateChangeCallback implements 
         } catch (MetaNotFoundException e) {
             throw new DdlException(e.getMessage());
         }
+    }
+
+    protected void unprotectedExecuteRetry(FailMsg failMsg) {
+        LOG.warn(new LogBuilder(LogKey.LOAD_JOB, id).add("transaction_id", transactionId)
+                .add("error_msg", "Failed to execute load with error: " + failMsg.getMsg()).build());
+
+        // get load ids of all loading tasks, we will cancel their coordinator process later
+        List<TUniqueId> loadIds = Lists.newArrayList();
+        for (LoadTask loadTask : idToTasks.values()) {
+            if (loadTask instanceof LoadLoadingTask) {
+                loadIds.add(((LoadLoadingTask) loadTask).getLoadId());
+            }
+        }
+
+        // set failMsg and state
+        this.failMsg = failMsg;
+        if (failMsg.getCancelType() == CancelType.TXN_UNKNOWN) {
+            // for bug fix, see LoadManager's fixLoadJobMetaBugs() method
+            finishTimestamp = createTimestamp;
+        } else {
+            finishTimestamp = System.currentTimeMillis();
+        }
+
+        // remove callback before abortTransaction(), so that the afterAborted() callback will not be called again
+        Env.getCurrentGlobalTransactionMgr().getCallbackFactory().removeCallback(id);
+        // abort txn by label, because transactionId here maybe -1
+        try {
+            LOG.debug(new LogBuilder(LogKey.LOAD_JOB, id)
+                    .add("label", label)
+                    .add("msg", "begin to abort txn")
+                    .build());
+            Env.getCurrentGlobalTransactionMgr().abortTransaction(dbId, label, failMsg.getMsg());
+        } catch (UserException e) {
+            LOG.warn(new LogBuilder(LogKey.LOAD_JOB, id)
+                    .add("label", label)
+                    .add("error_msg", "failed to abort txn when job is cancelled. " + e.getMessage())
+                    .build());
+        }
+
+        // cancel all running coordinators, so that the scheduler's worker thread will be released
+        for (TUniqueId loadId : loadIds) {
+            Coordinator coordinator = QeProcessorImpl.INSTANCE.getCoordinator(loadId);
+            if (coordinator != null) {
+                coordinator.cancel();
+            }
+        }
+
+        // change state
+        state = JobState.RETRY;
     }
 
     /**

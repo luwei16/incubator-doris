@@ -92,22 +92,15 @@ public class CopyLoadPendingTask extends BrokerLoadPendingTask {
         for (Map.Entry<FileGroupAggKey, List<BrokerFileGroup>> entry : aggKeyToBrokerFileGroups.entrySet()) {
             FileGroupAggKey aggKey = entry.getKey();
             List<BrokerFileGroup> fileGroups = entry.getValue();
+            LOG.debug("aggKey:{}, fileGroups:{}", aggKey, fileGroups);
 
             List<List<Pair<TBrokerFileStatus, ObjectFilePB>>> fileStatusList = Lists.newArrayList();
             long tableTotalFileSize = 0;
             int tableTotalFileNum = 0;
             int groupNum = 0;
-
             for (BrokerFileGroup fileGroup : fileGroups) {
                 long groupFileSize = 0;
                 List<Pair<TBrokerFileStatus, ObjectFilePB>> fileStatuses = Lists.newArrayList();
-                if (copyJob.isReplay()) {
-                    fileStatuses = getCopyFilesWhenReplay(copyJob.getStageId(), fileGroup.getTableId(),
-                            copyJob.getCopyId(), copyJob.getObjectInfo());
-                    LOG.info("Get copy files when replay, stageId={}, tableId={}, copyId={}, files={}",
-                            copyJob.getStageId(), fileGroup.getTableId(), copyJob.getCopyId(),
-                            fileStatuses.stream().map(p -> p.second.getRelativePath()).collect(Collectors.toList()));
-                }
                 if (!isBeginCopyDone) {
                     for (String path : fileGroup.getFilePaths()) {
                         LOG.debug("input path = {}", path);
@@ -187,6 +180,7 @@ public class CopyLoadPendingTask extends BrokerLoadPendingTask {
                         + "filtered %d files because files may be loading or loaded"
                         + reachLimitStr, matchedFileNum, matchedFileNum));
             }
+            copyJob.setAbortedCopy(false);
             Set<String> filteredObjectSet = filteredObjectFiles.stream()
                     .map(f -> getFileInfoUniqueId(f)).collect(Collectors.toSet());
             LOG.debug("Begin copy for stage={}, table={}, queryId={}, before objectSize={}, filtered objectSize={}",
