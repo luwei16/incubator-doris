@@ -196,6 +196,9 @@ public class CloudClusterChecker extends MasterDaemon {
                 for (SelectdbCloud.NodeInfoPB node : expectedBes) {
                     String endpoint = node.getIp() + ":" + node.getHeartbeatPort();
                     Backend b = new Backend(Env.getCurrentEnv().getNextId(), node.getIp(), node.getHeartbeatPort());
+                    if (node.hasIsSmoothUpgrade()) {
+                        b.setSmoothUpgradeDst(node.getIsSmoothUpgrade());
+                    }
                     newTagMap.put(Tag.CLOUD_UNIQUE_ID, node.getCloudUniqueId());
                     b.setTagMap(newTagMap);
                     nodeMap.put(endpoint, b);

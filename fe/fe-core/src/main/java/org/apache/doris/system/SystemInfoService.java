@@ -422,14 +422,19 @@ public class SystemInfoService {
 
             String host = be.getHost();
             if (existedHostToBeList.keySet().contains(host)) {
-                /* When smooth upgrading, a new BE process will start on the existed node */
-                int beNum = existedHostToBeList.get(host).size();
-                Backend colocatedBe = existedHostToBeList.get(host).get(0);
-                if (beNum != 1) {
-                    LOG.warn("find {} co-located BEs, select the first one {} as migration src", beNum,
-                            colocatedBe.getId());
+                if (be.isSmoothUpgradeDst()) {
+                    LOG.info("a new BE process will start on the existed node for smooth upgrading");
+                    int beNum = existedHostToBeList.get(host).size();
+                    Backend colocatedBe = existedHostToBeList.get(host).get(0);
+                    if (beNum != 1) {
+                        LOG.warn("find multiple co-located BEs, num: {}, select the 1st {} as migration src", beNum,
+                                colocatedBe.getId());
+                    }
+                    colocatedBe.setSmoothUpgradeSrc(true);
+                    handleNewBeOnSameNode(colocatedBe, be);
+                } else {
+                    LOG.warn("a new BE process will start on the existed node, it should not happend unless testing");
                 }
-                handleNewBeOnSameNode(colocatedBe, be);
             }
         }
         for (Backend be : toDel) {

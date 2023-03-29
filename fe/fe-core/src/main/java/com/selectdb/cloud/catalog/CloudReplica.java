@@ -152,7 +152,7 @@ public class CloudReplica extends Replica {
         // use alive be to exec sql
         List<Backend> availableBes = new ArrayList<>();
         for (Backend be : clusterBes) {
-            if (be.isAlive()) {
+            if (be.isAlive() && !be.isSmoothUpgradeSrc()) {
                 availableBes.add(be);
             }
         }

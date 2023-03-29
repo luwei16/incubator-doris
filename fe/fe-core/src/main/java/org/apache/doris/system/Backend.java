@@ -133,6 +133,8 @@ public class Backend implements Writable {
     @SerializedName("tagMap")
     private Map<String, String> tagMap = Maps.newHashMap();
 
+    private boolean isSmoothUpgradeSrc = false; // This be process is old process when doing smooth upgrade
+    private boolean isSmoothUpgradeDst = false; // This be process is new process when doing smooth upgrade
     // Counter of heartbeat failure.
     // Once a heartbeat failed, increase this counter by one.
     // And if it reaches Config.max_backend_heartbeat_failure_tolerance_count, this backend
@@ -376,6 +378,22 @@ public class Backend implements Writable {
 
     public BackendStatus getBackendStatus() {
         return backendStatus;
+    }
+
+    public void setSmoothUpgradeSrc(boolean is) {
+        this.isSmoothUpgradeSrc = is;
+    }
+
+    public boolean isSmoothUpgradeSrc() {
+        return this.isSmoothUpgradeSrc;
+    }
+
+    public void setSmoothUpgradeDst(boolean is) {
+        this.isSmoothUpgradeDst = is;
+    }
+
+    public boolean isSmoothUpgradeDst() {
+        return this.isSmoothUpgradeDst;
     }
 
     public int getHeartbeatFailureCounter() {
