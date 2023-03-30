@@ -820,7 +820,7 @@ public class Backend implements Writable {
         @SerializedName("isLoadDisabled")
         public volatile boolean isLoadDisabled = false;
         @SerializedName("isActive")
-        public volatile boolean isActive = false;
+        public volatile boolean isActive = true;
     }
 
     public Tag getLocationTag() {
