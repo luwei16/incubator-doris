@@ -32,6 +32,8 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.metastore.api.FieldSchema;
 import org.apache.hadoop.security.UserGroupInformation;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import java.io.IOException;
 import java.util.List;
@@ -41,8 +43,10 @@ import java.util.Map;
  * External catalog for hive metastore compatible data sources.
  */
 public class HMSExternalCatalog extends ExternalCatalog {
+    private static final Logger LOG = LogManager.getLogger(HMSExternalCatalog.class);
+
     private static final int MAX_CLIENT_POOL_SIZE = 8;
-    protected PooledHiveMetaStoreClient client;
+    protected volatile PooledHiveMetaStoreClient client;
 
     /**
      * Default constructor for HMSExternalCatalog.
@@ -56,6 +60,15 @@ public class HMSExternalCatalog extends ExternalCatalog {
 
     public String getHiveMetastoreUris() {
         return catalogProperty.getOrDefault(HMSResource.HIVE_METASTORE_URIS, "");
+    }
+
+    public void refreshCatalog() {
+        LOG.info("initLocalObjectsImpl");
+        initLocalObjectsImpl();
+        if (!objectCreated) {
+            objectCreated = true;
+        }
+
     }
 
     @Override
@@ -159,5 +172,17 @@ public class HMSExternalCatalog extends ExternalCatalog {
                     true, null, field.getComment(), true, null, -1));
         }
         return tmpSchema;
+    }
+
+    @Override
+    protected boolean supportDryRun() {
+        return true;
+    }
+
+    @Override
+    protected void tryGetMetadata() {
+        initLocalObjects();
+        List<String> allDatabases = client.getAllDatabases();
+        LOG.info("TryGetMetadata:{}", allDatabases);
     }
 }
