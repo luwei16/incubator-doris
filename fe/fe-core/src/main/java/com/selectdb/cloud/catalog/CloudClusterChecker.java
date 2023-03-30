@@ -6,6 +6,7 @@ import com.selectdb.cloud.proto.SelectdbCloud.ClusterPB.Type;
 import com.selectdb.cloud.proto.SelectdbCloud.MetaServiceCode;
 
 import org.apache.doris.catalog.Env;
+import org.apache.doris.common.AnalysisException;
 import org.apache.doris.common.Config;
 import org.apache.doris.common.DdlException;
 import org.apache.doris.common.FeConstants;
@@ -137,6 +138,11 @@ public class CloudClusterChecker extends MasterDaemon {
             if (status == SelectdbCloud.NodeStatusPB.NODE_STATUS_DECOMMISSIONING) {
                 LOG.info("decommissioned backend: {} status: {}", be, status);
                 be.setDecommissioned(true);
+                try {
+                    Env.getCurrentEnv().getCloudUpgradeMgr().registerWaterShedTxnId(be.getId());
+                } catch (AnalysisException e) {
+                    LOG.warn("failed to register water shed txn id, decommission be {}", be.getId(), e);
+                }
             }
         }
     }

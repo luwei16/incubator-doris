@@ -271,6 +271,10 @@ public class Backend implements Writable {
         this.backendStatus.isActive = isActive;
     }
 
+    public boolean isActive() {
+        return this.backendStatus.isActive;
+    }
+
     // for test only
     public void updateOnce(int bePort, int httpPort, int beRpcPort) {
         if (this.bePort != bePort) {

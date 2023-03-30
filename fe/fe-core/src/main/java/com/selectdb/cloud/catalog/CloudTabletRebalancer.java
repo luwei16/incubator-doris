@@ -163,7 +163,7 @@ public class CloudTabletRebalancer extends MasterDaemon {
             for (long beId : beList) {
                 long tabletNum = beToTabletsGlobal.get(beId) == null ? 0 : beToTabletsGlobal.get(beId).size();
                 Backend backend = Env.getCurrentSystemInfo().getBackend(beId);
-                if (backend.isDecommissioned() && tabletNum == 0) {
+                if (backend.isDecommissioned() && tabletNum == 0 && !backend.isActive()) {
                     if (!beToDecommissionedTime.containsKey(beId)) {
                         SelectdbCloud.AlterClusterRequest.Builder builder =
                                 SelectdbCloud.AlterClusterRequest.newBuilder();
