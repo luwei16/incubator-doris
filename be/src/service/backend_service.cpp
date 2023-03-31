@@ -392,6 +392,10 @@ void BackendService::pre_cache_async(TPreCacheAsyncResponse& response,
     TStatus t_status;
     std::shared_ptr<PBackendService_Stub> brpc_stub =
             _exec_env->brpc_internal_client_cache()->get_new_client_no_cache(brpc_addr);
+    if (!brpc_stub) {
+        st = Status::RpcError("Address {} is wrong", brpc_addr);
+        return;
+    }
     brpc::Controller cntl;
     PGetFileCacheMetaRequest brpc_request;
     std::for_each(request.tablet_ids.cbegin(), request.tablet_ids.cend(),
