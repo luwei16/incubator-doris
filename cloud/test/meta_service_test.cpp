@@ -11,7 +11,6 @@
 #include "gen_cpp/selectdb_cloud.pb.h"
 #include "meta-service/keys.h"
 #include "meta-service/mem_txn_kv.h"
-#include "meta-service/meta_server.h"
 #include "rate-limiter/rate_limiter.h"
 #include "resource-manager/resource_manager.h"
 #include "mock_resource_manager.h"
@@ -47,7 +46,7 @@ namespace selectdb {
 std::unique_ptr<MetaServiceImpl> get_meta_service() {
     int ret = 0;
     // MemKv
-    static auto txn_kv = std::dynamic_pointer_cast<TxnKv>(std::make_shared<MemTxnKv>());
+    auto txn_kv = std::dynamic_pointer_cast<TxnKv>(std::make_shared<MemTxnKv>());
     if (txn_kv != nullptr) {
         ret = txn_kv->init();
         [&] { ASSERT_EQ(ret, 0); }();
