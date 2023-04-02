@@ -1156,8 +1156,8 @@ TEST(MetaServiceTest, CheckTxnConflictTest) {
     txn_info_pb.set_db_id(db_id);
     txn_info_pb.set_label(label);
     txn_info_pb.add_table_ids(table_id);
-    begin_txn_req.mutable_txn_info()->CopyFrom(txn_info_pb);
     txn_info_pb.set_timeout_ms(36000);
+    begin_txn_req.mutable_txn_info()->CopyFrom(txn_info_pb);
 
     meta_service->begin_txn(reinterpret_cast<::google::protobuf::RpcController*>(&begin_txn_cntl),
                             &begin_txn_req, &begin_txn_res, nullptr);

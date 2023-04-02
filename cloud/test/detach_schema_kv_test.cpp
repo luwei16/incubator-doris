@@ -235,6 +235,7 @@ static void begin_txn(MetaServiceImpl* meta_service, int64_t db_id, const std::s
     txn_info->set_db_id(db_id);
     txn_info->set_label(label);
     txn_info->add_table_ids(table_id);
+    txn_info->set_timeout_ms(36000);
     meta_service->begin_txn(&cntl, &req, &res, nullptr);
     ASSERT_EQ(res.status().code(), MetaServiceCode::OK) << label;
     ASSERT_TRUE(res.has_txn_id()) << label;

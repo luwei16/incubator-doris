@@ -93,6 +93,7 @@ target_link_libraries(mem_txn_kv_test
 
 target_link_libraries(recycler_test
     ${TEST_LINK_LIBS} 
+    ${FDB_LINKER_FLAGS}
 )
 
 install(FILES
