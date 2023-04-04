@@ -228,6 +228,9 @@ public class BrokerLoadJob extends BulkLoadJob {
                     task.init(loadId, attachment.getFileStatusByTable(aggKey),
                             attachment.getFileNumByTable(aggKey), getUserInfo());
                 } else {
+                    if (Strings.isNullOrEmpty(clusterId)) {
+                        throw new UserException("can not get a valid cluster");
+                    }
                     task.init(loadId, attachment.getFileStatusByTable(aggKey),
                             attachment.getFileNumByTable(aggKey), getUserInfo(), clusterId);
                 }

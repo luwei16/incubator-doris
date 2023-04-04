@@ -302,8 +302,6 @@ public class CloudTabletRebalancer extends MasterDaemon {
             Map<Long, Map<Long, List<Tablet>>> indexToTablets = partitionEntry.getValue();
             // balance all index of a partition
             for (Map.Entry<Long, Map<Long, List<Tablet>>> entry : indexToTablets.entrySet()) {
-                LOG.info("balance partttion {} Index {}, cluster {}", partitionEntry.getKey(),
-                        entry.getKey(), clusterId);
                 // balance a index
                 balanceImpl(bes, clusterId, entry.getValue(), false);
             }
@@ -395,9 +393,9 @@ public class CloudTabletRebalancer extends MasterDaemon {
                 indexBalanced = false;
                 // update clusterToBackens
                 cloudReplica.updateClusterToBe(clusterId, destBe);
-                LOG.info("transfer {} from {} to {} cluster {} minNum {} maxNum {} beNum {} totalTabletsNum {} ",
+                LOG.info("transfer {} from {} to {} cluster {} minNum {} maxNum {} beNum {} totalTabletsNum {} part {}",
                          pickedTablet.getId(), srcBe, destBe, clusterId,
-                         minTabletsNum, maxTabletsNum, beNum, totalTabletsNum);
+                         minTabletsNum, maxTabletsNum, beNum, totalTabletsNum, cloudReplica.getPartitionId());
 
                 beToTabletsGlobal.get(srcBe).remove(randomIndex);
                 beToTabletsGlobal.putIfAbsent(destBe, new ArrayList<Tablet>());

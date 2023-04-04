@@ -115,6 +115,7 @@ public abstract class BulkLoadJob extends LoadJob {
                 String clusterName = context.getCloudCluster();
                 if (Strings.isNullOrEmpty(clusterName)) {
                     LOG.warn("cluster name is null");
+                    return;
                 }
 
                 this.clusterId = Env.getCurrentSystemInfo().getCloudClusterIdByName(clusterName);
