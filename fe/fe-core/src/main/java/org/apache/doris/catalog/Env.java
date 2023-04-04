@@ -1494,6 +1494,7 @@ public class Env {
 
         if (Config.isCloudMode()) {
             cloudClusterCheck.start();
+            upgradeMgr.start();
         }
 
         // heartbeat mgr

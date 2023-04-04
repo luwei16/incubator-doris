@@ -69,6 +69,10 @@ class ConfigOptions {
     static Option multiClusterBesOpt
     static Option metaServiceTokenOpt
     static Option multiClusterInstanceOpt
+    static Option upgradeNewBeIpOpt
+    static Option upgradeNewBeHbPortOpt
+    static Option upgradeNewBeHttpPortOpt
+    static Option upgradeNewBeUniqueIdOpt
     static Option stageIamEndpointOpt
     static Option stageIamRegionOpt
     static Option stageIamBucketOpt
@@ -403,6 +407,26 @@ class ConfigOptions {
                 .hasArg(false)
                 .desc("multi cluster instance")
                 .build()
+        upgradeNewBeIpOpt = Option.builder("upgradeNewBeIp")
+                .required(false)
+                .hasArg(false)
+                .desc("new BE ip")
+                .build()
+        upgradeNewBeHbPortOpt = Option.builder("upgradeNewBeHbPort")
+                .required(false)
+                .hasArg(false)
+                .desc("new BE heartbeat port")
+                .build()
+        upgradeNewBeHttpPortOpt = Option.builder("upgradeNewBeHttpPort")
+                .required(false)
+                .hasArg(false)
+                .desc("new BE http port")
+                .build()
+        upgradeNewBeUniqueIdOpt = Option.builder("upgradeNewBeUniqueId")
+                .required(false)
+                .hasArg(false)
+                .desc("new BE cloud unique id")
+                .build()
         stageIamEndpointOpt = Option.builder("stageIamEndpoint")
                 .required(false)
                 .hasArg(false)
@@ -487,6 +511,10 @@ class ConfigOptions {
                 .addOption(multiClusterBesOpt)
                 .addOption(metaServiceTokenOpt)
                 .addOption(multiClusterInstanceOpt)
+                .addOption(upgradeNewBeIpOpt)
+                .addOption(upgradeNewBeHbPortOpt)
+                .addOption(upgradeNewBeHttpPortOpt)
+                .addOption(upgradeNewBeUniqueIdOpt)
                 .addOption(stageIamEndpointOpt)
                 .addOption(stageIamRegionOpt)
                 .addOption(stageIamBucketOpt)

@@ -64,7 +64,7 @@ public class CloudUpgradeMgr extends MasterDaemon {
                 }
                 try {
                     isFinished = Env.getCurrentGlobalTransactionMgr().isPreviousTransactionsFinished(
-                        txnpair.first, txnpair.second, tableIdList);
+                        txnpair.second, txnpair.first, tableIdList);
                 } catch (AnalysisException e) {
                     throw new RuntimeException(e);
                 }

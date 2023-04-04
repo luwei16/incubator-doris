@@ -96,6 +96,10 @@ class Config {
     public String multiClusterBes
     public String metaServiceToken
     public String multiClusterInstance
+    public String upgradeNewBeIp
+    public String upgradeNewBeHbPort
+    public String upgradeNewBeHttpPort
+    public String upgradeNewBeUniqueId
 
     public String stageIamEndpoint
     public String stageIamRegion
@@ -116,6 +120,7 @@ class Config {
            String dataPath, String realDataPath, String sf1DataPath, String cacheDataPath, String testGroups,
            String excludeGroups, String testSuites, String excludeSuites, String testDirectories, String excludeDirectories,
            String pluginPath, String multiClusterBes, String metaServiceToken, String multiClusterInstance,
+           String upgradeNewBeIp, String upgradeNewBeHbPort, String upgradeNewBeHttpPort, String upgradeNewBeUniqueId,
            String stageIamEndpoint, String stageIamRegion, String stageIamBucket, String stageIamPolicy,
            String stageIamRole, String stageIamArn, String stageIamAk, String stageIamSk, String stageIamUserId) {
         this.defaultDb = defaultDb
@@ -147,6 +152,10 @@ class Config {
         this.multiClusterBes = multiClusterBes
         this.metaServiceToken = metaServiceToken
         this.multiClusterInstance = multiClusterInstance
+        this.upgradeNewBeIp = upgradeNewBeIp
+        this.upgradeNewBeHbPort = upgradeNewBeHbPort
+        this.upgradeNewBeHttpPort = upgradeNewBeHttpPort
+        this.upgradeNewBeUniqueId = upgradeNewBeUniqueId
         this.stageIamEndpoint = stageIamEndpoint
         this.stageIamRegion = stageIamRegion
         this.stageIamBucket = stageIamBucket
@@ -265,6 +274,18 @@ class Config {
         config.multiClusterInstance = cmd.getOptionValue(multiClusterInstanceOpt, config.multiClusterInstance)
         log.info("multiClusterInstance is ${config.multiClusterInstance}".toString())
 
+        config.upgradeNewBeIp = cmd.getOptionValue(upgradeNewBeIpOpt, config.upgradeNewBeIp)
+        log.info("upgradeNewBeIp is ${config.upgradeNewBeIp}".toString())
+
+        config.upgradeNewBeHbPort = cmd.getOptionValue(upgradeNewBeHbPortOpt, config.upgradeNewBeHbPort)
+        log.info("upgradeNewBeHbPort is ${config.upgradeNewBeHbPort}".toString())
+
+        config.upgradeNewBeHttpPort = cmd.getOptionValue(upgradeNewBeHttpPortOpt, config.upgradeNewBeHttpPort)
+        log.info("upgradeNewBeHttpPort is ${config.upgradeNewBeHttpPort}".toString())
+
+        config.upgradeNewBeUniqueId = cmd.getOptionValue(upgradeNewBeUniqueIdOpt, config.upgradeNewBeUniqueId)
+        log.info("upgradeNewBeUniqueId is ${config.upgradeNewBeUniqueId}".toString())
+
         config.stageIamEndpoint = cmd.getOptionValue(stageIamEndpointOpt, config.stageIamEndpoint)
         log.info("stageIamEndpoint is ${config.stageIamEndpoint}".toString())
         config.stageIamRegion = cmd.getOptionValue(stageIamRegionOpt, config.stageIamRegion)
@@ -359,6 +380,10 @@ class Config {
             configToString(obj.multiClusterBes),
             configToString(obj.metaServiceToken),
             configToString(obj.multiClusterInstance),
+            configToString(obj.upgradeNewBeIp),
+            configToString(obj.upgradeNewBeHbPort),
+            configToString(obj.upgradeNewBeHttpPort),
+            configToString(obj.upgradeNewBeUniqueId),
             configToString(obj.stageIamEndpoint),
             configToString(obj.stageIamRegion),
             configToString(obj.stageIamBucket),
@@ -580,7 +605,7 @@ class Config {
             log.info("Set actionParallel to 10 because not specify.".toString())
         }
     }
-    
+
     static String configToString(Object obj) {
         return (obj instanceof String || obj instanceof GString) ? obj.toString() : null
     }
