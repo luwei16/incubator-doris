@@ -136,12 +136,14 @@ public class CloudClusterChecker extends MasterDaemon {
             Backend be = currentMap.get(endpoint);
 
             if (status == SelectdbCloud.NodeStatusPB.NODE_STATUS_DECOMMISSIONING) {
-                LOG.info("decommissioned backend: {} status: {}", be, status);
-                be.setDecommissioned(true);
-                try {
-                    Env.getCurrentEnv().getCloudUpgradeMgr().registerWaterShedTxnId(be.getId());
-                } catch (AnalysisException e) {
-                    LOG.warn("failed to register water shed txn id, decommission be {}", be.getId(), e);
+                if (!be.isDecommissioned()) {
+                    LOG.info("decommissioned backend: {} status: {}", be, status);
+                    try {
+                        Env.getCurrentEnv().getCloudUpgradeMgr().registerWaterShedTxnId(be.getId());
+                    } catch (AnalysisException e) {
+                        LOG.warn("failed to register water shed txn id, decommission be {}", be.getId(), e);
+                    }
+                    be.setDecommissioned(true);
                 }
             }
         }
