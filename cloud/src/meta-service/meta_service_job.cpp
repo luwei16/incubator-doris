@@ -645,9 +645,9 @@ void process_compaction_job(MetaServiceCode& code, std::string& msg, std::string
             auto& recycle_key = *obj_pool.add(new std::string(
                     recycle_rowset_key({instance_id, tablet_id, rs.rowset_id_v2()})));
             RecycleRowsetPB recycle_rowset;
-            recycle_rowset.set_tablet_id(tablet_id);
-            recycle_rowset.set_resource_id(rs.resource_id());
             recycle_rowset.set_creation_time(now);
+            recycle_rowset.mutable_rowset_meta()->CopyFrom(rs);
+            recycle_rowset.set_type(RecycleRowsetPB::COMPACT);
             auto& recycle_val = *obj_pool.add(new std::string(recycle_rowset.SerializeAsString()));
             txn->put(recycle_key, recycle_val);
             INSTANCE_LOG(INFO) << "put recycle rowset, tablet_id=" << tablet_id
@@ -923,15 +923,15 @@ void process_schema_change_job(MetaServiceCode& code, std::string& msg, std::str
 
             num_remove_rows += rs.num_rows();
             size_remove_rowsets += rs.data_disk_size();
-            num_remove_rowsets += 1;
+            ++num_remove_rowsets;
             num_remove_segments += rs.num_segments();
 
             auto& recycle_key = *obj_pool.add(new std::string(
                     recycle_rowset_key({instance_id, new_tablet_id, rs.rowset_id_v2()})));
             RecycleRowsetPB recycle_rowset;
-            recycle_rowset.set_tablet_id(new_tablet_id);
-            recycle_rowset.set_resource_id(rs.resource_id());
             recycle_rowset.set_creation_time(now);
+            recycle_rowset.mutable_rowset_meta()->CopyFrom(rs);
+            recycle_rowset.set_type(RecycleRowsetPB::DROP);
             auto& recycle_val = *obj_pool.add(new std::string(recycle_rowset.SerializeAsString()));
             txn->put(recycle_key, recycle_val);
             INSTANCE_LOG(INFO) << "put recycle rowset, tablet_id=" << new_tablet_id

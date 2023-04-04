@@ -151,6 +151,12 @@ void instance_key(const InstanceKeyInfo& in, std::string* out) {
 // Transaction keys
 //==============================================================================
 
+std::string txn_key_prefix(std::string_view instance_id) {
+    std::string out;
+    encode_prefix(TxnIndexKeyInfo {instance_id, 0}, &out);
+    return out;
+}
+
 void txn_label_key(const TxnLabelKeyInfo& in, std::string* out) {
     encode_prefix(in, out);                 // 0x01 "txn" ${instance_id}
     encode_bytes(TXN_KEY_INFIX_LABEL, out); // "txn_index"
@@ -194,6 +200,12 @@ void version_key(const VersionKeyInfo& in, std::string* out) {
 // Meta keys
 //==============================================================================
 
+std::string meta_key_prefix(std::string_view instance_id) {
+    std::string out;
+    encode_prefix(MetaTabletIdxKeyInfo {instance_id, 0}, &out);
+    return out;
+}
+
 void meta_rowset_key(const MetaRowsetKeyInfo& in, std::string* out) {
     encode_prefix(in, out);                   // 0x01 "meta" ${instance_id}
     encode_bytes(META_KEY_INFIX_ROWSET, out); // "rowset"
@@ -234,6 +246,12 @@ void meta_schema_key(const MetaSchemaKeyInfo& in, std::string* out) {
 // Recycle keys
 //==============================================================================
 
+std::string recycle_key_prefix(std::string_view instance_id) {
+    std::string out;
+    encode_prefix(RecycleIndexKeyInfo {instance_id, 0}, &out);
+    return out;
+}
+
 void recycle_index_key(const RecycleIndexKeyInfo& in, std::string* out) {
     encode_prefix(in, out);                     // 0x01 "recycle" ${instance_id}
     encode_bytes(RECYCLE_KEY_INFIX_INDEX, out); // "index"
@@ -266,6 +284,10 @@ void recycle_stage_key(const RecycleStageKeyInfo& in, std::string* out) {
     encode_bytes(std::get<1>(in), out); // stage_id
 }
 
+//==============================================================================
+// Stats keys
+//==============================================================================
+
 void stats_tablet_key(const StatsTabletKeyInfo& in, std::string* out) {
     encode_prefix(in, out);                    // 0x01 "stats" ${instance_id}
     encode_bytes(STATS_KEY_INFIX_TABLET, out); // "tablet"
@@ -275,6 +297,10 @@ void stats_tablet_key(const StatsTabletKeyInfo& in, std::string* out) {
     encode_int64(std::get<4>(in), out);        // tablet_id
 }
 
+//==============================================================================
+// Job keys
+//==============================================================================
+
 void job_tablet_key(const JobTabletKeyInfo& in, std::string* out) {
     encode_prefix(in, out);                  // 0x01 "job" ${instance_id}
     encode_bytes(JOB_KEY_INFIX_TABLET, out); // "tablet"
@@ -282,6 +308,21 @@ void job_tablet_key(const JobTabletKeyInfo& in, std::string* out) {
     encode_int64(std::get<2>(in), out);      // index_id
     encode_int64(std::get<3>(in), out);      // partition_id
     encode_int64(std::get<4>(in), out);      // tablet_id
+}
+
+void job_recycle_key(const JobRecycleKeyInfo& in, std::string* out) {
+    encode_prefix(in, out);       // 0x01 "job" ${instance_id}
+    encode_bytes("recycle", out); // "recycle"
+}
+
+//==============================================================================
+// Copy keys
+//==============================================================================
+
+std::string copy_key_prefix(std::string_view instance_id) {
+    std::string out;
+    encode_prefix(CopyJobKeyInfo {instance_id, "", 0, "", 0}, &out);
+    return out;
 }
 
 void copy_job_key(const CopyJobKeyInfo& in, std::string* out) {
@@ -336,11 +377,6 @@ std::string system_meta_service_encryption_key_info_key() {
 //==============================================================================
 // Other keys
 //==============================================================================
-
-void job_recycle_key(const JobRecycleKeyInfo& in, std::string* out) {
-    encode_prefix(in, out);                     // 0x01 "job" ${instance_id}
-    encode_bytes("recycle", out);               // "recycle"
-}
 
 //==============================================================================
 // Decode keys

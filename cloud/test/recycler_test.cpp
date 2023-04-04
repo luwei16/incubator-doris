@@ -23,7 +23,6 @@
 static const std::string instance_id = "instance_id_recycle_test";
 static constexpr int64_t table_id = 10086;
 static int64_t current_time = 0;
-static int64_t cnt = 0;
 
 int main(int argc, char** argv) {
     auto conf_file = "selectdb_cloud.conf";
@@ -63,24 +62,50 @@ TEST(RecyclerTest, whitelist) {
     EXPECT_TRUE(filter.filter_out("instance2"));
 }
 
-static int create_prepared_rowset(TxnKv* txn_kv, ObjStoreAccessor* accessor,
-                                  const std::string& resource_id, int64_t tablet_id,
-                                  int num_segments = 1) {
-    ++cnt;
+extern std::string segment_path(int64_t tablet_id, const std::string& rowset_id,
+                                int64_t segment_id);
+extern std::string inverted_index_path(int64_t tablet_id, const std::string& rowset_id,
+                                       int64_t segment_id, int64_t index_id);
+extern std::string tablet_path_prefix(int64_t tablet_id);
 
+static std::string next_rowset_id() {
+    static int64_t cnt = 0;
+    return std::to_string(++cnt);
+}
+
+static int create_recycle_rowset(TxnKv* txn_kv, ObjStoreAccessor* accessor,
+                                 const std::string& resource_id, int64_t tablet_id,
+                                 RecycleRowsetPB::Type type, int num_segments = 1,
+                                 int num_inverted_indexes = 1) {
     std::string key;
     std::string val;
 
-    char rowset_id[50];
-    snprintf(rowset_id, sizeof(rowset_id), "%048ld", cnt);
-
+    auto rowset_id = next_rowset_id();
     RecycleRowsetKeyInfo key_info {instance_id, tablet_id, rowset_id};
     recycle_rowset_key(key_info, &key);
 
     RecycleRowsetPB rowset_pb;
-    rowset_pb.set_tablet_id(tablet_id);
-    rowset_pb.set_resource_id(resource_id);
-    rowset_pb.set_creation_time(current_time);
+    if (type != RecycleRowsetPB::UNKNOWN) {
+        rowset_pb.set_creation_time(current_time);
+        rowset_pb.set_type(type);
+        auto rs_meta = rowset_pb.mutable_rowset_meta();
+        rs_meta->set_rowset_id(0); // useless but required
+        rs_meta->set_rowset_id_v2(rowset_id);
+        rs_meta->set_num_segments(num_segments);
+        rs_meta->set_tablet_id(tablet_id);
+        rs_meta->set_resource_id(resource_id);
+        if (num_inverted_indexes > 0) {
+            auto schema = rs_meta->mutable_tablet_schema();
+            for (int i = 0; i < num_inverted_indexes; ++i) {
+                schema->add_index()->set_index_id(i);
+            }
+        }
+
+    } else { // old version RecycleRowsetPB
+        rowset_pb.set_tablet_id(tablet_id);
+        rowset_pb.set_resource_id(resource_id);
+        rowset_pb.set_creation_time(current_time);
+    }
     rowset_pb.SerializeToString(&val);
 
     std::unique_ptr<Transaction> txn;
@@ -93,23 +118,23 @@ static int create_prepared_rowset(TxnKv* txn_kv, ObjStoreAccessor* accessor,
     }
 
     for (int i = 0; i < num_segments; ++i) {
-        auto path = fmt::format("data/{}/{}_{}.dat", tablet_id, rowset_id, i);
+        auto path = segment_path(tablet_id, rowset_id, i);
         accessor->put_object(path, path);
+        for (int j = 0; j < num_inverted_indexes; ++j) {
+            auto path = inverted_index_path(tablet_id, rowset_id, i, j);
+            accessor->put_object(path, path);
+        }
     }
     return 0;
 }
 
 static int create_tmp_rowset(TxnKv* txn_kv, ObjStoreAccessor* accessor,
                              const std::string& resource_id, int64_t txn_id, int64_t tablet_id,
-                             int num_segments = 1) {
-    ++cnt;
-
+                             int num_segments = 1, int num_inverted_indexes = 1) {
     std::string key;
     std::string val;
 
-    char rowset_id[50];
-    snprintf(rowset_id, sizeof(rowset_id), "%048ld", cnt);
-
+    auto rowset_id = next_rowset_id();
     MetaRowsetTmpKeyInfo key_info {instance_id, txn_id, tablet_id};
     meta_rowset_tmp_key(key_info, &key);
 
@@ -120,6 +145,12 @@ static int create_tmp_rowset(TxnKv* txn_kv, ObjStoreAccessor* accessor,
     rowset_pb.set_tablet_id(tablet_id);
     rowset_pb.set_resource_id(resource_id);
     rowset_pb.set_creation_time(current_time);
+    if (num_inverted_indexes > 0) {
+        auto schema = rowset_pb.mutable_tablet_schema();
+        for (int i = 0; i < num_inverted_indexes; ++i) {
+            schema->add_index()->set_index_id(i);
+        }
+    }
     rowset_pb.SerializeToString(&val);
 
     std::unique_ptr<Transaction> txn;
@@ -132,24 +163,25 @@ static int create_tmp_rowset(TxnKv* txn_kv, ObjStoreAccessor* accessor,
     }
 
     for (int i = 0; i < num_segments; ++i) {
-        auto path = fmt::format("data/{}/{}_{}.dat", tablet_id, rowset_id, i);
+        auto path = segment_path(tablet_id, rowset_id, i);
         accessor->put_object(path, path);
+        for (int j = 0; j < num_inverted_indexes; ++j) {
+            auto path = inverted_index_path(tablet_id, rowset_id, i, j);
+            accessor->put_object(path, path);
+        }
     }
     return 0;
 }
 
 static int create_committed_rowset(TxnKv* txn_kv, ObjStoreAccessor* accessor,
                                    const std::string& resource_id, int64_t tablet_id,
-                                   int num_segments = 1) {
-    ++cnt;
-
+                                   int64_t version, int num_segments = 1,
+                                   int num_inverted_indexes = 1) {
     std::string key;
     std::string val;
 
-    char rowset_id[50];
-    snprintf(rowset_id, sizeof(rowset_id), "%048ld", cnt);
-
-    MetaRowsetKeyInfo key_info {instance_id, tablet_id, cnt};
+    auto rowset_id = next_rowset_id();
+    MetaRowsetKeyInfo key_info {instance_id, tablet_id, version};
     meta_rowset_key(key_info, &key);
 
     doris::RowsetMetaPB rowset_pb;
@@ -159,6 +191,12 @@ static int create_committed_rowset(TxnKv* txn_kv, ObjStoreAccessor* accessor,
     rowset_pb.set_tablet_id(tablet_id);
     rowset_pb.set_resource_id(resource_id);
     rowset_pb.set_creation_time(current_time);
+    if (num_inverted_indexes > 0) {
+        auto schema = rowset_pb.mutable_tablet_schema();
+        for (int i = 0; i < num_inverted_indexes; ++i) {
+            schema->add_index()->set_index_id(i);
+        }
+    }
     rowset_pb.SerializeToString(&val);
 
     std::unique_ptr<Transaction> txn;
@@ -171,39 +209,41 @@ static int create_committed_rowset(TxnKv* txn_kv, ObjStoreAccessor* accessor,
     }
 
     for (int i = 0; i < num_segments; ++i) {
-        auto path = fmt::format("data/{}/{}_{}.dat", tablet_id, rowset_id, i);
+        auto path = segment_path(tablet_id, rowset_id, i);
         accessor->put_object(path, path);
+        for (int j = 0; j < num_inverted_indexes; ++j) {
+            auto path = inverted_index_path(tablet_id, rowset_id, i, j);
+            accessor->put_object(path, path);
+        }
     }
     return 0;
 }
 
-static int create_tablet(TxnKv* txn_kv, ObjStoreAccessor* accessor, int64_t index_id,
-                         int64_t partition_id, int64_t tablet_id) {
-    std::string key;
-    std::string val;
-
-    MetaTabletKeyInfo key_info {instance_id, table_id, index_id, partition_id, tablet_id};
-    meta_tablet_key(key_info, &key);
-
-    doris::TabletMetaPB tablet_pb;
-    tablet_pb.set_index_id(index_id);
-    tablet_pb.set_partition_id(partition_id);
-    tablet_pb.set_tablet_id(tablet_id);
-    tablet_pb.SerializeToString(&val);
-
+static int create_tablet(TxnKv* txn_kv, int64_t index_id, int64_t partition_id, int64_t tablet_id) {
     std::unique_ptr<Transaction> txn;
     if (txn_kv->create_txn(&txn) != 0) {
         return -1;
     }
+    auto key = meta_tablet_key({instance_id, table_id, index_id, partition_id, tablet_id});
+    doris::TabletMetaPB tablet_meta;
+    tablet_meta.set_tablet_id(tablet_id);
+    auto val = tablet_meta.SerializeAsString();
     txn->put(key, val);
+    key = meta_tablet_idx_key({instance_id, tablet_id});
+    txn->put(key, val); // val is not necessary
+    key = stats_tablet_key({instance_id, table_id, index_id, partition_id, tablet_id});
+    txn->put(key, val); // val is not necessary
+    key = job_tablet_key({instance_id, table_id, index_id, partition_id, tablet_id});
+    txn->put(key, val); // val is not necessary
     if (txn->commit() != 0) {
         return -1;
     }
     return 0;
 }
 
-static int create_prepared_partiton(TxnKv* txn_kv, ObjStoreAccessor* accessor, int64_t partition_id,
-                                    const std::vector<int64_t>& index_ids) {
+static int create_recycle_partiton(TxnKv* txn_kv, int64_t partition_id,
+                                   const std::vector<int64_t>& index_ids,
+                                   RecyclePartitionPB::Type type) {
     std::string key;
     std::string val;
 
@@ -217,6 +257,7 @@ static int create_prepared_partiton(TxnKv* txn_kv, ObjStoreAccessor* accessor, i
         partition_pb.add_index_id(index_id);
     }
     partition_pb.set_creation_time(current_time);
+    partition_pb.set_type(type);
     partition_pb.SerializeToString(&val);
 
     std::unique_ptr<Transaction> txn;
@@ -230,7 +271,7 @@ static int create_prepared_partiton(TxnKv* txn_kv, ObjStoreAccessor* accessor, i
     return 0;
 }
 
-static int create_prepared_index(TxnKv* txn_kv, ObjStoreAccessor* accessor, int64_t index_id) {
+static int create_recycle_index(TxnKv* txn_kv, int64_t index_id, RecycleIndexPB::Type type) {
     std::string key;
     std::string val;
 
@@ -241,6 +282,7 @@ static int create_prepared_index(TxnKv* txn_kv, ObjStoreAccessor* accessor, int6
 
     index_pb.set_table_id(table_id);
     index_pb.set_creation_time(current_time);
+    index_pb.set_type(type);
     index_pb.SerializeToString(&val);
 
     std::unique_ptr<Transaction> txn;
@@ -469,6 +511,7 @@ TEST(RecyclerTest, recycle_empty) {
     obj_info->set_prefix("recycle_empty");
 
     InstanceRecycler recycler(txn_kv, instance);
+    ASSERT_EQ(recycler.init(), 0);
 
     recycler.recycle_rowsets();
 }
@@ -490,18 +533,83 @@ TEST(RecyclerTest, recycle_rowsets) {
     obj_info->set_prefix("recycle_rowsets");
 
     InstanceRecycler recycler(txn_kv, instance);
+    ASSERT_EQ(recycler.init(), 0);
 
     auto accessor = recycler.accessor_map_.begin()->second;
-    for (int i = 0; i < 500; ++i) {
-        create_prepared_rowset(txn_kv.get(), accessor.get(), "recycle_rowsets", 10010, 5);
+    for (int i = 0; i < 2000; ++i) {
+        create_recycle_rowset(
+                txn_kv.get(), accessor.get(), "recycle_rowsets", 10010,
+                static_cast<RecycleRowsetPB::Type>(i % (RecycleRowsetPB::Type_MAX + 1)), 5, 3);
     }
 
     recycler.recycle_rowsets();
 
-    // check rowset does not exist on s3
-    std::vector<std::string> existed_segments;
-    ASSERT_EQ(0, accessor->list("data/", &existed_segments));
-    ASSERT_TRUE(existed_segments.empty());
+    // check rowset does not exist on obj store
+    std::vector<std::string> files;
+    ASSERT_EQ(0, accessor->list(tablet_path_prefix(10010), &files));
+    ASSERT_TRUE(files.empty());
+    // check all recycle rowset kv have been deleted
+    std::unique_ptr<Transaction> txn;
+    ASSERT_EQ(txn_kv->create_txn(&txn), 0);
+    std::unique_ptr<RangeGetIterator> it;
+    auto begin_key = recycle_key_prefix(instance_id);
+    auto end_key = recycle_key_prefix(instance_id + '\xff');
+    ASSERT_EQ(txn->get(begin_key, end_key, &it), 0);
+    ASSERT_EQ(it->size(), 0);
+}
+
+TEST(RecyclerTest, bench_recycle_rowsets) {
+    config::retention_seconds = 0;
+    auto txn_kv = std::make_shared<MemTxnKv>();
+    ASSERT_EQ(txn_kv->init(), 0);
+
+    InstanceInfoPB instance;
+    instance.set_instance_id(instance_id);
+    auto obj_info = instance.add_obj_info();
+    obj_info->set_id("recycle_rowsets");
+    obj_info->set_ak(config::test_s3_ak);
+    obj_info->set_sk(config::test_s3_sk);
+    obj_info->set_endpoint(config::test_s3_endpoint);
+    obj_info->set_region(config::test_s3_region);
+    obj_info->set_bucket(config::test_s3_bucket);
+    obj_info->set_prefix("recycle_rowsets");
+
+    InstanceRecycler recycler(txn_kv, instance);
+    ASSERT_EQ(recycler.init(), 0);
+
+    auto sp = SyncPoint::get_instance();
+    sp->clear_all_call_backs();
+    sp->set_call_back("memkv::Transaction::get", [](void* limit) {
+        *((int*)limit) = 100;
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    });
+    sp->set_call_back("MockAccessor::delete_objects",
+                      [&](void* p) { std::this_thread::sleep_for(std::chrono::milliseconds(20)); });
+    sp->set_call_back("MockAccessor::delete_objects_by_prefix",
+                      [&](void* p) { std::this_thread::sleep_for(std::chrono::milliseconds(20)); });
+    sp->enable_processing();
+
+    auto accessor = recycler.accessor_map_.begin()->second;
+    for (int i = 0; i < 2000; ++i) {
+        create_recycle_rowset(txn_kv.get(), accessor.get(), "recycle_rowsets", 10010,
+                              i % 10 < 2 ? RecycleRowsetPB::PREPARE : RecycleRowsetPB::COMPACT, 5,
+                              3);
+    }
+
+    recycler.recycle_rowsets();
+
+    // check rowset does not exist on obj store
+    std::vector<std::string> files;
+    ASSERT_EQ(0, accessor->list(tablet_path_prefix(10010), &files));
+    ASSERT_TRUE(files.empty());
+    // check all recycle rowset kv have been deleted
+    std::unique_ptr<Transaction> txn;
+    ASSERT_EQ(txn_kv->create_txn(&txn), 0);
+    std::unique_ptr<RangeGetIterator> it;
+    auto begin_key = recycle_key_prefix(instance_id);
+    auto end_key = recycle_key_prefix(instance_id + '\xff');
+    ASSERT_EQ(txn->get(begin_key, end_key, &it), 0);
+    ASSERT_EQ(it->size(), 0);
 }
 
 TEST(RecyclerTest, recycle_tmp_rowsets) {
@@ -521,12 +629,13 @@ TEST(RecyclerTest, recycle_tmp_rowsets) {
     obj_info->set_prefix("recycle_tmp_rowsets");
 
     InstanceRecycler recycler(txn_kv, instance);
+    ASSERT_EQ(recycler.init(), 0);
 
     auto accessor = recycler.accessor_map_.begin()->second;
     int64_t txn_id_base = 114115;
     int64_t tablet_id_base = 10015;
     for (int i = 0; i < 100; ++i) {
-        for (int j = 0; j < 5; ++j) {
+        for (int j = 0; j < 20; ++j) {
             create_tmp_rowset(txn_kv.get(), accessor.get(), "recycle_tmp_rowsets", txn_id_base + i,
                               tablet_id_base + j, 5);
         }
@@ -534,13 +643,18 @@ TEST(RecyclerTest, recycle_tmp_rowsets) {
 
     recycler.recycle_tmp_rowsets();
 
-    // check rowset does not exist on s3
-    std::vector<std::string> existed_segments;
-    ASSERT_EQ(0, accessor->list("data/", &existed_segments));
-    for (auto& path : existed_segments) {
-        std::cout << path << std::endl;
-    }
-    ASSERT_TRUE(existed_segments.empty());
+    // check rowset does not exist on obj store
+    std::vector<std::string> files;
+    ASSERT_EQ(0, accessor->list("data/", &files));
+    ASSERT_TRUE(files.empty());
+    // check all tmp rowset kv have been deleted
+    std::unique_ptr<Transaction> txn;
+    ASSERT_EQ(txn_kv->create_txn(&txn), 0);
+    std::unique_ptr<RangeGetIterator> it;
+    auto begin_key = meta_key_prefix(instance_id);
+    auto end_key = meta_key_prefix(instance_id + '\xff');
+    ASSERT_EQ(txn->get(begin_key, end_key, &it), 0);
+    ASSERT_EQ(it->size(), 0);
 }
 
 TEST(RecyclerTest, recycle_tablet) {
@@ -559,22 +673,49 @@ TEST(RecyclerTest, recycle_tablet) {
     obj_info->set_prefix("recycle_tablet");
 
     InstanceRecycler recycler(txn_kv, instance);
+    ASSERT_EQ(recycler.init(), 0);
 
     auto accessor = recycler.accessor_map_.begin()->second;
-    create_tablet(txn_kv.get(), accessor.get(), 20010, 30010, 10020);
+    create_tablet(txn_kv.get(), 20010, 30010, 10020);
     for (int i = 0; i < 500; ++i) {
-        create_prepared_rowset(txn_kv.get(), accessor.get(), "recycle_tablet", 10020);
+        create_recycle_rowset(
+                txn_kv.get(), accessor.get(), "recycle_tablet", 10020,
+                static_cast<RecycleRowsetPB::Type>(i % (RecycleRowsetPB::Type_MAX + 1)), 5, 3);
     }
     for (int i = 0; i < 500; ++i) {
-        create_committed_rowset(txn_kv.get(), accessor.get(), "recycle_tablet", 10020);
+        create_committed_rowset(txn_kv.get(), accessor.get(), "recycle_tablet", 10020, i);
     }
 
-    ASSERT_EQ(0, recycler.recycle_tablet(10020));
+    ASSERT_EQ(0, recycler.recycle_tablets(table_id, 20010));
 
     // check rowset does not exist on s3
-    std::vector<std::string> existed_segments;
-    ASSERT_EQ(0, accessor->list("data/", &existed_segments));
-    ASSERT_TRUE(existed_segments.empty());
+    std::vector<std::string> files;
+    ASSERT_EQ(0, accessor->list(tablet_path_prefix(10020), &files));
+    ASSERT_TRUE(files.empty());
+    // check all related kv have been deleted
+    std::unique_ptr<Transaction> txn;
+    ASSERT_EQ(txn_kv->create_txn(&txn), 0);
+    std::unique_ptr<RangeGetIterator> it;
+    // meta_tablet_key, meta_tablet_idx_key, meta_rowset_key
+    auto begin_key = meta_key_prefix(instance_id);
+    auto end_key = meta_key_prefix(instance_id + '\xff');
+    ASSERT_EQ(txn->get(begin_key, end_key, &it), 0);
+    ASSERT_EQ(it->size(), 0);
+    // job_tablet_key
+    begin_key = job_tablet_key({instance_id, table_id, 0, 0, 0});
+    end_key = job_tablet_key({instance_id, table_id + 1, 0, 0, 0});
+    ASSERT_EQ(txn->get(begin_key, end_key, &it), 0);
+    ASSERT_EQ(it->size(), 0);
+    // stats_tablet_key
+    begin_key = stats_tablet_key({instance_id, table_id, 0, 0, 0});
+    end_key = stats_tablet_key({instance_id, table_id + 1, 0, 0, 0});
+    ASSERT_EQ(txn->get(begin_key, end_key, &it), 0);
+    ASSERT_EQ(it->size(), 0);
+    // recycle_rowset_key
+    begin_key = recycle_key_prefix(instance_id);
+    end_key = recycle_key_prefix(instance_id + '\xff');
+    ASSERT_EQ(txn->get(begin_key, end_key, &it), 0);
+    ASSERT_EQ(it->size(), 0);
 }
 
 TEST(RecyclerTest, recycle_indexes) {
@@ -594,27 +735,53 @@ TEST(RecyclerTest, recycle_indexes) {
     obj_info->set_prefix("recycle_indexes");
 
     InstanceRecycler recycler(txn_kv, instance);
+    ASSERT_EQ(recycler.init(), 0);
 
     auto accessor = recycler.accessor_map_.begin()->second;
-    create_prepared_index(txn_kv.get(), accessor.get(), 20015);
     int64_t tablet_id_base = 10100;
     for (int i = 0; i < 100; ++i) {
         int64_t tablet_id = tablet_id_base + i;
-        create_tablet(txn_kv.get(), accessor.get(), 20015, 30015, tablet_id);
+        create_tablet(txn_kv.get(), 20015, 30015, tablet_id);
         for (int j = 0; j < 10; ++j) {
-            create_prepared_rowset(txn_kv.get(), accessor.get(), "recycle_indexes", tablet_id);
+            create_recycle_rowset(
+                    txn_kv.get(), accessor.get(), "recycle_indexes", tablet_id,
+                    static_cast<RecycleRowsetPB::Type>(j % (RecycleRowsetPB::Type_MAX + 1)), 5, 3);
         }
         for (int j = 0; j < 10; ++j) {
-            create_committed_rowset(txn_kv.get(), accessor.get(), "recycle_indexes", tablet_id);
+            create_committed_rowset(txn_kv.get(), accessor.get(), "recycle_indexes", tablet_id, j);
         }
     }
-
+    create_recycle_index(txn_kv.get(), 20015, RecycleIndexPB::DROP);
     recycler.recycle_indexes();
 
     // check rowset does not exist on s3
-    std::vector<std::string> existed_segments;
-    ASSERT_EQ(0, accessor->list("data/", &existed_segments));
-    ASSERT_TRUE(existed_segments.empty());
+    std::vector<std::string> files;
+    ASSERT_EQ(0, accessor->list("data/", &files));
+    ASSERT_TRUE(files.empty());
+    // check all related kv have been deleted
+    std::unique_ptr<Transaction> txn;
+    ASSERT_EQ(txn_kv->create_txn(&txn), 0);
+    std::unique_ptr<RangeGetIterator> it;
+    // meta_tablet_key, meta_tablet_idx_key, meta_rowset_key
+    auto begin_key = meta_key_prefix(instance_id);
+    auto end_key = meta_key_prefix(instance_id + '\xff');
+    ASSERT_EQ(txn->get(begin_key, end_key, &it), 0);
+    ASSERT_EQ(it->size(), 0);
+    // job_tablet_key
+    begin_key = job_tablet_key({instance_id, table_id, 0, 0, 0});
+    end_key = job_tablet_key({instance_id, table_id + 1, 0, 0, 0});
+    ASSERT_EQ(txn->get(begin_key, end_key, &it), 0);
+    ASSERT_EQ(it->size(), 0);
+    // stats_tablet_key
+    begin_key = stats_tablet_key({instance_id, table_id, 0, 0, 0});
+    end_key = stats_tablet_key({instance_id, table_id + 1, 0, 0, 0});
+    ASSERT_EQ(txn->get(begin_key, end_key, &it), 0);
+    ASSERT_EQ(it->size(), 0);
+    // recycle_rowset_key
+    begin_key = recycle_key_prefix(instance_id);
+    end_key = recycle_key_prefix(instance_id + '\xff');
+    ASSERT_EQ(txn->get(begin_key, end_key, &it), 0);
+    ASSERT_EQ(it->size(), 0);
 }
 
 TEST(RecyclerTest, recycle_partitions) {
@@ -634,32 +801,59 @@ TEST(RecyclerTest, recycle_partitions) {
     obj_info->set_prefix("recycle_partitions");
 
     InstanceRecycler recycler(txn_kv, instance);
+    ASSERT_EQ(recycler.init(), 0);
 
     auto accessor = recycler.accessor_map_.begin()->second;
     std::vector<int64_t> index_ids {20200, 20201, 20202, 20203, 20204};
-    create_prepared_partiton(txn_kv.get(), accessor.get(), 30020, index_ids);
+
     int64_t tablet_id_base = 10100;
     for (auto index_id : index_ids) {
         for (int i = 0; i < 20; ++i) {
             int64_t tablet_id = tablet_id_base + i;
-            create_tablet(txn_kv.get(), accessor.get(), index_id, 30020, tablet_id);
+            create_tablet(txn_kv.get(), index_id, 30020, tablet_id);
             for (int j = 0; j < 10; ++j) {
-                create_prepared_rowset(txn_kv.get(), accessor.get(), "recycle_partitions",
-                                       tablet_id);
+                create_recycle_rowset(
+                        txn_kv.get(), accessor.get(), "recycle_partitions", tablet_id,
+                        static_cast<RecycleRowsetPB::Type>(j % (RecycleRowsetPB::Type_MAX + 1)), 5,
+                        3);
             }
             for (int j = 0; j < 10; ++j) {
                 create_committed_rowset(txn_kv.get(), accessor.get(), "recycle_partitions",
-                                        tablet_id);
+                                        tablet_id, j);
             }
         }
     }
-
+    create_recycle_partiton(txn_kv.get(), 30020, index_ids, RecyclePartitionPB::DROP);
     recycler.recycle_partitions();
 
     // check rowset does not exist on s3
-    std::vector<std::string> existed_segments;
-    ASSERT_EQ(0, accessor->list("data/", &existed_segments));
-    ASSERT_TRUE(existed_segments.empty());
+    std::vector<std::string> files;
+    ASSERT_EQ(0, accessor->list("data/", &files));
+    ASSERT_TRUE(files.empty());
+    // check all related kv have been deleted
+    std::unique_ptr<Transaction> txn;
+    ASSERT_EQ(txn_kv->create_txn(&txn), 0);
+    std::unique_ptr<RangeGetIterator> it;
+    // meta_tablet_key, meta_tablet_idx_key, meta_rowset_key
+    auto begin_key = meta_key_prefix(instance_id);
+    auto end_key = meta_key_prefix(instance_id + '\xff');
+    ASSERT_EQ(txn->get(begin_key, end_key, &it), 0);
+    ASSERT_EQ(it->size(), 0);
+    // job_tablet_key
+    begin_key = job_tablet_key({instance_id, table_id, 0, 0, 0});
+    end_key = job_tablet_key({instance_id, table_id + 1, 0, 0, 0});
+    ASSERT_EQ(txn->get(begin_key, end_key, &it), 0);
+    ASSERT_EQ(it->size(), 0);
+    // stats_tablet_key
+    begin_key = stats_tablet_key({instance_id, table_id, 0, 0, 0});
+    end_key = stats_tablet_key({instance_id, table_id + 1, 0, 0, 0});
+    ASSERT_EQ(txn->get(begin_key, end_key, &it), 0);
+    ASSERT_EQ(it->size(), 0);
+    // recycle_rowset_key
+    begin_key = recycle_key_prefix(instance_id);
+    end_key = recycle_key_prefix(instance_id + '\xff');
+    ASSERT_EQ(txn->get(begin_key, end_key, &it), 0);
+    ASSERT_EQ(it->size(), 0);
 }
 
 TEST(RecyclerTest, abort_timeout_txn) {
@@ -694,6 +888,7 @@ TEST(RecyclerTest, abort_timeout_txn) {
     InstanceInfoPB instance;
     instance.set_instance_id(mock_instance);
     InstanceRecycler recycler(txn_kv, instance);
+    ASSERT_EQ(recycler.init(), 0);
     sleep(1);
     recycler.abort_timeout_txn();
     TxnInfoPB txn_info_pb;
@@ -734,6 +929,7 @@ TEST(RecyclerTest, recycle_expired_txn_label) {
     InstanceInfoPB instance;
     instance.set_instance_id(mock_instance);
     InstanceRecycler recycler(txn_kv, instance);
+    ASSERT_EQ(recycler.init(), 0);
     sleep(1);
     recycler.abort_timeout_txn();
     TxnInfoPB txn_info_pb;
@@ -785,6 +981,7 @@ TEST(RecyclerTest, recycle_copy_jobs) {
     InstanceInfoPB instance_info;
     create_instance(internal_stage_id, external_stage_id, instance_info);
     InstanceRecycler recycler(txn_kv, instance_info);
+    ASSERT_EQ(recycler.init(), 0);
     auto internal_accessor = recycler.accessor_map_.find(internal_stage_id)->second;
 
     // create internal stage copy job with finish status
@@ -904,15 +1101,14 @@ TEST(RecyclerTest, recycle_copy_jobs) {
     stage_table_files.emplace_back(external_stage_id, 4, 10, true);
     stage_table_files.emplace_back(nonexist_external_stage_id, 7, 0, false);
     for (const auto& [stage_id, table_id, files, expected_job_exists] : stage_table_files) {
-        // std::cout << "table_id=" << table_id << std::endl;
         // check copy files
         int file_num = 0;
-        ASSERT_EQ(0, get_copy_file_num(txn_kv.get(), stage_id, table_id, &file_num));
-        ASSERT_EQ(files, file_num);
+        ASSERT_EQ(0, get_copy_file_num(txn_kv.get(), stage_id, table_id, &file_num)) << table_id;
+        EXPECT_EQ(files, file_num) << table_id;
         // check copy jobs
         bool exist = false;
-        ASSERT_EQ(0, copy_job_exists(txn_kv.get(), stage_id, table_id, &exist));
-        ASSERT_EQ(expected_job_exists, exist);
+        ASSERT_EQ(0, copy_job_exists(txn_kv.get(), stage_id, table_id, &exist)) << table_id;
+        EXPECT_EQ(expected_job_exists, exist) << table_id;
     }
 }
 
@@ -938,6 +1134,7 @@ TEST(RecyclerTest, recycle_stage) {
     instance.add_obj_info()->CopyFrom(object_info);
 
     InstanceRecycler recycler(txn_kv, instance);
+    ASSERT_EQ(recycler.init(), 0);
     auto accessor = recycler.accessor_map_.begin()->second;
     for (int i = 0; i < 10; ++i) {
         accessor->put_object(std::to_string(i) + ".csv", "abc");

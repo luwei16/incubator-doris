@@ -56,6 +56,7 @@ CONF_Int32(recycle_job_lease_expired_ms, "60000");
 CONF_String(recycle_whitelist, ""); // Comma seprated list
 // These instances will not be recycled, only effective when whitelist is empty.
 CONF_String(recycle_blacklist, ""); // Comma seprated list
+CONF_mInt32(instance_recycler_worker_pool_size, "10");
 CONF_Bool(enable_checker, "false");
 CONF_mInt32(check_object_interval_seconds, "259200"); // 72h
 

@@ -1,8 +1,11 @@
 #pragma once
 
+#include <glog/logging.h>
+
 #include <mutex>
 #include <set>
 
+#include "common/sync_point.h"
 #include "recycler/s3_accessor.h"
 
 namespace selectdb {
@@ -21,6 +24,8 @@ public:
 
     // returns 0 for success otherwise error
     int delete_objects_by_prefix(const std::string& relative_path) override {
+        TEST_SYNC_POINT_CALLBACK("MockAccessor::delete_objects_by_prefix", nullptr);
+        LOG(INFO) << "delete object of prefix=" << relative_path;
         std::lock_guard lock(mtx_);
         if (relative_path.empty()) {
             objects_.clear();
@@ -39,6 +44,10 @@ public:
 
     // returns 0 for success otherwise error
     int delete_objects(const std::vector<std::string>& relative_paths) override {
+        TEST_SYNC_POINT_CALLBACK("MockAccessor::delete_objects", nullptr);
+        for (auto& path : relative_paths) {
+            LOG(INFO) << "delete object path=" << path;
+        }
         std::lock_guard lock(mtx_);
         for (auto& path : relative_paths) {
             objects_.erase(path);

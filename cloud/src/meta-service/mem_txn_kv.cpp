@@ -1,6 +1,8 @@
-#include "common/logging.h"
+#include "common/sync_point.h"
 #include "mem_txn_kv.h"
 #include "txn_kv.h"
+
+#include <glog/logging.h>
 
 #include <cstdint>
 #include <memory>
@@ -178,7 +180,7 @@ int Transaction::get(std::string_view key, std::string* val, bool snapshot) {
 }
 
 int Transaction::get(std::string_view begin, std::string_view end,
-                     std::unique_ptr<selectdb::RangeGetIterator>* iter, bool snapshot, int limit) { 
+                     std::unique_ptr<selectdb::RangeGetIterator>* iter, bool snapshot, int limit) {
     std::lock_guard<std::mutex> l(lock_);
     std::string begin_k(begin.data(), begin.size());
     std::string end_k(end.data(), end.size());

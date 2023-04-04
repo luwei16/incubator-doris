@@ -34,7 +34,7 @@
 // 0x01 "recycle" ${instance_id} "txn" ${db_id} ${txn_id}                                    -> RecycleTxnKeyInfo
 // 0x01 "recycle" ${instance_id} "stage" ${stage_id}                                         -> RecycleStagePB
 //
-// 0x01 "job" ${instance_id} "tablet" ${tablet_id}                                           -> TabletJobInfoPB
+// 0x01 "job" ${instance_id} "tablet" ${table_id} ${index_id} ${partition_id} ${tablet_id}   -> TabletJobInfoPB
 // 0x01 "job" ${instance_id} "recycle"                                                       -> JobRecyclePB
 //
 // 0x02 "system" "meta-service" "registry"                                                   -> MetaServiceRegistryPB
@@ -134,13 +134,20 @@ using MetaSchemaKeyInfo    = BasicKeyInfo<21, std::tuple<std::string,  int64_t, 
 
 void instance_key(const InstanceKeyInfo& in, std::string* out);
 
+std::string txn_key_prefix(std::string_view instance_id);
 void txn_label_key(const TxnLabelKeyInfo& in, std::string* out);
 void txn_info_key(const TxnInfoKeyInfo& in, std::string* out);
 void txn_index_key(const TxnIndexKeyInfo& in, std::string* out);
 void txn_running_key(const TxnRunningKeyInfo& in, std::string* out);
+static inline std::string txn_label_key(const TxnLabelKeyInfo& in) { std::string s; txn_label_key(in, &s); return s; }
+static inline std::string txn_info_key(const TxnInfoKeyInfo& in) { std::string s; txn_info_key(in, &s); return s; }
+static inline std::string txn_index_key(const TxnIndexKeyInfo& in) { std::string s; txn_index_key(in, &s); return s; }
+static inline std::string txn_running_key(const TxnRunningKeyInfo& in) { std::string s; txn_running_key(in, &s); return s; }
 
 void version_key(const VersionKeyInfo& in, std::string* out);
+static inline std::string version_key(const VersionKeyInfo& in) { std::string s; version_key(in, &s); return s; }
 
+std::string meta_key_prefix(std::string_view instance_id);
 void meta_rowset_key(const MetaRowsetKeyInfo& in, std::string* out);
 void meta_rowset_tmp_key(const MetaRowsetTmpKeyInfo& in, std::string* out);
 void meta_tablet_idx_key(const MetaTabletIdxKeyInfo& in, std::string* out);
@@ -152,29 +159,30 @@ static inline std::string meta_tablet_idx_key(const MetaTabletIdxKeyInfo& in) { 
 static inline std::string meta_tablet_key(const MetaTabletKeyInfo& in) { std::string s; meta_tablet_key(in, &s); return s; }
 static inline std::string meta_schema_key(const MetaSchemaKeyInfo& in) { std::string s; meta_schema_key(in, &s); return s; }
 
-void job_recycle_key(const JobRecycleKeyInfo& in, std::string* out);
+std::string recycle_key_prefix(std::string_view instance_id);
 void recycle_index_key(const RecycleIndexKeyInfo& in, std::string* out);
 void recycle_partition_key(const RecyclePartKeyInfo& in, std::string* out);
 void recycle_rowset_key(const RecycleRowsetKeyInfo& in, std::string* out);
 void recycle_txn_key(const RecycleTxnKeyInfo& in, std::string* out);
+void recycle_stage_key(const RecycleStageKeyInfo& in, std::string* out);
 static inline std::string recycle_index_key(const RecycleIndexKeyInfo& in) { std::string s; recycle_index_key(in, &s); return s; }
 static inline std::string recycle_partition_key(const RecyclePartKeyInfo& in) { std::string s; recycle_partition_key(in, &s); return s; }
 static inline std::string recycle_rowset_key(const RecycleRowsetKeyInfo& in) { std::string s; recycle_rowset_key(in, &s); return s; }
 static inline std::string recycle_txn_key(const RecycleTxnKeyInfo& in) { std::string s; recycle_txn_key(in, &s); return s; }
+static inline std::string recycle_stage_key(const RecycleStageKeyInfo& in) { std::string s; recycle_stage_key(in, &s); return s; }
 
 void stats_tablet_key(const StatsTabletKeyInfo& in, std::string* out);
 static inline std::string stats_tablet_key(const StatsTabletKeyInfo& in) { std::string s; stats_tablet_key(in, &s); return s; }
 
+void job_recycle_key(const JobRecycleKeyInfo& in, std::string* out);
 void job_tablet_key(const JobTabletKeyInfo& in, std::string* out);
 static inline std::string job_tablet_key(const JobTabletKeyInfo& in) { std::string s; job_tablet_key(in, &s); return s; }
 
+std::string copy_key_prefix(std::string_view instance_id);
 void copy_job_key(const CopyJobKeyInfo& in, std::string* out);
 void copy_file_key(const CopyFileKeyInfo& in, std::string* out);
 [[maybe_unused]] static std::string copy_job_key(const CopyJobKeyInfo& in) { std::string s; copy_job_key(in, &s); return s; }
 [[maybe_unused]] static std::string copy_file_key(const CopyFileKeyInfo& in) { std::string s; copy_file_key(in, &s); return s; }
-
-void recycle_stage_key(const RecycleStageKeyInfo& in, std::string* out);
-[[maybe_unused]] static std::string recycle_stage_key(const RecycleStageKeyInfo& in) { std::string s; recycle_stage_key(in, &s); return s; }
 
 std::string system_meta_service_registry_key();
 std::string system_meta_service_arn_info_key();

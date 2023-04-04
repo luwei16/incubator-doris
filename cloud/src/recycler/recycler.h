@@ -74,7 +74,12 @@ private:
 class InstanceRecycler {
 public:
     explicit InstanceRecycler(std::shared_ptr<TxnKv> txn_kv, const InstanceInfoPB& instance);
-    ~InstanceRecycler() = default;
+    ~InstanceRecycler();
+
+    int init();
+
+    // remove all kv and data in this instance, ONLY be called when instance has been deleted
+    void recycle_instance();
 
     // scan and recycle expired indexes
     void recycle_indexes();
@@ -82,7 +87,7 @@ public:
     // scan and recycle expired partitions
     void recycle_partitions();
 
-    // scan and recycle expired prepared rowsets
+    // scan and recycle expired rowsets
     void recycle_rowsets();
 
     // scan and recycle expired tmp rowsets
@@ -121,19 +126,22 @@ public:
 private:
     /**
      * Scan key-value pairs between [`begin`, `end`), and perform `recycle_func` on each key-value pair.
-     * This function will also remove successfully recycled key-value pairs from kv store.
      *
-     * @param recycle_func defines how to recycle resources corresponding to a key-value pair. Returns true if the recycling is successful.
-     * @param try_range_remove_kv if true, try to remove key-value pairs from kv store by range which is more efficient
-     * @return 0 if all corresponding resources(including key-value pairs) are recycled successfully, otherwise non-zero
+     * @param recycle_func defines how to recycle resources corresponding to a key-value pair. Returns 0 if the recycling is successful.
+     * @param loop_done is called after `RangeGetIterator` has no next kv. Usually used to perform a batch recycling. Returns 0 if success. 
+     * @return 0 if all corresponding resources are recycled successfully, otherwise non-zero
      */
     int scan_and_recycle(std::string begin, std::string_view end,
-                         std::function<bool(std::string_view k, std::string_view v)> recycle_func,
-                         bool try_range_remove_kv = false);
-
+                         std::function<int(std::string_view k, std::string_view v)> recycle_func,
+                         std::function<int()> loop_done = nullptr);
+    // return 0 for success otherwise error
     int delete_rowset_data(const doris::RowsetMetaPB& rs_meta_pb);
-
-    int delete_rowset_data(const std::string& rowset_id, const RecycleRowsetPB& recycl_rs_pb);
+    // return 0 for success otherwise error
+    // NOTE: this function ONLY be called when the file paths cannot be calculated
+    int delete_rowset_data(const std::string& resource_id, int64_t tablet_id,
+                           const std::string& rowset_id);
+    // return 0 for success otherwise error
+    int delete_rowset_data(const std::vector<doris::RowsetMetaPB>& rowsets);
 
     /**
      * Get stage storage info from instance and init ObjStoreAccessor

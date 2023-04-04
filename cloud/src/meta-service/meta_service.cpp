@@ -2224,12 +2224,12 @@ void MetaServiceImpl::prepare_rowset(::google::protobuf::RpcController* controll
     RecycleRowsetKeyInfo prepare_key_info {instance_id, tablet_id, rowset_id};
     recycle_rowset_key(prepare_key_info, &prepare_key);
     RecycleRowsetPB prepare_rowset;
-    prepare_rowset.set_tablet_id(rowset_meta.tablet_id());
-    prepare_rowset.set_resource_id(rowset_meta.resource_id());
     using namespace std::chrono;
     int64_t now = duration_cast<seconds>(system_clock::now().time_since_epoch()).count();
     prepare_rowset.set_creation_time(now);
-    prepare_rowset.set_expiration(rowset_meta.txn_expiration());
+    prepare_rowset.set_expiration(request->rowset_meta().txn_expiration());
+    prepare_rowset.mutable_rowset_meta()->CopyFrom(request->rowset_meta());
+    prepare_rowset.set_type(RecycleRowsetPB::PREPARE);
     prepare_rowset.SerializeToString(&prepare_val);
 
     txn->put(prepare_key, prepare_val);
@@ -2702,7 +2702,7 @@ int index_exists(MetaServiceCode& code, std::string& msg, const ::selectdb::Inde
 
 void put_recycle_index_kv(MetaServiceCode& code, std::string& msg, int& ret,
                           const ::selectdb::IndexRequest* request, const std::string& instance_id,
-                          Transaction* txn) {
+                          Transaction* txn, RecycleIndexPB::Type type) {
     const auto& index_ids = request->index_ids();
     if (index_ids.empty() || !request->has_table_id()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
@@ -2724,6 +2724,7 @@ void put_recycle_index_kv(MetaServiceCode& code, std::string& msg, int& ret,
         recycle_index.set_table_id(request->table_id());
         recycle_index.set_creation_time(creation_time);
         recycle_index.set_expiration(request->expiration());
+        recycle_index.set_type(type);
         std::string val = recycle_index.SerializeAsString();
 
         kvs.emplace_back(std::move(key), std::move(val));
@@ -2797,7 +2798,7 @@ void MetaServiceImpl::prepare_index(::google::protobuf::RpcController* controlle
         msg = "index already existed";
         return;
     }
-    put_recycle_index_kv(code, msg, ret, request, instance_id, txn.get());
+    put_recycle_index_kv(code, msg, ret, request, instance_id, txn.get(), RecycleIndexPB::PREPARE);
 }
 
 void MetaServiceImpl::commit_index(::google::protobuf::RpcController* controller,
@@ -2843,7 +2844,7 @@ void MetaServiceImpl::drop_index(::google::protobuf::RpcController* controller,
         msg = "failed to create txn";
         return;
     }
-    put_recycle_index_kv(code, msg, ret, request, instance_id, txn.get());
+    put_recycle_index_kv(code, msg, ret, request, instance_id, txn.get(), RecycleIndexPB::DROP);
 }
 
 int partition_exists(MetaServiceCode& code, std::string& msg,
@@ -2879,7 +2880,7 @@ int partition_exists(MetaServiceCode& code, std::string& msg,
 
 void put_recycle_partition_kv(MetaServiceCode& code, std::string& msg, int& ret,
                               const ::selectdb::PartitionRequest* request,
-                              const std::string& instance_id, Transaction* txn) {
+                              const std::string& instance_id, Transaction* txn, RecyclePartitionPB::Type type) {
     const auto& partition_ids = request->partition_ids();
     const auto& index_ids = request->index_ids();
     if (partition_ids.empty() || index_ids.empty() || !request->has_table_id()) {
@@ -2904,6 +2905,7 @@ void put_recycle_partition_kv(MetaServiceCode& code, std::string& msg, int& ret,
         *recycle_partition.mutable_index_id() = index_ids;
         recycle_partition.set_creation_time(creation_time);
         recycle_partition.set_expiration(request->expiration());
+        recycle_partition.set_type(type);
         std::string val = recycle_partition.SerializeAsString();
 
         kvs.emplace_back(std::move(key), std::move(val));
@@ -2979,7 +2981,7 @@ void MetaServiceImpl::prepare_partition(::google::protobuf::RpcController* contr
         msg = "index already existed";
         return;
     }
-    put_recycle_partition_kv(code, msg, ret, request, instance_id, txn.get());
+    put_recycle_partition_kv(code, msg, ret, request, instance_id, txn.get(), RecyclePartitionPB::PREPARE);
 }
 
 void MetaServiceImpl::commit_partition(::google::protobuf::RpcController* controller,
@@ -3025,7 +3027,7 @@ void MetaServiceImpl::drop_partition(::google::protobuf::RpcController* controll
         msg = "failed to create txn";
         return;
     }
-    put_recycle_partition_kv(code, msg, ret, request, instance_id, txn.get());
+    put_recycle_partition_kv(code, msg, ret, request, instance_id, txn.get(), RecyclePartitionPB::DROP);
 }
 
 void MetaServiceImpl::get_tablet_stats(::google::protobuf::RpcController* controller,
