@@ -144,16 +144,24 @@ CloudFileCache::QueryContextPtr CloudFileCache::get_or_set_query_context(
 
 void CloudFileCache::QueryContext::remove(const Key& key, size_t offset,
                                           std::lock_guard<std::mutex>& cache_lock) {
-    auto record = records.find({key, offset});
+    // The key maybe comes from the 'lru_queue'
+    // and we need to erase the 'records' first.
+    // If not, it will cause heap-use-after-free
+    auto pair = std::make_pair(key, offset);
+    auto record = records.find(pair);
     DCHECK(record != records.end());
-    lru_queue.remove(record->second, cache_lock);
-    records.erase({key, offset});
+    auto iter = record->second;
+    records.erase(pair);
+    lru_queue.remove(iter, cache_lock);
 }
 
 void CloudFileCache::QueryContext::reserve(const Key& key, size_t offset, size_t size,
                                            std::lock_guard<std::mutex>& cache_lock) {
-    auto queue_iter = lru_queue.add(key, offset, size, cache_lock);
-    records.insert({{key, offset}, queue_iter});
+    auto pair = std::make_pair(key, offset);
+    if (records.find(pair) == records.end()) {
+        auto queue_iter = lru_queue.add(key, offset, size, cache_lock);
+        records.insert({pair, queue_iter});
+    }
 }
 
 Status CloudFileCache::initialize() {
@@ -593,7 +601,8 @@ const CloudFileCache::LRUQueue& CloudFileCache::get_queue(CacheType type) const 
 
 bool CloudFileCache::try_reserve_for_ttl(size_t size, std::lock_guard<std::mutex>& cache_lock) {
     size_t removed_size = 0;
-    auto is_overflow = [&] { return _cur_cache_size + size - removed_size > _total_size; };
+    size_t cur_cache_size = _cur_cache_size;
+    auto is_overflow = [&] { return cur_cache_size + size - removed_size > _total_size; };
     auto remove_file_segment_if = [&](FileSegmentCell* cell) {
         FileSegmentSPtr file_segment = cell->file_segment;
         if (file_segment) {
@@ -695,20 +704,19 @@ bool CloudFileCache::try_reserve(const Key& key, const CacheContext& context, si
                                .count();
     auto& queue = get_queue(context.cache_type);
     size_t removed_size = 0;
-    size_t queue_element_size = queue.get_elements_num(cache_lock);
     size_t queue_size = queue.get_total_cache_size(cache_lock);
+    size_t cur_cache_size = _cur_cache_size;
+    size_t query_context_cache_size = query_context->get_cache_size(cache_lock);
 
     std::vector<CloudFileCache::LRUQueue::Iterator> ghost;
     std::vector<FileSegmentCell*> trash;
     std::vector<FileSegmentCell*> to_evict;
 
     size_t max_size = queue.get_max_size();
-    size_t max_element_size = queue.get_max_element_size();
     auto is_overflow = [&] {
-        return _cur_cache_size + size - removed_size > _total_size ||
+        return cur_cache_size + size - removed_size > _total_size ||
                (queue_size + size - removed_size > max_size) ||
-               queue_element_size >= max_element_size ||
-               (query_context->get_cache_size(cache_lock) + size - removed_size >
+               (query_context_cache_size + size - removed_size >
                 query_context->get_max_cache_size());
     };
 
@@ -744,7 +752,6 @@ bool CloudFileCache::try_reserve(const Key& key, const CacheContext& context, si
                 }
                 }
                 removed_size += cell_size;
-                --queue_element_size;
             }
         }
     }
@@ -881,7 +888,8 @@ bool CloudFileCache::try_reserve_from_other_queue(CacheType cur_cache_type, size
                                                   std::lock_guard<std::mutex>& cache_lock) {
     auto other_cache_types = get_other_cache_type(cur_cache_type);
     size_t removed_size = 0;
-    auto is_overflow = [&] { return _cur_cache_size + size - removed_size > _total_size; };
+    size_t cur_cache_size = _cur_cache_size;
+    auto is_overflow = [&] { return cur_cache_size + size - removed_size > _total_size; };
     std::vector<FileSegmentCell*> to_evict;
     std::vector<FileSegmentCell*> trash;
     for (CacheType cache_type : other_cache_types) {
@@ -950,11 +958,12 @@ bool CloudFileCache::try_reserve_for_lru(const Key& key, QueryContextPtr query_c
         size_t removed_size = 0;
         size_t queue_element_size = queue.get_elements_num(cache_lock);
         size_t queue_size = queue.get_total_cache_size(cache_lock);
+        size_t cur_cache_size = _cur_cache_size;
 
         size_t max_size = queue.get_max_size();
         size_t max_element_size = queue.get_max_element_size();
         auto is_overflow = [&] {
-            return _cur_cache_size + size - removed_size > _total_size ||
+            return cur_cache_size + size - removed_size > _total_size ||
                    (queue_size + size - removed_size > max_size) ||
                    queue_element_size >= max_element_size;
         };
