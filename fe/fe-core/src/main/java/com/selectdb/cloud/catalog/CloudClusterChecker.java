@@ -6,6 +6,7 @@ import com.selectdb.cloud.proto.SelectdbCloud.ClusterPB.Type;
 import com.selectdb.cloud.proto.SelectdbCloud.MetaServiceCode;
 
 import org.apache.doris.catalog.Env;
+import org.apache.doris.common.AnalysisException;
 import org.apache.doris.common.Config;
 import org.apache.doris.common.DdlException;
 import org.apache.doris.common.FeConstants;
@@ -135,8 +136,15 @@ public class CloudClusterChecker extends MasterDaemon {
             Backend be = currentMap.get(endpoint);
 
             if (status == SelectdbCloud.NodeStatusPB.NODE_STATUS_DECOMMISSIONING) {
-                LOG.info("decommissioned backend: {} status: {}", be, status);
-                be.setDecommissioned(true);
+                if (!be.isDecommissioned()) {
+                    LOG.info("decommissioned backend: {} status: {}", be, status);
+                    try {
+                        Env.getCurrentEnv().getCloudUpgradeMgr().registerWaterShedTxnId(be.getId());
+                    } catch (AnalysisException e) {
+                        LOG.warn("failed to register water shed txn id, decommission be {}", be.getId(), e);
+                    }
+                    be.setDecommissioned(true);
+                }
             }
         }
     }
@@ -196,6 +204,9 @@ public class CloudClusterChecker extends MasterDaemon {
                 for (SelectdbCloud.NodeInfoPB node : expectedBes) {
                     String endpoint = node.getIp() + ":" + node.getHeartbeatPort();
                     Backend b = new Backend(Env.getCurrentEnv().getNextId(), node.getIp(), node.getHeartbeatPort());
+                    if (node.hasIsSmoothUpgrade()) {
+                        b.setSmoothUpgradeDst(node.getIsSmoothUpgrade());
+                    }
                     newTagMap.put(Tag.CLOUD_UNIQUE_ID, node.getCloudUniqueId());
                     b.setTagMap(newTagMap);
                     nodeMap.put(endpoint, b);

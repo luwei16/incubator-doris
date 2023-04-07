@@ -48,6 +48,7 @@ public abstract class LoadTask extends MasterTask {
     protected TaskAttachment attachment;
     protected FailMsg failMsg = new FailMsg();
     protected int retryTime = 1;
+    private volatile boolean done = false;
 
     public LoadTask(LoadTaskCallback callback, TaskType taskType) {
         this.taskType = taskType;
@@ -77,6 +78,7 @@ public abstract class LoadTask extends MasterTask {
                 // callback on pending task failed
                 callback.onTaskFailed(signature, failMsg);
             }
+            done = true;
         }
     }
 
@@ -106,5 +108,9 @@ public abstract class LoadTask extends MasterTask {
 
     public TaskType getTaskType() {
         return taskType;
+    }
+
+    public boolean isDone() {
+        return done;
     }
 }

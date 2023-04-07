@@ -231,6 +231,9 @@ std::string TypeDescriptor::debug_string() const {
         ss << "ARRAY<" << children[0].debug_string() << ">";
         return ss.str();
     }
+    case TYPE_VARIANT:
+        ss << "VARIANT";
+        return ss.str();
     default:
         return type_to_string(type);
     }

@@ -20,6 +20,7 @@ package org.apache.doris.load.loadv2;
 import org.apache.doris.analysis.BrokerDesc;
 import org.apache.doris.analysis.UserIdentity;
 import org.apache.doris.catalog.Database;
+import org.apache.doris.catalog.Env;
 import org.apache.doris.catalog.OlapTable;
 import org.apache.doris.common.Config;
 import org.apache.doris.common.LoadException;
@@ -78,7 +79,7 @@ public class LoadLoadingTask extends LoadTask {
 
     private RuntimeProfile jobProfile;
     private long beginTime;
-    private String cloudCluster;
+    private String clusterId;
 
     public LoadLoadingTask(Database db, OlapTable table,
             BrokerDesc brokerDesc, List<BrokerFileGroup> fileGroups,
@@ -98,6 +99,7 @@ public class LoadLoadingTask extends LoadTask {
         this.txnId = txnId;
         this.failMsg = new FailMsg(FailMsg.CancelType.LOAD_RUN_FAIL);
         // No need to retry for cloud mode, txn id should not be reused
+        // http://jira.selectdb.com:8090/browse/CORE-466
         this.retryTime = 1;
         this.timezone = timezone;
         this.timeoutS = timeoutS;
@@ -119,13 +121,14 @@ public class LoadLoadingTask extends LoadTask {
     }
 
     public void init(TUniqueId loadId, List<List<TBrokerFileStatus>> fileStatusList,
-            int fileNum, UserIdentity userInfo, String cluster, String qualifiedUser) throws UserException {
+            int fileNum, UserIdentity userInfo, String clusterId) throws UserException {
         this.loadId = loadId;
+        String clusterName = Env.getCurrentSystemInfo().getClusterNameByClusterId(clusterId);
         planner = new LoadingTaskPlanner(callback.getCallbackId(), txnId, db.getId(), table, brokerDesc, fileGroups,
                 strictMode, timezone, this.timeoutS, this.loadParallelism, this.sendBatchParallelism,
-                this.useNewLoadScanNode, userInfo, cluster, qualifiedUser);
+                this.useNewLoadScanNode, userInfo, clusterName);
         planner.plan(loadId, fileStatusList, fileNum);
-        this.cloudCluster = cluster;
+        this.clusterId = clusterId;
     }
 
     public TUniqueId getLoadId() {
@@ -138,17 +141,18 @@ public class LoadLoadingTask extends LoadTask {
                 DebugUtil.printId(loadId), callback.getCallbackId(), db.getFullName(), table.getName(), retryTime);
         boolean needCleanCtx = false;
         if (Config.isCloudMode()) {
-            if (Strings.isNullOrEmpty(cloudCluster)) {
+            String clusterName = Env.getCurrentSystemInfo().getClusterNameByClusterId(this.clusterId);
+            if (Strings.isNullOrEmpty(clusterName)) {
                 throw new Exception("cluster is empty");
             }
 
             if (ConnectContext.get() == null) {
                 ConnectContext ctx = new ConnectContext();
                 ctx.setThreadLocalInfo();
-                ctx.setCloudCluster(cloudCluster);
+                ctx.setCloudCluster(clusterName);
                 needCleanCtx = true;
             } else {
-                ConnectContext.get().setCloudCluster(cloudCluster);
+                ConnectContext.get().setCloudCluster(clusterName);
             }
         }
 

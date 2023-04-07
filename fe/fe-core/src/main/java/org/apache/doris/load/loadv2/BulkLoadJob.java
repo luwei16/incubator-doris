@@ -92,6 +92,12 @@ public abstract class BulkLoadJob extends LoadJob {
     // we persist these sessionVariables due to the session is not available when replaying the job.
     private Map<String, String> sessionVariables = Maps.newHashMap();
 
+    private static final String CLUSTER_ID = "clusterId";
+    protected String clusterId;
+
+    // retry 2 times is enough
+    protected int retryTimes = 2;
+
     public BulkLoadJob(EtlJobType jobType) {
         super(jobType);
     }
@@ -103,9 +109,29 @@ public abstract class BulkLoadJob extends LoadJob {
         this.authorizationInfo = gatherAuthInfo();
         this.userInfo = userInfo;
 
+        if (Config.isCloudMode()) {
+            ConnectContext context = ConnectContext.get();
+            if (context != null) {
+                String clusterName = context.getCloudCluster();
+                if (Strings.isNullOrEmpty(clusterName)) {
+                    LOG.warn("cluster name is null");
+                    return;
+                }
+
+                this.clusterId = Env.getCurrentSystemInfo().getCloudClusterIdByName(clusterName);
+                if (!Strings.isNullOrEmpty(context.getSessionVariable().getCloudCluster())) {
+                    clusterName = context.getSessionVariable().getCloudCluster();
+                    this.clusterId =
+                            Env.getCurrentSystemInfo().getCloudClusterIdByName(clusterName);
+                }
+            }
+        }
         if (ConnectContext.get() != null) {
             SessionVariable var = ConnectContext.get().getSessionVariable();
             sessionVariables.put(SessionVariable.SQL_MODE, Long.toString(var.getSqlMode()));
+            if (Config.isCloudMode()) {
+                sessionVariables.put(CLUSTER_ID, clusterId);
+            }
         } else {
             sessionVariables.put(SessionVariable.SQL_MODE, String.valueOf(SqlModeHelper.MODE_DEFAULT));
         }
@@ -127,7 +153,7 @@ public abstract class BulkLoadJob extends LoadJob {
                 case SPARK:
                     if (Config.isCloudMode()) {
                         LOG.info("stmt={}, not supported in cloud mode", stmt.toString());
-                        throw new DdlException("Unsupported operaiton");
+                        throw new DdlException("Unsupported operation");
                     }
                     bulkLoadJob = new SparkLoadJob(db.getId(), stmt.getLabel().getLabelName(), stmt.getResourceDesc(),
                             stmt.getOrigStmt(), stmt.getUserInfo());
@@ -269,6 +295,9 @@ public abstract class BulkLoadJob extends LoadJob {
         fileGroupAggInfo = new BrokerFileGroupAggInfo();
         SqlParser parser = new SqlParser(new SqlScanner(new StringReader(originStmt.originStmt),
                 Long.valueOf(sessionVariables.get(SessionVariable.SQL_MODE))));
+        if (Config.isCloudMode()) {
+            clusterId = sessionVariables.get("clusterId");
+        }
         try {
             Database db = Env.getCurrentInternalCatalog().getDbOrDdlException(dbId);
             analyzeStmt(SqlParserUtils.getStmt(parser, originStmt.idx), db);

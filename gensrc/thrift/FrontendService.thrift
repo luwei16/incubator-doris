@@ -683,23 +683,6 @@ struct TWaitingTxnStatusResult {
     2: optional i32 txn_status_id
 }
 
-// Only support base table add columns
-struct TAddColumnsRequest {
-    1: required i64 table_id
-    2: required list<TColumnDef> addColumns
-    3: optional string table_name
-    4: optional string db_name
-    5: optional bool type_conflict_free
-}
-
-// Only support base table add columns
-struct TAddColumnsResult {
-    1: required Status.TStatus status
-    2: required i64 table_id
-    3: required list<Descriptors.TColumn> allColumns
-    4: required i32 schema_version
-}
-
 struct TInitExternalCtlMetaRequest {
     1: optional i64 catalogId
     2: optional i64 dbId
@@ -723,6 +706,23 @@ struct TFetchSchemaTableDataRequest {
 struct TFetchSchemaTableDataResult {
   1: required Status.TStatus status
   2: optional list<Data.TRow> data_batch;
+}
+
+// Only support base table add columns
+struct TAddColumnsRequest {
+    1: optional i64 table_id
+    2: optional list<TColumnDef> addColumns
+    3: optional string table_name
+    4: optional string db_name
+    5: optional bool allow_type_conflict 
+}
+
+// Only support base table add columns
+struct TAddColumnsResult {
+    1: optional Status.TStatus status
+    2: optional i64 table_id
+    3: optional list<Descriptors.TColumn> allColumns
+    4: optional i32 schema_version
 }
 
 service FrontendService {

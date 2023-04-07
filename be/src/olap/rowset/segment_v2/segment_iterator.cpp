@@ -557,13 +557,7 @@ bool SegmentIterator::_is_handle_predicate_by_fulltext(ColumnPredicate* predicat
 }
 
 bool SegmentIterator::_need_read_data(ColumnId cid) {
-    int32_t unique_id = _schema.unique_id(cid);
-    if (_need_read_data_indices.count(unique_id) > 0 && !_need_read_data_indices[unique_id] &&
-        _output_columns.count(unique_id) < 1) {
-        VLOG_DEBUG << "SegmentIterator no need read data for column: "
-                   << _opts.tablet_schema->column_by_uid(unique_id).name();
-        return false;
-    }
+    // TODO(xk) impl right logic
     return true;
 }
 
@@ -2121,17 +2115,17 @@ void SegmentIterator::_output_index_return_column(uint16_t* sel_rowid_idx, uint1
         return;
     }
 
-    for (auto column_sign : _rowid_result_for_index) {
+    for (auto& iter : _rowid_result_for_index) {
         block->insert({vectorized::ColumnUInt8::create(),
-                       std::make_shared<vectorized::DataTypeUInt8>(), column_sign.first});
-        if (!column_sign.second.first) {
+                       std::make_shared<vectorized::DataTypeUInt8>(), iter.first});
+        if (!iter.second.first) {
             // predicate not in compound query
-            block->get_by_name(column_sign.first).column =
+            block->get_by_name(iter.first).column =
                     vectorized::DataTypeUInt8().create_column_const(block->rows(), 1u);
             continue;
         }
-        _build_index_return_column(sel_rowid_idx, select_size, block, column_sign.first,
-                                   column_sign.second.second);
+        _build_index_return_column(sel_rowid_idx, select_size, block, iter.first,
+                                   iter.second.second);
     }
 }
 

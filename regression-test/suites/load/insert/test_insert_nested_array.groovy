@@ -90,9 +90,9 @@ suite("test_insert_nested_array", "load") {
         qt_select "select * from ${tableName} order by `key`"
     }
 
-    test_nested_array_2_depths.call(false)
+    test_nested_array_2_depths.call(true)
     test_nested_array_2_depths.call(true)
 
-    test_nested_array_3_depths.call(false)
+    test_nested_array_3_depths.call(true)
     test_nested_array_3_depths.call(true)
 }

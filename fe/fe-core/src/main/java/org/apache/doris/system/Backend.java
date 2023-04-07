@@ -133,6 +133,8 @@ public class Backend implements Writable {
     @SerializedName("tagMap")
     private Map<String, String> tagMap = Maps.newHashMap();
 
+    private boolean isSmoothUpgradeSrc = false; // This be process is old process when doing smooth upgrade
+    private boolean isSmoothUpgradeDst = false; // This be process is new process when doing smooth upgrade
     // Counter of heartbeat failure.
     // Once a heartbeat failed, increase this counter by one.
     // And if it reaches Config.max_backend_heartbeat_failure_tolerance_count, this backend
@@ -269,6 +271,10 @@ public class Backend implements Writable {
         this.backendStatus.isActive = isActive;
     }
 
+    public boolean isActive() {
+        return this.backendStatus.isActive;
+    }
+
     // for test only
     public void updateOnce(int bePort, int httpPort, int beRpcPort) {
         if (this.bePort != bePort) {
@@ -346,6 +352,10 @@ public class Backend implements Writable {
         return lastMissingHeartbeatTime;
     }
 
+    public void setLastMissingHeartbeatTime(long lastMissingHeartbeatTime) {
+        this.lastMissingHeartbeatTime = lastMissingHeartbeatTime;
+    }
+
     public boolean isAlive() {
         return this.isAlive.get();
     }
@@ -372,6 +382,22 @@ public class Backend implements Writable {
 
     public BackendStatus getBackendStatus() {
         return backendStatus;
+    }
+
+    public void setSmoothUpgradeSrc(boolean is) {
+        this.isSmoothUpgradeSrc = is;
+    }
+
+    public boolean isSmoothUpgradeSrc() {
+        return this.isSmoothUpgradeSrc;
+    }
+
+    public void setSmoothUpgradeDst(boolean is) {
+        this.isSmoothUpgradeDst = is;
+    }
+
+    public boolean isSmoothUpgradeDst() {
+        return this.isSmoothUpgradeDst;
     }
 
     public int getHeartbeatFailureCounter() {
@@ -794,7 +820,7 @@ public class Backend implements Writable {
         @SerializedName("isLoadDisabled")
         public volatile boolean isLoadDisabled = false;
         @SerializedName("isActive")
-        public volatile boolean isActive = false;
+        public volatile boolean isActive = true;
     }
 
     public Tag getLocationTag() {

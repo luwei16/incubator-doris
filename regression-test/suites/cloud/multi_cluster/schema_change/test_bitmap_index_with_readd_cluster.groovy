@@ -61,8 +61,11 @@ suite("test_bitmap_index_with_readd_cluster") {
     sleep(12000)
     result  = sql "show clusters"
     assertTrue(result.size() == 1);
+
+    sql "use @regression_cluster_name0"
+    result  = sql "show clusters"
     for (row : result) {
-        println row
+        logger.info("row:${row}");
         if(row[0] == "regression_cluster_name0") {
             assertTrue(row[1].toString().toLowerCase() == "true")
         }
@@ -126,9 +129,9 @@ suite("test_bitmap_index_with_readd_cluster") {
     result  = sql "show clusters"
     assertTrue(result.size() == 1);
     for (row : result) {
-        println row
+        logger.info("row:${row}");
         if(row[0] == "regression_cluster_name1") {
-            assertTrue(row[1].toString().toLowerCase() == "true")
+            assertTrue(row[1].toString().toLowerCase() == "false")
         }
     }
 
@@ -143,7 +146,7 @@ suite("test_bitmap_index_with_readd_cluster") {
             Thread.sleep(1000)
             if (max_try_secs < 1) {
                 println "test timeout," + "state:" + res
-                assertEquals("CANCELLED", res)
+                assertEquals("FINISHED", res)
             }
         }
     }

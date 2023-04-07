@@ -37,7 +37,7 @@
 #include "util/runtime_profile.h"
 
 // dynamic table
-#include "vec/common/object_util.h"
+#include "vec/common/schema_util.h"
 #include "vec/json/json_parser.h"
 #include "vec/json/parse2column.h"
 #include "vec/json/simd_json_parser.h"

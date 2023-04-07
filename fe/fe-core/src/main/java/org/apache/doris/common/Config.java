@@ -2105,5 +2105,8 @@ public class Config extends ConfigBase {
      */
     @ConfField(mutable = true)
     public static int cloud_upgrade_mgr_interval_second = 15;
+
+    @ConfField(mutable = true)
+    public static boolean merge_on_write_forced_to_false = false;
 }
 

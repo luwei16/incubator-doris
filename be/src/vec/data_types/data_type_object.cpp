@@ -22,6 +22,7 @@
 #include <vec/data_types/data_type_object.h>
 #include <vec/io/io_helper.h>
 
+#include <cassert>
 #include <vec/data_types/data_type_factory.hpp>
 
 namespace doris::vectorized {
@@ -35,16 +36,103 @@ bool DataTypeObject::equals(const IDataType& rhs) const {
     return false;
 }
 
-int64_t DataTypeObject::get_uncompressed_serialized_bytes(const IColumn& column, int be_exec_version) const {
-    LOG(FATAL) << "Method get_uncompressed_serialized_bytes() is not implemented for data type " << get_name();
+int64_t DataTypeObject::get_uncompressed_serialized_bytes(const IColumn& column,
+                                                          int be_exec_version) const {
+    const auto& column_object = assert_cast<const ColumnObject&>(column);
+    assert(column_object.is_finalized());
+
+    const auto& subcolumns = column_object.get_subcolumns();
+    size_t size = 0;
+
+    size += sizeof(uint32_t);
+    for (const auto& entry : subcolumns) {
+        auto type = entry->data.get_least_common_type();
+
+        PColumnMeta column_meta_pb;
+        column_meta_pb.set_name(entry->path.get_path());
+        type->to_pb_column_meta(&column_meta_pb);
+        std::string meta_binary;
+        column_meta_pb.SerializeToString(&meta_binary);
+        size += sizeof(uint32_t);
+        size += meta_binary.size();
+
+        size += type->get_uncompressed_serialized_bytes(entry->data.get_finalized_column(),
+                                                        be_exec_version);
+    }
+
+    return size;
 }
 
 char* DataTypeObject::serialize(const IColumn& column, char* buf, int be_exec_version) const {
-    LOG(FATAL) << "Method serialize() is not implemented for data type " << get_name(); 
+    const auto& column_object = assert_cast<const ColumnObject&>(column);
+    assert(column_object.is_finalized());
+#ifndef NDEBUG
+    // DCHECK size
+    column_object.check_consistency();
+#endif
+
+    const auto& subcolumns = column_object.get_subcolumns();
+
+    // 1. serialize num of subcolumns
+    *reinterpret_cast<uint32_t*>(buf) = subcolumns.size();
+    buf += sizeof(uint32_t);
+
+    // 2. serialize each subcolumn in a loop
+    for (const auto& entry : subcolumns) {
+        // 2.1 serialize subcolumn column meta pb (path and type)
+        auto type = entry->data.get_least_common_type();
+
+        PColumnMeta column_meta_pb;
+        column_meta_pb.set_name(entry->path.get_path());
+        type->to_pb_column_meta(&column_meta_pb);
+        std::string meta_binary;
+        column_meta_pb.SerializeToString(&meta_binary);
+        *reinterpret_cast<uint32_t*>(buf) = meta_binary.size();
+        buf += sizeof(uint32_t);
+        memcpy(buf, meta_binary.data(), meta_binary.size());
+        buf += meta_binary.size();
+
+        // 2.2 serialize subcolumn
+        buf = type->serialize(entry->data.get_finalized_column(), buf, be_exec_version);
+    }
+
+    return buf;
 }
 
-const char* DataTypeObject::deserialize(const char* buf, IColumn* column, int be_exec_version) const {
-    LOG(FATAL) << "Method deserialize() is not implemented for data type " << get_name();  
+const char* DataTypeObject::deserialize(const char* buf, IColumn* column,
+                                        int be_exec_version) const {
+    auto column_object = assert_cast<ColumnObject*>(column);
+
+    // 1. deserialize num of subcolumns
+    uint32_t num_subcolumns = *reinterpret_cast<const uint32_t*>(buf);
+    buf += sizeof(uint32_t);
+
+    // 2. deserialize each subcolumn in a loop
+    for (uint32_t i = 0; i < num_subcolumns; i++) {
+        // 2.1 deserialize subcolumn column path (str size + str data)
+        uint32_t size = *reinterpret_cast<const uint32_t*>(buf);
+        buf += sizeof(uint32_t);
+        std::string meta_binary {buf, size};
+        buf += size;
+        PColumnMeta column_meta_pb;
+        column_meta_pb.ParseFromString(meta_binary);
+
+        // 2.2 deserialize subcolumn
+        auto type = DataTypeFactory::instance().create_data_type(column_meta_pb);
+        MutableColumnPtr sub_column = type->create_column();
+        buf = type->deserialize(buf, sub_column.get(), be_exec_version);
+
+        // add subcolumn to column_object
+        PathInData key {column_meta_pb.name()};
+        column_object->add_sub_column(key, std::move(sub_column));
+    }
+
+    column_object->finalize();
+#ifndef NDEBUG
+    // DCHECK size
+    column_object->check_consistency();
+#endif
+    return buf;
 }
 
 } // namespace doris::vectorized

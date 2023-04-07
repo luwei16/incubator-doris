@@ -163,6 +163,8 @@ Status DeltaWriter::init() {
     context.segments_overlap = OVERLAPPING;
     context.tablet_schema = _tablet_schema;
     context.fs = cloud::latest_fs();
+    context.tablet_id = _tablet->table_id();
+    context.is_direct_write = true;
     context.tablet = _tablet;
     context.tablet_id = _tablet->table_id();
     context.is_direct_write = true;

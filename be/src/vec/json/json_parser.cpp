@@ -1,3 +1,23 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+// This file is copied from
+// https://github.com/ClickHouse/ClickHouse/blob/master/src/Common/JSONParsers/SimdJSONParser.cpp
+// and modified by Doris
+
 #include "vec/json/json_parser.h"
 
 #include "vec/json/simd_json_parser.h"
@@ -44,13 +64,17 @@ template <typename ParserImpl>
 std::optional<ParseResult> JSONDataParser<ParserImpl>::parse(const char* begin, size_t length) {
     std::string_view json {begin, length};
     Element document;
-    if (!parser.parse(json, document)) return {};
+    if (!parser.parse(json, document)) {
+        return {};
+    }
     ParseContext context;
     traverse(document, context);
     ParseResult result;
     result.values = std::move(context.values);
     result.paths.reserve(context.paths.size());
-    for (auto&& path : context.paths) result.paths.emplace_back(std::move(path));
+    for (auto&& path : context.paths) {
+        result.paths.emplace_back(std::move(path));
+    }
     return result;
 }
 
@@ -111,7 +135,9 @@ void JSONDataParser<ParserImpl>::traverseArrayElement(const Element& element,
     size_t size = paths.size();
     size_t keys_to_update = ctx.arrays_by_path.size();
     for (size_t i = 0; i < size; ++i) {
-        if (values[i].is_null()) continue;
+        if (values[i].is_null()) {
+            continue;
+        }
         UInt128 hash = PathInData::get_parts_hash(paths[i]);
         auto found = ctx.arrays_by_path.find(hash);
         if (found != ctx.arrays_by_path.end()) {
@@ -124,9 +150,9 @@ void JSONDataParser<ParserImpl>::traverseArrayElement(const Element& element,
             if (!nested_key.empty()) {
                 size_t array_size = get<const Array&>(values[i]).size();
                 auto& current_nested_sizes = ctx.nested_sizes_by_key[nested_key];
-                if (current_nested_sizes.size() == ctx.current_size)
+                if (current_nested_sizes.size() == ctx.current_size) {
                     current_nested_sizes.push_back(array_size);
-                else if (array_size != current_nested_sizes.back()) {
+                } else if (array_size != current_nested_sizes.back()) {
                     LOG(FATAL) << fmt::format("Array sizes mismatched ({} and {})", array_size,
                                               current_nested_sizes.back());
                 }
@@ -147,14 +173,16 @@ void JSONDataParser<ParserImpl>::traverseArrayElement(const Element& element,
                 } else {
                     /// If newly added element is part of the Nested then
                     /// resize its elements to keep correct sizes of Nested arrays.
-                    for (size_t j = 0; j < ctx.current_size; ++j)
+                    for (size_t j = 0; j < ctx.current_size; ++j) {
                         path_array[j] = Array(current_nested_sizes[j]);
+                    }
                 }
-                if (current_nested_sizes.size() == ctx.current_size)
+                if (current_nested_sizes.size() == ctx.current_size) {
                     current_nested_sizes.push_back(array_size);
-                else if (array_size != current_nested_sizes.back())
+                } else if (array_size != current_nested_sizes.back()) {
                     LOG(FATAL) << fmt::format("Array sizes mismatched ({} and {})", array_size,
                                               current_nested_sizes.back());
+                }
             }
             path_array.push_back(std::move(values[i]));
             auto& elem = ctx.arrays_by_path[hash];
@@ -164,7 +192,9 @@ void JSONDataParser<ParserImpl>::traverseArrayElement(const Element& element,
     }
     /// If some of the keys are missed in current element,
     /// add default values for them.
-    if (keys_to_update) fillMissedValuesInArrays(ctx);
+    if (keys_to_update) {
+        fillMissedValuesInArrays(ctx);
+    }
 }
 
 template <typename ParserImpl>
@@ -174,7 +204,9 @@ void JSONDataParser<ParserImpl>::fillMissedValuesInArrays(ParseArrayContext& ctx
         assert(path_array.size() == ctx.current_size || path_array.size() == ctx.current_size + 1);
         if (path_array.size() == ctx.current_size) {
             bool inserted = tryInsertDefaultFromNested(ctx, path, path_array);
-            if (!inserted) path_array.emplace_back();
+            if (!inserted) {
+                path_array.emplace_back();
+            }
         }
     }
 }
@@ -185,17 +217,25 @@ bool JSONDataParser<ParserImpl>::tryInsertDefaultFromNested(ParseArrayContext& c
                                                             Array& array) {
     /// If there is a collected size of current Nested
     /// then insert array of this size as a default value.
-    if (path.empty() || array.empty()) return false;
+    if (path.empty() || array.empty()) {
+        return false;
+    }
     /// Last element is not Null, because otherwise this path wouldn't exist.
     auto nested_key = getNameOfNested(path, array.back());
-    if (nested_key.empty()) return false;
+    if (nested_key.empty()) {
+        return false;
+    }
     auto mapped = ctx.nested_sizes_by_key.find(nested_key);
-    if (mapped == ctx.nested_sizes_by_key.end()) return false;
+    if (mapped == ctx.nested_sizes_by_key.end()) {
+        return false;
+    }
     auto& current_nested_sizes = mapped->second;
     assert(current_nested_sizes.size() == ctx.current_size ||
            current_nested_sizes.size() == ctx.current_size + 1);
     /// If all keys of Nested were missed then add a zero length.
-    if (current_nested_sizes.size() == ctx.current_size) current_nested_sizes.push_back(0);
+    if (current_nested_sizes.size() == ctx.current_size) {
+        current_nested_sizes.push_back(0);
+    }
     size_t array_size = current_nested_sizes.back();
     array.push_back(Array(array_size));
     return true;
@@ -204,15 +244,20 @@ bool JSONDataParser<ParserImpl>::tryInsertDefaultFromNested(ParseArrayContext& c
 template <typename ParserImpl>
 StringRef JSONDataParser<ParserImpl>::getNameOfNested(const PathInData::Parts& path,
                                                       const Field& value) {
-    if (value.get_type() != Field::Types::Array || path.empty()) return {};
+    if (value.get_type() != Field::Types::Array || path.empty()) {
+        return {};
+    }
     /// Find first key that is marked as nested,
     /// because we may have tuple of Nested and there could be
     /// several arrays with the same prefix, but with independent sizes.
     /// Consider we have array element with type `k2 Tuple(k3 Nested(...), k5 Nested(...))`
     /// Then subcolumns `k2.k3` and `k2.k5` may have indepented sizes and we should extract
     /// `k3` and `k5` keys instead of `k2`.
-    for (const auto& part : path)
-        if (part.is_nested) return StringRef(part.key.data(), part.key.size());
+    for (const auto& part : path) {
+        if (part.is_nested) {
+            return StringRef(part.key.data(), part.key.size());
+        }
+    }
     return {};
 }
 

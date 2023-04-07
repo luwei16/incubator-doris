@@ -31,8 +31,9 @@
 namespace doris {
 
 using TabletSharedPtr = std::shared_ptr<Tablet>;
-
-namespace vectorized::object_util {
+class RowsetWriterContextBuilder;
+using RowsetWriterContextBuilderSharedPtr = std::shared_ptr<RowsetWriterContextBuilder>;
+namespace vectorized::schema_util {
 class LocalSchemaChangeRecorder;
 }
 
@@ -104,7 +105,7 @@ struct RowsetWriterContext {
     // it could be compaction or schema change etc..
     bool is_direct_write = false;
     // for tracing local schema change record
-    std::shared_ptr<vectorized::object_util::LocalSchemaChangeRecorder> schema_change_recorder =
+    std::shared_ptr<vectorized::schema_util::LocalSchemaChangeRecorder> schema_change_recorder =
             nullptr;
 };
 

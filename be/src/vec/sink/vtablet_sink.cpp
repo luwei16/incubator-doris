@@ -208,11 +208,6 @@ Status VNodeChannel::add_block(vectorized::Block* block,
         _cur_mutable_block.reset(new vectorized::MutableBlock(block->clone_empty()));
     }
 
-    if (_parent->_schema->is_dynamic_schema()) {
-        // Set _cur_mutable_block to dynamic since input blocks may be structure-variable(dyanmic)
-        // this will align _cur_mutable_block with block and auto extends columns
-        _cur_mutable_block->set_block_type(vectorized::BlockType::DYNAMIC);
-    }
     block->append_block_by_selector(_cur_mutable_block.get(), *(payload.first));
     for (auto tablet_id : payload.second) {
         _cur_add_block_request.add_tablet_ids(tablet_id);
@@ -232,7 +227,6 @@ Status VNodeChannel::add_block(vectorized::Block* block,
                        << " jobid:" << std::to_string(_state->load_job_id())
                        << " loadinfo:" << _load_info;
         }
-
         _cur_mutable_block.reset(new vectorized::MutableBlock(block->clone_empty()));
         _cur_add_block_request.clear_tablet_ids();
     }

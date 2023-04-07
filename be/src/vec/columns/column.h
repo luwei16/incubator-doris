@@ -404,7 +404,7 @@ public:
     /// Creates new column with values column[indexes[:limit]]. If limit is 0, all indexes are used.
     /// Indexes must be one of the ColumnUInt. For default implementation, see select_index_impl from ColumnsCommon.h
     virtual Ptr index(const IColumn& indexes, size_t limit) const {
-        LOG(FATAL) << "column not support filter_by_selector";
+        LOG(FATAL) << "column not support index";
         __builtin_unreachable();
     }
 
@@ -467,9 +467,6 @@ public:
         LOG(FATAL) << "not support";
     }
 
-    template <typename Derived>
-    void get_indices_of_non_default_rows_impl(Offsets64& indices, size_t from, size_t limit) const;
-
     /// Returns column with @total_size elements.
     /// In result column values from current column are at positions from @offsets.
     /// Other values are filled by @default_value.
@@ -477,6 +474,10 @@ public:
     /// Used to create full column from sparse.
     virtual Ptr create_with_offsets(const Offsets64& offsets, const Field& default_field,
                                     size_t total_rows, size_t shift) const;
+
+    template <typename Derived>
+    void get_indices_of_non_default_rows_impl(IColumn::Offsets64& indices, size_t from,
+                                              size_t limit) const;
 
     /** Split column to smaller columns. Each value goes to column index, selected by corresponding element of 'selector'.
       * Selector must contain values from 0 to num_columns - 1.

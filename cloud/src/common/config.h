@@ -51,12 +51,14 @@ CONF_Int32(log_verbose_level, "5");
 CONF_mInt64(recycle_interval_seconds, "3600");
 CONF_mInt64(retention_seconds, "259200"); // 72h
 CONF_Int32(recycle_concurrency, "16");
-CONF_Bool(recycle_standalone_mode, "false");
 CONF_Int32(recycle_job_lease_expired_ms, "60000");
 // Which instance should be recycled. If empty, recycle all instances.
 CONF_String(recycle_whitelist, ""); // Comma seprated list
 // These instances will not be recycled, only effective when whitelist is empty.
 CONF_String(recycle_blacklist, ""); // Comma seprated list
+CONF_mInt32(instance_recycler_worker_pool_size, "10");
+CONF_Bool(enable_checker, "false");
+CONF_mInt32(check_object_interval_seconds, "259200"); // 72h
 
 CONF_String(test_s3_ak, "ak");
 CONF_String(test_s3_sk, "sk");
@@ -67,8 +69,6 @@ CONF_String(test_s3_bucket, "bucket");
 // CONF_Bool(b, "true");
 
 // txn config
-CONF_Int32(stream_load_default_timeout_second, "600");
-CONF_Int32(stream_load_default_precommit_timeout_second, "3600");
 CONF_Int32(label_keep_max_second, "259200"); //3 * 24 * 3600 seconds
 CONF_Int32(expired_txn_scan_key_nums, "1000");
 
@@ -101,5 +101,7 @@ CONF_Int64(internal_stage_objects_expire_time_second, "259200"); // 3 * 24 * 360
 // format with base64: eg, "selectdbselectdbselectdbselectdb" -> "c2VsZWN0ZGJzZWxlY3RkYnNlbGVjdGRic2VsZWN0ZGI="
 CONF_String(encryption_key, "c2VsZWN0ZGJzZWxlY3RkYnNlbGVjdGRic2VsZWN0ZGI=");
 CONF_String(encryption_method, "AES_256_ECB");
+
+CONF_mBool(write_schema_kv, "false"); // temporary config for upgrade
 
 } // namespace selectdb::config

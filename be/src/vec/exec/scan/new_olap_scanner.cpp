@@ -326,8 +326,9 @@ Status NewOlapScanner::_init_tablet_reader_params(
 
     if (!_state->skip_storage_engine_merge()) {
         TOlapScanNode& olap_scan_node = ((NewOlapScanNode*)_parent)->_olap_scan_node;
-        if (olap_scan_node.__isset.sort_info &&
-            olap_scan_node.sort_info.is_asc_order.size() > 0) {
+        // order by table keys optimization for topn
+        // will only read head/tail of data file since it's already sorted by keys
+        if (olap_scan_node.__isset.sort_info && olap_scan_node.sort_info.is_asc_order.size() > 0) {
             _limit = _parent->_limit_per_scanner;
             _tablet_reader_params.read_orderby_key = true;
             if (!olap_scan_node.sort_info.is_asc_order[0]) {
@@ -510,7 +511,20 @@ void NewOlapScanner::_update_counters_before_close() {
     COUNTER_UPDATE(olap_parent->_bytes_scanned_from_remote,
                    stats.file_cache_stats.bytes_read_from_remote);
     COUNTER_UPDATE(olap_parent->_load_segments_timer, stats.load_segments_timer);
+    COUNTER_UPDATE(olap_parent->_async_remote_total_use_timer_ns, stats.async_io_stat.remote_total_use_timer_ns);
+    COUNTER_UPDATE(olap_parent->_async_remote_task_exec_timer_ns, stats.async_io_stat.remote_task_exec_timer_ns);
+    COUNTER_UPDATE(olap_parent->_async_remote_task_wait_worker_timer_ns, stats.async_io_stat.remote_task_wait_worker_timer_ns);
+    COUNTER_UPDATE(olap_parent->_async_remote_task_wake_up_timer_ns, stats.async_io_stat.remote_task_wake_up_timer_ns);
+    COUNTER_UPDATE(olap_parent->_async_remote_task_total, stats.async_io_stat.remote_task_total);
+    COUNTER_UPDATE(olap_parent->_async_remote_wait_for_putting_queue, stats.async_io_stat.remote_wait_for_putting_queue);
 
+    COUNTER_UPDATE(olap_parent->_async_local_total_use_timer_ns, stats.async_io_stat.local_total_use_timer_ns);
+    COUNTER_UPDATE(olap_parent->_async_local_task_exec_timer_ns, stats.async_io_stat.local_task_exec_timer_ns);
+    COUNTER_UPDATE(olap_parent->_async_local_task_wait_worker_timer_ns, stats.async_io_stat.local_task_wait_worker_timer_ns);
+    COUNTER_UPDATE(olap_parent->_async_local_task_wake_up_timer_ns, stats.async_io_stat.local_task_wake_up_timer_ns);
+    COUNTER_UPDATE(olap_parent->_async_local_task_total, stats.async_io_stat.local_task_total);
+    COUNTER_UPDATE(olap_parent->_async_local_wait_for_putting_queue, stats.async_io_stat.local_wait_for_putting_queue);
+ 
     // Update metrics
     DorisMetrics::instance()->query_scan_bytes->increment(_compressed_bytes_read);
     DorisMetrics::instance()->query_scan_rows->increment(_raw_rows_read);

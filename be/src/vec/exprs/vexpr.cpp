@@ -34,6 +34,7 @@
 #include "vec/exprs/vinfo_func.h"
 #include "vec/exprs/vliteral.h"
 #include "vec/exprs/vruntimefilter_wrapper.h"
+#include "vec/exprs/vschema_change_expr.h"
 #include "vec/exprs/vslot_ref.h"
 #include "vec/exprs/vtuple_is_null_predicate.h"
 
@@ -159,6 +160,10 @@ Status VExpr::create_expr(doris::ObjectPool* pool, const doris::TExprNode& texpr
     }
     case TExprNodeType::TUPLE_IS_NULL_PRED: {
         *expr = pool->add(new VTupleIsNullPredicate(texpr_node));
+        break;
+    }
+    case TExprNodeType::SCHEMA_CHANGE_EXPR: {
+        *expr = pool->add(new VSchemaChangeExpr(texpr_node));
         break;
     }
     default:

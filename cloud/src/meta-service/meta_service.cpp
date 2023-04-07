@@ -72,20 +72,19 @@ std::string static trim(std::string& str) {
     return str.erase(0, str.find_first_not_of(drop));
 }
 
-std::vector<std::string> split(const std::string& str, const char delim){
+std::vector<std::string> split(const std::string& str, const char delim) {
     std::vector<std::string> result;
     size_t start = 0;
     size_t pos = str.find(delim);
-    while(pos != std::string::npos){
-        if(pos > start){
-            result.push_back(str.substr(start, pos-start));
+    while (pos != std::string::npos) {
+        if (pos > start) {
+            result.push_back(str.substr(start, pos - start));
         }
         start = pos + 1;
         pos = str.find(delim, start);
     }
 
-    if(start < str.length())
-        result.push_back(str.substr(start));
+    if (start < str.length()) result.push_back(str.substr(start));
 
     return result;
 }
@@ -100,33 +99,34 @@ std::string get_instance_id(const std::shared_ptr<ResourceManager>& rc_mgr,
 
     std::vector<NodeInfo> nodes;
     std::string err = rc_mgr->get_node(cloud_unique_id, &nodes);
-    {
-        TEST_SYNC_POINT_CALLBACK("get_instance_id_err", &err);
-    }
+    { TEST_SYNC_POINT_CALLBACK("get_instance_id_err", &err); }
     if (!err.empty()) {
         // cache can't find cloud_unique_id, so degraded by parse cloud_unique_id
         // cloud_unique_id encode: ${version}:${instance_id}:${unique_id}
         // check it split by ':' c
         auto vec = split(cloud_unique_id, ':');
         std::stringstream ss;
-        for (int i=0; i<vec.size(); ++i) {
-            ss << "idx "  << i << "= [" << vec[i] << "] ";
+        for (int i = 0; i < vec.size(); ++i) {
+            ss << "idx " << i << "= [" << vec[i] << "] ";
         }
-        LOG(INFO) << "degraded to get instance_id, cloud_unique_id: " << cloud_unique_id << "after split: " << ss.str();
+        LOG(INFO) << "degraded to get instance_id, cloud_unique_id: " << cloud_unique_id
+                  << "after split: " << ss.str();
         if (vec.size() != 3) {
-            LOG(WARNING) << "cloud unique id is not degraded format, failed to check instance info, cloud_unique_id="
+            LOG(WARNING) << "cloud unique id is not degraded format, failed to check instance "
+                            "info, cloud_unique_id="
                          << cloud_unique_id << " , err=" << err;
             return "";
         }
         // version: vec[0], instance_id: vec[1], unique_id: vec[2]
         switch (std::atoi(vec[0].c_str())) {
-            case 1:
-                // just return instance id;
-                return vec[1];
-            default:
-                LOG(WARNING) << "cloud unique id degraded state, but version not eq configure, cloud_unique_id="
-                             << cloud_unique_id << ", err=" << err;
-                return "";
+        case 1:
+            // just return instance id;
+            return vec[1];
+        default:
+            LOG(WARNING) << "cloud unique id degraded state, but version not eq configure, "
+                            "cloud_unique_id="
+                         << cloud_unique_id << ", err=" << err;
+            return "";
         }
     }
 
@@ -217,20 +217,39 @@ void finish_rpc(std::string_view func_name, brpc::Controller* ctrl, Response* re
         }                                                                                \
     });
 
-#define RPC_RATE_LIMIT(func_name)                                                        \
-    if (config::enable_rate_limit &&                                                     \
-            config::use_detailed_metrics && !instance_id.empty()) {                      \
-        auto rate_limiter = rate_limiter_->get_rpc_rate_limiter(#func_name);             \
-        assert(rate_limiter != nullptr);                                                 \
-        std::function<int()> get_bvar_qps = [&] {                                        \
-                    return g_bvar_ms_##func_name.get(instance_id)->qps(); };             \
-        if (!rate_limiter->get_qps_token(instance_id, get_bvar_qps)) {                   \
-            drop_request = true;                                                         \
-            code = MetaServiceCode::MAX_QPS_LIMIT;                                       \
-            msg = "reach max qps limit";                                                 \
-            return;                                                                      \
-        }                                                                                \
+#define RPC_RATE_LIMIT(func_name)                                                            \
+    if (config::enable_rate_limit && config::use_detailed_metrics && !instance_id.empty()) { \
+        auto rate_limiter = rate_limiter_->get_rpc_rate_limiter(#func_name);                 \
+        assert(rate_limiter != nullptr);                                                     \
+        std::function<int()> get_bvar_qps = [&] {                                            \
+            return g_bvar_ms_##func_name.get(instance_id)->qps();                            \
+        };                                                                                   \
+        if (!rate_limiter->get_qps_token(instance_id, get_bvar_qps)) {                       \
+            drop_request = true;                                                             \
+            code = MetaServiceCode::MAX_QPS_LIMIT;                                           \
+            msg = "reach max qps limit";                                                     \
+            return;                                                                          \
+        }                                                                                    \
     }
+
+static void get_tablet_idx(MetaServiceCode& code, std::string& msg, int& ret, Transaction* txn,
+                           const std::string& instance_id, int64_t tablet_id,
+                           TabletIndexPB& tablet_idx) {
+    std::string key, val;
+    meta_tablet_idx_key({instance_id, tablet_id}, &key);
+    ret = txn->get(key, &val);
+    if (ret != 0) {
+        code = ret == 1 ? MetaServiceCode::TABLET_NOT_FOUND : MetaServiceCode::KV_TXN_GET_ERR;
+        msg = fmt::format("failed to get tablet_idx, err={}",
+                          ret == 1 ? "not found" : "internal error");
+        return;
+    }
+    if (!tablet_idx.ParseFromString(val)) {
+        code = MetaServiceCode::PROTOBUF_PARSE_ERR;
+        msg = "malformed tablet index value";
+        return;
+    }
+}
 
 //TODO: we need move begin/commit etc txn to TxnManager
 void MetaServiceImpl::begin_txn(::google::protobuf::RpcController* controller,
@@ -248,7 +267,7 @@ void MetaServiceImpl::begin_txn(::google::protobuf::RpcController* controller,
     std::string label = txn_info.has_label() ? txn_info.label() : "";
     int64_t db_id = txn_info.has_db_id() ? txn_info.db_id() : -1;
 
-    if (label.empty() || db_id < 0 || txn_info.table_ids().empty()) {
+    if (label.empty() || db_id < 0 || txn_info.table_ids().empty() || !txn_info.has_timeout_ms()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
         ss << "invalid argument, label=" << label << " db_id=" << db_id;
         msg = ss.str();
@@ -439,7 +458,6 @@ void MetaServiceImpl::begin_txn(::google::protobuf::RpcController* controller,
     uint64_t prepare_time = duration_cast<milliseconds>(now_time.time_since_epoch()).count();
 
     txn_info.set_prepare_time(prepare_time);
-
     //4. put txn info and db_tbl
     std::string txn_inf_key;
     std::string txn_inf_val;
@@ -472,11 +490,7 @@ void MetaServiceImpl::begin_txn(::google::protobuf::RpcController* controller,
     txn_running_key(txn_run_key_info, &txn_run_key);
 
     TxnRunningPB running_val_pb;
-    uint64_t txn_timeout_ms = txn_info.has_timeout_ms()
-                                      ? txn_info.timeout_ms()
-                                      : config::stream_load_default_timeout_second * 1000;
-
-    running_val_pb.set_timeout_time(prepare_time + txn_timeout_ms);
+    running_val_pb.set_timeout_time(prepare_time + txn_info.timeout_ms());
     for (auto i : txn_info.table_ids()) {
         running_val_pb.add_table_ids(i);
     }
@@ -528,9 +542,9 @@ void MetaServiceImpl::precommit_txn(::google::protobuf::RpcController* controlle
     RPC_PREPROCESS(precommit_txn);
     int64_t txn_id = request->has_txn_id() ? request->txn_id() : -1;
     int64_t db_id = request->has_db_id() ? request->db_id() : -1;
-    if (txn_id < 0 && db_id < 0) {
+    if ((txn_id < 0 && db_id < 0) || !request->has_precommit_timeout_ms()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
-        ss << "invalid txn_id and db_id, "
+        ss << "invalid argument, "
            << "txn_id=" << txn_id << " db_id=" << db_id;
         msg = ss.str();
         return;
@@ -655,10 +669,7 @@ void MetaServiceImpl::precommit_txn(::google::protobuf::RpcController* controlle
     txn_running_key(txn_run_key_info, &txn_run_key);
 
     TxnRunningPB running_val_pb;
-    uint64_t txn_timeout_ms = request->has_precommit_timeout_ms()
-                                      ? txn_info.precommit_timeout_ms()
-                                      : config::stream_load_default_precommit_timeout_second * 1000;
-    running_val_pb.set_timeout_time(precommit_time + txn_timeout_ms);
+    running_val_pb.set_timeout_time(precommit_time + txn_info.precommit_timeout_ms());
     if (!running_val_pb.SerializeToString(&txn_run_val)) {
         code = MetaServiceCode::PROTOBUF_SERIALIZE_ERR;
         ss << "failed to serialize running_val_pb, txn_id=" << txn_id;
@@ -957,8 +968,6 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
         stats_tablet_key(stat_key_info, &stat_key);
         while (tablet_stats.count(stat_key) == 0) {
             ret = txn->get(stat_key, &stat_val); // May be perf. bottle-neck
-            LOG(INFO) << "get tablet_stats_key, key=" << hex(stat_key) << " ret=" << ret
-                      << " txn_id=" << txn_id;
             if (ret != 1 && ret != 0) {
                 code = MetaServiceCode::KV_TXN_GET_ERR;
                 ss << "failed to get tablet stats, tablet_id=" << tablet_id
@@ -1052,6 +1061,13 @@ void MetaServiceImpl::commit_txn(::google::protobuf::RpcController* controller,
 
     auto now_time = system_clock::now();
     uint64_t commit_time = duration_cast<milliseconds>(now_time.time_since_epoch()).count();
+    if ((txn_info.prepare_time() + txn_info.timeout_ms()) < commit_time) {
+        code = MetaServiceCode::UNDEFINED_ERR;
+        msg = fmt::format("txn is expired, not allow to commit txn_id={}", txn_id);
+        LOG(INFO) << msg << " prepapre_time=" << txn_info.prepare_time()
+                  << " timeout_ms=" << txn_info.timeout_ms() << " commit_time=" << commit_time;
+        return;
+    }
     txn_info.set_commit_time(commit_time);
     txn_info.set_finish_time(commit_time);
     if (request->has_commit_attachment()) {
@@ -1671,7 +1687,8 @@ void MetaServiceImpl::get_version(::google::protobuf::RpcController* controller,
 
 void internal_create_tablet(MetaServiceCode& code, std::string& msg, int& ret,
                             doris::TabletMetaPB& tablet_meta, std::shared_ptr<TxnKv> txn_kv,
-                            const std::string& instance_id) {
+                            const std::string& instance_id,
+                            std::set<std::pair<int64_t, int32_t>>& saved_schema) {
     bool has_first_rowset = tablet_meta.rs_metas_size() > 0;
 
     // TODO: validate tablet meta, check existence
@@ -1680,26 +1697,62 @@ void internal_create_tablet(MetaServiceCode& code, std::string& msg, int& ret,
     int64_t partition_id = tablet_meta.partition_id();
     int64_t tablet_id = tablet_meta.tablet_id();
 
+    if (!tablet_meta.has_schema() && !tablet_meta.has_schema_version()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "tablet_meta must have either schema or schema_version";
+        return;
+    }
+
     std::unique_ptr<Transaction> txn;
     ret = txn_kv->create_txn(&txn);
+    if (ret != 0) {
+        code = MetaServiceCode::KV_TXN_CREATE_ERR;
+        msg = "failed to init txn";
+        return;
+    }
 
     if (has_first_rowset) {
         // Put first rowset if needed
         std::string rs_key;
         std::string rs_val;
-        auto& first_rowset = tablet_meta.rs_metas(0);
-        if (has_first_rowset) {
-            MetaRowsetKeyInfo rs_key_info {instance_id, tablet_id, first_rowset.end_version()};
-            meta_rowset_key(rs_key_info, &rs_key);
-            if (!first_rowset.SerializeToString(&rs_val)) {
+        auto first_rowset = tablet_meta.mutable_rs_metas(0);
+        if (config::write_schema_kv) { // detach schema from rowset meta
+            first_rowset->set_index_id(index_id);
+            first_rowset->set_schema_version(tablet_meta.has_schema_version()
+                                                     ? tablet_meta.schema_version()
+                                                     : tablet_meta.schema().schema_version());
+            first_rowset->set_allocated_tablet_schema(nullptr);
+        }
+        MetaRowsetKeyInfo rs_key_info {instance_id, tablet_id, first_rowset->end_version()};
+        meta_rowset_key(rs_key_info, &rs_key);
+        if (!first_rowset->SerializeToString(&rs_val)) {
+            code = MetaServiceCode::PROTOBUF_SERIALIZE_ERR;
+            msg = "failed to serialize first rowset meta";
+            return;
+        }
+        txn->put(rs_key, rs_val);
+        tablet_meta.clear_rs_metas(); // Strip off rowset meta
+    }
+
+    std::string schema_key, schema_val;
+    while (config::write_schema_kv && tablet_meta.has_schema()) {
+        // detach TabletSchemaPB from TabletMetaPB
+        tablet_meta.set_schema_version(tablet_meta.schema().schema_version());
+        auto [_, success] = saved_schema.emplace(index_id, tablet_meta.schema_version());
+        if (success) { // schema may not be saved
+            meta_schema_key({instance_id, index_id, tablet_meta.schema_version()}, &schema_key);
+            if (txn->get(schema_key, &schema_val, true) == 0) {
+                break; // schema has already been saved
+            }
+            if (!tablet_meta.schema().SerializeToString(&schema_val)) [[unlikely]] {
                 code = MetaServiceCode::PROTOBUF_SERIALIZE_ERR;
-                msg = "failed to serialize first rowset meta";
+                msg = "failed to serialize tablet schema value";
                 return;
             }
-            txn->put(rs_key, rs_val);
-            LOG(INFO) << "xxx rowset key=" << hex(rs_key);
+            txn->put(schema_key, schema_val);
         }
-        tablet_meta.clear_rs_metas(); // Strip off rowset meta
+        tablet_meta.set_allocated_schema(nullptr);
+        break;
     }
 
     MetaTabletKeyInfo key_info {instance_id, table_id, index_id, partition_id, tablet_id};
@@ -1779,48 +1832,34 @@ void MetaServiceImpl::create_tablets(::google::protobuf::RpcController* controll
         return;
     }
     RPC_RATE_LIMIT(create_tablets)
+    // [index_id, schema_version]
+    std::set<std::pair<int64_t, int32_t>> saved_schema;
     for (auto& tablet_meta : request->tablet_metas()) {
         auto& meta = const_cast<doris::TabletMetaPB&>(tablet_meta);
-        internal_create_tablet(code, msg, ret, meta, txn_kv_, instance_id);
+        internal_create_tablet(code, msg, ret, meta, txn_kv_, instance_id, saved_schema);
         if (code != MetaServiceCode::OK) {
             return;
         }
     }
 }
 
-void get_tablet(MetaServiceCode& code, std::string& msg, std::stringstream& ss, int& ret,
-                const std::string& instance_id, Transaction* txn, int64_t tablet_id,
-                doris::TabletMetaPB* tablet_meta) {
+void internal_get_tablet(MetaServiceCode& code, std::string& msg, int& ret,
+                         const std::string& instance_id, Transaction* txn, int64_t tablet_id,
+                         doris::TabletMetaPB* tablet_meta, bool skip_schema) {
     // TODO: validate request
-    MetaTabletIdxKeyInfo key_info0 {instance_id, tablet_id};
-    std::string key0, val0;
-    meta_tablet_idx_key(key_info0, &key0);
-    ret = txn->get(key0, &val0);
-    LOG(INFO) << "get tablet meta, tablet_id=" << tablet_id << " key=" << hex(key0);
-    if (ret != 0) {
-        ss << "failed to get table id from tablet_id, err="
-           << (ret == 1 ? "not found" : "internal error");
-        code = MetaServiceCode::KV_TXN_GET_ERR;
-        msg = ss.str();
-        return;
-    }
+    TabletIndexPB tablet_idx;
+    get_tablet_idx(code, msg, ret, txn, instance_id, tablet_id, tablet_idx);
+    if (code != MetaServiceCode::OK) return;
 
-    TabletIndexPB tablet_table;
-    if (!tablet_table.ParseFromString(val0)) {
-        code = MetaServiceCode::PROTOBUF_PARSE_ERR;
-        msg = "malformed tablet table value";
-        return;
-    }
-
-    MetaTabletKeyInfo key_info1 {instance_id, tablet_table.table_id(), tablet_table.index_id(),
-                                 tablet_table.partition_id(), tablet_id};
+    MetaTabletKeyInfo key_info1 {instance_id, tablet_idx.table_id(), tablet_idx.index_id(),
+                                 tablet_idx.partition_id(), tablet_id};
     std::string key1, val1;
     meta_tablet_key(key_info1, &key1);
     ret = txn->get(key1, &val1);
     if (ret != 0) {
         code = (ret == 1 ? MetaServiceCode::TABLET_NOT_FOUND : MetaServiceCode::KV_TXN_GET_ERR);
-        ss << "failed to get tablet" << (ret == 1 ? ": not found" : "");
-        msg = ss.str();
+        msg = fmt::format("failed to get tablet, err={}",
+                          ret == 1 ? "not found" : "internal error");
         return;
     }
 
@@ -1828,6 +1867,32 @@ void get_tablet(MetaServiceCode& code, std::string& msg, std::stringstream& ss, 
         code = MetaServiceCode::PROTOBUF_PARSE_ERR;
         msg = "malformed tablet meta, unable to initialize";
         return;
+    }
+
+    if (tablet_meta->has_schema()) { // tablet meta saved before detach schema kv
+        tablet_meta->set_schema_version(tablet_meta->schema().schema_version());
+    }
+    if (!tablet_meta->has_schema() && !skip_schema) {
+        if (!tablet_meta->has_schema_version()) {
+            code = MetaServiceCode::INVALID_ARGUMENT;
+            msg = "tablet_meta must have either schema or schema_version";
+            return;
+        }
+        auto key = meta_schema_key(
+                {instance_id, tablet_meta->index_id(), tablet_meta->schema_version()});
+        std::string val;
+        ret = txn->get(key, &val);
+        if (ret != 0) {
+            code = MetaServiceCode::KV_TXN_GET_ERR;
+            msg = fmt::format("failed to get schema, err={}",
+                              ret == 1 ? "not found" : "internal error");
+            return;
+        }
+        if (!tablet_meta->mutable_schema()->ParseFromString(val)) {
+            code = MetaServiceCode::PROTOBUF_PARSE_ERR;
+            msg = fmt::format("malformed schema value, key={}", key);
+            return;
+        }
     }
 }
 
@@ -1852,8 +1917,8 @@ void MetaServiceImpl::update_tablet(::google::protobuf::RpcController* controlle
     }
     for (const TabletMetaInfoPB& tablet_meta_info : request->tablet_meta_infos()) {
         doris::TabletMetaPB tablet_meta;
-        selectdb::get_tablet(code, msg, ss, ret, instance_id, txn.get(),
-                             tablet_meta_info.tablet_id(), &tablet_meta);
+        internal_get_tablet(code, msg, ret, instance_id, txn.get(), tablet_meta_info.tablet_id(),
+                            &tablet_meta, true);
         if (code != MetaServiceCode::OK) {
             return;
         }
@@ -1890,9 +1955,10 @@ void MetaServiceImpl::update_tablet(::google::protobuf::RpcController* controlle
 }
 
 void MetaServiceImpl::update_tablet_schema(::google::protobuf::RpcController* controller,
-                       const ::selectdb::UpdateTabletSchemaRequest* request,
-                       ::selectdb::UpdateTabletSchemaResponse* response,
-                       ::google::protobuf::Closure* done) {
+                                           const ::selectdb::UpdateTabletSchemaRequest* request,
+                                           ::selectdb::UpdateTabletSchemaResponse* response,
+                                           ::google::protobuf::Closure* done) {
+    DCHECK(false) << "should not call update_tablet_schema";
     RPC_PREPROCESS(update_tablet_schema);
     instance_id = get_instance_id(resource_mgr_, request->cloud_unique_id());
     if (instance_id.empty()) {
@@ -1912,14 +1978,31 @@ void MetaServiceImpl::update_tablet_schema(::google::protobuf::RpcController* co
     }
 
     doris::TabletMetaPB tablet_meta;
-    selectdb::get_tablet(code, msg, ss, ret, instance_id, txn.get(),
-                            request->tablet_id(), &tablet_meta);
+    internal_get_tablet(code, msg, ret, instance_id, txn.get(), request->tablet_id(), &tablet_meta,
+                        true);
     if (code != MetaServiceCode::OK) {
         return;
     }
 
-    if (request->has_tablet_schema()) {
-        tablet_meta.mutable_schema()->CopyFrom(request->tablet_schema());
+    std::string schema_key, schema_val;
+    while (request->has_tablet_schema()) {
+        if (!config::write_schema_kv) {
+            tablet_meta.mutable_schema()->CopyFrom(request->tablet_schema());
+            break;
+        }
+        tablet_meta.set_schema_version(request->tablet_schema().schema_version());
+        meta_schema_key({instance_id, tablet_meta.index_id(), tablet_meta.schema_version()},
+                        &schema_key);
+        if (txn->get(schema_key, &schema_val, true) == 0) {
+            break; // schema has already been saved
+        }
+        if (!request->tablet_schema().SerializeToString(&schema_val)) [[unlikely]] {
+            code = MetaServiceCode::PROTOBUF_SERIALIZE_ERR;
+            msg = "failed to serialize tablet schema value";
+            return;
+        }
+        txn->put(schema_key, schema_val);
+        break;
     }
 
     int64_t table_id = tablet_meta.table_id();
@@ -1963,8 +2046,79 @@ void MetaServiceImpl::get_tablet(::google::protobuf::RpcController* controller,
         msg = "failed to init txn";
         return;
     }
-    selectdb::get_tablet(code, msg, ss, ret, instance_id, txn.get(), request->tablet_id(),
-                         response->mutable_tablet_meta());
+    internal_get_tablet(code, msg, ret, instance_id, txn.get(), request->tablet_id(),
+                        response->mutable_tablet_meta(), false);
+}
+
+static void detach_schema_from_rowset(MetaServiceCode& code, std::string& msg, int& ret,
+                                      Transaction* txn, const std::string& instance_id,
+                                      doris::RowsetMetaPB& rowset_meta, std::string& schema_key,
+                                      std::string& schema_val) {
+    if (!rowset_meta.has_index_id()) {
+        TabletIndexPB tablet_idx;
+        get_tablet_idx(code, msg, ret, txn, instance_id, rowset_meta.tablet_id(), tablet_idx);
+        if (code != MetaServiceCode::OK) return;
+        rowset_meta.set_index_id(tablet_idx.index_id());
+    }
+    rowset_meta.set_schema_version(rowset_meta.tablet_schema().schema_version());
+    meta_schema_key({instance_id, rowset_meta.index_id(), rowset_meta.schema_version()},
+                    &schema_key);
+    if (txn->get(schema_key, &schema_val, true) == 0) {
+        rowset_meta.set_allocated_tablet_schema(nullptr);
+        return; // schema has already been saved
+    }
+    if (!rowset_meta.tablet_schema().SerializeToString(&schema_val)) [[unlikely]] {
+        code = MetaServiceCode::PROTOBUF_SERIALIZE_ERR;
+        msg = "failed to serialize tablet schema value";
+        return;
+    }
+    txn->put(schema_key, schema_val);
+    rowset_meta.set_allocated_tablet_schema(nullptr);
+}
+
+static void set_schema_in_existed_rowset(MetaServiceCode& code, std::string& msg, int& ret,
+                                         Transaction* txn, const std::string& instance_id,
+                                         doris::RowsetMetaPB& rowset_meta,
+                                         doris::RowsetMetaPB& existed_rowset_meta) {
+    DCHECK(existed_rowset_meta.has_index_id());
+    if (!existed_rowset_meta.has_schema_version()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "rowset_meta must have either schema or schema_version";
+        return;
+    }
+    // Currently, schema version of `existed_rowset_meta` and `rowset_meta` MUST be equal
+    DCHECK_EQ(existed_rowset_meta.schema_version(),
+              rowset_meta.has_tablet_schema() ? rowset_meta.tablet_schema().schema_version()
+                                              : rowset_meta.schema_version());
+    if (rowset_meta.has_tablet_schema() &&
+        rowset_meta.tablet_schema().schema_version() == existed_rowset_meta.schema_version()) {
+        if (existed_rowset_meta.GetArena() &&
+            rowset_meta.tablet_schema().GetArena() == existed_rowset_meta.GetArena()) {
+            existed_rowset_meta.unsafe_arena_set_allocated_tablet_schema(
+                    rowset_meta.mutable_tablet_schema());
+        } else {
+            existed_rowset_meta.mutable_tablet_schema()->CopyFrom(rowset_meta.tablet_schema());
+        }
+    } else {
+        // get schema from txn kv
+        std::string schema_key, schema_val;
+        meta_schema_key(
+                {instance_id, existed_rowset_meta.index_id(), existed_rowset_meta.schema_version()},
+                &schema_key);
+        ret = txn->get(schema_key, &schema_val, true);
+        if (ret != 0) {
+            code = MetaServiceCode::KV_TXN_GET_ERR;
+            msg = fmt::format("failed to get schema, schema_version={}: {}",
+                              rowset_meta.schema_version(),
+                              ret == 1 ? "not found" : "internal error");
+            return;
+        }
+        if (!existed_rowset_meta.mutable_tablet_schema()->ParseFromString(schema_val)) {
+            code = MetaServiceCode::PROTOBUF_PARSE_ERR;
+            msg = fmt::format("malformed schema value, key={}", schema_key);
+            return;
+        }
+    }
 }
 
 /**
@@ -1992,22 +2146,28 @@ void MetaServiceImpl::prepare_rowset(::google::protobuf::RpcController* controll
         LOG(INFO) << msg << ", cloud_unique_id=" << request->cloud_unique_id();
         return;
     }
+    auto& rowset_meta = const_cast<doris::RowsetMetaPB&>(request->rowset_meta());
+    if (!rowset_meta.has_tablet_schema() && !rowset_meta.has_schema_version()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "rowset_meta must have either schema or schema_version";
+        return;
+    }
     RPC_RATE_LIMIT(prepare_rowset)
-    // temporary == true is for loading rowset from user,
-    // temporary == false is for doris internal rowset put, such as data conversion in schema change procedure.
+    // temporary == true is for load txn, schema change, compaction
+    // temporary == false currently no such situation
     bool temporary = request->has_temporary() ? request->temporary() : false;
-    int64_t tablet_id = request->rowset_meta().tablet_id();
-    int64_t end_version = request->rowset_meta().end_version();
-    const auto& rowset_id = request->rowset_meta().rowset_id_v2();
+    int64_t tablet_id = rowset_meta.tablet_id();
+    int64_t end_version = rowset_meta.end_version();
+    const auto& rowset_id = rowset_meta.rowset_id_v2();
 
     std::string commit_key;
     std::string commit_val;
 
-    if (temporary) {
-        int64_t txn_id = request->rowset_meta().txn_id();
+    if (temporary) { // load txn, schema change, compaction
+        int64_t txn_id = rowset_meta.txn_id();
         MetaRowsetTmpKeyInfo key_info {instance_id, txn_id, tablet_id};
         meta_rowset_tmp_key(key_info, &commit_key);
-    } else {
+    } else { // ?
         MetaRowsetKeyInfo key_info {instance_id, tablet_id, end_version};
         meta_rowset_key(key_info, &commit_key);
     }
@@ -2023,10 +2183,31 @@ void MetaServiceImpl::prepare_rowset(::google::protobuf::RpcController* controll
     // Check if commit key already exists.
     ret = txn->get(commit_key, &commit_val);
     if (ret == 0) {
-        if (!response->mutable_existed_rowset_meta()->ParseFromString(commit_val)) {
+        auto existed_rowset_meta = response->mutable_existed_rowset_meta();
+        if (!existed_rowset_meta->ParseFromString(commit_val)) {
             code = MetaServiceCode::PROTOBUF_PARSE_ERR;
             msg = fmt::format("malformed rowset meta value. key={}", hex(commit_key));
             return;
+        }
+        if (!existed_rowset_meta->has_index_id()) {
+            if (rowset_meta.has_index_id()) {
+                existed_rowset_meta->set_index_id(rowset_meta.index_id());
+            } else {
+                TabletIndexPB tablet_idx;
+                get_tablet_idx(code, msg, ret, txn.get(), instance_id, rowset_meta.tablet_id(),
+                               tablet_idx);
+                if (code != MetaServiceCode::OK) return;
+                existed_rowset_meta->set_index_id(tablet_idx.index_id());
+                rowset_meta.set_index_id(tablet_idx.index_id());
+            }
+        }
+        if (!existed_rowset_meta->has_tablet_schema()) {
+            set_schema_in_existed_rowset(code, msg, ret, txn.get(), instance_id, rowset_meta,
+                                         *existed_rowset_meta);
+            if (code != MetaServiceCode::OK) return;
+        } else {
+            existed_rowset_meta->set_schema_version(
+                    existed_rowset_meta->tablet_schema().schema_version());
         }
         code = MetaServiceCode::ALREADY_EXISTED;
         msg = "rowset already exists";
@@ -2043,12 +2224,12 @@ void MetaServiceImpl::prepare_rowset(::google::protobuf::RpcController* controll
     RecycleRowsetKeyInfo prepare_key_info {instance_id, tablet_id, rowset_id};
     recycle_rowset_key(prepare_key_info, &prepare_key);
     RecycleRowsetPB prepare_rowset;
-    prepare_rowset.set_tablet_id(request->rowset_meta().tablet_id());
-    prepare_rowset.set_resource_id(request->rowset_meta().resource_id());
     using namespace std::chrono;
     int64_t now = duration_cast<seconds>(system_clock::now().time_since_epoch()).count();
     prepare_rowset.set_creation_time(now);
     prepare_rowset.set_expiration(request->rowset_meta().txn_expiration());
+    prepare_rowset.mutable_rowset_meta()->CopyFrom(request->rowset_meta());
+    prepare_rowset.set_type(RecycleRowsetPB::PREPARE);
     prepare_rowset.SerializeToString(&prepare_val);
 
     txn->put(prepare_key, prepare_val);
@@ -2092,27 +2273,33 @@ void MetaServiceImpl::commit_rowset(::google::protobuf::RpcController* controlle
         LOG(INFO) << msg << ", cloud_unique_id=" << request->cloud_unique_id();
         return;
     }
+    auto& rowset_meta = const_cast<doris::RowsetMetaPB&>(request->rowset_meta());
+    if (!rowset_meta.has_tablet_schema() && !rowset_meta.has_schema_version()) {
+        code = MetaServiceCode::INVALID_ARGUMENT;
+        msg = "rowset_meta must have either schema or schema_version";
+        return;
+    }
     RPC_RATE_LIMIT(commit_rowset)
-    // temporary == true is for loading rowset from user,
-    // temporary == false is for doris internal rowset put, such as data conversion in schema change procedure.
+    // temporary == true is for load txn, schema change, compaction
+    // temporary == false currently no such situation
     bool temporary = request->has_temporary() ? request->temporary() : false;
-    int64_t tablet_id = request->rowset_meta().tablet_id();
-    int64_t end_version = request->rowset_meta().end_version();
-    const auto& rowset_id = request->rowset_meta().rowset_id_v2();
+    int64_t tablet_id = rowset_meta.tablet_id();
+    int64_t end_version = rowset_meta.end_version();
+    const auto& rowset_id = rowset_meta.rowset_id_v2();
 
     std::string commit_key;
     std::string commit_val;
 
-    if (temporary) { // Txn
-        int64_t txn_id = request->rowset_meta().txn_id();
+    if (temporary) { // load txn, schema change, compaction
+        int64_t txn_id = rowset_meta.txn_id();
         MetaRowsetTmpKeyInfo key_info {instance_id, txn_id, tablet_id};
         meta_rowset_tmp_key(key_info, &commit_key);
-    } else { // Schema change
+    } else { // ?
         MetaRowsetKeyInfo key_info {instance_id, tablet_id, end_version};
         meta_rowset_key(key_info, &commit_key);
     }
 
-    if (!request->rowset_meta().SerializeToString(&commit_val)) {
+    if (!rowset_meta.SerializeToString(&commit_val)) {
         code = MetaServiceCode::PROTOBUF_SERIALIZE_ERR;
         msg = "failed to serialize rowset meta";
         return;
@@ -2134,10 +2321,31 @@ void MetaServiceImpl::commit_rowset(::google::protobuf::RpcController* controlle
             // Same request, return OK
             return;
         }
-        if (!response->mutable_existed_rowset_meta()->ParseFromString(commit_val)) {
+        auto existed_rowset_meta = response->mutable_existed_rowset_meta();
+        if (!existed_rowset_meta->ParseFromString(existed_commit_val)) {
             code = MetaServiceCode::PROTOBUF_PARSE_ERR;
             msg = fmt::format("malformed rowset meta value. key={}", hex(commit_key));
             return;
+        }
+        if (!existed_rowset_meta->has_index_id()) {
+            if (rowset_meta.has_index_id()) {
+                existed_rowset_meta->set_index_id(rowset_meta.index_id());
+            } else {
+                TabletIndexPB tablet_idx;
+                get_tablet_idx(code, msg, ret, txn.get(), instance_id, rowset_meta.tablet_id(),
+                               tablet_idx);
+                if (code != MetaServiceCode::OK) return;
+                existed_rowset_meta->set_index_id(tablet_idx.index_id());
+                rowset_meta.set_index_id(tablet_idx.index_id());
+            }
+        }
+        if (!existed_rowset_meta->has_tablet_schema()) {
+            set_schema_in_existed_rowset(code, msg, ret, txn.get(), instance_id, rowset_meta,
+                                         *existed_rowset_meta);
+            if (code != MetaServiceCode::OK) return;
+        } else {
+            existed_rowset_meta->set_schema_version(
+                    existed_rowset_meta->tablet_schema().schema_version());
         }
         code = MetaServiceCode::ALREADY_EXISTED;
         msg = "rowset already exists";
@@ -2148,12 +2356,20 @@ void MetaServiceImpl::commit_rowset(::google::protobuf::RpcController* controlle
         msg = "failed to check whether rowset exists";
         return;
     }
+    // write schema kv if rowset_meta has schema
+    std::string schema_key;
+    std::string schema_val;
+    if (config::write_schema_kv && rowset_meta.has_tablet_schema()) {
+        detach_schema_from_rowset(code, msg, ret, txn.get(), instance_id, rowset_meta, schema_key,
+                                  schema_val);
+        if (code != MetaServiceCode::OK) return;
+    }
 
     std::string prepare_key;
     RecycleRowsetKeyInfo prepare_key_info {instance_id, tablet_id, rowset_id};
     recycle_rowset_key(prepare_key_info, &prepare_key);
 
-    if (!request->rowset_meta().SerializeToString(&commit_val)) {
+    if (!rowset_meta.SerializeToString(&commit_val)) {
         code = MetaServiceCode::PROTOBUF_SERIALIZE_ERR;
         msg = "failed to serialize rowset meta";
         return;
@@ -2162,7 +2378,7 @@ void MetaServiceImpl::commit_rowset(::google::protobuf::RpcController* controlle
     txn->remove(prepare_key);
     txn->put(commit_key, commit_val);
     LOG(INFO) << "xxx put" << (temporary ? " tmp " : " ") << "commit_rowset_key "
-              << hex(prepare_key);
+              << hex(commit_key);
     ret = txn->commit();
     if (ret != 0) {
         code = ret == -1 ? MetaServiceCode::KV_TXN_CONFLICT : MetaServiceCode::KV_TXN_COMMIT_ERR;
@@ -2204,7 +2420,6 @@ void get_rowset(Transaction* txn, int64_t start, int64_t end, const std::string&
 
         while (it->has_next()) {
             auto [k, v] = it->next();
-            LOG(INFO) << "xxx range get rowset_key=" << hex(k);
             auto rs = response->add_rowset_meta();
             if (!rs->ParseFromArray(v.data(), v.size())) {
                 code = MetaServiceCode::PROTOBUF_PARSE_ERR;
@@ -2335,31 +2550,17 @@ void MetaServiceImpl::get_rowset(::google::protobuf::RpcController* controller,
     int64_t partition_id = request->idx().partition_id();
     // Get tablet id index from kv
     if (table_id <= 0 || index_id <= 0 || partition_id <= 0) {
-        std::string idx_key = meta_tablet_idx_key({instance_id, tablet_id});
-        std::string idx_val;
-        ret = txn->get(idx_key, &idx_val);
-        LOG(INFO) << "get tablet meta, tablet_id=" << tablet_id << " key=" << hex(idx_key);
-        if (ret != 0) {
-            ss << "failed to get table id from tablet_id, err="
-               << (ret == 1 ? "not found" : "internal error");
-            code = MetaServiceCode::KV_TXN_GET_ERR;
-            msg = ss.str();
-            return;
-        }
-        TabletIndexPB idx_pb;
-        if (!idx_pb.ParseFromString(idx_val)) {
-            code = MetaServiceCode::PROTOBUF_PARSE_ERR;
-            msg = "malformed tablet table value";
-            return;
-        }
-        table_id = idx_pb.table_id();
-        index_id = idx_pb.index_id();
-        partition_id = idx_pb.partition_id();
-        if (tablet_id != idx_pb.tablet_id()) {
+        TabletIndexPB tablet_idx;
+        get_tablet_idx(code, msg, ret, txn.get(), instance_id, tablet_id, tablet_idx);
+        if (code != MetaServiceCode::OK) return;
+        table_id = tablet_idx.table_id();
+        index_id = tablet_idx.index_id();
+        partition_id = tablet_idx.partition_id();
+        if (tablet_id != tablet_idx.tablet_id()) {
             code = MetaServiceCode::UNDEFINED_ERR;
             msg = "internal error";
             LOG(WARNING) << "unexpected error given_tablet_id=" << tablet_id
-                         << " idx_pb_tablet_id=" << idx_pb.tablet_id();
+                         << " idx_pb_tablet_id=" << tablet_idx.tablet_id();
             return;
         }
     }
@@ -2369,7 +2570,6 @@ void MetaServiceImpl::get_rowset(::google::protobuf::RpcController* controller,
     StatsTabletKeyInfo key_info {instance_id, table_id, index_id, partition_id, tablet_id};
     stats_tablet_key(key_info, &tablet_stat_key);
     ret = txn->get(tablet_stat_key, &tablet_stat_val);
-    LOG(INFO) << "get tablet stats, tablet_id=" << tablet_id << " key=" << hex(tablet_stat_key);
     if (ret != 0) {
         code = ret == 1 ? MetaServiceCode::TABLET_NOT_FOUND : MetaServiceCode::KV_TXN_GET_ERR;
         ss << (ret == 1 ? " not_found" : " failed") << "_tablet_id=" << tablet_id;
@@ -2419,6 +2619,56 @@ void MetaServiceImpl::get_rowset(::google::protobuf::RpcController* controller,
             return;
         }
     }
+
+    // get referenced schema
+    std::unordered_map<int32_t, doris::TabletSchemaPB*> version_to_schema;
+    for (auto& rowset_meta : *response->mutable_rowset_meta()) {
+        if (rowset_meta.has_tablet_schema()) {
+            version_to_schema.emplace(rowset_meta.tablet_schema().schema_version(),
+                                      rowset_meta.mutable_tablet_schema());
+            rowset_meta.set_schema_version(rowset_meta.tablet_schema().schema_version());
+        }
+        rowset_meta.set_index_id(index_id);
+    }
+    auto arena = response->GetArena();
+    for (auto& rowset_meta : *response->mutable_rowset_meta()) {
+        if (rowset_meta.has_tablet_schema()) continue;
+        if (!rowset_meta.has_schema_version()) {
+            code = MetaServiceCode::INVALID_ARGUMENT;
+            msg = fmt::format(
+                    "rowset_meta must have either schema or schema_version, "
+                    "rowset_version=[{}-{}]",
+                    rowset_meta.start_version(), rowset_meta.end_version());
+            return;
+        }
+        if (auto it = version_to_schema.find(rowset_meta.schema_version());
+            it != version_to_schema.end()) {
+            if (arena != nullptr) {
+                rowset_meta.set_allocated_tablet_schema(it->second);
+            } else {
+                rowset_meta.mutable_tablet_schema()->CopyFrom(*it->second);
+            }
+        } else {
+            auto key = meta_schema_key({instance_id, index_id, rowset_meta.schema_version()});
+            std::string val;
+            ret = txn->get(key, &val);
+            if (ret != 0) {
+                code = MetaServiceCode::KV_TXN_GET_ERR;
+                msg = fmt::format(
+                        "failed to get schema, schema_version={}, rowset_version=[{}-{}]: {}",
+                        rowset_meta.schema_version(), rowset_meta.start_version(),
+                        rowset_meta.end_version(), ret == 1 ? "not found" : "internal error");
+                return;
+            }
+            auto schema = rowset_meta.mutable_tablet_schema();
+            if (!schema->ParseFromString(val)) {
+                code = MetaServiceCode::PROTOBUF_PARSE_ERR;
+                msg = fmt::format("malformed schema value, key={}", key);
+                return;
+            }
+            version_to_schema.emplace(rowset_meta.schema_version(), schema);
+        }
+    }
 }
 
 int index_exists(MetaServiceCode& code, std::string& msg, const ::selectdb::IndexRequest* request,
@@ -2452,7 +2702,7 @@ int index_exists(MetaServiceCode& code, std::string& msg, const ::selectdb::Inde
 
 void put_recycle_index_kv(MetaServiceCode& code, std::string& msg, int& ret,
                           const ::selectdb::IndexRequest* request, const std::string& instance_id,
-                          Transaction* txn) {
+                          Transaction* txn, RecycleIndexPB::Type type) {
     const auto& index_ids = request->index_ids();
     if (index_ids.empty() || !request->has_table_id()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
@@ -2474,6 +2724,7 @@ void put_recycle_index_kv(MetaServiceCode& code, std::string& msg, int& ret,
         recycle_index.set_table_id(request->table_id());
         recycle_index.set_creation_time(creation_time);
         recycle_index.set_expiration(request->expiration());
+        recycle_index.set_type(type);
         std::string val = recycle_index.SerializeAsString();
 
         kvs.emplace_back(std::move(key), std::move(val));
@@ -2547,7 +2798,7 @@ void MetaServiceImpl::prepare_index(::google::protobuf::RpcController* controlle
         msg = "index already existed";
         return;
     }
-    put_recycle_index_kv(code, msg, ret, request, instance_id, txn.get());
+    put_recycle_index_kv(code, msg, ret, request, instance_id, txn.get(), RecycleIndexPB::PREPARE);
 }
 
 void MetaServiceImpl::commit_index(::google::protobuf::RpcController* controller,
@@ -2593,7 +2844,7 @@ void MetaServiceImpl::drop_index(::google::protobuf::RpcController* controller,
         msg = "failed to create txn";
         return;
     }
-    put_recycle_index_kv(code, msg, ret, request, instance_id, txn.get());
+    put_recycle_index_kv(code, msg, ret, request, instance_id, txn.get(), RecycleIndexPB::DROP);
 }
 
 int partition_exists(MetaServiceCode& code, std::string& msg,
@@ -2629,7 +2880,7 @@ int partition_exists(MetaServiceCode& code, std::string& msg,
 
 void put_recycle_partition_kv(MetaServiceCode& code, std::string& msg, int& ret,
                               const ::selectdb::PartitionRequest* request,
-                              const std::string& instance_id, Transaction* txn) {
+                              const std::string& instance_id, Transaction* txn, RecyclePartitionPB::Type type) {
     const auto& partition_ids = request->partition_ids();
     const auto& index_ids = request->index_ids();
     if (partition_ids.empty() || index_ids.empty() || !request->has_table_id()) {
@@ -2654,6 +2905,7 @@ void put_recycle_partition_kv(MetaServiceCode& code, std::string& msg, int& ret,
         *recycle_partition.mutable_index_id() = index_ids;
         recycle_partition.set_creation_time(creation_time);
         recycle_partition.set_expiration(request->expiration());
+        recycle_partition.set_type(type);
         std::string val = recycle_partition.SerializeAsString();
 
         kvs.emplace_back(std::move(key), std::move(val));
@@ -2729,7 +2981,7 @@ void MetaServiceImpl::prepare_partition(::google::protobuf::RpcController* contr
         msg = "index already existed";
         return;
     }
-    put_recycle_partition_kv(code, msg, ret, request, instance_id, txn.get());
+    put_recycle_partition_kv(code, msg, ret, request, instance_id, txn.get(), RecyclePartitionPB::PREPARE);
 }
 
 void MetaServiceImpl::commit_partition(::google::protobuf::RpcController* controller,
@@ -2775,7 +3027,7 @@ void MetaServiceImpl::drop_partition(::google::protobuf::RpcController* controll
         msg = "failed to create txn";
         return;
     }
-    put_recycle_partition_kv(code, msg, ret, request, instance_id, txn.get());
+    put_recycle_partition_kv(code, msg, ret, request, instance_id, txn.get(), RecyclePartitionPB::DROP);
 }
 
 void MetaServiceImpl::get_tablet_stats(::google::protobuf::RpcController* controller,
@@ -2896,11 +3148,17 @@ void static format_to_json_resp(std::string& response_body, const MetaServiceCod
     response_body = sb.GetString();
 }
 
-static int encrypt_ak_sk_helper(const std::string plain_ak, const std::string plain_sk, EncryptionInfoPB* encryption_info,
-            AkSkPair* cipher_ak_sk_pair, MetaServiceCode& code, std::string& msg) {
+static int encrypt_ak_sk_helper(const std::string plain_ak, const std::string plain_sk,
+                                EncryptionInfoPB* encryption_info, AkSkPair* cipher_ak_sk_pair,
+                                MetaServiceCode& code, std::string& msg) {
     std::string key;
     int64_t key_id;
     int ret = get_newest_encryption_key_for_ak_sk(&key_id, &key);
+    {
+        TEST_SYNC_POINT_CALLBACK("encrypt_ak_sk:get_encryption_key_ret", &ret);
+        TEST_SYNC_POINT_CALLBACK("encrypt_ak_sk:get_encryption_key", &key);
+        TEST_SYNC_POINT_CALLBACK("encrypt_ak_sk:get_encryption_key_id", &key_id);
+    }
     if (ret != 0) {
         msg = "failed to get encryption key";
         code = MetaServiceCode::ERR_ENCRYPT;
@@ -2908,7 +3166,7 @@ static int encrypt_ak_sk_helper(const std::string plain_ak, const std::string pl
         return -1;
     }
     std::string encryption_method = get_encryption_method_for_ak_sk();
-    AkSkPair plain_ak_sk_pair{plain_ak, plain_sk};
+    AkSkPair plain_ak_sk_pair {plain_ak, plain_sk};
     ret = encrypt_ak_sk(plain_ak_sk_pair, encryption_method, key, cipher_ak_sk_pair);
     if (ret != 0) {
         msg = "failed to encrypt";
@@ -2921,18 +3179,24 @@ static int encrypt_ak_sk_helper(const std::string plain_ak, const std::string pl
     return 0;
 }
 
-static int decrypt_ak_sk_helper(const std::string cipher_ak, const std::string cipher_sk, const EncryptionInfoPB& encryption_info,
-            AkSkPair* plain_ak_sk_pair, MetaServiceCode& code, std::string& msg) {
+static int decrypt_ak_sk_helper(const std::string cipher_ak, const std::string cipher_sk,
+                                const EncryptionInfoPB& encryption_info, AkSkPair* plain_ak_sk_pair,
+                                MetaServiceCode& code, std::string& msg) {
     std::string key;
     int ret = get_encryption_key_for_ak_sk(encryption_info.key_id(), &key);
+    {
+        TEST_SYNC_POINT_CALLBACK("decrypt_ak_sk:get_encryption_key_ret", &ret);
+        TEST_SYNC_POINT_CALLBACK("decrypt_ak_sk:get_encryption_key", &key);
+    }
     if (ret != 0) {
         msg = "failed to get encryption key";
         code = MetaServiceCode::ERR_DECPYPT;
         LOG(WARNING) << msg << " key_id: " << encryption_info.key_id();
         return -1;
     }
-    AkSkPair cipher_ak_sk_pair{cipher_ak, cipher_sk};
-    ret = decrypt_ak_sk(cipher_ak_sk_pair, encryption_info.encryption_method(), key, plain_ak_sk_pair);
+    AkSkPair cipher_ak_sk_pair {cipher_ak, cipher_sk};
+    ret = decrypt_ak_sk(cipher_ak_sk_pair, encryption_info.encryption_method(), key,
+                        plain_ak_sk_pair);
     if (ret != 0) {
         msg = "failed to decrypt";
         code = MetaServiceCode::ERR_DECPYPT;
@@ -2942,12 +3206,14 @@ static int decrypt_ak_sk_helper(const std::string cipher_ak, const std::string c
     return 0;
 }
 
-static int decrypt_instance_info(InstanceInfoPB &instance, const std::string& instance_id,
-                MetaServiceCode& code, std::string& msg, std::shared_ptr<Transaction>& txn) {
-    for (auto& obj_info: *instance.mutable_obj_info()) {
+static int decrypt_instance_info(InstanceInfoPB& instance, const std::string& instance_id,
+                                 MetaServiceCode& code, std::string& msg,
+                                 std::shared_ptr<Transaction>& txn) {
+    for (auto& obj_info : *instance.mutable_obj_info()) {
         if (obj_info.has_encryption_info()) {
             AkSkPair plain_ak_sk_pair;
-            int ret = decrypt_ak_sk_helper(obj_info.ak(), obj_info.sk(), obj_info.encryption_info(), &plain_ak_sk_pair, code, msg);
+            int ret = decrypt_ak_sk_helper(obj_info.ak(), obj_info.sk(), obj_info.encryption_info(),
+                                           &plain_ak_sk_pair, code, msg);
             if (ret != 0) return -1;
             obj_info.set_ak(std::move(plain_ak_sk_pair.first));
             obj_info.set_sk(std::move(plain_ak_sk_pair.second));
@@ -2956,11 +3222,11 @@ static int decrypt_instance_info(InstanceInfoPB &instance, const std::string& in
     if (instance.has_ram_user() && instance.ram_user().has_encryption_info()) {
         auto& ram_user = *instance.mutable_ram_user();
         AkSkPair plain_ak_sk_pair;
-        int ret = decrypt_ak_sk_helper(ram_user.ak(), ram_user.sk(), ram_user.encryption_info(), &plain_ak_sk_pair, code, msg);
+        int ret = decrypt_ak_sk_helper(ram_user.ak(), ram_user.sk(), ram_user.encryption_info(),
+                                       &plain_ak_sk_pair, code, msg);
         if (ret != 0) return -1;
         ram_user.set_ak(std::move(plain_ak_sk_pair.first));
         ram_user.set_sk(std::move(plain_ak_sk_pair.second));
-
     }
 
     std::string val;
@@ -2982,7 +3248,8 @@ static int decrypt_instance_info(InstanceInfoPB &instance, const std::string& in
             return -1;
         }
         AkSkPair plain_ak_sk_pair;
-        int ret = decrypt_ak_sk_helper(iam_user.ak(), iam_user.sk(), iam_user.encryption_info(), &plain_ak_sk_pair, code, msg);
+        int ret = decrypt_ak_sk_helper(iam_user.ak(), iam_user.sk(), iam_user.encryption_info(),
+                                       &plain_ak_sk_pair, code, msg);
         if (ret != 0) return -1;
         iam_user.set_ak(std::move(plain_ak_sk_pair.first));
         iam_user.set_sk(std::move(plain_ak_sk_pair.second));
@@ -2994,11 +3261,12 @@ static int decrypt_instance_info(InstanceInfoPB &instance, const std::string& in
         return -1;
     }
 
-    for (auto& stage: *instance.mutable_stages()) {
+    for (auto& stage : *instance.mutable_stages()) {
         if (stage.has_obj_info() && stage.obj_info().has_encryption_info()) {
             auto& obj_info = *stage.mutable_obj_info();
             AkSkPair plain_ak_sk_pair;
-            int ret = decrypt_ak_sk_helper(obj_info.ak(), obj_info.sk(), obj_info.encryption_info(), &plain_ak_sk_pair, code, msg);
+            int ret = decrypt_ak_sk_helper(obj_info.ak(), obj_info.sk(), obj_info.encryption_info(),
+                                           &plain_ak_sk_pair, code, msg);
             if (ret != 0) return -1;
             obj_info.set_ak(std::move(plain_ak_sk_pair.first));
             obj_info.set_sk(std::move(plain_ak_sk_pair.second));
@@ -3007,9 +3275,9 @@ static int decrypt_instance_info(InstanceInfoPB &instance, const std::string& in
     return 0;
 }
 
-std::pair<MetaServiceCode, std::string> get_instance_info(const std::shared_ptr<ResourceManager>& resource,
-                                                          const std::shared_ptr<TxnKv>& txn_kv,
-                                                          std::string instance_id, const std::string& cloud_unique_id) {
+std::pair<MetaServiceCode, std::string> get_instance_info(
+        const std::shared_ptr<ResourceManager>& resource, const std::shared_ptr<TxnKv>& txn_kv,
+        std::string instance_id, const std::string& cloud_unique_id) {
     std::pair<MetaServiceCode, std::string> ec {MetaServiceCode::OK, ""};
     [[maybe_unused]] auto& [code, msg] = ec;
     std::stringstream ss;
@@ -3049,7 +3317,7 @@ std::pair<MetaServiceCode, std::string> get_instance_info(const std::shared_ptr<
         return ec;
     }
     // maybe do not decrypt ak/sk?
-    if(decrypt_instance_info(instance, instance_id, code, msg, txn)) {
+    if (decrypt_instance_info(instance, instance_id, code, msg, txn)) {
         return ec;
     }
     msg = proto_to_json(instance);
@@ -3108,6 +3376,8 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
     auto token = uri.GetQuery("token");
     if (token == nullptr || *token != config::http_token) {
         msg = "incorrect token, token=" + (token == nullptr ? std::string("(not given)") : *token);
+        ret = MetaServiceCode::INVALID_ARGUMENT;
+        keep_raw_body = true;
         response_body = "incorrect token";
         status_code = 403;
         return;
@@ -3515,8 +3785,10 @@ void MetaServiceImpl::http(::google::protobuf::RpcController* controller,
     }
 
     if (unresolved_path == "get_instance") {
-        const std::string instance_id = uri.GetQuery("instance_id") == nullptr ? "" : *uri.GetQuery("instance_id");
-        const std::string cloud_unique_id = uri.GetQuery("cloud_unique_id") == nullptr ? "" : *uri.GetQuery("cloud_unique_id");
+        const std::string instance_id =
+                uri.GetQuery("instance_id") == nullptr ? "" : *uri.GetQuery("instance_id");
+        const std::string cloud_unique_id =
+                uri.GetQuery("cloud_unique_id") == nullptr ? "" : *uri.GetQuery("cloud_unique_id");
         auto [c0, m0] = get_instance_info(resource_mgr_, txn_kv_, instance_id, cloud_unique_id);
         ret = c0;
         response_body = m0;
@@ -3620,10 +3892,11 @@ void MetaServiceImpl::get_obj_store_info(google::protobuf::RpcController* contro
         msg = "failed to parse InstanceInfoPB";
         return;
     }
-    for (auto& obj_info: *instance.mutable_obj_info()) {
+    for (auto& obj_info : *instance.mutable_obj_info()) {
         if (obj_info.has_encryption_info()) {
             AkSkPair plain_ak_sk_pair;
-            int ret = decrypt_ak_sk_helper(obj_info.ak(), obj_info.sk(), obj_info.encryption_info(), &plain_ak_sk_pair, code, msg);
+            int ret = decrypt_ak_sk_helper(obj_info.ak(), obj_info.sk(), obj_info.encryption_info(),
+                                           &plain_ak_sk_pair, code, msg);
             if (ret != 0) return;
             obj_info.set_ak(std::move(plain_ak_sk_pair.first));
             obj_info.set_sk(std::move(plain_ak_sk_pair.second));
@@ -3745,7 +4018,7 @@ void MetaServiceImpl::alter_obj_store_info(google::protobuf::RpcController* cont
             msg = "s3 conf info err, please check it";
             return;
         }
- 
+
         auto& objs = instance.obj_info();
         for (auto& it : objs) {
             if (bucket == it.bucket() && prefix == it.prefix() && endpoint == it.endpoint() &&
@@ -3809,9 +4082,9 @@ void MetaServiceImpl::alter_obj_store_info(google::protobuf::RpcController* cont
 }
 
 void MetaServiceImpl::update_ak_sk(google::protobuf::RpcController* controller,
-                                           const ::selectdb::UpdateAkSkRequest* request,
-                                           ::selectdb::UpdateAkSkResponse* response,
-                                           ::google::protobuf::Closure* done) {
+                                   const ::selectdb::UpdateAkSkRequest* request,
+                                   ::selectdb::UpdateAkSkResponse* response,
+                                   ::google::protobuf::Closure* done) {
     RPC_PREPROCESS(update_ak_sk);
     instance_id = request->has_instance_id() ? request->instance_id() : "";
     if (instance_id.empty()) {
@@ -3870,8 +4143,8 @@ void MetaServiceImpl::update_ak_sk(google::protobuf::RpcController* controller,
 
     // if has ram_user, encrypt and save it
     if (request->has_ram_user()) {
-        if (request->ram_user().user_id().empty()
-                || request->ram_user().ak().empty() || request->ram_user().sk().empty()) {
+        if (request->ram_user().user_id().empty() || request->ram_user().ak().empty() ||
+            request->ram_user().sk().empty()) {
             code = MetaServiceCode::INVALID_ARGUMENT;
             msg = "ram user info err " + proto_to_json(*request);
             return;
@@ -3884,7 +4157,8 @@ void MetaServiceImpl::update_ak_sk(google::protobuf::RpcController* controller,
         auto& ram_user = request->ram_user();
         EncryptionInfoPB encryption_info;
         AkSkPair cipher_ak_sk_pair;
-        ret = encrypt_ak_sk_helper(ram_user.ak(), ram_user.sk(), &encryption_info, &cipher_ak_sk_pair, code, msg);
+        ret = encrypt_ak_sk_helper(ram_user.ak(), ram_user.sk(), &encryption_info,
+                                   &cipher_ak_sk_pair, code, msg);
         if (ret != 0) {
             return;
         }
@@ -3906,14 +4180,15 @@ void MetaServiceImpl::update_ak_sk(google::protobuf::RpcController* controller,
         instance_ram_user.set_sk(std::move(cipher_ak_sk_pair.second));
         instance_ram_user.mutable_encryption_info()->CopyFrom(encryption_info);
         update_record << "update ram_user's ak sk, instance_id: " << instance_id
-                      << " user_id: " << ram_user.user_id()
-                      << " old:  cipher ak: " << old_ak << " cipher sk: " << old_sk
-                      << " new: cipher ak: " << ak << " cipher sk: " << sk;
+                      << " user_id: " << ram_user.user_id() << " old:  cipher ak: " << old_ak
+                      << " cipher sk: " << old_sk << " new: cipher ak: " << ak
+                      << " cipher sk: " << sk;
     }
 
     bool has_found_alter_obj_info = false;
     for (auto& alter_bucket_user : request->internal_bucket_user()) {
-        if (!alter_bucket_user.has_ak() || !alter_bucket_user.has_sk() || !alter_bucket_user.has_user_id()) {
+        if (!alter_bucket_user.has_ak() || !alter_bucket_user.has_sk() ||
+            !alter_bucket_user.has_user_id()) {
             code = MetaServiceCode::INVALID_ARGUMENT;
             msg = "s3 bucket info err " + proto_to_json(*request);
             return;
@@ -3921,7 +4196,8 @@ void MetaServiceImpl::update_ak_sk(google::protobuf::RpcController* controller,
         std::string user_id = alter_bucket_user.user_id();
         EncryptionInfoPB encryption_info;
         AkSkPair cipher_ak_sk_pair;
-        ret = encrypt_ak_sk_helper(alter_bucket_user.ak(), alter_bucket_user.sk(), &encryption_info, &cipher_ak_sk_pair, code, msg);
+        ret = encrypt_ak_sk_helper(alter_bucket_user.ak(), alter_bucket_user.sk(), &encryption_info,
+                                   &cipher_ak_sk_pair, code, msg);
         if (ret != 0) {
             return;
         }
@@ -3933,11 +4209,12 @@ void MetaServiceImpl::update_ak_sk(google::protobuf::RpcController* controller,
             std::string old_sk = it.sk();
             if (!it.has_user_id()) {
                 has_found_alter_obj_info = true;
-                // For compatibility, obj_info without a user_id only allow 
+                // For compatibility, obj_info without a user_id only allow
                 // single internal_bucket_user to modify it.
                 if (request->internal_bucket_user_size() != 1) {
                     code = MetaServiceCode::INVALID_ARGUMENT;
-                    msg = "fail to update old instance's obj_info, s3 obj info err " + proto_to_json(*request);
+                    msg = "fail to update old instance's obj_info, s3 obj info err " +
+                          proto_to_json(*request);
                     return;
                 }
                 if (it.ak() == ak && it.sk() == sk) {
@@ -3950,11 +4227,11 @@ void MetaServiceImpl::update_ak_sk(google::protobuf::RpcController* controller,
                 it.set_ak(ak);
                 it.set_sk(sk);
                 it.mutable_encryption_info()->CopyFrom(encryption_info);
-                update_record << "update obj_info's ak sk without user_id, instance_id: " << instance_id
-                      << " obj_info_id: " << it.id()
-                      << " new user_id: " << user_id
-                      << " old:  cipher ak: " << old_ak << " cipher sk: " << old_sk
-                      << " new:  cipher ak: " << ak << " cipher sk: " << sk;
+                update_record << "update obj_info's ak sk without user_id, instance_id: "
+                              << instance_id << " obj_info_id: " << it.id()
+                              << " new user_id: " << user_id << " old:  cipher ak: " << old_ak
+                              << " cipher sk: " << old_sk << " new:  cipher ak: " << ak
+                              << " cipher sk: " << sk;
                 continue;
             }
             if (it.user_id() == user_id) {
@@ -3969,10 +4246,9 @@ void MetaServiceImpl::update_ak_sk(google::protobuf::RpcController* controller,
                 it.set_sk(sk);
                 it.mutable_encryption_info()->CopyFrom(encryption_info);
                 update_record << "update obj_info's ak sk, instance_id: " << instance_id
-                      << " obj_info_id: " << it.id()
-                      << " user_id: " << user_id
-                      << " old:  cipher ak: " << old_ak << " cipher sk: " << old_sk
-                      << " new:  cipher ak: " << ak << " cipher sk: " << sk;
+                              << " obj_info_id: " << it.id() << " user_id: " << user_id
+                              << " old:  cipher ak: " << old_ak << " cipher sk: " << old_sk
+                              << " new:  cipher ak: " << ak << " cipher sk: " << sk;
             }
         }
     }
@@ -4024,8 +4300,8 @@ void MetaServiceImpl::create_instance(google::protobuf::RpcController* controlle
     std::string region = obj.has_region() ? obj.region() : "";
 
     // ATTN: prefix may be empty
-    if (plain_ak.empty() || plain_sk.empty() || bucket.empty() || endpoint.empty() || region.empty() ||
-        !obj.has_provider()) {
+    if (plain_ak.empty() || plain_sk.empty() || bucket.empty() || endpoint.empty() ||
+        region.empty() || !obj.has_provider()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
         msg = "s3 conf info err, please check it";
         return;
@@ -4042,7 +4318,6 @@ void MetaServiceImpl::create_instance(google::protobuf::RpcController* controlle
             return;
         }
     }
-
 
     EncryptionInfoPB encryption_info;
     AkSkPair cipher_ak_sk_pair;
@@ -4082,10 +4357,11 @@ void MetaServiceImpl::create_instance(google::protobuf::RpcController* controlle
         auto& ram_user = request->ram_user();
         EncryptionInfoPB encryption_info;
         AkSkPair cipher_ak_sk_pair;
-        ret = encrypt_ak_sk_helper(ram_user.ak(), ram_user.sk(), &encryption_info, &cipher_ak_sk_pair, code, msg);
+        ret = encrypt_ak_sk_helper(ram_user.ak(), ram_user.sk(), &encryption_info,
+                                   &cipher_ak_sk_pair, code, msg);
         if (ret != 0) {
             return;
-        } 
+        }
         RamUserPB new_ram_user;
         new_ram_user.CopyFrom(ram_user);
         new_ram_user.set_ak(std::move(cipher_ak_sk_pair.first));
@@ -4182,7 +4458,8 @@ void MetaServiceImpl::alter_instance(google::protobuf::RpcController* controller
             }
 
             instance->set_status(InstanceInfoPB::DELETED);
-            instance->set_mtime(duration_cast<seconds>(system_clock::now().time_since_epoch()).count());
+            instance->set_mtime(
+                    duration_cast<seconds>(system_clock::now().time_since_epoch()).count());
 
             std::string ret = instance->SerializeAsString();
             if (ret.empty()) {
@@ -4226,10 +4503,10 @@ void MetaServiceImpl::alter_instance(google::protobuf::RpcController* controller
                 return std::make_pair(MetaServiceCode::INVALID_ARGUMENT, msg);
             }
             instance->set_sse_enabled(true);
-            instance->set_mtime(duration_cast<seconds>(system_clock::now().time_since_epoch()).count());
+            instance->set_mtime(
+                    duration_cast<seconds>(system_clock::now().time_since_epoch()).count());
 
-
-            for (auto& obj_info: *(instance->mutable_obj_info())) {
+            for (auto& obj_info : *(instance->mutable_obj_info())) {
                 obj_info.set_sse_enabled(true);
             }
             std::string ret = instance->SerializeAsString();
@@ -4252,10 +4529,10 @@ void MetaServiceImpl::alter_instance(google::protobuf::RpcController* controller
                 return std::make_pair(MetaServiceCode::INVALID_ARGUMENT, msg);
             }
             instance->set_sse_enabled(false);
-            instance->set_mtime(duration_cast<seconds>(system_clock::now().time_since_epoch()).count());
+            instance->set_mtime(
+                    duration_cast<seconds>(system_clock::now().time_since_epoch()).count());
 
-
-            for (auto& obj_info: *(instance->mutable_obj_info())) {
+            for (auto& obj_info : *(instance->mutable_obj_info())) {
                 obj_info.set_sse_enabled(false);
             }
             std::string ret = instance->SerializeAsString();
@@ -4496,10 +4773,9 @@ void MetaServiceImpl::alter_cluster(google::protobuf::RpcController* controller,
             std::vector<NodeInfo> to_del;
             for (auto& node : to_add) {
                 node.node_info.set_status(NodeStatusPB::NODE_STATUS_DECOMMISSIONING);
-                LOG(INFO) << "decomission node, " << "size: " << to_add.size()
-                          << " " << node.node_info.DebugString()
-                          << " " << node.cluster_id
-                          << " " << node.cluster_name;
+                LOG(INFO) << "decomission node, "
+                          << "size: " << to_add.size() << " " << node.node_info.DebugString() << " "
+                          << node.cluster_id << " " << node.cluster_name;
             }
             msg = resource_mgr_->modify_nodes(instance_id, to_add, to_del);
         }
@@ -4543,10 +4819,9 @@ void MetaServiceImpl::alter_cluster(google::protobuf::RpcController* controller,
             std::vector<NodeInfo> to_del;
             for (auto& node : to_add) {
                 node.node_info.set_status(NodeStatusPB::NODE_STATUS_DECOMMISSIONED);
-                LOG(INFO) << "notify node decomissioned, " << " size: " << to_add.size()
-                          << " " << node.node_info.DebugString()
-                          << " " << node.cluster_id
-                          << " " << node.cluster_name;
+                LOG(INFO) << "notify node decomissioned, "
+                          << " size: " << to_add.size() << " " << node.node_info.DebugString()
+                          << " " << node.cluster_id << " " << node.cluster_name;
             }
             msg = resource_mgr_->modify_nodes(instance_id, to_add, to_del);
         }
@@ -4891,7 +5166,8 @@ void MetaServiceImpl::create_stage(::google::protobuf::RpcController* controller
             auto obj_info = tmp_stage.mutable_obj_info();
             EncryptionInfoPB encryption_info;
             AkSkPair cipher_ak_sk_pair;
-            ret = encrypt_ak_sk_helper(obj_info->ak(), obj_info->sk(), &encryption_info, &cipher_ak_sk_pair, code, msg);
+            ret = encrypt_ak_sk_helper(obj_info->ak(), obj_info->sk(), &encryption_info,
+                                       &cipher_ak_sk_pair, code, msg);
             if (ret != 0) {
                 return;
             }
@@ -5038,7 +5314,9 @@ void MetaServiceImpl::get_stage(google::protobuf::RpcController* controller,
                 stage_pb.mutable_obj_info()->set_sk(old_obj.sk());
                 if (old_obj.has_encryption_info()) {
                     AkSkPair plain_ak_sk_pair;
-                    int ret = decrypt_ak_sk_helper(old_obj.ak(), old_obj.sk(), old_obj.encryption_info(), &plain_ak_sk_pair, code, msg);
+                    int ret = decrypt_ak_sk_helper(old_obj.ak(), old_obj.sk(),
+                                                   old_obj.encryption_info(), &plain_ak_sk_pair,
+                                                   code, msg);
                     if (ret != 0) return;
                     stage_pb.mutable_obj_info()->set_ak(std::move(plain_ak_sk_pair.first));
                     stage_pb.mutable_obj_info()->set_sk(std::move(plain_ak_sk_pair.second));
@@ -5088,7 +5366,9 @@ void MetaServiceImpl::get_stage(google::protobuf::RpcController* controller,
                 auto obj_info = stage.mutable_obj_info();
                 if (obj_info->has_encryption_info()) {
                     AkSkPair plain_ak_sk_pair;
-                    int ret = decrypt_ak_sk_helper(obj_info->ak(), obj_info->sk(), obj_info->encryption_info(), &plain_ak_sk_pair, code, msg);
+                    int ret = decrypt_ak_sk_helper(obj_info->ak(), obj_info->sk(),
+                                                   obj_info->encryption_info(), &plain_ak_sk_pair,
+                                                   code, msg);
                     if (ret != 0) return;
                     obj_info->set_ak(std::move(plain_ak_sk_pair.first));
                     obj_info->set_sk(std::move(plain_ak_sk_pair.second));
@@ -5102,7 +5382,9 @@ void MetaServiceImpl::get_stage(google::protobuf::RpcController* controller,
                 }
                 if (instance.ram_user().has_encryption_info()) {
                     AkSkPair plain_ak_sk_pair;
-                    int ret = decrypt_ak_sk_helper(instance.ram_user().ak(), instance.ram_user().sk(), instance.ram_user().encryption_info(), &plain_ak_sk_pair, code, msg);
+                    int ret = decrypt_ak_sk_helper(
+                            instance.ram_user().ak(), instance.ram_user().sk(),
+                            instance.ram_user().encryption_info(), &plain_ak_sk_pair, code, msg);
                     if (ret != 0) return;
                     stage.mutable_obj_info()->set_ak(std::move(plain_ak_sk_pair.first));
                     stage.mutable_obj_info()->set_sk(std::move(plain_ak_sk_pair.second));
@@ -5126,7 +5408,9 @@ void MetaServiceImpl::get_stage(google::protobuf::RpcController* controller,
                         return;
                     }
                     AkSkPair plain_ak_sk_pair;
-                    int ret = decrypt_ak_sk_helper(iam_user.ak(), iam_user.sk(), iam_user.encryption_info(), &plain_ak_sk_pair, code, msg);
+                    int ret = decrypt_ak_sk_helper(iam_user.ak(), iam_user.sk(),
+                                                   iam_user.encryption_info(), &plain_ak_sk_pair,
+                                                   code, msg);
                     if (ret != 0) return;
                     stage.mutable_obj_info()->set_ak(std::move(plain_ak_sk_pair.first));
                     stage.mutable_obj_info()->set_sk(std::move(plain_ak_sk_pair.second));
@@ -5137,7 +5421,6 @@ void MetaServiceImpl::get_stage(google::protobuf::RpcController* controller,
                     msg = ss.str();
                     return;
                 }
-
             }
             response->add_stage()->CopyFrom(stage);
             return;
@@ -5163,8 +5446,8 @@ void MetaServiceImpl::drop_stage(google::protobuf::RpcController* controller,
     std::string instance_id;
     bool drop_request = false;
     std::unique_ptr<int, std::function<void(int*)>> defer_status(
-            (int*)0x01,
-            [&ret, &code, &msg, &response, &ctrl, &closure_guard, &sw, &instance_id, &drop_request](int*) {
+            (int*)0x01, [&ret, &code, &msg, &response, &ctrl, &closure_guard, &sw, &instance_id,
+                         &drop_request](int*) {
                 response->mutable_status()->set_code(code);
                 response->mutable_status()->set_msg(msg);
                 LOG(INFO) << (ret == 0 ? "succ to " : "failed to ") << __PRETTY_FUNCTION__ << " "
@@ -5368,7 +5651,8 @@ void MetaServiceImpl::get_iam(google::protobuf::RpcController* controller,
             return;
         }
         AkSkPair plain_ak_sk_pair;
-        int ret = decrypt_ak_sk_helper(iam_user.ak(), iam_user.sk(), iam_user.encryption_info(), &plain_ak_sk_pair, code, msg);
+        int ret = decrypt_ak_sk_helper(iam_user.ak(), iam_user.sk(), iam_user.encryption_info(),
+                                       &plain_ak_sk_pair, code, msg);
         if (ret != 0) return;
         iam_user.set_external_id(instance_id);
         iam_user.set_ak(std::move(plain_ak_sk_pair.first));
@@ -5386,8 +5670,9 @@ void MetaServiceImpl::get_iam(google::protobuf::RpcController* controller,
         ram_user.CopyFrom(instance.ram_user());
         if (ram_user.has_encryption_info()) {
             AkSkPair plain_ak_sk_pair;
-            int ret = decrypt_ak_sk_helper(ram_user.ak(), ram_user.sk(), ram_user.encryption_info(), &plain_ak_sk_pair, code, msg);
-            if (ret != 0) return; 
+            int ret = decrypt_ak_sk_helper(ram_user.ak(), ram_user.sk(), ram_user.encryption_info(),
+                                           &plain_ak_sk_pair, code, msg);
+            if (ret != 0) return;
             ram_user.set_ak(std::move(plain_ak_sk_pair.first));
             ram_user.set_sk(std::move(plain_ak_sk_pair.second));
         }
@@ -5396,9 +5681,9 @@ void MetaServiceImpl::get_iam(google::protobuf::RpcController* controller,
 }
 
 void MetaServiceImpl::alter_iam(google::protobuf::RpcController* controller,
-                              const ::selectdb::AlterIamRequest* request,
-                              ::selectdb::AlterIamResponse* response,
-                              ::google::protobuf::Closure* done) {
+                                const ::selectdb::AlterIamRequest* request,
+                                ::selectdb::AlterIamResponse* response,
+                                ::google::protobuf::Closure* done) {
     RPC_PREPROCESS(alter_iam);
     std::string arn_id = request->has_account_id() ? request->account_id() : "";
     std::string arn_ak = request->has_ak() ? request->ak() : "";
@@ -5495,8 +5780,8 @@ void MetaServiceImpl::alter_ram_user(google::protobuf::RpcController* controller
         msg = "empty instance_id";
         return;
     }
-    if (!request->has_ram_user() || request->ram_user().user_id().empty()
-        || request->ram_user().ak().empty() || request->ram_user().sk().empty()) {
+    if (!request->has_ram_user() || request->ram_user().user_id().empty() ||
+        request->ram_user().ak().empty() || request->ram_user().sk().empty()) {
         code = MetaServiceCode::INVALID_ARGUMENT;
         msg = "ram user info err " + proto_to_json(*request);
         return;
@@ -5541,7 +5826,8 @@ void MetaServiceImpl::alter_ram_user(google::protobuf::RpcController* controller
     }
     EncryptionInfoPB encryption_info;
     AkSkPair cipher_ak_sk_pair;
-    ret = encrypt_ak_sk_helper(ram_user.ak(), ram_user.sk(), &encryption_info, &cipher_ak_sk_pair, code, msg);
+    ret = encrypt_ak_sk_helper(ram_user.ak(), ram_user.sk(), &encryption_info, &cipher_ak_sk_pair,
+                               code, msg);
     if (ret != 0) {
         return;
     }

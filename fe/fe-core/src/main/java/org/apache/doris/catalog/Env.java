@@ -1494,6 +1494,7 @@ public class Env {
 
         if (Config.isCloudMode()) {
             cloudClusterCheck.start();
+            upgradeMgr.start();
         }
 
         // heartbeat mgr
@@ -3164,6 +3165,12 @@ public class Env {
                             + PropertyAnalyzer.PROPERTIES_SEQUENCE_TYPE).append("\" = \"");
                     sb.append(olapTable.getSequenceType().toString()).append("\"");
                 }
+            }
+
+            // dynamic schema
+            if (olapTable.isDynamicSchema()) {
+                sb.append(",\n\"").append(PropertyAnalyzer.PROPERTIES_DYNAMIC_SCHEMA).append("\" = \"");
+                sb.append(olapTable.isDynamicSchema()).append("\"");
             }
 
             // dynamic schema
@@ -6006,7 +6013,9 @@ public class Env {
         if (Config.isNotCloudMode()) {
             throw new DdlException("stage is only supported in cloud mode");
         }
-        getInternalCatalog().createStage(stmt.toStageProto(), stmt.isIfNotExists());
+        if (!stmt.isDryRun()) {
+            getInternalCatalog().createStage(stmt.toStageProto(), stmt.isIfNotExists());
+        }
     }
 
     public void dropStage(DropStageStmt stmt) throws DdlException {

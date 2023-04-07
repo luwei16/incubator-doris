@@ -17,6 +17,9 @@
 
 #include "io/buffered_reader.h"
 
+#include <bvar/reducer.h>
+#include <bvar/window.h>
+
 #include <algorithm>
 #include <sstream>
 
@@ -29,6 +32,12 @@
 
 namespace doris {
 
+// add bvar to capture the download bytes per second by buffered reader
+bvar::Adder<uint64_t> g_bytes_downloaded("buffered_reader", "bytes_downloaded");
+bvar::PerSecond<bvar::Adder<uint64_t>> g_bytes_downloaded_per_second("buffered_reader",
+                                                                     "bytes_downloaded_per_second",
+                                                                     &g_bytes_downloaded, 60);
+
 // there exists occasions where the buffer is already closed but
 // some prior tasks are still queued in threadpool, so we have to check wheher
 // the buffer is closed each time the condition variable is norified
@@ -40,7 +49,12 @@ void PrefetchBuffer::reset_offset(int64_t offset) {
             _prefetched.notify_all();
             return;
         }
-        _buffer_status = BufferStatus::RESET;
+        // only prefetch if the offset is valid
+        if (offset < _reader->size()) {
+            _buffer_status = BufferStatus::RESET;
+        } else {
+            _buffer_status = BufferStatus::PREFETCHED;
+        }
         _offset = offset;
         _prefetched.notify_all();
     }
@@ -65,11 +79,15 @@ void PrefetchBuffer::prefetch_buffer() {
     }
     _len = 0;
     Status s;
-    {
-        SCOPED_TIMER(_remote_read_timer);
-        s = _reader->readat(_offset, _size, &_len, _buf.data());
+    if (_reader->size() - _offset >= 0) {
+        size_t nbytes = std::min({_size, _reader->size() - _offset});
+        {
+            SCOPED_TIMER(_remote_read_timer);
+            s = _reader->readat(_offset, nbytes, &_len, _buf.data());
+        }
+        g_bytes_downloaded << _len;
+        COUNTER_UPDATE(_remote_read_counter, 1);
     }
-    COUNTER_UPDATE(_remote_read_counter, 1);
     std::unique_lock lck {_lock};
     _prefetched.wait(lck, [this]() { return _buffer_status == BufferStatus::PENDING; });
     if (!s.ok()) {
@@ -94,6 +112,10 @@ Status PrefetchBuffer::read_buffer(int64_t off, uint8_t* out, int64_t buf_len,
             return Status::OK();
         }
     }
+    if (off >= _reader->size()) {
+        *bytes_read = 0;
+        return Status::OK();
+    }
     RETURN_IF_ERROR(_prefetch_status);
     // there is only parquet would do not sequence read
     // it would read the end of the file first
@@ -108,7 +130,8 @@ Status PrefetchBuffer::read_buffer(int64_t off, uint8_t* out, int64_t buf_len,
     int64_t read_len = std::min({buf_len, _offset + _size - off, _offset + _len - off});
     memcpy(out, _buf.data() + (off - _offset), read_len);
     *bytes_read = read_len;
-    if (off + *bytes_read == _offset + _len) {
+    auto new_off = _offset + _whole_buffer_size;
+    if ((off + *bytes_read == _offset + _len) && new_off < _reader->size()) {
         reset_offset(_offset + _whole_buffer_size);
     }
     return Status::OK();
@@ -125,22 +148,10 @@ void PrefetchBuffer::close() {
 // buffered reader
 BufferedReader::BufferedReader(RuntimeProfile* profile, FileReader* reader, int64_t buffer_size)
         : _profile(profile), _reader(reader) {
-    if (buffer_size == -1L) {
+    if (buffer_size <= 0) {
         buffer_size = config::remote_storage_read_buffer_mb * 1024 * 1024;
     }
     _whole_pre_buffer_size = buffer_size;
-#ifdef BE_TEST
-    s_max_pre_buffer_size = config::prefetch_single_buffer_size_mb;
-#endif
-    int buffer_num = buffer_size > s_max_pre_buffer_size ? buffer_size / s_max_pre_buffer_size : 1;
-    // set the _cur_offset of this reader as same as the inner reader's,
-    // to make sure the buffer reader will start to read at right position.
-    _reader->tell(&_cur_offset);
-    for (int i = 0; i < buffer_num; i++) {
-        _pre_buffers.emplace_back(std::make_shared<PrefetchBuffer>(
-                profile, _cur_offset + i * s_max_pre_buffer_size, s_max_pre_buffer_size,
-                _whole_pre_buffer_size, _reader.get()));
-    }
 }
 
 BufferedReader::~BufferedReader() {
@@ -162,12 +173,27 @@ Status BufferedReader::open() {
     _remote_read_bytes = ADD_COUNTER(_profile, "FileRemoteReadBytes", TUnit::BYTES);
     _remote_read_rate = _profile->add_derived_counter(
             "FileRemoteReadRate", TUnit::BYTES_PER_SECOND,
-            std::bind<int64_t>(&RuntimeProfile::units_per_second, _remote_read_bytes,
-                               _remote_read_timer),
+            std::bind<int64_t>(&RuntimeProfile::units_per_second, _remote_read_bytes, _read_timer),
             "");
 
     RETURN_IF_ERROR(_reader->open());
     _reader_size = _reader->size();
+
+    _whole_pre_buffer_size = std::min(_whole_pre_buffer_size, _reader->size());
+    auto buffer_size = _whole_pre_buffer_size;
+#ifdef BE_TEST
+    s_max_pre_buffer_size = config::prefetch_single_buffer_size_mb;
+#endif
+    int64_t buffer_num = (buffer_size + s_max_pre_buffer_size - 1) / s_max_pre_buffer_size;
+    // set the _cur_offset of this reader as same as the inner reader's,
+    // to make sure the buffer reader will start to read at right position.
+    _reader->tell(&_cur_offset);
+    for (int i = 0; i < buffer_num; i++) {
+        _pre_buffers.emplace_back(std::make_shared<PrefetchBuffer>(
+                _profile, _cur_offset + i * s_max_pre_buffer_size, s_max_pre_buffer_size,
+                _whole_pre_buffer_size, _reader.get()));
+    }
+
     // init all buffer and submit task
     resetAllBuffer(_cur_offset);
     return Status::OK();

@@ -11,7 +11,6 @@
 #include "gen_cpp/selectdb_cloud.pb.h"
 #include "meta-service/keys.h"
 #include "meta-service/mem_txn_kv.h"
-#include "meta-service/meta_server.h"
 #include "rate-limiter/rate_limiter.h"
 #include "resource-manager/resource_manager.h"
 #include "mock_resource_manager.h"
@@ -47,7 +46,7 @@ namespace selectdb {
 std::unique_ptr<MetaServiceImpl> get_meta_service() {
     int ret = 0;
     // MemKv
-    static auto txn_kv = std::dynamic_pointer_cast<TxnKv>(std::make_shared<MemTxnKv>());
+    auto txn_kv = std::dynamic_pointer_cast<TxnKv>(std::make_shared<MemTxnKv>());
     if (txn_kv != nullptr) {
         ret = txn_kv->init();
         [&] { ASSERT_EQ(ret, 0); }();
@@ -132,10 +131,18 @@ TEST(MetaServiceTest, CreateInstanceTest) {
         obj.set_provider(ObjectStoreInfoPB::BOS);
         req.mutable_obj_info()->CopyFrom(obj);
 
+        auto sp = SyncPoint::get_instance();
+        sp->set_call_back("encrypt_ak_sk:get_encryption_key_ret", [](void* p) { *reinterpret_cast<int*>(p) = 0; });
+        sp->set_call_back("encrypt_ak_sk:get_encryption_key", [](void* p) { *reinterpret_cast<std::string*>(p) = "test"; });
+        sp->set_call_back("encrypt_ak_sk:get_encryption_key_id", [](void* p) { *reinterpret_cast<int*>(p) = 1; });
+        sp->enable_processing();
         CreateInstanceResponse res;
         meta_service->create_instance(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
                                       &req, &res, nullptr);
         ASSERT_EQ(res.status().code(), MetaServiceCode::OK);
+        sp->clear_all_call_backs();
+        sp->clear_trace();
+        sp->disable_processing();
     }
 
     // case: request has invalid argument
@@ -344,6 +351,7 @@ TEST(MetaServiceTest, BeginTxnTest) {
         txn_info_pb.set_db_id(666);
         txn_info_pb.set_label("test_label");
         txn_info_pb.add_table_ids(123);
+        txn_info_pb.set_timeout_ms(36000);
         req.mutable_txn_info()->CopyFrom(txn_info_pb);
         BeginTxnResponse res;
         meta_service->begin_txn(reinterpret_cast<::google::protobuf::RpcController*>(&cntl), &req,
@@ -361,6 +369,7 @@ TEST(MetaServiceTest, BeginTxnTest) {
         txn_info_pb.set_db_id(888);
         txn_info_pb.set_label("test_label_already_in_use");
         txn_info_pb.add_table_ids(456);
+        txn_info_pb.set_timeout_ms(36000);
         req.mutable_txn_info()->CopyFrom(txn_info_pb);
         BeginTxnResponse res;
         meta_service->begin_txn(reinterpret_cast<::google::protobuf::RpcController*>(&cntl), &req,
@@ -386,6 +395,7 @@ TEST(MetaServiceTest, BeginTxnTest) {
         unique_id_pb.set_hi(100);
         unique_id_pb.set_lo(10);
         txn_info_pb.mutable_request_id()->CopyFrom(unique_id_pb);
+        txn_info_pb.set_timeout_ms(36000);
         req.mutable_txn_info()->CopyFrom(txn_info_pb);
         BeginTxnResponse res;
         meta_service->begin_txn(reinterpret_cast<::google::protobuf::RpcController*>(&cntl), &req,
@@ -491,6 +501,7 @@ TEST(MetaServiceTest, BeginTxnTest) {
             unique_id_pb.set_hi(1001);
             unique_id_pb.set_lo(11);
             txn_info_pb.mutable_request_id()->CopyFrom(unique_id_pb);
+            txn_info_pb.set_timeout_ms(36000);
             req.mutable_txn_info()->CopyFrom(txn_info_pb);
             BeginTxnResponse res;
             meta_service->begin_txn(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
@@ -518,6 +529,7 @@ TEST(MetaServiceTest, BeginTxnTest) {
             unique_id_pb.set_hi(100);
             unique_id_pb.set_lo(10);
             txn_info_pb.mutable_request_id()->CopyFrom(unique_id_pb);
+            txn_info_pb.set_timeout_ms(36000);
             req.mutable_txn_info()->CopyFrom(txn_info_pb);
             BeginTxnResponse res;
             meta_service->begin_txn(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
@@ -609,6 +621,7 @@ TEST(MetaServiceTest, BeginTxnTest) {
             unique_id_pb.set_hi(1001);
             unique_id_pb.set_lo(11);
             txn_info_pb.mutable_request_id()->CopyFrom(unique_id_pb);
+            txn_info_pb.set_timeout_ms(36000);
             req.mutable_txn_info()->CopyFrom(txn_info_pb);
             BeginTxnResponse res;
             meta_service->begin_txn(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
@@ -632,6 +645,7 @@ TEST(MetaServiceTest, BeginTxnTest) {
             txn_info_pb.set_db_id(db_id);
             txn_info_pb.set_label(test_label2);
             txn_info_pb.add_table_ids(table_id);
+            txn_info_pb.set_timeout_ms(36000);
             UniqueIdPB unique_id_pb;
             unique_id_pb.set_hi(100);
             unique_id_pb.set_lo(10);
@@ -678,6 +692,7 @@ TEST(MetaServiceTest, BeginTxnTest) {
             txn_info_pb.set_db_id(db_id);
             txn_info_pb.set_label(label);
             txn_info_pb.add_table_ids(table_id);
+            txn_info_pb.set_timeout_ms(36000);
             UniqueIdPB unique_id_pb;
             unique_id_pb.set_hi(100);
             unique_id_pb.set_lo(10);
@@ -715,6 +730,7 @@ TEST(MetaServiceTest, BeginTxnTest) {
             unique_id_pb.set_hi(100);
             unique_id_pb.set_lo(10);
             txn_info_pb.mutable_request_id()->CopyFrom(unique_id_pb);
+            txn_info_pb.set_timeout_ms(36000);
             req.mutable_txn_info()->CopyFrom(txn_info_pb);
             BeginTxnResponse res;
             meta_service->begin_txn(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
@@ -737,6 +753,7 @@ TEST(MetaServiceTest, PreCommitTxnTest) {
         txn_info_pb.set_db_id(666);
         txn_info_pb.set_label("test_label");
         txn_info_pb.add_table_ids(111);
+        txn_info_pb.set_timeout_ms(36000);
         req.mutable_txn_info()->CopyFrom(txn_info_pb);
         BeginTxnResponse res;
         meta_service->begin_txn(reinterpret_cast<::google::protobuf::RpcController*>(&cntl), &req, &res,
@@ -765,6 +782,7 @@ TEST(MetaServiceTest, PreCommitTxnTest) {
         req.set_cloud_unique_id("test_cloud_unique_id");
         req.set_db_id(666);
         req.set_txn_id(txn_id);
+        req.set_precommit_timeout_ms(36000);
         PrecommitTxnResponse res;
         meta_service->precommit_txn(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
                                     &req, &res, nullptr);
@@ -802,6 +820,7 @@ TEST(MetaServiceTest, PreCommitTxnTest) {
         req.set_cloud_unique_id("test_cloud_unique_id");
         req.set_db_id(666);
         req.set_txn_id(txn_id);
+        req.set_precommit_timeout_ms(36000);
         PrecommitTxnResponse res;
         meta_service->precommit_txn(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
                                     &req, &res, nullptr);
@@ -888,6 +907,7 @@ TEST(MetaServiceTest, CommitTxnTest) {
             txn_info_pb.set_db_id(666);
             txn_info_pb.set_label("test_label");
             txn_info_pb.add_table_ids(1234);
+            txn_info_pb.set_timeout_ms(36000);
             req.mutable_txn_info()->CopyFrom(txn_info_pb);
             BeginTxnResponse res;
             meta_service->begin_txn(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
@@ -910,6 +930,7 @@ TEST(MetaServiceTest, CommitTxnTest) {
             req.set_cloud_unique_id("test_cloud_unique_id");
             req.set_db_id(666);
             req.set_txn_id(txn_id);
+            req.set_precommit_timeout_ms(36000);
             PrecommitTxnResponse res;
             meta_service->precommit_txn(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
                                         &req, &res, nullptr);
@@ -927,6 +948,56 @@ TEST(MetaServiceTest, CommitTxnTest) {
             meta_service->commit_txn(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
                                      &req, &res, nullptr);
             ASSERT_EQ(res.status().code(), MetaServiceCode::OK);
+        }
+    }
+}
+
+TEST(MetaServiceTest, CommitTxnExpiredTest) {
+    auto meta_service = get_meta_service();
+
+    // case: first version of rowset
+    {
+        int64_t txn_id = -1;
+        int64_t db_id = 713232132;
+        // begin txn
+        {
+            brpc::Controller cntl;
+            BeginTxnRequest req;
+            req.set_cloud_unique_id("test_cloud_unique_id");
+            TxnInfoPB txn_info_pb;
+            txn_info_pb.set_db_id(db_id);
+            txn_info_pb.set_label("test_commit_txn_expired");
+            txn_info_pb.add_table_ids(1234789234);
+            txn_info_pb.set_timeout_ms(1);
+            req.mutable_txn_info()->CopyFrom(txn_info_pb);
+            BeginTxnResponse res;
+            meta_service->begin_txn(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
+                                    &req, &res, nullptr);
+            ASSERT_EQ(res.status().code(), MetaServiceCode::OK);
+            txn_id = res.txn_id();
+        }
+
+        // mock rowset and tablet
+        int64_t tablet_id_base = 1103;
+        for (int i = 0; i < 5; ++i) {
+            create_tmp_rowset_and_meta_tablet(meta_service->txn_kv_.get(), txn_id,
+                                              tablet_id_base + i);
+        }
+        // sleep 1 second for txn timeout
+        sleep(1);
+        // commit txn
+        {
+            brpc::Controller cntl;
+            CommitTxnRequest req;
+            req.set_cloud_unique_id("test_cloud_unique_id");
+            req.set_db_id(db_id);
+            req.set_txn_id(txn_id);
+            CommitTxnResponse res;
+            meta_service->commit_txn(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
+                                     &req, &res, nullptr);
+            ASSERT_EQ(res.status().code(), MetaServiceCode::UNDEFINED_ERR);
+            ASSERT_TRUE(res.status().msg().find("txn is expired, not allow to commit txn_id=") !=
+                        std::string::npos);
         }
     }
 }
@@ -951,6 +1022,7 @@ TEST(MetaServiceTest, AbortTxnTest) {
             txn_info_pb.set_db_id(db_id);
             txn_info_pb.set_label(label);
             txn_info_pb.add_table_ids(table_id);
+            txn_info_pb.set_timeout_ms(36000);
             req.mutable_txn_info()->CopyFrom(txn_info_pb);
             BeginTxnResponse res;
             meta_service->begin_txn(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
@@ -997,6 +1069,7 @@ TEST(MetaServiceTest, AbortTxnTest) {
             txn_info_pb.set_db_id(db_id);
             txn_info_pb.set_label(label);
             txn_info_pb.add_table_ids(table_id);
+            txn_info_pb.set_timeout_ms(36000);
             req.mutable_txn_info()->CopyFrom(txn_info_pb);
             BeginTxnResponse res;
             meta_service->begin_txn(reinterpret_cast<::google::protobuf::RpcController*>(&cntl),
@@ -1044,6 +1117,7 @@ TEST(MetaServiceTest, GetCurrentMaxTxnIdTest) {
     txn_info_pb.set_db_id(db_id);
     txn_info_pb.set_label(label);
     txn_info_pb.add_table_ids(12345);
+    txn_info_pb.set_timeout_ms(36000);
     begin_txn_req.mutable_txn_info()->CopyFrom(txn_info_pb);
 
     meta_service->begin_txn(reinterpret_cast<::google::protobuf::RpcController*>(&begin_txn_cntl),
@@ -1082,6 +1156,7 @@ TEST(MetaServiceTest, CheckTxnConflictTest) {
     txn_info_pb.set_db_id(db_id);
     txn_info_pb.set_label(label);
     txn_info_pb.add_table_ids(table_id);
+    txn_info_pb.set_timeout_ms(36000);
     begin_txn_req.mutable_txn_info()->CopyFrom(txn_info_pb);
 
     meta_service->begin_txn(reinterpret_cast<::google::protobuf::RpcController*>(&begin_txn_cntl),
@@ -1526,6 +1601,11 @@ TEST(MetaServiceTest, StageTest) {
     [[maybe_unused]] auto sp = SyncPoint::get_instance();
     sp->set_call_back("get_instance_id::pred", [](void* p) { *((bool*)p) = true; });
     sp->set_call_back("get_instance_id", [&](void* p) { *((std::string*)p) = instance_id; });
+    sp->set_call_back("encrypt_ak_sk:get_encryption_key_ret", [](void* p) { *reinterpret_cast<int*>(p) = 0; });
+    sp->set_call_back("encrypt_ak_sk:get_encryption_key", [](void* p) { *reinterpret_cast<std::string*>(p) = "test"; });
+    sp->set_call_back("encrypt_ak_sk:get_encryption_key_id", [](void* p) { *reinterpret_cast<int*>(p) = 1; });
+    sp->set_call_back("decrypt_ak_sk:get_encryption_key_ret", [](void* p) { *reinterpret_cast<int*>(p) = 0; });
+    sp->set_call_back("decrypt_ak_sk:get_encryption_key", [](void* p) { *reinterpret_cast<std::string*>(p) = "test"; });
     sp->enable_processing();
 
     ObjectStoreInfoPB obj;
@@ -1719,6 +1799,9 @@ TEST(MetaServiceTest, StageTest) {
             ASSERT_EQ("ex_name_0", get_stage_res.stage().at(0).name());
         }
     }
+    sp->clear_all_call_backs();
+    sp->clear_trace();
+    sp->disable_processing();
 }
 
 TEST(MetaServiceTest, GetIamTest) {
@@ -1729,6 +1812,11 @@ TEST(MetaServiceTest, GetIamTest) {
     [[maybe_unused]] auto sp = SyncPoint::get_instance();
     sp->set_call_back("get_instance_id::pred", [](void* p) { *((bool*)p) = true; });
     sp->set_call_back("get_instance_id", [&](void* p) { *((std::string*)p) = instance_id; });
+    sp->set_call_back("encrypt_ak_sk:get_encryption_key_ret", [](void* p) { *reinterpret_cast<int*>(p) = 0; });
+    sp->set_call_back("encrypt_ak_sk:get_encryption_key", [](void* p) { *reinterpret_cast<std::string*>(p) = "test"; });
+    sp->set_call_back("encrypt_ak_sk:get_encryption_key_id", [](void* p) { *reinterpret_cast<int*>(p) = 1; });
+    sp->set_call_back("decrypt_ak_sk:get_encryption_key_ret", [](void* p) { *reinterpret_cast<int*>(p) = 0; });
+    sp->set_call_back("decrypt_ak_sk:get_encryption_key", [](void* p) { *reinterpret_cast<std::string*>(p) = "test"; });
     sp->enable_processing();
 
     config::arn_id = "iam_arn";
@@ -1779,6 +1867,9 @@ TEST(MetaServiceTest, GetIamTest) {
     ASSERT_EQ(response.iam_user().external_id(), instance_id);
     ASSERT_EQ(response.iam_user().ak(), "iam_ak");
     ASSERT_EQ(response.iam_user().sk(), "iam_sk");
+    sp->clear_all_call_backs();
+    sp->clear_trace();
+    sp->disable_processing();
 }
 
 TEST(MetaServiceTest, AlterIamTest) {
@@ -1789,6 +1880,11 @@ TEST(MetaServiceTest, AlterIamTest) {
     [[maybe_unused]] auto sp = SyncPoint::get_instance();
     sp->set_call_back("get_instance_id::pred", [](void* p) { *((bool*)p) = true; });
     sp->set_call_back("get_instance_id", [&](void* p) { *((std::string*)p) = instance_id; });
+    sp->set_call_back("encrypt_ak_sk:get_encryption_key_ret", [](void* p) { *reinterpret_cast<int*>(p) = 0; });
+    sp->set_call_back("encrypt_ak_sk:get_encryption_key", [](void* p) { *reinterpret_cast<std::string*>(p) = "test"; });
+    sp->set_call_back("encrypt_ak_sk:get_encryption_key_id", [](void* p) { *reinterpret_cast<int*>(p) = 1; });
+    sp->set_call_back("decrypt_ak_sk:get_encryption_key_ret", [](void* p) { *reinterpret_cast<int*>(p) = 0; });
+    sp->set_call_back("decrypt_ak_sk:get_encryption_key", [](void* p) { *reinterpret_cast<std::string*>(p) = "test"; });
     sp->enable_processing();
 
     config::arn_id = "iam_arn";
@@ -1847,6 +1943,9 @@ TEST(MetaServiceTest, AlterIamTest) {
     ASSERT_EQ(response.ram_user().user_id(), "test_user_id");
     ASSERT_EQ(response.ram_user().ak(), "test_ak");
     ASSERT_EQ(response.ram_user().sk(), "test_sk");
+    sp->clear_all_call_backs();
+    sp->clear_trace();
+    sp->disable_processing();
 }
 
 std::string to_raw_string(std::string_view v) {

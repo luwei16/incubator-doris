@@ -42,6 +42,7 @@ import org.apache.doris.common.TableAliasGenerator;
 import org.apache.doris.common.TreeNode;
 import org.apache.doris.common.UserException;
 import org.apache.doris.common.util.SqlUtils;
+import org.apache.doris.common.util.ToSqlContext;
 import org.apache.doris.mysql.privilege.PrivPredicate;
 import org.apache.doris.qe.ConnectContext;
 import org.apache.doris.rewrite.ExprRewriter;
@@ -600,6 +601,16 @@ public class SelectStmt extends QueryStmt {
         return result;
     }
 
+    public List<TupleId> getAllTableRefIds() {
+        List<TupleId> result = Lists.newArrayList();
+
+        for (TableRef ref : fromClause) {
+            result.addAll(ref.getAllTableRefIds());
+        }
+
+        return result;
+    }
+
     public List<TupleId> getTableRefIdsWithoutInlineView() {
         List<TupleId> result = Lists.newArrayList();
 
@@ -700,7 +711,7 @@ public class SelectStmt extends QueryStmt {
         // can also be safely evaluated below the join (picked up by getBoundPredicates()).
         // Such predicates will be marked twice and that is ok.
         List<Expr> unassigned =
-                analyzer.getUnassignedConjuncts(getTableRefIds(), true);
+                analyzer.getUnassignedConjuncts(getAllTableRefIds(), true);
         List<Expr> unassignedJoinConjuncts = Lists.newArrayList();
         for (Expr e : unassigned) {
             if (analyzer.evalAfterJoin(e)) {
@@ -1832,7 +1843,9 @@ public class SelectStmt extends QueryStmt {
     @Override
     public String toSql() {
         if (sqlString != null) {
-            return sqlString;
+            if (ToSqlContext.get() == null || ToSqlContext.get().isNeedSlotRefId()) {
+                return sqlString;
+            }
         }
         StringBuilder strBuilder = new StringBuilder();
         if (withClause != null) {

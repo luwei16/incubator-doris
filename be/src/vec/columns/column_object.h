@@ -77,11 +77,11 @@ public:
 
         bool is_finalized() const;
 
-        const DataTypePtr& getLeastCommonType() const { return least_common_type.get(); }
+        const DataTypePtr& get_least_common_type() const { return least_common_type.get(); }
 
-        const DataTypePtr& getLeastCommonTypeBase() const { return least_common_type.getBase(); }
+        const DataTypePtr& get_least_common_typeBase() const { return least_common_type.getBase(); }
 
-        size_t getDimensions() const { return least_common_type.getDimensions(); }
+        size_t get_dimensions() const { return least_common_type.get_dimensions(); }
 
         /// Checks the consistency of column's parts stored in @data.
         void checkTypes() const;
@@ -106,11 +106,11 @@ public:
         void finalize();
 
         /// Returns last inserted field.
-        Field getLastField() const;
+        Field get_last_field() const;
 
         /// Recreates subcolumn with default scalar values and keeps sizes of arrays.
         /// Used to create columns of type Nested with consistent array sizes.
-        Subcolumn recreateWithDefaultValues(const FieldInfo& field_info) const;
+        Subcolumn recreate_with_default_values(const FieldInfo& field_info) const;
 
         /// Returns single column if subcolumn in finalizes.
         /// Otherwise -- undefined behaviour.
@@ -133,7 +133,7 @@ public:
 
             const DataTypePtr& getBase() const { return base_type; }
 
-            size_t getDimensions() const { return num_dimensions; }
+            size_t get_dimensions() const { return num_dimensions; }
 
         private:
             DataTypePtr type;
@@ -171,7 +171,7 @@ public:
 
     ColumnObject(Subcolumns&& subcolumns_, bool is_nullable_);
 
-    ~ColumnObject() = default;
+    ~ColumnObject() override = default;
 
     bool can_be_inside_nullable() const override { return true; }
 
@@ -187,6 +187,10 @@ public:
     Subcolumn* get_subcolumn(const PathInData& key);
 
     void incr_num_rows() { ++num_rows; }
+
+    void incr_num_rows(size_t n) { num_rows += n; }
+
+    size_t rows() const { return num_rows; }
 
     /// Adds a subcolumn from existing IColumn.
     bool add_sub_column(const PathInData& key, MutableColumnPtr&& subcolumn);
@@ -244,14 +248,18 @@ public:
     // Do nothing, call try_insert instead
     void insert(const Field& field) override {
         Status st = try_insert(field);
-        if (!st.ok()) LOG(FATAL) << "insert return ERROR status: " << st;
+        if (!st.ok()) {
+            LOG(FATAL) << "insert return ERROR status: " << st;
+        }
     }
 
-    // Do nothing, call try_insert_range_from instead
-    void insert_range_from(const IColumn& src, size_t start, size_t length) override {
-        Status st = try_insert_range_from(src, start, length);
-        if (!st.ok()) LOG(FATAL) << "insert_range_from return ERROR status: " << st;
-    }
+    void insert_range_from(const IColumn& src, size_t start, size_t length) override;
+
+    void append_data_by_selector(MutableColumnPtr& res,
+                                 const IColumn::Selector& selector) const override;
+
+    void insert_indices_from(const IColumn& src, const int* indices_begin,
+                             const int* indices_end) override;
 
     // Only called in Block::add_row
     Status try_insert(const Field& field);
@@ -279,11 +287,6 @@ public:
         return StringRef();
     }
 
-    void insert_indices_from(const IColumn& src, const int* indices_begin,
-                             const int* indices_end) override {
-        LOG(FATAL) << "should not call the method in column object";
-    }
-
     Status try_insert_indices_from(const IColumn& src, const int* indices_begin,
                                    const int* indices_end);
 
@@ -306,10 +309,9 @@ public:
         LOG(FATAL) << "should not call the method in column object";
     }
 
-    ColumnPtr filter(const Filter&, ssize_t) const override {
-        LOG(FATAL) << "should not call the method in column object";
-        return nullptr;
-    }
+    ColumnPtr filter(const Filter&, ssize_t) const override;
+
+    // size_t filter(const Filter&) override;
 
     ColumnPtr permute(const Permutation&, size_t) const override {
         LOG(FATAL) << "should not call the method in column object";
@@ -339,16 +341,11 @@ public:
         LOG(FATAL) << "should not call the method in column object";
     }
 
-    virtual void get_extremes(Field& min, Field& max) const override {
+    void get_extremes(Field& min, Field& max) const override {
         LOG(FATAL) << "should not call the method in column object";
     }
 
     void get_indices_of_non_default_rows(Offsets64&, size_t, size_t) const override {
-        LOG(FATAL) << "should not call the method in column object";
-    }
-
-    void append_data_by_selector(MutableColumnPtr& res,
-                                 const IColumn::Selector& selector) const override {
         LOG(FATAL) << "should not call the method in column object";
     }
 

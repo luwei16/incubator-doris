@@ -166,9 +166,6 @@ Status VBrokerScanNode::get_next(RuntimeState* state, vectorized::Block* block, 
 
         if (UNLIKELY(!_mutable_block)) {
             _mutable_block.reset(new MutableBlock(scanner_block->clone_empty()));
-            if (_need_align_block) {
-                _mutable_block->set_block_type(BlockType::DYNAMIC);
-            }
         }
 
         if (_mutable_block->rows() + scanner_block->rows() < batch_size) {

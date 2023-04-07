@@ -122,8 +122,8 @@ public class CloudTabletRebalancer extends MasterDaemon {
         SystemInfoService systemInfoService = Env.getCurrentSystemInfo();
         for (Long beId : systemInfoService.getBackendIds(false)) {
             Backend be = systemInfoService.getBackend(beId);
-            clusterToBes.putIfAbsent(be.getCloudClusterName(), new ArrayList<Long>());
-            clusterToBes.get(be.getCloudClusterName()).add(beId);
+            clusterToBes.putIfAbsent(be.getCloudClusterId(), new ArrayList<Long>());
+            clusterToBes.get(be.getCloudClusterId()).add(beId);
         }
         LOG.info("cluster to backends {}", clusterToBes);
 
@@ -263,7 +263,7 @@ public class CloudTabletRebalancer extends MasterDaemon {
             for (long beId : beList) {
                 long tabletNum = beToTabletsGlobal.get(beId) == null ? 0 : beToTabletsGlobal.get(beId).size();
                 Backend backend = Env.getCurrentSystemInfo().getBackend(beId);
-                if (backend.isDecommissioned() && tabletNum == 0) {
+                if (backend.isDecommissioned() && tabletNum == 0 && !backend.isActive()) {
                     if (!beToDecommissionedTime.containsKey(beId)) {
                         LOG.info("prepare to notify meta service be {} decommissioned", backend.getId());
                         SelectdbCloud.AlterClusterRequest.Builder builder =
@@ -419,10 +419,6 @@ public class CloudTabletRebalancer extends MasterDaemon {
             Map<Long, Map<Long, List<Tablet>>> indexToTablets = partitionEntry.getValue();
             // balance all index of a partition
             for (Map.Entry<Long, Map<Long, List<Tablet>>> entry : indexToTablets.entrySet()) {
-                /*
-                LOG.info("balance partttion {} Index {}, cluster {}", partitionEntry.getKey(),
-                        entry.getKey(), clusterId);
-                */
                 // balance a index
                 balanceImpl(bes, clusterId, entry.getValue(), false);
             }
@@ -612,9 +608,9 @@ public class CloudTabletRebalancer extends MasterDaemon {
                 task.beToTablets = beToTablets;
                 tabletToInfightTask.put(pickedTablet.getId(), task);
 
-                LOG.info("pre cache {} from {} to {}, cluster {} minNum {} maxNum {} beNum {} totalTabletsNum {}",
+                LOG.info("pre cache {} from {} to {}, cluster {} minNum {} maxNum {} beNum {} tabletsNum {}, part {}",
                          pickedTablet.getId(), srcBe, destBe, clusterId,
-                         minTabletsNum, maxTabletsNum, beNum, totalTabletsNum);
+                         minTabletsNum, maxTabletsNum, beNum, totalTabletsNum, cloudReplica.getPartitionId());
                 updateBeToTablets(pickedTablet, srcBe, destBe, isGlobal, clusterId, beToTablets,
                                   futureBeToTabletsGlobal);
             } else {
@@ -629,9 +625,9 @@ public class CloudTabletRebalancer extends MasterDaemon {
                     }
                 }
 
-                LOG.info("transfer {} from {} to {}, cluster {} minNum {} maxNum {} beNum {} totalTabletsNum {}",
+                LOG.info("transfer {} from {} to {}, cluster {} minNum {} maxNum {} beNum {} tabletsNum {}, part {}",
                          pickedTablet.getId(), srcBe, destBe, clusterId,
-                         minTabletsNum, maxTabletsNum, beNum, totalTabletsNum);
+                         minTabletsNum, maxTabletsNum, beNum, totalTabletsNum, cloudReplica.getPartitionId());
                 updateBeToTablets(pickedTablet, srcBe, destBe, isGlobal, clusterId, beToTablets, beToTabletsGlobal);
                 updateClusterToBeMap(pickedTablet, destBe, clusterId);
             }

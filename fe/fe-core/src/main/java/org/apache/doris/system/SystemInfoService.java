@@ -121,6 +121,10 @@ public class SystemInfoService {
         return clusterIdToBackend.get(clusterId);
     }
 
+    public List<Backend> getBackendsByClusterId(final String clusterId) {
+        return clusterIdToBackend.get(clusterId);
+    }
+
     public void updateClusterNameToId(final String newName,
                                       final String originalName, final String clusterId) {
         lock.lock();
@@ -422,26 +426,31 @@ public class SystemInfoService {
 
             String host = be.getHost();
             if (existedHostToBeList.keySet().contains(host)) {
-                /* When smooth upgrading, a new BE process will start on the existed node */
-                int beNum = existedHostToBeList.get(host).size();
-                Backend colocatedBe = existedHostToBeList.get(host).get(0);
-                if (colocatedBe.getCloudClusterId() != be.getCloudClusterId()) {
-                    continue;
+                if (be.isSmoothUpgradeDst()) {
+                    LOG.info("a new BE process will start on the existed node for smooth upgrading");
+                    int beNum = existedHostToBeList.get(host).size();
+                    Backend colocatedBe = existedHostToBeList.get(host).get(0);
+                    if (beNum != 1) {
+                        LOG.warn("find multiple co-located BEs, num: {}, select the 1st {} as migration src", beNum,
+                                colocatedBe.getId());
+                    }
+                    colocatedBe.setSmoothUpgradeSrc(true);
+                    handleNewBeOnSameNode(colocatedBe, be);
+                } else {
+                    LOG.warn("a new BE process will start on the existed node, it should not happend unless testing");
                 }
-                if (beNum != 1) {
-                    LOG.warn("find {} co-located BEs, select the first one {} as migration src", beNum,
-                            colocatedBe.getId());
-                }
-                handleNewBeOnSameNode(colocatedBe, be);
             }
         }
         for (Backend be : toDel) {
+            // drop be, set it not alive
+            be.setAlive(false);
+            be.setLastMissingHeartbeatTime(System.currentTimeMillis());
             Env.getCurrentEnv().getEditLog().logDropBackend(be);
             Cluster cluster = Env.getCurrentEnv().getCluster(be.getOwnerClusterName());
             if (null != cluster) {
                 cluster.removeBackend(be.getId());
             }
-            LOG.info("dropped cloud backend={} ", be);
+            LOG.info("dropped cloud backend={}, and lastMissingHeartbeatTime={}", be, be.getLastMissingHeartbeatTime());
             // backends is changed, regenerated tablet number metrics
             MetricRepo.generateBackendsTabletMetrics();
         }

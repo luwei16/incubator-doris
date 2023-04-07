@@ -20,6 +20,7 @@
 
 #include "vec/data_types/data_type_factory.hpp"
 
+#include <gen_cpp/types.pb.h>
 #include "vec/data_types/data_type_hll.h"
 #include "vec/data_types/data_type_jsonb.h"
 #include "vec/data_types/data_type_object.h"
@@ -126,11 +127,12 @@ DataTypePtr DataTypeFactory::create_data_type(const TypeDescriptor& col_desc, bo
     case TYPE_NULL:
         nested = std::make_shared<vectorized::DataTypeUInt8>();
         break;
-    case TYPE_ARRAY:
+    case TYPE_ARRAY: {
         DCHECK(col_desc.children.size() == 1);
         nested = std::make_shared<vectorized::DataTypeArray>(
                 create_data_type(col_desc.children[0], col_desc.contains_null));
         break;
+    }
     case TYPE_VARIANT:
         // ColumnObject always none nullable
         return std::make_shared<vectorized::DataTypeObject>("json", true);
@@ -302,6 +304,10 @@ DataTypePtr DataTypeFactory::create_data_type(const PColumnMeta& pcolumn) {
     case PGenericType::FIXEDLENGTHOBJECT:
         nested = std::make_shared<DataTypeFixedLengthObject>();
         break;
+    case PGenericType::VARIANT: {
+        nested = std::make_shared<DataTypeObject>("object", true);
+        break;
+    }
     default: {
         LOG(FATAL) << fmt::format("Unknown data type: {}", pcolumn.type());
         return nullptr;

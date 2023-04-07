@@ -28,7 +28,7 @@
 #include "runtime/runtime_state.h"
 #include "runtime/tuple.h"
 #include "vec/data_types/data_type_factory.hpp"
-#include "vec/common/object_util.h"
+#include "vec/common/schema_util.h"
 
 namespace doris {
 
@@ -65,7 +65,7 @@ BaseScanner::BaseScanner(RuntimeState* state, RuntimeProfile* profile,
           _scanner_eof(false) {}
 
 Status BaseScanner::open() {
-    _full_base_schema_view.reset(new vectorized::object_util::FullBaseSchemaView);
+    _full_base_schema_view.reset(new vectorized::schema_util::FullBaseSchemaView);
     RETURN_IF_ERROR(init_expr_ctxes());
     if (_params.__isset.strict_mode) {
         _strict_mode = _params.strict_mode;
@@ -124,7 +124,7 @@ Status BaseScanner::init_expr_ctxes() {
         }
         _src_slot_descs.emplace_back(it->second);
 
-        if (it->second->type().is_variant() &&
+        if (it->second->type().is_variant_type() &&
             it->second->col_name() == BeConsts::DYNAMIC_COLUMN_NAME) {
             _is_dynamic_schema = true;
         }
@@ -335,7 +335,7 @@ Status BaseScanner::_materialize_dest_block(vectorized::Block* dest_block) {
         if (!slot_desc->is_materialized()) {
             continue;
         }
-        if (slot_desc->type().is_variant()) {
+        if (slot_desc->type().is_variant_type()) {
             continue;
         }
         int dest_index = ctx_idx++;
@@ -347,7 +347,7 @@ Status BaseScanner::_materialize_dest_block(vectorized::Block* dest_block) {
             auto dest_type = vectorized::DataTypeFactory::instance().create_data_type(
                     slot_desc->type(), slot_desc->is_nullable());
             if (!column_type_name.type->equals(*dest_type)) {
-                RETURN_IF_ERROR(vectorized::object_util::cast_column(column_type_name, dest_type,
+                RETURN_IF_ERROR(vectorized::schema_util::cast_column(column_type_name, dest_type,
                                                                      &column_ptr));
             } else {
                 column_ptr = column_type_name.column;
@@ -430,7 +430,7 @@ Status BaseScanner::_materialize_dest_block(vectorized::Block* dest_block) {
             // type conflict free path, always cast to original type
             if (!column_type_name.type->equals(*original_type)) {
                 vectorized::ColumnPtr column_ptr;
-                RETURN_IF_ERROR(vectorized::object_util::cast_column(column_type_name,
+                RETURN_IF_ERROR(vectorized::schema_util::cast_column(column_type_name,
                                                                      original_type, &column_ptr));
                 column_type_name.column = column_ptr;
                 column_type_name.type = original_type;

@@ -25,6 +25,7 @@ import org.apache.doris.analysis.ExprSubstitutionMap;
 import org.apache.doris.analysis.FunctionCallExpr;
 import org.apache.doris.analysis.IntLiteral;
 import org.apache.doris.analysis.NullLiteral;
+import org.apache.doris.analysis.SchemaChangeExpr;
 import org.apache.doris.analysis.SlotDescriptor;
 import org.apache.doris.analysis.SlotRef;
 import org.apache.doris.analysis.StringLiteral;
@@ -130,8 +131,6 @@ public class ExternalFileScanNode extends ExternalScanNode {
 
     private String cluster;
 
-    private String qualifiedUser;
-
     private boolean needClearContext = false;
 
     /**
@@ -143,10 +142,9 @@ public class ExternalFileScanNode extends ExternalScanNode {
         super(id, desc, "EXTERNAL_FILE_SCAN_NODE", StatisticalType.FILE_SCAN_NODE);
     }
 
-    public ExternalFileScanNode(PlanNodeId id, TupleDescriptor desc, String cluster, String qualifiedUser) {
+    public ExternalFileScanNode(PlanNodeId id, TupleDescriptor desc, String cluster) {
         this(id, desc);
         this.cluster = cluster;
-        this.qualifiedUser = qualifiedUser;
     }
 
     // Only for broker load job.
@@ -516,6 +514,10 @@ public class ExternalFileScanNode extends ExternalScanNode {
                 String name = "jsonb_parse_" + nullable + "_error_to_null";
                 expr = new FunctionCallExpr(name, args);
                 expr.analyze(analyzer);
+            } else if (dstType == PrimitiveType.VARIANT) {
+                // Generate SchemaChange expr for dynamicly generating columns
+                TableIf targetTbl = desc.getTable();
+                expr = new SchemaChangeExpr((SlotRef) expr, (int) targetTbl.getId());
             } else {
                 expr = castToSlot(destSlotDesc, expr);
             }
