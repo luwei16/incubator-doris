@@ -567,7 +567,105 @@ public class CloudSystemInfoService extends SystemInfoService {
 
     public List<Backend> getBackendsByClusterId(final String clusterId) {
         // copy a new List
-        return new ArrayList<>(clusterIdToBackend.getOrDefault(clusterId, new ArrayList<>()));
+        return new ArrayList<>(clusterIdToBackend.getOrDefault(physicalClusterId, new ArrayList<>()));
+    }
+
+    public String getPhysicalCluster(String clusterName) {
+        ComputeGroup cg = getComputeGroupByName(clusterName);
+        if (cg == null) {
+            return clusterName;
+        }
+
+        if (!cg.isVirtual()) {
+            return clusterName;
+        }
+
+        ComputeGroup.Policy policy = cg.getPolicy();
+        // todo check policy
+        String acgName = policy.getActiveComputeGroup();
+        if (acgName != null) {
+            ComputeGroup acg = getComputeGroupByName(acgName);
+            if (acg != null) {
+                if (isComputeGroupAvailable(acgName, policy.getUnhealthyNodeThresholdPercent())) {
+                    acg.setUnavailableSince(-1);
+                    return acgName;
+                } else {
+                    if (acg.getUnavailableSince() <= 0) {
+                        acg.setUnavailableSince(System.currentTimeMillis()
+                                - computeGroupFailureCount(acgName) * Config.heartbeat_interval_second * 1000);
+                    }
+                }
+            }
+        }
+
+        String scgName = policy.getStandbyComputeGroup();
+        if (scgName != null) {
+            ComputeGroup scg = getComputeGroupByName(scgName);
+            if (scg != null) {
+                if (isComputeGroupAvailable(scgName, policy.getUnhealthyNodeThresholdPercent())) {
+                    scg.setUnavailableSince(-1);
+                    ComputeGroup acg = getComputeGroupByName(acgName);
+                    if (acg == null || System.currentTimeMillis() - acg.getUnavailableSince()
+                            > policy.getFailoverFailureThreshold() * Config.heartbeat_interval_second * 1000) {
+                        switchActiveStandby(cg, acgName, scgName);
+                        policy.setActiveComputeGroup(scgName);
+                        policy.setStandbyComputeGroup(acgName);
+                        cg.setNeedRebuildFileCache(true);
+                    }
+                    return scgName;
+                } else {
+                    if (scg.getUnavailableSince() <= 0) {
+                        scg.setUnavailableSince(System.currentTimeMillis()
+                                - computeGroupFailureCount(scgName) * Config.heartbeat_interval_second * 1000);
+                    }
+                }
+            }
+        }
+
+        if (acgName != null) {
+            return acgName;
+        } else {
+            return clusterName;
+        }
+    }
+
+    public boolean isComputeGroupAvailable(String cg, long unhealthyNodeThresholdPercent) {
+        List<Backend> bes = getBackendsByClusterName(cg);
+        if (bes == null || bes.isEmpty()) {
+            return false;
+        }
+
+        long deadBeNum = 0;
+        for (Backend be : bes) {
+            if (!be.isAlive()) {
+                deadBeNum++;
+            }
+        }
+        if (deadBeNum * 100 / bes.size() >= unhealthyNodeThresholdPercent) {
+            return false;
+        }
+
+        return true;
+    }
+
+    public int computeGroupFailureCount(String cg) {
+        List<Backend> bes = getBackendsByClusterName(cg);
+        if (bes == null || bes.isEmpty()) {
+            return 0;
+        }
+
+        int failureCount = 0;
+        for (Backend be : bes) {
+            if (!be.isAlive()) {
+                if (failureCount == 0) {
+                    failureCount = be.getHeartbeatFailureCounter();
+                } else {
+                    failureCount = Math.min(be.getHeartbeatFailureCounter(), failureCount);
+                }
+            }
+        }
+
+        return failureCount;
     }
 
     public String getClusterNameByBeAddr(String beEndpoint) {
